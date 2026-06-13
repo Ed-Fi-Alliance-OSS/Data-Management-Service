@@ -41,10 +41,10 @@ public class ContentProviderTests
     }
 
     [Test]
-    public void Returns_Expected_Json_Files()
+    public void Returns_Empty_Xsd_File_List_For_Unknown_Section()
     {
         // Act
-        var response = _contentProvider.Files("ApiSchema", ".json", "ed-fi");
+        var response = _contentProvider.ListXsdFiles("unknown");
 
         // Assert
         response.Should().NotBeNull();
@@ -55,7 +55,7 @@ public class ContentProviderTests
     public void Returns_Expected_Xsd_Files()
     {
         // Act
-        var response = _contentProvider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi");
+        var response = _contentProvider.ListXsdFiles("ed-fi");
 
         // Assert
         response.Should().NotBeNull();
@@ -116,11 +116,11 @@ public class ContentProviderTests
         MemoryStream contentStream = new(Encoding.UTF8.GetBytes(content.ToString()));
 
         var contentProvider = A.Fake<IContentProvider>();
-        A.CallTo(() => contentProvider.LoadXsdContent(A<string>._))
+        A.CallTo(() => contentProvider.LoadXsdContent(A<string>._, A<string>._))
             .Returns(new Lazy<Stream>(() => contentStream));
 
         // Act
-        var response = contentProvider.LoadXsdContent("Interchange-Contact.xsd");
+        var response = contentProvider.LoadXsdContent("Interchange-Contact.xsd", "ed-fi");
         var responseStream = response.Value;
         string line = string.Empty;
         using (var reader = new StreamReader(responseStream))
@@ -515,8 +515,7 @@ public class Given_file_mode_xsd_listing_for_core_section
     [Test]
     public void It_lists_only_core_xsd_files_for_the_core_section()
     {
-        // XsdMetadataEndpointModule passes a broad listing pattern for the full listing.
-        var files = _provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();
+        var files = _provider.ListXsdFiles("ed-fi").ToList();
 
         files.Should().Equal(FileModeWorkspaceBuilder.CoreXsdFile1, FileModeWorkspaceBuilder.CoreXsdFile2);
     }
@@ -524,7 +523,7 @@ public class Given_file_mode_xsd_listing_for_core_section
     [Test]
     public void It_does_not_include_extension_files_for_core_section()
     {
-        var files = _provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();
+        var files = _provider.ListXsdFiles("ed-fi").ToList();
 
         files.Should().NotContain(FileModeWorkspaceBuilder.ExtensionXsdFile);
     }
@@ -532,7 +531,7 @@ public class Given_file_mode_xsd_listing_for_core_section
     [Test]
     public void It_filters_by_bare_file_name()
     {
-        var files = _provider.Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "ed-fi").ToList();
+        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "ed-fi").ToList();
 
         files.Should().ContainSingle();
         files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1);
@@ -541,7 +540,7 @@ public class Given_file_mode_xsd_listing_for_core_section
     [Test]
     public void It_returns_no_core_files_for_an_unknown_section()
     {
-        var files = _provider.Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "unknown").ToList();
+        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "unknown").ToList();
 
         files.Should().BeEmpty();
     }
@@ -573,9 +572,7 @@ public class Given_file_mode_xsd_listing_for_extension_section
     [Test]
     public void It_blends_core_and_extension_xsd_files_for_extension_section()
     {
-        var files = _provider
-            .Files(@"EdFi\.DataStandard.*\.ApiSchema|EdFi.sample.ApiSchema", ".xsd", "sample")
-            .ToList();
+        var files = _provider.ListXsdFiles("sample").ToList();
 
         files
             .Should()
@@ -589,7 +586,7 @@ public class Given_file_mode_xsd_listing_for_extension_section
     [Test]
     public void It_filters_extension_section_by_bare_extension_file_name()
     {
-        var files = _provider.Files(FileModeWorkspaceBuilder.ExtensionXsdFile, ".xsd", "sample").ToList();
+        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.ExtensionXsdFile, "sample").ToList();
 
         files.Should().ContainSingle();
         files[0].Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFile);
@@ -622,7 +619,7 @@ public class Given_file_mode_xsd_stream_loading
     [Test]
     public void It_returns_stream_content_for_bare_file_name()
     {
-        var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1);
+        var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1, "ed-fi");
         using var reader = new StreamReader(lazy.Value);
         var content = reader.ReadToEnd();
 
@@ -632,7 +629,7 @@ public class Given_file_mode_xsd_stream_loading
     [Test]
     public void It_returns_extension_file_stream_content()
     {
-        var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.ExtensionXsdFile);
+        var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.ExtensionXsdFile, "sample");
         using var reader = new StreamReader(lazy.Value);
         var content = reader.ReadToEnd();
 
@@ -660,7 +657,7 @@ public class Given_file_mode_xsd_stream_loading
         );
 
         var advertisedFiles = _provider
-            .Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "sample")
+            .FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "sample")
             .ToList();
         advertisedFiles.Should().ContainSingle(FileModeWorkspaceBuilder.CoreXsdFile1);
 
@@ -699,7 +696,18 @@ public class Given_file_mode_xsd_stream_loading
     [Test]
     public void It_throws_for_unknown_xsd_file_name()
     {
-        Action action = () => _provider.LoadXsdContent("DoesNotExist.xsd");
+        Action action = () => _provider.LoadXsdContent("DoesNotExist.xsd", "ed-fi");
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
+    }
+
+    [Test]
+    public void It_throws_for_legacy_assembly_resource_prefixed_xsd_file_name()
+    {
+        var legacyPrefixedFileName =
+            $"EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile1}";
+
+        Action action = () => _provider.LoadXsdContent(legacyPrefixedFileName, "ed-fi");
 
         action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
     }
@@ -738,7 +746,7 @@ public class Given_file_mode_missing_optional_content
     public void It_returns_empty_files_for_project_without_xsd_directory()
     {
         // "minimal" project has no xsdDirectory key in the manifest
-        var files = _provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "minimal").ToList();
+        var files = _provider.ListXsdFiles("minimal").ToList();
 
         // Minimal is an extension project but has no xsdDirectory; only core files are returned
         // because no extension xsdDirectory is present (core files always included if core exists)
@@ -746,9 +754,9 @@ public class Given_file_mode_missing_optional_content
     }
 
     [Test]
-    public void It_returns_empty_xsd_list_for_non_xsd_extension()
+    public void It_returns_empty_xsd_list_for_unknown_section()
     {
-        var files = _provider.Files("anything", ".json", "ed-fi").ToList();
+        var files = _provider.ListXsdFiles("unknown").ToList();
 
         files.Should().BeEmpty();
     }
@@ -781,7 +789,7 @@ public class Given_file_mode_invalid_core_project_manifest
         MutateProject("Ed-Fi", project => project["isExtensionProject"] = true);
         var provider = BuildProvider();
 
-        Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "sample").ToList();
+        Action action = () => provider.ListXsdFiles("sample").ToList();
 
         action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 0*");
     }
@@ -792,7 +800,7 @@ public class Given_file_mode_invalid_core_project_manifest
         MutateProject("Sample", project => project["isExtensionProject"] = false);
         var provider = BuildProvider();
 
-        Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "sample").ToList();
+        Action action = () => provider.ListXsdFiles("sample").ToList();
 
         action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 2*");
     }
@@ -877,7 +885,7 @@ public class Given_file_mode_path_escape_rejection
         var provider = new ContentProvider(logger, manifestProvider);
 
         // Requesting files for core section triggers EnumerateValidatedXsdFiles which validates the path
-        Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();
+        Action action = () => provider.ListXsdFiles("ed-fi").ToList();
 
         action.Should().Throw<InvalidOperationException>().WithMessage("*parent-directory traversal*");
     }

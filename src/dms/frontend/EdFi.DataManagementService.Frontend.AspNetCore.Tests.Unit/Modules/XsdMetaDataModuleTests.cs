@@ -57,7 +57,7 @@ public class XsdMetaDataModuleTests
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
         _contentProvider = A.Fake<IContentProvider>();
-        A.CallTo(() => _contentProvider.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
+        A.CallTo(() => _contentProvider.ListXsdFiles("ed-fi")).Returns(files);
     }
 
     [Test]
@@ -184,7 +184,7 @@ public class XsdMetaDataModuleTests
         A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored, "ed-fi")).Returns(_fileStream);
 
         var files = new List<string> { "text.xsd" };
-        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
+        A.CallTo(() => _contentProvider!.FindXsdFiles(A<string>.Ignored, "ed-fi")).Returns(files);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -214,7 +214,7 @@ public class XsdMetaDataModuleTests
     {
         // Arrange
         var files = new List<string>();
-        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
+        A.CallTo(() => _contentProvider!.FindXsdFiles(A<string>.Ignored, "ed-fi")).Returns(files);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -391,6 +391,19 @@ public class Given_file_mode_xsd_metadata_endpoint
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
+    }
+
+    [Test]
+    public async Task It_returns_404_for_legacy_assembly_resource_prefixed_xsd_file_name()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile1}"
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Test]

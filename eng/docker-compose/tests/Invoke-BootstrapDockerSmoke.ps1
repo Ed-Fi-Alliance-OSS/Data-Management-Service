@@ -572,33 +572,6 @@ try {
                     throw "GET $firstFileUrl returned an empty body; expected XSD file content."
                 }
                 Write-Host "[smoke] GET $firstFileUrl -> $($firstFileResponse.StatusCode) OK ($(($firstFileResponse.Content).Length) bytes)"
-
-                # Construct the legacy assembly-resource-prefixed form and GET it -> 200
-                # The legacy prefix convention (NormalizeToBareXsdFileName in ContentProvider.cs) is:
-                #   <AssemblyName>.xsd.<BareFileName>
-                # e.g. EdFi.DataStandard52.ApiSchema.xsd.Ed-Fi-Core.xsd
-                # The URL segment is the bare file name from $firstFileUrl; extract it:
-                $bareFileName = Split-Path -Leaf ([uri]$firstFileUrl).LocalPath
-                # Build the legacy-prefixed name using the projectName with dots replacing spaces:
-                # The assembly name convention is: EdFi.<ProjectNamePascal>.ApiSchema
-                # For the core "Ed-Fi" project the published assembly name is EdFi.DataStandard<ver>.ApiSchema.
-                # In the smoke test we derive it from the projectEndpointName (lowercased project name without dashes).
-                # The exact prefix must survive NormalizeToBareXsdFileName which strips everything up to and including
-                # the literal ".xsd." infix. So any prefix ending in ".xsd." works — we use the projectName itself.
-                $safeProjectName = ($project.projectName -replace '[^A-Za-z0-9]', '.')
-                $legacyPrefixedName = "EdFi.$safeProjectName.ApiSchema.xsd.$bareFileName"
-                $legacyFileUrl = "$dmsBase/metadata/xsd/$projectNameLower/$legacyPrefixedName"
-                $legacyResponse = $null
-                try {
-                    $legacyResponse = Invoke-WebRequest -Uri $legacyFileUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
-                }
-                catch {
-                    throw "GET $legacyFileUrl (legacy-prefixed) failed: $($_.Exception.Message)"
-                }
-                if ($legacyResponse.StatusCode -ne 200) {
-                    throw "GET $legacyFileUrl (legacy-prefixed) returned HTTP $($legacyResponse.StatusCode); expected 200."
-                }
-                Write-Host "[smoke] GET $legacyFileUrl (legacy-prefixed) -> $($legacyResponse.StatusCode) OK"
             }
         }
     }

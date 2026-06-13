@@ -159,3 +159,9 @@ Key decisions: ContentProvider now selects the single core manifest project for 
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format touched C# files; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~discovery passed, 16 tests.
 Blockers/notes: remaining task: dead XSD listing cleanup.
+
+Task completed: Code Simplification - dead legacy XSD listing cleanup for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Replaced generic XSD Files contract with explicit ListXsdFiles/FindXsdFiles and kept only section-aware LoadXsdContent in production. XSD endpoint lists by section without legacy assembly regexes; prefixed resource names now 404. Docker smoke follows returned staged XSD URLs only.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/XsdMetadataEndpointModule.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/XsdMetaDataModuleTests.cs; eng/docker-compose/tests/Invoke-BootstrapDockerSmoke.ps1; tasks.json; progress.txt.
+Verification: dotnet csharpier format touched C# files; Invoke-Pester BootstrapDockerSmoke passed, 23 tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd|FullyQualifiedName~ContentProvider passed, 11 tests; rg stale production patterns and smoke legacy-prefixed names returned none.
+Blockers/notes: all tasks now complete.

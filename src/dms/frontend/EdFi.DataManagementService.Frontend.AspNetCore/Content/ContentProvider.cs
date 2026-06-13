@@ -28,13 +28,6 @@ public interface IContentProvider
     JsonNode LoadJsonContent(string fileNamePattern);
 
     /// <summary>
-    /// Provides xsd file stream.
-    /// </summary>
-    /// <param name="fileName"></param>
-    /// <returns></returns>
-    Lazy<Stream> LoadXsdContent(string fileName);
-
-    /// <summary>
     /// Provides xsd file stream for the requested metadata section.
     /// </summary>
     /// <param name="fileName"></param>
@@ -43,13 +36,19 @@ public interface IContentProvider
     Lazy<Stream> LoadXsdContent(string fileName, string section);
 
     /// <summary>
-    /// Provides list of files.
+    /// Provides section-based xsd file list.
     /// </summary>
-    /// <param name="fileNamePattern"></param>
-    /// <param name="fileExtension"></param>
     /// <param name="section"></param>
     /// <returns></returns>
-    IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section);
+    IEnumerable<string> ListXsdFiles(string section);
+
+    /// <summary>
+    /// Provides exact bare-name xsd file lookup for the requested metadata section.
+    /// </summary>
+    /// <param name="fileName"></param>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    IEnumerable<string> FindXsdFiles(string fileName, string section);
 }
 
 /// <summary>
@@ -60,47 +59,19 @@ public class ContentProvider(
     IApiSchemaAssetManifestProvider manifestProvider
 ) : IContentProvider
 {
-    public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section)
+    public IEnumerable<string> ListXsdFiles(string section)
     {
-        return FilesFromManifest(fileNamePattern, fileExtension, section);
-    }
-
-    private IEnumerable<string> FilesFromManifest(
-        string fileNamePattern,
-        string fileExtension,
-        string section
-    )
-    {
-        // In file mode, only XSD files are listed from the manifest.
-        // Return empty for any non-XSD file extension — the section-based listing is
-        // only defined for XSD content.
-        if (!fileExtension.Equals(".xsd", StringComparison.OrdinalIgnoreCase))
-        {
-            return [];
-        }
-
-        // XsdMetadataEndpointModule passes either a broad listing pattern or an exact
-        // package XSD file name (e.g. "Ed-Fi-Core.xsd") for single-file lookup.
-        // Listing patterns do not end in ".xsd"; in file mode we ignore
-        // them for filtering and use the section for manifest project selection instead.
-        // File-name patterns ending in ".xsd" are matched exactly.
-        bool patternIsFileNameFilter = fileNamePattern.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase);
-
         var candidatePaths = ResolveXsdListingPathsForSection(section);
 
-        // Extract bare file names for the listing
-        var fileNames = candidatePaths
+        return candidatePaths
             .Select(p => Path.GetFileName(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
 
-        if (!patternIsFileNameFilter)
-        {
-            // Non-file listing pattern: return the full section list.
-            return fileNames;
-        }
-
-        return fileNames.Where(f => f.Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase));
+    public IEnumerable<string> FindXsdFiles(string fileName, string section)
+    {
+        return ListXsdFiles(section).Where(f => f.Equals(fileName, StringComparison.OrdinalIgnoreCase));
     }
 
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
@@ -134,7 +105,7 @@ public class ContentProvider(
             ? $"{fileNamePattern}-spec"
             : fileNamePattern;
 
-        using StreamReader reader = new(GetStream(fileNamePattern, ".json"));
+        using StreamReader reader = new(GetJsonStreamFromManifest(fileNamePattern));
         var jsonContent = reader.ReadToEnd();
 
         JsonNode? jsonNodeFromFile = JsonNode.Parse(jsonContent);
@@ -147,38 +118,10 @@ public class ContentProvider(
         return jsonNodeFromFile;
     }
 
-    public Lazy<Stream> LoadXsdContent(string fileName)
-    {
-        _logger.LogDebug("Entering Xsd FileLoader");
-        return new Lazy<Stream>(GetStream(fileName, ".xsd"));
-    }
-
     public Lazy<Stream> LoadXsdContent(string fileName, string section)
     {
         _logger.LogDebug("Entering Xsd FileLoader");
         return new Lazy<Stream>(GetXsdStreamFromManifest(fileName, section));
-    }
-
-    public Stream GetStream(string fileNamePattern, string fileExtension)
-    {
-        return GetStreamFromManifest(fileNamePattern, fileExtension);
-    }
-
-    private Stream GetStreamFromManifest(string fileNamePattern, string fileExtension)
-    {
-        if (fileExtension.Equals(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            return GetJsonStreamFromManifest(fileNamePattern);
-        }
-
-        if (fileExtension.Equals(".xsd", StringComparison.OrdinalIgnoreCase))
-        {
-            return GetXsdStreamFromManifest(fileNamePattern);
-        }
-
-        var error = $"Couldn't load find the resource";
-        _logger.LogCritical(error);
-        throw new InvalidOperationException(error);
     }
 
     private Stream GetJsonStreamFromManifest(string fileNamePattern)
@@ -221,28 +164,6 @@ public class ContentProvider(
         }
 
         // No project provides a discovery spec: keep the legacy failure shape.
-        var error = $"Couldn't load find the resource";
-        _logger.LogCritical(error);
-        throw new InvalidOperationException(error);
-    }
-
-    private Stream GetXsdStreamFromManifest(string fileNamePattern)
-    {
-        var manifest = manifestProvider.GetManifest();
-
-        // Search core first, then extensions in manifest order; return the first matching file
-        var matchedPath = manifest
-            .Projects.OrderBy(p => p.IsExtensionProject ? 1 : 0)
-            .SelectMany(manifestProvider.EnumerateValidatedXsdFiles)
-            .FirstOrDefault(f =>
-                Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
-            );
-
-        if (matchedPath is not null)
-        {
-            return File.OpenRead(matchedPath);
-        }
-
         var error = $"Couldn't load find the resource";
         _logger.LogCritical(error);
         throw new InvalidOperationException(error);

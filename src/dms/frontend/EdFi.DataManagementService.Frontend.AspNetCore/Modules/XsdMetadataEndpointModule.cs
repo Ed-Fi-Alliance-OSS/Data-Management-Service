@@ -99,10 +99,7 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();
-            var searchPattern = dataModelInfo.IsCoreProject
-                ? @"EdFi\.DataStandard.*\.ApiSchema"
-                : $@"EdFi\.DataStandard.*\.ApiSchema|EdFi.{section}.ApiSchema";
-            var xsdFiles = contentProvider.Files(searchPattern, ".xsd", section);
+            var xsdFiles = contentProvider.ListXsdFiles(section);
 
             if (xsdFiles.Any())
             {
@@ -143,7 +140,7 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         string section = match.Groups["section"].Value;
         var fileName = match.Groups["fileName"].Value;
         var fileFullName = $"{fileName}.xsd";
-        var files = contentProvider.Files(fileFullName, ".xsd", section);
+        var files = contentProvider.FindXsdFiles(fileFullName, section);
         if (files.Any())
         {
             var content = contentProvider.LoadXsdContent(fileFullName, section);
