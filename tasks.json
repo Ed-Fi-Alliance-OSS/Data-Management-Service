@@ -306,7 +306,6 @@
     "steps-to-verify": [
       "Update `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs` to emit `bootstrap-api-schema-manifest.json` from the materialized schema files.",
       "Add or update `Given_FixtureContextLoader` assertions that the bootstrap manifest exists, selects the materialized schemas, and still preserves the generated `fixture.json` baseline manifest.",
-      "Add a focused host-loading assertion, such as a new `Given_ApiIntegrationHostLoadsManifestBackedFixture` test or an equivalent `ApiIntegrationTestBase`-derived smoke test, that starts DMS with a manifest-backed fixture workspace and fails if the fixture can only load through recursive `ApiSchema*.json` discovery.",
       "Search `src/dms/tests/EdFi.DataManagementService.Tests.Integration` for `ApiSchema*.json`, `scan pattern`, and `host scans`; confirm remaining matches do not describe runtime fallback loading.",
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_FixtureContextLoader|FullyQualifiedName~Given_ApiIntegrationHostLoadsManifestBackedFixture\"`"
     ],
@@ -326,7 +325,6 @@
     "steps-to-verify": [
       "Search `src/dms/core` for `ReadApiSchemaFiles`, `SearchOption.AllDirectories`, and `Directory.EnumerateFiles` and confirm no runtime schema-loading fallback remains.",
       "Search `src/dms` for `Given_legacy_workspace_without_a_bootstrap_manifest`, `It_preserves_recursive_ApiSchema_file_loading`, and runtime comments describing `ApiSchema*.json` scans; confirm they were removed or rewritten.",
-      "Add explicit bundled no-manifest negative verification by temporarily removing or isolating the bundled `ApiSchema/bootstrap-api-schema-manifest.json`, leaving loose `ApiSchema*.json` content present, and asserting startup/schema loading fails with a missing-manifest configuration failure.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_FixtureContextLoader\"`"
