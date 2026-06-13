@@ -412,7 +412,7 @@
       "Add verification that declared-but-missing optional content fails during materialization, not later at runtime.",
       "Run the focused container-packaging verification added for bundled ApiSchema manifest generation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Schema Loading",
