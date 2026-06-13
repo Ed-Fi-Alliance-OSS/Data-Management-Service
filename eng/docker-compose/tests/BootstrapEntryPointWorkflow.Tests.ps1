@@ -555,4 +555,51 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
         }
     }
+
+    Context "Published InfraOnly claims-ready gate" {
+        It "start-published-dms.ps1 imports and runs the claims-ready gate after CMS auth metadata setup" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "bootstrap-claims-gate\.psm1"\) -Force'
+
+            $infraStart = $startScript.IndexOf('if ($InfraOnly) {')
+            $infraStart | Should -BeGreaterThan -1
+            $infraComplete = $startScript.IndexOf(
+                'Write-Output "Infrastructure phase complete. DMS service was not started."',
+                $infraStart
+            )
+            $infraComplete | Should -BeGreaterThan $infraStart
+            $infraBlock = $startScript.Substring($infraStart, $infraComplete - $infraStart)
+
+            $healthIndex = $infraBlock.IndexOf('Write-Output "Configuration Service is healthy."')
+            $authMetadataClientIndex = $infraBlock.IndexOf('CMSAuthMetadataReadOnlyAccess')
+            $gateIndex = $infraBlock.IndexOf('Test-CmsClaimsReady')
+
+            $healthIndex | Should -BeGreaterThan -1
+            $authMetadataClientIndex | Should -BeGreaterThan -1
+            $gateIndex | Should -BeGreaterThan $healthIndex
+            $gateIndex | Should -BeGreaterThan $authMetadataClientIndex
+
+            $infraBlock | Should -Match 'if \(\$bootstrapManifestPresent\)\s*\{[\s\S]*?Test-CmsClaimsReady'
+            $infraBlock | Should -Match '-EnvironmentFile \$EnvironmentFile'
+            $infraBlock | Should -Match '-IdentityProvider \$IdentityProvider'
+        }
+
+        It "start-published-dms.ps1 skips the claims-ready gate with an informational message on no-manifest InfraOnly runs" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $infraStart = $startScript.IndexOf('if ($InfraOnly) {')
+            $infraComplete = $startScript.IndexOf(
+                'Write-Output "Infrastructure phase complete. DMS service was not started."',
+                $infraStart
+            )
+            $infraBlock = $startScript.Substring($infraStart, $infraComplete - $infraStart)
+
+            $infraBlock | Should -Match 'else\s*\{[\s\S]*?Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run\." -InformationAction Continue'
+        }
+    }
 }

@@ -380,7 +380,7 @@
       "Add a negative assertion that no-manifest published startup skips the claims-ready gate with an informational message.",
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Metadata Content",

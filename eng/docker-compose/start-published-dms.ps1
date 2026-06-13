@@ -100,6 +100,7 @@ param (
 )
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -405,6 +406,19 @@ else {
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
+        }
+
+        # Claims-ready gate: prove CMS has applied the expected claims content before
+        # instance configuration begins. Runs only on bootstrap-manifest runs; skipped
+        # with an informational message on legacy no-manifest invocations.
+        if ($bootstrapManifestPresent) {
+            Write-Output "Running claims-ready gate..."
+            Test-CmsClaimsReady `
+                -EnvironmentFile $EnvironmentFile `
+                -IdentityProvider $IdentityProvider
+        }
+        else {
+            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run." -InformationAction Continue
         }
 
         Write-Output "Infrastructure phase complete. DMS service was not started."
