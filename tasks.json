@@ -447,7 +447,7 @@
       "Add `ContentProvider` unit coverage where only an extension declares `discoverySpecPath` and assert discovery loading follows the absent-content failure path instead of serving the extension file.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ContentProvider|FullyQualifiedName~discovery\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Code Simplification",

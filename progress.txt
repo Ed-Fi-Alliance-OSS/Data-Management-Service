@@ -153,3 +153,9 @@ Key decisions: Directory.Build.targets now reads package-manifest.json for bundl
 Files changed: src/dms/Directory.Build.targets; eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1; tasks.json; progress.txt.
 Verification: Invoke-Pester BootstrapContainerPackaging passed, 6 tests; dotnet publish --no-restore frontend Release to /tmp/dms-frontend-publish-bundled-manifest-check passed and manifest showed Ed-Fi discovery/xsd, TPDM discoverySpecPath null, TPDM xsdDirectory present.
 Blockers/notes: remaining tasks: core-only discovery-spec serving, dead XSD listing cleanup.
+
+Task completed: Metadata Content - core-only discovery-spec serving for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: ContentProvider now selects the single core manifest project for discovery-spec. Extension discoverySpecPath assets are package-local and are ignored for global DMS discovery; core missing path keeps absent-content failure.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format touched C# files; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~discovery passed, 16 tests.
+Blockers/notes: remaining task: dead XSD listing cleanup.

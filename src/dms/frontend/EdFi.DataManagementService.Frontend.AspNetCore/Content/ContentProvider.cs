@@ -194,12 +194,13 @@ public class ContentProvider(
         }
 
         var manifest = manifestProvider.GetManifest();
-        var project = manifest.Projects.FirstOrDefault(p => p.DiscoverySpecPath is not null);
+        var project = GetCoreProject(manifest);
 
-        // Serve the first manifest project (in manifest order) that provides discoverySpecPath
-        if (project is not null)
+        // Serve discovery-spec only from the core manifest project. Extension discovery specs are
+        // package-local assets, not the global DMS discovery document.
+        if (project.DiscoverySpecPath is not null)
         {
-            var resolvedPath = manifestProvider.ResolveValidatedPath(project.DiscoverySpecPath!);
+            var resolvedPath = manifestProvider.ResolveValidatedPath(project.DiscoverySpecPath);
             if (!File.Exists(resolvedPath))
             {
                 var invalidWorkspaceError =

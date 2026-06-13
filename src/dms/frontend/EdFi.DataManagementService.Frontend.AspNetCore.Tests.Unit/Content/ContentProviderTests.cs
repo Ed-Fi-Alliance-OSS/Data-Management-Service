@@ -419,6 +419,74 @@ public class Given_file_mode_discovery_spec_load
             .Throw<InvalidOperationException>()
             .WithMessage("*Ed-Fi*discoverySpecPath*content/Ed-Fi/discovery-spec.json*does not exist*");
     }
+
+    [Test]
+    public void It_serves_core_discovery_spec_when_an_extension_with_discovery_spec_appears_first()
+    {
+        AddSampleDiscoverySpecToManifest();
+
+        var manifest = ReadManifest();
+        var projects = manifest["projects"]!.AsArray();
+        var sampleProject = projects[1];
+        projects.RemoveAt(1);
+        projects.Insert(0, sampleProject);
+        WriteManifest(manifest);
+
+        var result = _provider.LoadJsonContent("discovery", string.Empty, string.Empty);
+
+        result["source"].Should().BeNull();
+        result["version"]!.GetValue<string>().Should().Be("1.0");
+    }
+
+    [Test]
+    public void It_throws_when_only_an_extension_declares_discovery_spec()
+    {
+        AddSampleDiscoverySpecToManifest();
+        RemoveCoreDiscoverySpecFromManifest();
+
+        Action action = () => _provider.LoadJsonContent("discovery", string.Empty, string.Empty);
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
+    }
+
+    private void AddSampleDiscoverySpecToManifest()
+    {
+        var extensionDiscoverySpecPath = Path.Combine(
+            _workspaceRoot,
+            "content",
+            "Sample",
+            "discovery-spec.json"
+        );
+        File.WriteAllText(extensionDiscoverySpecPath, """{"source":"extension"}""");
+
+        var manifest = ReadManifest();
+        var sampleProject = manifest["projects"]!.AsArray()[1]!.AsObject();
+        sampleProject["discoverySpecPath"] = "content/Sample/discovery-spec.json";
+        WriteManifest(manifest);
+    }
+
+    private void RemoveCoreDiscoverySpecFromManifest()
+    {
+        var manifest = ReadManifest();
+        var coreProject = manifest["projects"]!.AsArray()[0]!.AsObject();
+        coreProject.Remove("discoverySpecPath");
+        WriteManifest(manifest);
+    }
+
+    private JsonObject ReadManifest()
+    {
+        return JsonNode
+            .Parse(File.ReadAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json")))!
+            .AsObject();
+    }
+
+    private void WriteManifest(JsonObject manifest)
+    {
+        File.WriteAllText(
+            Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+    }
 }
 
 [TestFixture]
