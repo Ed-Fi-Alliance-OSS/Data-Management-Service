@@ -243,12 +243,12 @@ DMS. That explains the current `.env.example` pattern, for example:
 ```json
 [
   {
-    "version": "1.0.331",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.331",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.Sample.ApiSchema"
   }
@@ -1916,8 +1916,8 @@ A minimal acceptable console shape is:
 Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
-  Core:  EdFi.DataStandard52.ApiSchema        1.0.331
-  Ext:   EdFi.DataStandard52.Sample.ApiSchema 1.0.331
+  Core:  EdFi.DataStandard52.ApiSchema        1.0.332
+  Ext:   EdFi.DataStandard52.Sample.ApiSchema 1.0.332
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
