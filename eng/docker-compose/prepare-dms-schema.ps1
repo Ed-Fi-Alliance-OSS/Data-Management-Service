@@ -199,7 +199,6 @@ function Add-ProjectContentOperation {
 
     $xsdDirectoryRelativePath = $null
     if (Test-Path -LiteralPath $xsdSourceDirectory -PathType Container) {
-        $xsdDirectoryRelativePath = "$contentRoot/xsd"
         $pathSeparatorChars = [char[]]@(
             [System.IO.Path]::DirectorySeparatorChar,
             [System.IO.Path]::AltDirectorySeparatorChar
@@ -213,13 +212,16 @@ function Add-ProjectContentOperation {
             }
         }
 
-        foreach ($xsdFile in Get-ChildItem -LiteralPath $xsdSourceDirectory -File -Recurse | Sort-Object -Property FullName) {
-            $sourceRelativePath = Get-BootstrapRelativePath -Path $xsdFile.FullName -BasePath $xsdSourceDirectory
-            Add-CopyOperation `
-                -TargetSources $TargetSources `
-                -CopyOperations $CopyOperations `
-                -SourcePath $xsdFile.FullName `
-                -RelativeTargetPath "$xsdDirectoryRelativePath/$sourceRelativePath"
+        if ($xsdFiles.Count -gt 0) {
+            $xsdDirectoryRelativePath = "$contentRoot/xsd"
+            foreach ($xsdFile in $xsdFiles) {
+                $sourceRelativePath = Get-BootstrapRelativePath -Path $xsdFile.FullName -BasePath $xsdSourceDirectory
+                Add-CopyOperation `
+                    -TargetSources $TargetSources `
+                    -CopyOperations $CopyOperations `
+                    -SourcePath $xsdFile.FullName `
+                    -RelativeTargetPath "$xsdDirectoryRelativePath/$sourceRelativePath"
+            }
         }
     }
 

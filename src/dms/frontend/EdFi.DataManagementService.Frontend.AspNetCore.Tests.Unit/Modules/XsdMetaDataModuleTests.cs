@@ -181,10 +181,7 @@ public class XsdMetaDataModuleTests
             return ms;
         });
 
-        A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored, "ed-fi")).Returns(_fileStream);
-
-        var files = new List<string> { "text.xsd" };
-        A.CallTo(() => _contentProvider!.FindXsdFiles(A<string>.Ignored, "ed-fi")).Returns(files);
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("test.xsd", "ed-fi")).Returns(_fileStream);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -213,8 +210,8 @@ public class XsdMetaDataModuleTests
     public async Task XsdMetaData_Files_Returns_Invalid_Resource_With_Wrong_File()
     {
         // Arrange
-        var files = new List<string>();
-        A.CallTo(() => _contentProvider!.FindXsdFiles(A<string>.Ignored, "ed-fi")).Returns(files);
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("not-exists.xsd", "ed-fi"))
+            .Returns((Lazy<Stream>?)null);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {

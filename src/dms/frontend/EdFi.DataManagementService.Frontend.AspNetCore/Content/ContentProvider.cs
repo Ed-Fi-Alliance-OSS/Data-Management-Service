@@ -36,19 +36,19 @@ public interface IContentProvider
     Lazy<Stream> LoadXsdContent(string fileName, string section);
 
     /// <summary>
+    /// Provides xsd file stream for the requested metadata section, when found.
+    /// </summary>
+    /// <param name="fileName"></param>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    Lazy<Stream>? TryLoadXsdContent(string fileName, string section);
+
+    /// <summary>
     /// Provides section-based xsd file list.
     /// </summary>
     /// <param name="section"></param>
     /// <returns></returns>
     IEnumerable<string> ListXsdFiles(string section);
-
-    /// <summary>
-    /// Provides exact bare-name xsd file lookup for the requested metadata section.
-    /// </summary>
-    /// <param name="fileName"></param>
-    /// <param name="section"></param>
-    /// <returns></returns>
-    IEnumerable<string> FindXsdFiles(string fileName, string section);
 }
 
 /// <summary>
@@ -67,11 +67,6 @@ public class ContentProvider(
             .Select(p => Path.GetFileName(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
-
-    public IEnumerable<string> FindXsdFiles(string fileName, string section)
-    {
-        return ListXsdFiles(section).Where(f => f.Equals(fileName, StringComparison.OrdinalIgnoreCase));
     }
 
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
@@ -120,8 +115,20 @@ public class ContentProvider(
 
     public Lazy<Stream> LoadXsdContent(string fileName, string section)
     {
+        return TryLoadXsdContent(fileName, section) ?? throw CreateXsdNotFoundException();
+    }
+
+    public Lazy<Stream>? TryLoadXsdContent(string fileName, string section)
+    {
         _logger.LogDebug("Entering Xsd FileLoader");
-        return new Lazy<Stream>(GetXsdStreamFromManifest(fileName, section));
+        var matchedPath = ResolveXsdPathForSection(fileName, section);
+
+        if (matchedPath is null)
+        {
+            return null;
+        }
+
+        return new Lazy<Stream>(() => File.OpenRead(matchedPath));
     }
 
     private Stream GetJsonStreamFromManifest(string fileNamePattern)
@@ -169,21 +176,12 @@ public class ContentProvider(
         throw new InvalidOperationException(error);
     }
 
-    private Stream GetXsdStreamFromManifest(string fileNamePattern, string section)
+    private string? ResolveXsdPathForSection(string fileNamePattern, string section)
     {
-        var matchedPath = ResolveXsdListingPathsForSection(section)
+        return ResolveXsdListingPathsForSection(section)
             .FirstOrDefault(f =>
                 Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
             );
-
-        if (matchedPath is not null)
-        {
-            return File.OpenRead(matchedPath);
-        }
-
-        var error = $"Couldn't load find the resource";
-        _logger.LogCritical(error);
-        throw new InvalidOperationException(error);
     }
 
     private IEnumerable<string> ResolveXsdListingPathsForSection(string section)
@@ -230,6 +228,13 @@ public class ContentProvider(
     private static bool IsSameProject(ApiSchemaProject left, ApiSchemaProject right)
     {
         return left.ProjectName.Equals(right.ProjectName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private InvalidOperationException CreateXsdNotFoundException()
+    {
+        var error = $"Couldn't load find the resource";
+        _logger.LogCritical(error);
+        return new InvalidOperationException(error);
     }
 
     /// <summary>

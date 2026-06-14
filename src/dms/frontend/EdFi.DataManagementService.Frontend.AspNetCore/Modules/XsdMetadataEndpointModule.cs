@@ -140,10 +140,9 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         string section = match.Groups["section"].Value;
         var fileName = match.Groups["fileName"].Value;
         var fileFullName = $"{fileName}.xsd";
-        var files = contentProvider.FindXsdFiles(fileFullName, section);
-        if (files.Any())
+        var content = contentProvider.TryLoadXsdContent(fileFullName, section);
+        if (content is not null)
         {
-            var content = contentProvider.LoadXsdContent(fileFullName, section);
             return Results.File(content.Value, "application/xml");
         }
         else

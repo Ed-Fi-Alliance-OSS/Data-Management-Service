@@ -529,20 +529,21 @@ public class Given_file_mode_xsd_listing_for_core_section
     }
 
     [Test]
-    public void It_filters_by_bare_file_name()
+    public void It_loads_by_bare_file_name()
     {
-        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "ed-fi").ToList();
+        var xsdContent = _provider.TryLoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1, "ed-fi");
 
-        files.Should().ContainSingle();
-        files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1);
+        xsdContent.Should().NotBeNull();
+        using var reader = new StreamReader(xsdContent!.Value);
+        reader.ReadToEnd().Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
     }
 
     [Test]
     public void It_returns_no_core_files_for_an_unknown_section()
     {
-        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "unknown").ToList();
+        var content = _provider.TryLoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1, "unknown");
 
-        files.Should().BeEmpty();
+        content.Should().BeNull();
     }
 }
 
@@ -584,12 +585,13 @@ public class Given_file_mode_xsd_listing_for_extension_section
     }
 
     [Test]
-    public void It_filters_extension_section_by_bare_extension_file_name()
+    public void It_loads_extension_section_by_bare_extension_file_name()
     {
-        var files = _provider.FindXsdFiles(FileModeWorkspaceBuilder.ExtensionXsdFile, "sample").ToList();
+        var xsdContent = _provider.TryLoadXsdContent(FileModeWorkspaceBuilder.ExtensionXsdFile, "sample");
 
-        files.Should().ContainSingle();
-        files[0].Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFile);
+        xsdContent.Should().NotBeNull();
+        using var reader = new StreamReader(xsdContent!.Value);
+        reader.ReadToEnd().Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFileContent);
     }
 }
 
@@ -657,11 +659,12 @@ public class Given_file_mode_xsd_stream_loading
         );
 
         var advertisedFiles = _provider
-            .FindXsdFiles(FileModeWorkspaceBuilder.CoreXsdFile1, "sample")
+            .ListXsdFiles("sample")
+            .Where(f => f.Equals(FileModeWorkspaceBuilder.CoreXsdFile1, StringComparison.OrdinalIgnoreCase))
             .ToList();
         advertisedFiles.Should().ContainSingle(FileModeWorkspaceBuilder.CoreXsdFile1);
 
-        var content = ReadXsdContent(_provider.LoadXsdContent(advertisedFiles.Single(), "sample"));
+        var content = ReadXsdContent(_provider.TryLoadXsdContent(advertisedFiles.Single(), "sample"));
 
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
     }
@@ -712,9 +715,10 @@ public class Given_file_mode_xsd_stream_loading
         action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
     }
 
-    private static string ReadXsdContent(Lazy<Stream> xsdContent)
+    private static string ReadXsdContent(Lazy<Stream>? xsdContent)
     {
-        using var reader = new StreamReader(xsdContent.Value);
+        xsdContent.Should().NotBeNull();
+        using var reader = new StreamReader(xsdContent!.Value);
         return reader.ReadToEnd();
     }
 }
