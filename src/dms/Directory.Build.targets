@@ -9,11 +9,14 @@
             <ManifestPath ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
+            <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
             <Using Namespace="System" />
             <Using Namespace="System.Collections.Generic" />
             <Using Namespace="System.IO" />
             <Using Namespace="System.Linq" />
             <Using Namespace="System.Text" />
+            <Using Namespace="Newtonsoft.Json" />
+            <Using Namespace="Newtonsoft.Json.Linq" />
             <Code Type="Fragment" Language="cs"><![CDATA[
 var projects = new List<Dictionary<string, object>>();
 
@@ -42,10 +45,10 @@ foreach (var package in BundledPackages)
         return false;
     }
 
-    Dictionary<string, object> manifest;
+    JObject manifest;
     try
     {
-        manifest = ParseFlatJsonObject(File.ReadAllText(packageManifestPath), packageManifestPath);
+        manifest = ReadPackageManifest(packageManifestPath);
     }
     catch (InvalidOperationException exception)
     {
@@ -58,7 +61,11 @@ foreach (var package in BundledPackages)
         return false;
     }
 
-    var manifestPackageId = ReadOptionalString(manifest, "packageId", packageManifestPath);
+    if (!TryReadOptionalString(manifest, "packageId", packageManifestPath, out var manifestPackageId))
+    {
+        return false;
+    }
+
     if (
         manifestPackageId is not null
         && !string.Equals(manifestPackageId, packageId, StringComparison.OrdinalIgnoreCase)
@@ -142,15 +149,46 @@ if (!string.IsNullOrEmpty(manifestDirectory))
 }
 File.WriteAllText(ManifestPath, BuildBootstrapManifestJson(projects), new UTF8Encoding(false));
 
-bool IsSupportedManifestVersion(Dictionary<string, object> manifest, string manifestPath)
+JObject ReadPackageManifest(string manifestPath)
 {
-    if (!manifest.TryGetValue("version", out var versionValue))
+    try
+    {
+        var manifest = JObject.Parse(File.ReadAllText(manifestPath));
+        if (manifest is not null)
+        {
+            return manifest;
+        }
+
+        throw new InvalidOperationException(
+            $"ApiSchema package manifest '{manifestPath}' must contain a JSON object."
+        );
+    }
+    catch (JsonReaderException exception)
+    {
+        throw new InvalidOperationException(
+            $"ApiSchema package manifest '{manifestPath}' contains invalid JSON: {exception.Message}",
+            exception
+        );
+    }
+}
+
+bool IsSupportedManifestVersion(JObject manifest, string manifestPath)
+{
+    if (!TryGetManifestProperty(manifest, "version", out var versionValue))
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' is missing version.");
         return false;
     }
 
-    var version = versionValue as string;
+    string version = null;
+    if (versionValue.Type == JTokenType.String)
+    {
+        version = versionValue.ToString();
+    }
+    else if (versionValue.Type == JTokenType.Integer)
+    {
+        version = versionValue.ToString();
+    }
 
     if (version != "1")
     {
@@ -161,56 +199,87 @@ bool IsSupportedManifestVersion(Dictionary<string, object> manifest, string mani
     return true;
 }
 
-string ReadRequiredString(Dictionary<string, object> manifest, string fieldName, string manifestPath)
+string ReadRequiredString(JObject manifest, string fieldName, string manifestPath)
 {
-    var value = ReadOptionalString(manifest, fieldName, manifestPath);
-    if (string.IsNullOrWhiteSpace(value))
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
         return null;
     }
 
-    return value;
-}
-
-string ReadOptionalString(Dictionary<string, object> manifest, string fieldName, string manifestPath)
-{
-    if (!manifest.TryGetValue(fieldName, out var value) || value is null)
+    if (value.Type != JTokenType.String)
     {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string.");
         return null;
     }
 
-    var stringValue = value as string;
-    if (stringValue is null)
+    var stringValue = value.ToString();
+    if (string.IsNullOrWhiteSpace(stringValue))
     {
-        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string or null.");
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
         return null;
     }
 
     return stringValue;
 }
 
-bool? ReadRequiredBoolean(Dictionary<string, object> manifest, string fieldName, string manifestPath)
+bool TryReadOptionalString(JObject manifest, string fieldName, string manifestPath, out string stringValue)
 {
-    if (!manifest.TryGetValue(fieldName, out var value) || value is null)
+    stringValue = null;
+
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    {
+        return true;
+    }
+
+    if (value.Type != JTokenType.String)
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string or null.");
+        return false;
+    }
+
+    stringValue = value.ToString();
+    return true;
+}
+
+bool? ReadRequiredBoolean(JObject manifest, string fieldName, string manifestPath)
+{
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
     {
         Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare {fieldName} as a boolean.");
         return null;
     }
 
-    if (!(value is bool boolValue))
+    if (value.Type == JTokenType.Boolean)
     {
-        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a boolean.");
-        return null;
+        return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
-    return boolValue;
+    Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a boolean.");
+    return null;
+}
+
+bool TryGetManifestProperty(JObject manifest, string fieldName, out JToken value)
+{
+    value = null;
+    var found = false;
+
+    foreach (var property in manifest.Properties())
+    {
+        if (string.Equals(property.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            value = property.Value;
+            found = true;
+        }
+    }
+
+    return found;
 }
 
 bool TryResolveOptionalPackagePath(
     string packageId,
     string packageRoot,
-    Dictionary<string, object> manifest,
+    JObject manifest,
     string fieldName,
     bool requiredFile,
     out string manifestRelativePath
@@ -218,18 +287,18 @@ bool TryResolveOptionalPackagePath(
 {
     manifestRelativePath = null;
 
-    if (!manifest.TryGetValue(fieldName, out var value) || value is null)
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
     {
         return true;
     }
 
-    var packageRelativePath = value as string;
-    if (packageRelativePath is null)
+    if (value.Type != JTokenType.String)
     {
         Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be a string or null.");
         return false;
     }
 
+    var packageRelativePath = value.ToString();
     if (string.IsNullOrWhiteSpace(packageRelativePath))
     {
         Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be null or a non-blank path.");
@@ -326,7 +395,18 @@ bool TryValidateFlatXsdDirectory(string packageId, string xsdDirectoryPath, stri
 
 bool IsNestedUnderDirectory(string filePath, string directoryPath)
 {
-    var relativePath = Path.GetRelativePath(directoryPath, filePath);
+    var normalizedDirectoryPath = EnsureTrailingDirectorySeparator(Path.GetFullPath(directoryPath));
+    var fullFilePath = Path.GetFullPath(filePath);
+    var pathComparison = Path.DirectorySeparatorChar == '\\'
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
+    if (!fullFilePath.StartsWith(normalizedDirectoryPath, pathComparison))
+    {
+        return false;
+    }
+
+    var relativePath = fullFilePath.Substring(normalizedDirectoryPath.Length);
     return relativePath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }).Length > 1;
 }
 
@@ -350,301 +430,10 @@ string EnsureTrailingDirectorySeparator(string path)
 
 string BuildBootstrapManifestJson(List<Dictionary<string, object>> projects)
 {
-    var builder = new StringBuilder();
-    builder.AppendLine("{");
-    builder.AppendLine("  \"version\": 1,");
-    builder.AppendLine("  \"projects\": [");
-
-    for (var index = 0; index < projects.Count; index++)
-    {
-        var project = projects[index];
-        builder.Append("    { ");
-        builder.Append("\"projectName\": ");
-        builder.Append(QuoteJsonString((string)project["projectName"]));
-        builder.Append(", \"projectEndpointName\": ");
-        builder.Append(QuoteJsonString((string)project["projectEndpointName"]));
-        builder.Append(", \"isExtensionProject\": ");
-        builder.Append(((bool)project["isExtensionProject"]) ? "true" : "false");
-        builder.Append(", \"schemaPath\": ");
-        builder.Append(QuoteJsonString((string)project["schemaPath"]));
-        builder.Append(", \"discoverySpecPath\": ");
-        builder.Append(QuoteJsonStringOrNull(project["discoverySpecPath"] as string));
-        builder.Append(", \"xsdDirectory\": ");
-        builder.Append(QuoteJsonStringOrNull(project["xsdDirectory"] as string));
-        builder.Append(" }");
-
-        if (index < projects.Count - 1)
-        {
-            builder.Append(",");
-        }
-
-        builder.AppendLine();
-    }
-
-    builder.AppendLine("  ]");
-    builder.AppendLine("}");
-    return builder.ToString();
-}
-
-string QuoteJsonStringOrNull(string value)
-{
-    return value is null ? "null" : QuoteJsonString(value);
-}
-
-string QuoteJsonString(string value)
-{
-    var builder = new StringBuilder();
-    builder.Append('"');
-
-    foreach (var character in value)
-    {
-        switch (character)
-        {
-            case '\\':
-                builder.Append("\\\\");
-                break;
-            case '"':
-                builder.Append("\\\"");
-                break;
-            case '\r':
-                builder.Append("\\r");
-                break;
-            case '\n':
-                builder.Append("\\n");
-                break;
-            case '\t':
-                builder.Append("\\t");
-                break;
-            default:
-                if (char.IsControl(character))
-                {
-                    builder.Append("\\u");
-                    builder.Append(((int)character).ToString("x4"));
-                }
-                else
-                {
-                    builder.Append(character);
-                }
-
-                break;
-        }
-    }
-
-    builder.Append('"');
-    return builder.ToString();
-}
-
-Dictionary<string, object> ParseFlatJsonObject(string json, string sourceDescription)
-{
-    var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-    var index = 0;
-
-    SkipJsonWhitespace(json, ref index);
-    ExpectJsonCharacter(json, ref index, '{', sourceDescription);
-    SkipJsonWhitespace(json, ref index);
-
-    if (TryConsumeJsonCharacter(json, ref index, '}'))
-    {
-        return values;
-    }
-
-    while (true)
-    {
-        var name = ReadJsonString(json, ref index, sourceDescription);
-        SkipJsonWhitespace(json, ref index);
-        ExpectJsonCharacter(json, ref index, ':', sourceDescription);
-        var value = ReadJsonValue(json, ref index, sourceDescription);
-        values[name] = value;
-        SkipJsonWhitespace(json, ref index);
-
-        if (TryConsumeJsonCharacter(json, ref index, '}'))
-        {
-            break;
-        }
-
-        ExpectJsonCharacter(json, ref index, ',', sourceDescription);
-        SkipJsonWhitespace(json, ref index);
-    }
-
-    SkipJsonWhitespace(json, ref index);
-    if (index != json.Length)
-    {
-        throw new InvalidOperationException($"Unexpected trailing JSON content in {sourceDescription}.");
-    }
-
-    return values;
-}
-
-object ReadJsonValue(string json, ref int index, string sourceDescription)
-{
-    SkipJsonWhitespace(json, ref index);
-
-    if (index >= json.Length)
-    {
-        throw new InvalidOperationException($"Unexpected end of JSON in {sourceDescription}.");
-    }
-
-    if (json[index] == '"')
-    {
-        return ReadJsonString(json, ref index, sourceDescription);
-    }
-
-    if (TryConsumeJsonLiteral(json, ref index, "null"))
-    {
-        return null;
-    }
-
-    if (TryConsumeJsonLiteral(json, ref index, "true"))
-    {
-        return true;
-    }
-
-    if (TryConsumeJsonLiteral(json, ref index, "false"))
-    {
-        return false;
-    }
-
-    if (char.IsDigit(json[index]) || json[index] == '-')
-    {
-        return ReadJsonNumberToken(json, ref index);
-    }
-
-    throw new InvalidOperationException($"Unsupported JSON value in {sourceDescription} at character {index}.");
-}
-
-string ReadJsonNumberToken(string json, ref int index)
-{
-    var start = index;
-
-    while (
-        index < json.Length
-        && (
-            char.IsDigit(json[index])
-            || json[index] == '-'
-            || json[index] == '+'
-            || json[index] == '.'
-            || json[index] == 'e'
-            || json[index] == 'E'
-        )
-    )
-    {
-        index++;
-    }
-
-    return json.Substring(start, index - start);
-}
-
-string ReadJsonString(string json, ref int index, string sourceDescription)
-{
-    SkipJsonWhitespace(json, ref index);
-    ExpectJsonCharacter(json, ref index, '"', sourceDescription);
-
-    var builder = new StringBuilder();
-    while (index < json.Length)
-    {
-        var character = json[index++];
-        if (character == '"')
-        {
-            return builder.ToString();
-        }
-
-        if (character != '\\')
-        {
-            builder.Append(character);
-            continue;
-        }
-
-        if (index >= json.Length)
-        {
-            throw new InvalidOperationException($"Unterminated JSON escape in {sourceDescription}.");
-        }
-
-        var escaped = json[index++];
-        switch (escaped)
-        {
-            case '"':
-            case '\\':
-            case '/':
-                builder.Append(escaped);
-                break;
-            case 'b':
-                builder.Append('\b');
-                break;
-            case 'f':
-                builder.Append('\f');
-                break;
-            case 'n':
-                builder.Append('\n');
-                break;
-            case 'r':
-                builder.Append('\r');
-                break;
-            case 't':
-                builder.Append('\t');
-                break;
-            case 'u':
-                if (index + 4 > json.Length)
-                {
-                    throw new InvalidOperationException($"Incomplete unicode JSON escape in {sourceDescription}.");
-                }
-
-                var hex = json.Substring(index, 4);
-                builder.Append((char)Convert.ToInt32(hex, 16));
-                index += 4;
-                break;
-            default:
-                throw new InvalidOperationException($"Unsupported JSON escape '\\{escaped}' in {sourceDescription}.");
-        }
-    }
-
-    throw new InvalidOperationException($"Unterminated JSON string in {sourceDescription}.");
-}
-
-bool TryConsumeJsonLiteral(string json, ref int index, string literal)
-{
-    if (index + literal.Length > json.Length)
-    {
-        return false;
-    }
-
-    if (string.Compare(json, index, literal, 0, literal.Length, StringComparison.Ordinal) != 0)
-    {
-        return false;
-    }
-
-    index += literal.Length;
-    return true;
-}
-
-void ExpectJsonCharacter(string json, ref int index, char expected, string sourceDescription)
-{
-    if (index >= json.Length || json[index] != expected)
-    {
-        throw new InvalidOperationException(
-            $"Expected JSON character '{expected}' in {sourceDescription} at character {index}."
-        );
-    }
-
-    index++;
-}
-
-bool TryConsumeJsonCharacter(string json, ref int index, char expected)
-{
-    if (index >= json.Length || json[index] != expected)
-    {
-        return false;
-    }
-
-    index++;
-    return true;
-}
-
-void SkipJsonWhitespace(string json, ref int index)
-{
-    while (index < json.Length && char.IsWhiteSpace(json[index]))
-    {
-        index++;
-    }
+    return JsonConvert.SerializeObject(
+        new Dictionary<string, object> { ["version"] = 1, ["projects"] = projects },
+        Formatting.Indented
+    );
 }
 ]]></Code>
         </Task>
