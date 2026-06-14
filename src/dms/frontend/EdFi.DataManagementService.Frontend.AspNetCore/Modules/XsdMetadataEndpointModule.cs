@@ -71,7 +71,6 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
     internal async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IApiService apiService,
         IOptions<AppSettings> options,
         ITenantValidator tenantValidator
     )
@@ -88,34 +87,30 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(ErrorResourcePath);
+            return;
         }
 
         string section = match.Groups["section"].Value;
-        IDataModelInfo? dataModelInfo = apiService
-            .GetDataModelInfo()
-            .FirstOrDefault(x => x.ProjectName.Equals(section, StringComparison.InvariantCultureIgnoreCase));
-
-        if (dataModelInfo != null)
-        {
-            var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
-            var withFullPath = new List<string>();
-            var xsdFiles = contentProvider.ListXsdFiles(section);
-
-            if (xsdFiles.Any())
-            {
-                withFullPath.AddRange(from xsdFile in xsdFiles select $"{baseUrl}{xsdFile}");
-            }
-            else
-            {
-                withFullPath.Add("No XSD files found for extension.");
-            }
-            await httpContext.Response.WriteAsSerializedJsonAsync(withFullPath);
-        }
-        else
+        if (!contentProvider.IsXsdSectionKnown(section))
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(ErrorResourcePath);
+            return;
         }
+
+        var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
+        var withFullPath = new List<string>();
+        var xsdFiles = contentProvider.ListXsdFiles(section);
+
+        if (xsdFiles.Any())
+        {
+            withFullPath.AddRange(from xsdFile in xsdFiles select $"{baseUrl}{xsdFile}");
+        }
+        else
+        {
+            withFullPath.Add("No XSD files found for extension.");
+        }
+        await httpContext.Response.WriteAsSerializedJsonAsync(withFullPath);
     }
 
     internal async Task<IResult> GetXsdMetadataFileContent(

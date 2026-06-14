@@ -7,6 +7,7 @@ param()
 
 BeforeAll {
     function New-TestApiSchemaPackage {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pester helper writes only inside $TestDrive-managed temporary workspaces; no public -WhatIf surface.')]
         param(
             [string]$PackageCacheRoot,
             [string]$PackageId,
@@ -45,6 +46,7 @@ BeforeAll {
     }
 
     function New-TestProject {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pester helper writes only inside $TestDrive-managed temporary workspaces; no public -WhatIf surface.')]
         param(
             [string]$WorkspaceRoot,
             [string]$TargetsPath

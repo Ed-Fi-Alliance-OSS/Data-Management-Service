@@ -64,6 +64,41 @@ public class ContentProviderTests
     }
 
     [Test]
+    public void Returns_True_When_Xsd_Section_Matches_Project_Endpoint_Name()
+    {
+        // Arrange
+        var manifestPath = Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var sampleProject = manifest["projects"]!
+            .AsArray()
+            .Select(p => p!.AsObject())
+            .Single(p =>
+                p["projectName"]!.GetValue<string>() == FileModeWorkspaceBuilder.ExtensionProjectName
+            );
+        sampleProject["projectEndpointName"] = "sample-extension";
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+
+        // Act
+        var response = _contentProvider.IsXsdSectionKnown("sample-extension");
+
+        // Assert
+        response.Should().BeTrue();
+    }
+
+    [Test]
+    public void Returns_False_When_Xsd_Section_Is_Unknown()
+    {
+        // Act
+        var response = _contentProvider.IsXsdSectionKnown("unknown");
+
+        // Assert
+        response.Should().BeFalse();
+    }
+
+    [Test]
     public void Returns_Expected_Json_File_Content()
     {
         // Arrange

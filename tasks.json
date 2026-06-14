@@ -500,6 +500,6 @@
       "Run: `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs`",
       "Run the focused frontend unit tests that cover content-provider manifest error paths, if present."
     ],
-    "completed": false
+    "completed": true
   }
 ]

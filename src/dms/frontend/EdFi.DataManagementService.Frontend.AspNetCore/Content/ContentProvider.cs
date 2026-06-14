@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -49,6 +50,13 @@ public interface IContentProvider
     /// <param name="section"></param>
     /// <returns></returns>
     IEnumerable<string> ListXsdFiles(string section);
+
+    /// <summary>
+    /// Indicates whether the requested XSD metadata section is declared by the ApiSchema manifest.
+    /// </summary>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    bool IsXsdSectionKnown(string section);
 }
 
 /// <summary>
@@ -67,6 +75,12 @@ public class ContentProvider(
             .Select(p => Path.GetFileName(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public bool IsXsdSectionKnown(string section)
+    {
+        var manifest = manifestProvider.GetManifest();
+        return FindProjectForSection(manifest, section) is not null;
     }
 
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
@@ -158,14 +172,14 @@ public class ContentProvider(
                     + $"'{project.DiscoverySpecPath}', but the resolved file '{resolvedPath}' does not exist.";
                 _logger.LogCritical(
                     "Invalid ApiSchema workspace: {Error}",
-                    SanitizeForLog(invalidWorkspaceError)
+                    LoggingSanitizer.SanitizeForLogging(invalidWorkspaceError)
                 );
                 throw new InvalidOperationException(invalidWorkspaceError);
             }
 
             _logger.LogDebug(
                 "Serving discovery-spec from manifest project {ProjectName}",
-                SanitizeForLog(project.ProjectName)
+                LoggingSanitizer.SanitizeForLogging(project.ProjectName)
             );
             return File.OpenRead(resolvedPath);
         }
@@ -235,32 +249,5 @@ public class ContentProvider(
         var error = $"Couldn't load find the resource";
         _logger.LogCritical(error);
         return new InvalidOperationException(error);
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }

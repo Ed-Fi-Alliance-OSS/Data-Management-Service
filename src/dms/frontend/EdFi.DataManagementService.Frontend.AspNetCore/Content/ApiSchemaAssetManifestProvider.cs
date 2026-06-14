@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -100,8 +101,8 @@ public class ApiSchemaAssetManifestProvider(
             logger.LogError(
                 ex,
                 "Invalid ApiSchema manifest in workspace {WorkspaceRoot}: {Message}",
-                SanitizeForLog(workspaceRoot),
-                SanitizeForLog(ex.Message)
+                LoggingSanitizer.SanitizeForLogging(workspaceRoot),
+                LoggingSanitizer.SanitizeForLogging(ex.Message)
             );
 
             throw new InvalidOperationException(
@@ -155,32 +156,5 @@ public class ApiSchemaAssetManifestProvider(
         var relativePath = Path.GetRelativePath(directoryPath, filePath);
         return relativePath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
             || relativePath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }

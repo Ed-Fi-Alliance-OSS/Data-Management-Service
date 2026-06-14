@@ -57,6 +57,7 @@ public class XsdMetaDataModuleTests
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
         _contentProvider = A.Fake<IContentProvider>();
+        A.CallTo(() => _contentProvider.IsXsdSectionKnown("ed-fi")).Returns(true);
         A.CallTo(() => _contentProvider.ListXsdFiles("ed-fi")).Returns(files);
     }
 
@@ -120,6 +121,37 @@ public class XsdMetaDataModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         files.Should().NotBeNull();
         files?.Count().Should().Be(3);
+    }
+
+    [Test]
+    public async Task XsdMetaData_Returns_Files_For_Project_Endpoint_Name_Section()
+    {
+        // Arrange
+        var files = new List<string> { "grand-bend.xsd" };
+        A.CallTo(() => _contentProvider!.IsXsdSectionKnown("grand-bend")).Returns(true);
+        A.CallTo(() => _contentProvider!.ListXsdFiles("grand-bend")).Returns(files);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(x => _apiService!);
+                collection.AddTransient(x => _contentProvider!);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/metadata/xsd/grand-bend/files");
+        var content = await response.Content.ReadAsStringAsync();
+
+        var returnedFiles = JsonSerializer.Deserialize<List<string>>(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        returnedFiles.Should().Equal("http://localhost/metadata/xsd/grand-bend/grand-bend.xsd");
     }
 
     [Test]
@@ -239,9 +271,9 @@ public class XsdMetaDataModuleTests
 /// File-mode XSD metadata module tests. Uses a real ContentProvider wired to a faked
 /// IApiSchemaAssetManifestProvider backed by a temp-dir staged workspace. The faked manifest
 /// provider is pre-configured to serve the workspace content. IApiService is faked with
-/// ProjectName values matching the manifest projectName values so section routing works
-/// end-to-end. The approach keeps AppSettings untouched (no DI override) so the
-/// AppSettingsValidator is not disturbed.
+/// ProjectName values matching the manifest projectName values so the section list works
+/// end-to-end. File listing and streaming use manifest-backed section resolution. The approach
+/// keeps AppSettings untouched (no DI override) so the AppSettingsValidator is not disturbed.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
