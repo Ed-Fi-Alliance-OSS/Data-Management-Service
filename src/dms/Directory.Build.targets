@@ -295,9 +295,39 @@ bool TryResolveExistingPackagePath(
         return false;
     }
 
+    if (
+        !requiredFile
+        && string.Equals(fieldName, "xsdDirectory", StringComparison.Ordinal)
+        && !TryValidateFlatXsdDirectory(packageId, fullPath, packageRelativePath)
+    )
+    {
+        return false;
+    }
+
     var relativeToPackageRoot = fullPath.Substring(normalizedPackageRoot.Length);
     manifestRelativePath = $"Packages/{packageId}/{relativeToPackageRoot.Replace('\\', '/')}";
     return true;
+}
+
+bool TryValidateFlatXsdDirectory(string packageId, string xsdDirectoryPath, string packageRelativePath)
+{
+    var allXsdFiles = Directory.EnumerateFiles(xsdDirectoryPath, "*.xsd", SearchOption.AllDirectories).ToList();
+    var nestedXsdFile = allXsdFiles.FirstOrDefault(file => IsNestedUnderDirectory(file, xsdDirectoryPath));
+    if (nestedXsdFile is null)
+    {
+        return true;
+    }
+
+    Log.LogError(
+        $"ApiSchema package '{packageId}' manifest field xsdDirectory '{packageRelativePath}' contains nested XSD file '{nestedXsdFile}'. XSD files must be flattened directly under the declared xsdDirectory."
+    );
+    return false;
+}
+
+bool IsNestedUnderDirectory(string filePath, string directoryPath)
+{
+    var relativePath = Path.GetRelativePath(directoryPath, filePath);
+    return relativePath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }).Length > 1;
 }
 
 string EnsureTrailingDirectorySeparator(string path)

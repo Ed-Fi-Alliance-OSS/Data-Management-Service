@@ -61,15 +61,6 @@ both materialize to the same workspace before runtime starts.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a
   file-based staged workspace with no `*.ApiSchema.dll` files present.
 
-## Implementation Note
-
-The package-backed OpenAPI surface can advertise resource-scoped Change Query paths before their runtime
-handlers are implemented. Until the Epic 10 `/deletes` and `/keyChanges` runtime story replaces it,
-`CoreEndpointModule` includes a dev-only route-level stub for
-`/data/{projectNamespace}/{endpointName}/deletes` and
-`/data/{projectNamespace}/{endpointName}/keyChanges`. The stub returns an empty JSON array and exists only to
-keep dev and smoke environments from routing those paths through the generic document-id GET path.
-
 ## Tasks
 
 1. Add a small manifest reader for `bootstrap-api-schema-manifest.json`, or extend an existing ApiSchema

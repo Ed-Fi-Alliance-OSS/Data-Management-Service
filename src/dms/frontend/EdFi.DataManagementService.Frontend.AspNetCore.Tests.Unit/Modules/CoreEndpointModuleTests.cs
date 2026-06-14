@@ -3,15 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
-using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -138,52 +131,6 @@ public class CoreEndpointModuleTests
             {
                 _result.Should().Be("/{tenant}/{districtId}/{schoolYear}/data/{**dmsPath}");
             }
-        }
-    }
-
-    [TestFixture]
-    [NonParallelizable]
-    public class Given_Change_Query_Stub_Routes
-    {
-        private IApiService _apiService = null!;
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            _apiService = A.Fake<IApiService>();
-            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => _apiService);
-                });
-            });
-            _client = _factory.CreateClient();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client.Dispose();
-            _factory.Dispose();
-        }
-
-        [TestCase("deletes")]
-        [TestCase("keyChanges")]
-        public async Task It_should_return_an_empty_json_array_without_calling_the_core_get_path(
-            string changeQueryType
-        )
-        {
-            var response = await _client.GetAsync($"/data/ed-fi/surveys/{changeQueryType}");
-            string content = await response.Content.ReadAsStringAsync();
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            content.Should().Be("[]");
-            A.CallTo(() => _apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
         }
     }
 }

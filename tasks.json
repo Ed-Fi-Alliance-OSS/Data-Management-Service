@@ -468,5 +468,38 @@
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ContentProvider\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Code Simplification",
+    "description": "Low: Replace the hand-rolled package-manifest JSON parser and bootstrap-manifest JSON writer in `src/dms/Directory.Build.targets:321` and `src/dms/Directory.Build.targets:407` with structured JSON APIs or a small shared build helper.",
+    "acceptance-criteria": [
+      "`MaterializeBundledApiSchemaBootstrapManifestTask` no longer tokenizes JSON with custom `ParseFlatJsonObject`, `ReadJsonValue`, `ReadJsonString`, or manually quotes manifest strings with `QuoteJsonString`.",
+      "Package manifest reading uses `System.Text.Json` APIs, or an equivalent small typed helper, so malformed JSON handling matches the rest of the runtime manifest readers.",
+      "Generated `ApiSchema/bootstrap-api-schema-manifest.json` is emitted through a structured JSON writer or serializer and preserves the existing field names, null optional content fields, and UTF-8-no-BOM output.",
+      "The build task still validates manifest version, package ID, required project fields, optional content existence, and package-relative path containment before writing the bundled root manifest.",
+      "Valid bundled ApiSchema package content still publishes schema, discovery, and XSD assets recursively with the same manifest shape."
+    ],
+    "steps-to-verify": [
+      "Search `src/dms/Directory.Build.targets` for `ParseFlatJsonObject`, `ReadJsonValue`, `ReadJsonString`, and `QuoteJsonString`; confirm the custom parser/writer surface is gone.",
+      "Add or update container-packaging/build verification for a valid package manifest and malformed package manifest to prove the structured reader succeeds and fails in the expected places.",
+      "Run the focused container-packaging verification added for bundled ApiSchema manifest generation."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Simplification",
+    "description": "Low: Remove duplicated log-sanitizer helpers from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:165` and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs:240` and use the existing shared `LoggingSanitizer`.",
+    "acceptance-criteria": [
+      "`ApiSchemaAssetManifestProvider` logs sanitized workspace and manifest errors through `LoggingSanitizer.SanitizeForLogging`, or an equivalent shared sanitizer already used by the frontend.",
+      "`ContentProvider` logs sanitized manifest project and invalid workspace details through the same shared sanitizer.",
+      "The duplicated private `SanitizeForLog` implementations are removed from both content provider classes.",
+      "Logged values keep the same strict whitelist behavior already used by `LoggingSanitizer.SanitizeForLogging`."
+    ],
+    "steps-to-verify": [
+      "Search `ApiSchemaAssetManifestProvider.cs` and `ContentProvider.cs` for `private static string SanitizeForLog` and confirm both local copies are gone.",
+      "Run: `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs`",
+      "Run the focused frontend unit tests that cover content-provider manifest error paths, if present."
+    ],
+    "completed": false
   }
 ]

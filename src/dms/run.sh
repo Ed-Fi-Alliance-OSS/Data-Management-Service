@@ -78,6 +78,31 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
                 exit 1
             fi
 
+            if jq -e '.xsdDirectory != null' "$package_manifest_path" >/dev/null; then
+                if ! jq -e '.xsdDirectory | type == "string"' "$package_manifest_path" >/dev/null; then
+                    echo "ApiSchema package manifest field xsdDirectory must be a string or null: $package_manifest_path"
+                    exit 1
+                fi
+
+                xsd_directory=$(jq -r '.xsdDirectory' "$package_manifest_path")
+                if ! jq -n -e --arg path "$xsd_directory" '($path | length > 0) and ($path | startswith("/") | not) and ($path | contains("\\") | not) and ($path | split("/") | all(. != "" and . != "." and . != ".."))' >/dev/null; then
+                    echo "ApiSchema package manifest field xsdDirectory must be a non-blank relative path without current-directory or parent-directory segments: $package_manifest_path"
+                    exit 1
+                fi
+
+                package_xsd_directory="${AppSettings__ApiSchemaPath}/Packages/${name}/${xsd_directory}"
+                if [ ! -d "$package_xsd_directory" ]; then
+                    echo "ApiSchema package manifest declares xsdDirectory '$xsd_directory', but the directory was not found: $package_xsd_directory"
+                    exit 1
+                fi
+
+                nested_xsd_file=$(find "$package_xsd_directory" -mindepth 2 -type f -name '*.xsd' -print -quit)
+                if [ -n "$nested_xsd_file" ]; then
+                    echo "ApiSchema package manifest declares xsdDirectory '$xsd_directory', but nested XSD file '$nested_xsd_file' was found. XSD files must be flattened directly under the declared xsdDirectory."
+                    exit 1
+                fi
+            fi
+
             jq --arg packageDir "Packages/${name}" '{
                 projectName: .projectName,
                 projectEndpointName: .projectEndpointName,
