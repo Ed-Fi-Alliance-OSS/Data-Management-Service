@@ -243,14 +243,14 @@ DMS. That explains the current `.env.example` pattern, for example:
 ```json
 [
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.Sample.ApiSchema"
+    "name": "EdFi.DataStandard52.Sample.ApiSchema"
   }
 ]
 ```
@@ -336,10 +336,10 @@ are not themselves the hashed artifact. Package-backed selection is a later inpu
 must converge on the same filesystem workspace. Direct `-ApiSchemaPath` loading remains a supported
 bootstrap path after asset-only packages replace DLL-backed package distribution.
 
-The staged ApiSchema workspace is the end-state runtime schema/content contract for the run after Story 04
-activates file-based runtime loading. Story 00 prepares and validates this workspace but does not make it the
-Docker runtime source of truth. In the Story 04 path, DMS runtime reads
-`eng/docker-compose/.bootstrap/ApiSchema/` and applies the same normalization rules to that staged file set:
+The staged ApiSchema workspace is the end-state runtime schema/content contract for the run. Story 00 prepares
+and validates this workspace; Story 04 (DMS-1154, delivered) makes it the Docker runtime source of truth.
+DMS runtime reads `eng/docker-compose/.bootstrap/ApiSchema/` and applies the same normalization rules to that
+staged file set:
 
 - exactly one normalized schema file must have `projectSchema.isExtensionProject=false`; that file is the core
   schema passed to `dms-schema hash`,
@@ -519,22 +519,26 @@ prepare-dms-schema.ps1
 > **Note:** This diagram shows only the schema delivery flow. Security staging happens before the Config
 > Service starts, and DDL deployment mode is decided after instance creation but before the DMS process
 > starts. See [`command-boundaries.md`](command-boundaries.md) for the authoritative full phase ordering.
-> Runtime loading of schema-adjacent static content is implemented by Story 04; package production for the
-> asset-only shape is implemented by Story 05. Both target the same filesystem workspace contract, so direct
-> `-ApiSchemaPath` loading can be implemented and retained independently of package publication. Story 00
+> Runtime loading of schema-adjacent static content is delivered by Story 04 (DMS-1154); package production
+> for the asset-only shape is implemented by Story 05. Both target the same filesystem workspace contract, so
+> direct `-ApiSchemaPath` loading can be implemented and retained independently of package publication. Story 00
 > implements that direct filesystem path only; package-backed Modes 1 and 2 belong to Story 06.
 
-> **Implementation note (Story 04 boundary):** The "Docker-hosted DMS" branch of the diagram above —
+> **Activation boundary (Story 04 delivered):** The "Docker-hosted DMS" branch of the diagram above —
 > `bind-mount .bootstrap/ApiSchema/ → /app/ApiSchema`, `set USE_API_SCHEMA_PATH=true`,
 > `set API_SCHEMA_PATH=/app/ApiSchema`, clear `SCHEMA_PACKAGES`, and the companion `bootstrap-dms.yml`
-> Docker Compose override — is **not activated by Story 00**. `ContentProvider` still discovers schema from
-> `*.ApiSchema.dll` assemblies; pointing it at a JSON-only staged workspace would cause discovery and XSD
-> content fetch failures. Story 00 stages the workspace and validates the manifest; Story 04 owns the
-> `ContentProvider` update that makes the staged JSON workspace the authoritative runtime source,
-> re-introduces `bootstrap-dms.yml`, and wires `Set-BootstrapStartupEnvironment` to emit the
-> `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` env vars. Until Story 04 lands, bootstrap-present Docker startup
-> blanks those env vars and falls back to the built-in DLL-backed schema assemblies. Non-bootstrap local
-> startup can still use the existing `SCHEMA_PACKAGES` downloader path.
+> Docker Compose override — is activated at startup when a valid `bootstrap-api-schema-manifest.json` is
+> present. Story 04 (DMS-1154) delivered the `ContentProvider` update that makes the staged JSON workspace the
+> authoritative runtime source: `ContentProvider` reads discovery/specification JSON and XSD content from the
+> manifest-relative paths in the staged workspace and no longer requires `*.ApiSchema.dll` assemblies on the
+> bootstrap path. `Set-BootstrapStartupEnvironment` emits `USE_API_SCHEMA_PATH=true`,
+> `API_SCHEMA_PATH=/app/ApiSchema`, `DMS_API_SCHEMA_MOUNT_SOURCE=<abs .bootstrap/ApiSchema>`, and clears
+> `SCHEMA_PACKAGES` so `run.sh` performs no second download. `bootstrap-dms.yml` (re-introduced) mounts
+> `.bootstrap/ApiSchema` into the DMS container; staged claims are activated per manifest `claims.mode`.
+> In bootstrap mode, default Debezium connector registration is also skipped because the bootstrap relational
+> schema does not include the legacy CDC tables (`dms.document`, `dms.educationorganizationhierarchytermslookup`)
+> or the `to_debezium` publication that the default connector targets. Non-bootstrap local startup can still use
+> the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the
 host materializes concrete schema files first, then downstream steps operate on those staged files rather
@@ -555,7 +559,7 @@ For each extension in `-Extensions`, bootstrap resolves the schema package and a
 fragment metadata from the configured artifact sources. The seed phase owns a separate seed catalog that may
 define an optional built-in seed data package for the same extension name:
 
-1. **Schema package** (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) - determines API surface
+1. **Schema package** (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) - determines API surface
 2. **Security fragment** (e.g., `004-sample-extension-claimset.json`) - determines authorization rules
 3. **Optional built-in seed data package** (when present in the seed catalog) - determines bootstrap-managed
    sample data
@@ -780,9 +784,9 @@ The authoritative phase order and ownership rules live only in
 the security-specific acceptance context:
 
 - `prepare-dms-claims.ps1` derives and stages the claims inputs before staged runtime startup.
-- Story 00 `start-local-dms.ps1` validates the bootstrap manifest when present but does not consume the
-  staged claims section at startup until Story 04 can also point DMS at the matching staged ApiSchema
-  workspace.
+- Story 00 staged the bootstrap manifest; Story 04 (DMS-1154, delivered) activates both staged claims and
+  staged schema at startup when a valid manifest is present, so staged claims and staged schema are activated
+  together as one boundary.
 - After staged runtime startup is enabled, a missing claimset for an extension resource causes authorization
   failures during API-based seed loading, so seed delivery never proceeds until the claims-ready gate has
   passed.
@@ -807,9 +811,9 @@ the top-level fragment name and `authorizationStrategyOverridesForCRUD`.
 The bootstrap design uses the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` to
 carry the effective Config Service claims inputs for the run, including the equivalent of Hybrid vs Embedded
 startup mode and the relative staged claims workspace when Hybrid mode is active. Story 00 records and
-validates those inputs; Story 04 activates them at startup when DMS also reads the matching staged schema
-workspace. This is the intended path for every schema-selection flow, with `-ClaimsDirectoryPath` acting only
-as an additive input.
+validates those inputs; Story 04 (DMS-1154, delivered) activates them at startup together with the staged
+schema workspace as one boundary. This is the intended path for every schema-selection flow, with
+`-ClaimsDirectoryPath` acting only as an additive input.
 For expert `-ApiSchemaPath` flows that need additional non-core security metadata, that additive input is
 required because bootstrap does not infer security fragments for arbitrary resources.
 
@@ -818,13 +822,13 @@ required because bootstrap does not infer security fragments for arbitrary resou
 All three schema-selection modes are explicitly designed to operate without this flag:
 
 - **Mode 1 (core only)**: the bootstrap manifest claims section resolves to Embedded mode - no extra flag needed.
-- **Mode 2 (named extensions)**: the bootstrap manifest claims section resolves to Hybrid mode and, after
-  Story 04 activates staged runtime startup, points at the staged claims workspace containing only the
-  selected claimset files - no extra flag needed.
+- **Mode 2 (named extensions)**: the bootstrap manifest claims section resolves to Hybrid mode and points
+  at the staged claims workspace containing only the selected claimset files — activated at startup by
+  Story 04 (DMS-1154, delivered) — no extra flag needed.
 - **Mode 3 (expert `-ApiSchemaPath`)**: claims staging is automatic from the staged schema and available
   claims inputs. When the staged schema set contains extension resources with matching fragments, the same
   bootstrap manifest mechanism stages the matching base fragments and selects Hybrid mode automatically for
-  the future staged runtime startup path.
+  the staged runtime startup path (activated by Story 04, delivered).
   Additional non-core claim fragments use `-ClaimsDirectoryPath` and that same mechanism. The
   dangerously-enable flag is **not** required in expert mode either.
 - `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` is **not set** in any of the three modes above.
@@ -1125,6 +1129,14 @@ Example shape:
   }
 }
 ```
+
+Each `claims.expectedVerificationChecks` entry is `{ claimSetName, resourceClaim, action }` plus an
+optional `isParent: true` marker on checks extracted from parent (`isParent=true`) fragment resource
+claims. CMS `/authorizationMetadata` serializes leaf resource claims only — parent grants materialize on
+leaf descendants via hierarchy lineage and the parent name itself never appears in the response — so the
+claims-ready gate (DMS-1153) asserts non-parent checks and defers `isParent` checks with a warning,
+failing only if nothing was verifiable. The embedded baseline probe therefore targets a leaf resource
+claim (`ed-fi/schoolYearType`), never a `domains/*` parent.
 
 The manifest deliberately stays small. It records only stable prepared inputs and fingerprints needed to
 validate `.bootstrap` compatibility, reject built-in templates in expert `-ApiSchemaPath` mode, compose the
@@ -1591,8 +1603,9 @@ start.
 6. If any specified extension artifact cannot be resolved, the owning phase exits with a clear error before
    starting any containers.
 
-Once Story 04 activates staged claims startup, the staged claims directory must remain in place while Docker
-containers are running because it is bind-mounted into the container at `/app/additional-claims`. For v1,
+The staged claims directory must remain in place while Docker containers are running because it is
+bind-mounted into the container at `/app/additional-claims` (activated as part of staged startup by
+Story 04, delivered). For v1,
 bootstrap uses a stable repo-local workspace under `eng/docker-compose/.bootstrap/claims` rather than per-run
 temp directories plus a state file. On same-checkout reruns, bootstrap compares the intended claims set to
 the existing workspace.
@@ -1649,7 +1662,7 @@ seed-catalog concern rather than a schema-selection concern.
 The `-Extensions` parameter is the single developer-facing control for enabling extensions. Passing it triggers three coordinated actions automatically - the developer does not need to configure each concern separately:
 
 1. **ApiSchema files staged host-side (Section 3)** - The script resolves the extension's NuGet schema
-   package (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) on the host, stages the resulting file in
+   package (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) on the host, stages the resulting file in
    `eng/docker-compose/.bootstrap/ApiSchema/`, and includes that staged file in the exact set later hashed
    and mounted/read by DMS.
 
@@ -1903,8 +1916,8 @@ A minimal acceptable console shape is:
 Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
-  Core:  EdFi.DataStandard52.ApiSchema        1.0.328
-  Ext:   EdFi.DataStandard52.ApiSchema.Sample 1.0.154
+  Core:  EdFi.DataStandard52.ApiSchema        1.0.332
+  Ext:   EdFi.DataStandard52.Sample.ApiSchema 1.0.332
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
@@ -2474,6 +2487,7 @@ creates admin-scoped clients.
 | `ConfigurationServiceSettings__ClientId` | `CMSReadOnlyAccess` | Local identity setup read-only OAuth client ID that DMS uses to authenticate against the Config Service during local development. |
 | `ConfigurationServiceSettings__ClientSecret` | `<local-cms-readonly-secret>` | Local-development secret for `CMSReadOnlyAccess`, taken from the identity setup output or IDE guidance. **DEV-ONLY**: This localhost credential must not be reused in shared, remote, or production environments. |
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
+| `ConfigurationServiceSettings__EncryptionKey` | `<dms-config-database-encryption-key>` | Key used to decrypt data-store connection strings returned by the Config Service. Must match the Docker-hosted Config Service's `DatabaseSettings__EncryptionKey`; both are sourced from `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` in the docker-compose env file (`.env.example` default `DefaultEncryptionKey32CharactersX1`). **DEV-ONLY**: This localhost key must not be reused in shared, remote, or production environments. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
 | `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | JWT authority for token validation, translated to host-local endpoints for IDE debugging. |
 | `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | OIDC discovery document URL for the selected identity provider. |
@@ -2503,7 +2517,8 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "BaseUrl": "http://localhost:8081",
     "ClientId": "CMSReadOnlyAccess",
     "ClientSecret": "<local-cms-readonly-secret>",
-    "Scope": "edfi_admin_api/readonly_access"
+    "Scope": "edfi_admin_api/readonly_access",
+    "EncryptionKey": "<dms-config-database-encryption-key>"
   },
   "AppSettings": {
     "UseApiSchemaPath": true,
@@ -2526,7 +2541,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
 }
 ```
 
-This file is illustrative IDE guidance only. It shows the common single-instance workflow using the non-qualified self-contained token endpoint and is intentionally not a multi-year template. It also explicitly enables the relational backend because this IDE flow assumes bootstrap has already provisioned the relational schema. Bootstrap does not generate it and does not read it as a bootstrap input; the developer copies it to `appsettings.Development.json`, replaces `<local-cms-readonly-secret>` with the credential from local identity setup output or printed IDE guidance, and replaces `<repo-root>` with the native absolute path for the host platform running the IDE, for example a Windows path, `/Users/...`, or `/home/...`.
+This file is illustrative IDE guidance only. It shows the common single-instance workflow using the non-qualified self-contained token endpoint and is intentionally not a multi-year template. It also explicitly enables the relational backend because this IDE flow assumes bootstrap has already provisioned the relational schema. Bootstrap does not generate it and does not read it as a bootstrap input; the developer copies it to `appsettings.Development.json`, replaces `<local-cms-readonly-secret>` with the credential from local identity setup output or printed IDE guidance, replaces `<dms-config-database-encryption-key>` with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from the docker-compose env file (`.env.example` default `DefaultEncryptionKey32CharactersX1`), and replaces `<repo-root>` with the native absolute path for the host platform running the IDE, for example a Windows path, `/Users/...`, or `/home/...`.
 
 When the existing `-SchoolYearRange` developer workflow is used with self-contained identity and the
 developer continues bootstrap against an IDE-hosted DMS process for one selected school year, update the
@@ -2596,8 +2611,8 @@ the same provider explicitly, for example
 When `-InfraOnly` is used **without** `-DmsBaseUrl`, `start-local-dms.ps1` itself performs only:
 
 1. Docker infrastructure startup without the DMS container.
-2. Config Service readiness checks. Story 00 requires `/health` to be green; staged claims readiness moves
-   with the Story 04 staged-schema runtime activation defined in `command-boundaries.md`.
+2. Config Service readiness checks: `/health` must be green; staged claims and staged schema activation are
+   delivered by Story 04 (DMS-1154) per the runtime-activation boundary in `command-boundaries.md`.
 3. Exit after the infrastructure phase is ready.
 
 The broader IDE preparation flow then continues through separate phase commands or the thin wrapper:
@@ -2616,8 +2631,8 @@ from the earlier stopped invocation.
 When `-DmsBaseUrl` is provided alongside wrapper `-InfraOnly`, the same pre-DMS phases still complete first:
 
 1. Start Docker infrastructure (PostgreSQL, Kafka, Config Service) but not the DMS container.
-2. Wait for Config Service readiness. Story 00 requires `/health` to be green; staged claims readiness moves
-   with the Story 04 staged-schema runtime activation defined in `command-boundaries.md`.
+2. Wait for Config Service readiness: `/health` must be green; staged claims and staged schema are activated
+   at startup by Story 04 (DMS-1154, delivered) per `command-boundaries.md`.
 3. Run `configure-local-data-store.ps1` to create or confirm the target DMS instances, validate or report
    the fixed dev-only `CMSReadOnlyAccess` client created by local identity setup, and optionally create
    smoke-test credentials.
@@ -2648,9 +2663,9 @@ already exist.
   DMS-dependent work from an earlier pre-DMS-only invocation.
 
 No IDE-specific runtime architecture is introduced for this workflow. The IDE path uses the same DMS runtime
-configuration shape as Docker-hosted DMS, including the normalized ApiSchema workspace. The separate Story 04
-runtime change removes the bootstrap-path dependency on `*.ApiSchema.dll` content loading; it is not an
-IDE-only behavior.
+configuration shape as Docker-hosted DMS, including the normalized ApiSchema workspace. Story 04 (DMS-1154,
+delivered) removed the bootstrap-path dependency on `*.ApiSchema.dll` content loading for both Docker-hosted
+and IDE-hosted DMS; it is not an IDE-only behavior.
 
 ## 13. Companion Implementation Stories
 
@@ -2684,13 +2699,14 @@ Companion implementation-ready story definitions live in
 - Story 00 owns the `.gitignore` entry for `eng/docker-compose/.bootstrap/` before generated staging
   artifacts are written. Story 03 owns the remaining repo-local `.bootstrap/` workspace lifecycle hygiene and
   the user-facing migration note for the narrowed `-NoDataStore` contract.
-- Story 04 depends on Story 00's normalized ApiSchema workspace and ApiSchema asset manifest contract.
-  Docker-hosted and IDE-hosted DMS are not fully on the DMS-916 staged-asset path until Story 04 removes the bootstrap-path
-  `ContentProvider` dependency on `*.ApiSchema.dll` assemblies.
+- Story 04 (DMS-1154, delivered) depended on Story 00's normalized ApiSchema workspace and ApiSchema asset
+  manifest contract. Docker-hosted and IDE-hosted DMS are now on the DMS-916 staged-asset path: Story 04
+  removed the bootstrap-path `ContentProvider` dependency on `*.ApiSchema.dll` assemblies. Both startup modes
+  read discovery/specification JSON and XSD content from the staged filesystem workspace.
 - Story 05 is the cross-repo MetaEd package-production switch-over. It is a prerequisite for Story 06
   package-backed standard mode against published packages, but it is not a prerequisite for Story 00's
-  direct filesystem ApiSchema loading contract. Story 00, Story 04, and Story 05 can proceed in parallel
-  because they all meet at the normalized filesystem workspace.
+  direct filesystem ApiSchema loading contract. Story 00, Story 04 (delivered), and Story 05 all meet at the
+  normalized filesystem workspace; Story 05 can proceed independently of Story 00 and Story 04.
 - Story 06 owns the standard developer schema-selection path: omitted `-Extensions` for core-only bootstrap
   and named `-Extensions` for package-backed extension selection. It depends on Story 05 for asset-only package
   inputs and on Story 00 for the shared workspace, ApiSchema asset manifest, claims-staging, and root
@@ -2732,7 +2748,7 @@ these rows, it is outside the intended scope of this design spike.
 
 | Ticket acceptance criterion | Evidence in this document | Design completeness | Delivery readiness | Blocking dependency / gap |
 |-----------------------------|---------------------------|---------------------|--------------------|---------------------------|
-| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3; [`apischema-container.md`](apischema-container.md) | Designed. The selected schema set is staged as a normalized file-based ApiSchema asset container: schema JSON drives hash/DDL/API surface, while the ApiSchema asset manifest indexes optional static content for runtime metadata/XSD endpoints. Direct filesystem ApiSchema loading is the stable core contract; package-backed selection is the Story 06 input-materialization path. | Designed, implementation pending. Story 00 owns direct filesystem workspace staging through `-ApiSchemaPath`; Story 04 owns runtime file-based content loading; Story 05 owns producing asset-only MetaEd packages; Story 06 owns package-backed no-argument core-only mode and named `-Extensions` delivery. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
+| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3; [`apischema-container.md`](apischema-container.md) | Designed. The selected schema set is staged as a normalized file-based ApiSchema asset container: schema JSON drives hash/DDL/API surface, while the ApiSchema asset manifest indexes optional static content for runtime metadata/XSD endpoints. Direct filesystem ApiSchema loading is the stable core contract; package-backed selection is the Story 06 input-materialization path. | Story 00 (filesystem staging) and Story 04 (DMS-1154, runtime file-based content loading) delivered. Story 05 (MetaEd asset-only packages) and Story 06 (package-backed no-argument core-only and named `-Extensions` delivery) remain pending. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed. DMS-916 derives base claims inputs from the staged schema and available claims artifacts in every schema-selection mode. Expert `-ApiSchemaPath` mode uses `-ClaimsDirectoryPath` for additional non-core security fragments, with structural validation only. | Designed, implementation pending. Story 00 owns claims staging and direct-filesystem inputs; Story 06 feeds the same root bootstrap manifest schema contract for package-backed standard mode. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 11.3-11.5; [`command-boundaries.md` Section 3.5](command-boundaries.md#35-provision-dms-schemaps1--authoritative-schema-provisioning) | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. DMS startup provisioning is explicitly disabled, including both `AppSettings__DeployDatabaseOnStartup` and the legacy `NEED_DATABASE_SETUP` / `Backend.Installer` pre-launch path. | Designed, implementation pending. Bootstrap delegates to the SchemaTools / runtime-owned provisioning path; readiness is gated on that surface remaining stable. | [`../../epics/16-bootstrap/01-schema-deployment-safety.md`](../../epics/16-bootstrap/01-schema-deployment-safety.md); SchemaTools dependency in Section 14.3 |
 | Sample data loading - API-based seed loading replacing direct SQL, with pinned Ed-Fi XML seed templates in Phase 1 and JSONL assets in Phase 2 paired with compatible schema/security inputs | Section 6 | Designed. All DMS-side design decisions are complete: BulkLoadClient consumption contract (Section 6.1), seed-source selection (`-SeedTemplate` / `-SeedDataPath`, Section 6.2), bootstrap manifest handoff (Section 6.2.5), seed workspace with collision detection (Section 6.3.1), per-year invocation for school-year paths (Section 10), and the bootstrap manifest compatibility boundary for `-SeedDataPath`, including explicit `-AdditionalNamespacePrefix` values for SeedLoader vendor authorization. DMS-1152 Phase 1 is API-based XML loading through the repo-pinned BulkLoadClient XML surface; Phase 2 remains the JSONL target. | Phase 1 implemented by Story 02 as XML interchange. Phase 2 migration remains blocked externally by BulkLoadClient JSONL support and DMS-owned JSONL asset work. | Story 02 XML implementation; ODS-6738 and future Phase 2 JSONL asset work |
@@ -2756,7 +2772,7 @@ is required. The first deliverable from each owning story unblocks all downstrea
 | Phase 2 repo-local built-in seed assets | Add deterministic JSONL files for the future `eng/docker-compose/seed-data/minimal/` and `eng/docker-compose/seed-data/populated/` locations matching the Section 6.2.2 manifests. These are DMS-owned developer bootstrap assets for the JSONL phase, not published deployment packages. | Future Phase 2 JSONL migration after ODS-6738 |
 | Direct filesystem schema + explicit-claims staging | Implement `-ApiSchemaPath` schema staging plus `-ClaimsDirectoryPath` staging per the command-boundary contracts in `command-boundaries.md` Sections 3.1–3.2. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md) Tasks 1-5 |
 | `-InfraOnly` flag for IDE debugging | Implement the `-InfraOnly` switch and post-provision `-DmsBaseUrl` continuation behavior on `start-local-dms.ps1` per Story 03. | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md) Task 1 |
-| Replace DMS ApiSchema DLL resource loading | Update DMS runtime so `ContentProvider` reads metadata/specification JSON and XSD assets from the normalized ApiSchema workspace and ApiSchema asset manifest instead of requiring `*.ApiSchema.dll` assemblies for the bootstrap path. DMS runtime does not read `.nupkg` files or NuGet cache layout directly. | [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) |
+| Replace DMS ApiSchema DLL resource loading | **Delivered (DMS-1154).** `ContentProvider` now reads discovery/specification JSON and XSD content from the normalized ApiSchema workspace and `bootstrap-api-schema-manifest.json` manifest-relative paths when `UseApiSchemaPath=true`. DMS runtime does not require `*.ApiSchema.dll` assemblies on the bootstrap path and does not read `.nupkg` files or NuGet cache layout directly. Docker activation (`USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, `bootstrap-dms.yml` mount, `SCHEMA_PACKAGES` cleared) and staged claims activation are delivered as one boundary. | [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) |
 
 #### External Cross-Team Blockers (design complete; blocked on other teams)
 
@@ -2807,12 +2823,13 @@ DMS-916 design**. The phase ownership, parameter, readiness, and wrapper contrac
 [`command-boundaries.md`](command-boundaries.md); stakeholders should treat that file as the implementation
 contract that Stories 00-03 use for command behavior.
 
-**Design acceptance is not feature completion.** The non-seed items marked "Designed, implementation pending"
-in Section 14.1 — direct filesystem schema plus explicit-claims staging, the `-InfraOnly` /
-`-DmsBaseUrl` IDE workflow, the `SeedLoader` claim set, and the phase-command surface itself — are **not delivered today**
-and are not counted as complete by virtue of this document being merged. Each remains owned by its Story
-00–03 ticket. Seed-delivery readiness is a separate concern, tracked under the cross-team blockers in
-Section 14.3, and is not what this close-out is asserting.
+**Design acceptance is not feature completion.** Of the items originally marked "Designed, implementation
+pending" in Section 14.1, direct filesystem schema plus explicit-claims staging (Story 00), the `-InfraOnly`
+/ `-DmsBaseUrl` IDE workflow (Story 03), the `SeedLoader` claim set (Story 02), and the phase-command
+surface itself are owned by their Story 00–03 tickets. Story 04 (DMS-1154) is now **delivered**: DMS runtime
+reads discovery/specification JSON and XSD content from the staged filesystem workspace; Docker bootstrap
+activation emits the staged env vars and mounts `.bootstrap/ApiSchema` as one boundary. Seed-delivery
+readiness is a separate concern, tracked under the cross-team blockers in Section 14.3.
 
 A stakeholder reading only this section should leave with one takeaway: the design is settled and
 approved; the implementation work it describes is tracked in the linked tickets and is not yet done.
@@ -2830,3 +2847,4 @@ or contributors.
 | 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
 | 4 | Persisted data-store-ID hand-off via `.bootstrap/run-context.json` | `configure-local-data-store.ps1` wrote selected data store IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | data store IDs are emitted in a structured `configure-local-data-store.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-DataStoreId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
 | 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -DataStoreId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-DataStoreId`; it always provisions and optionally seeds the instance set from the structured `configure-local-data-store.ps1` result in the same invocation. Explicit `-DataStoreId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -DataStoreId ...` or `load-dms-seed-data.ps1 -DataStoreId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |
+| 6 | `start-local-dms.ps1` parameter surface (DMS-1153) | `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, and `-AddSmokeTestCredentials` were accepted by `start-local-dms.ps1` | `start-local-dms.ps1` is **infrastructure-lifecycle-only** as of DMS-1153; these four flags are removed. `-NoDataStore` is now owned by `configure-local-data-store.ps1` (narrow rerun escape hatch — see row #2). `-SchoolYearRange` and `-AddSmokeTestCredentials` are also owned by `configure-local-data-store.ps1`. `-LoadSeedData` is a wrapper-level opt-in (see row #3). `start-published-dms.ps1` retains these transitional flags unchanged. | Replace `start-local-dms.ps1 -NoDataStore` with `start-local-dms.ps1 -InfraOnly` followed by `configure-local-data-store.ps1 -NoDataStore`; or use `bootstrap-local-dms.ps1 -NoDataStore` which forwards the flag to the configure phase. For fresh-stack runs, drop `-NoDataStore` entirely and let `configure-local-data-store.ps1` create the instance. |

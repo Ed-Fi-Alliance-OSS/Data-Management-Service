@@ -202,7 +202,15 @@ function Add-ExpectedVerificationCheck {
         $ResourceClaim,
 
         [string]
-        $Action
+        $Action,
+
+        # Marks a check extracted from a parent (isParent=true) fragment resource claim.
+        # Parent grants propagate to leaf claims via hierarchy lineage and are NOT directly
+        # observable in CMS /authorizationMetadata (which serializes leaf resource claims
+        # only), so the claims-ready gate defers these instead of asserting them.
+        [switch]
+        $IsParent
+
     )
 
     if ([string]::IsNullOrWhiteSpace($ClaimSetName) -or
@@ -213,13 +221,15 @@ function Add-ExpectedVerificationCheck {
 
     $key = "$ClaimSetName|$ResourceClaim|$Action"
     if ($Seen.Add($key)) {
-        $null = $Checks.Add(
-            [ordered]@{
-                claimSetName = $ClaimSetName
-                resourceClaim = $ResourceClaim
-                action = $Action
-            }
-        )
+        $check = [ordered]@{
+            claimSetName = $ClaimSetName
+            resourceClaim = $ResourceClaim
+            action = $Action
+        }
+        if ($IsParent) {
+            $check.isParent = $true
+        }
+        $null = $Checks.Add($check)
     }
 }
 
@@ -237,6 +247,7 @@ function Assert-FragmentValidAndExtractCheck {
 
         [System.Collections.ArrayList]
         $ExpectedVerificationChecks
+
     )
 
     $fragment = Read-JsonHashtable -Path $Path -ArtifactName "Claimset fragment"
@@ -311,12 +322,17 @@ function Assert-FragmentValidAndExtractCheck {
                     throw "Claimset fragment '$(Format-LogSafeText $Path)' has a claimSets actions entry missing 'name'."
                 }
 
+                # Explicit claimSets entries only occur on parent resource claims (non-parent
+                # entries with claimSets are rejected above), so mark the check as parent-derived:
+                # the grant materializes on leaf descendants via hierarchy lineage and the parent
+                # name itself never appears in /authorizationMetadata claims[].
                 Add-ExpectedVerificationCheck `
                     -Seen $SeenChecks `
                     -Checks $ExpectedVerificationChecks `
                     -ClaimSetName $claimSetName `
                     -ResourceClaim $resourceClaimName `
-                    -Action $actionName
+                    -Action $actionName `
+                    -IsParent:$isParent
             }
         }
 
@@ -442,11 +458,15 @@ $expectedVerificationChecks = [System.Collections.ArrayList]::new()
 $seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 # Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
 # that CMS applied the embedded base claims before checking staged extension entries.
+# The probe targets a LEAF resource claim: CMS /authorizationMetadata flattens the claims
+# hierarchy to leaf resource claims only (verified live — domain parents such as
+# domains/edFiTypes are never serialized in claims[].name). schoolYearType is the
+# edFiTypes domain's child in the embedded Claims.json and carries Read for EdFiSandbox.
 Add-ExpectedVerificationCheck `
     -Seen $seenChecks `
     -Checks $expectedVerificationChecks `
     -ClaimSetName "EdFiSandbox" `
-    -ResourceClaim "http://ed-fi.org/identity/claims/domains/edFiTypes" `
+    -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
     -Action "Read"
 
 foreach ($fragment in $fragments) {

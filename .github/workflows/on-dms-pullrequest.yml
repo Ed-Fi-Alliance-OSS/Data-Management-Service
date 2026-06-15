@@ -132,7 +132,11 @@ jobs:
         run: |
           $paths = @(
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1"
+            "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
+            "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",
+            "eng/docker-compose/tests/ResolveIdentityClientSecrets.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) {
@@ -1250,6 +1254,14 @@ jobs:
       - name: Start DMS Docker
         run: |
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -EnableConfig
+        working-directory: eng/docker-compose/
+
+      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the claims-ready
+      # gate does not apply, and the DMS container restarts until this data store exists
+      # (restart: unless-stopped).
+      - name: Configure DMS Data Store
+        run: |
+          ./configure-local-data-store.ps1 -EnvironmentFile "./.env.e2e"
         working-directory: eng/docker-compose/
 
       - name: Wait for DMS to be ready

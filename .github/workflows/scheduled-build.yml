@@ -228,6 +228,14 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -EnableConfig -r
         working-directory: eng/docker-compose/
 
+      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the claims-ready
+      # gate does not apply, and the DMS container restarts until this data store exists
+      # (restart: unless-stopped).
+      - name: Configure DMS Data Store
+        run: |
+          ./configure-local-data-store.ps1 -EnvironmentFile "./.env.e2e"
+        working-directory: eng/docker-compose/
+
       - name: Wait for DMS to be ready
         run: |
           $maxAttempts = 10

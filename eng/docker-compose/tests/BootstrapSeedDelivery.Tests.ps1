@@ -1332,7 +1332,7 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1379,9 +1379,9 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.Homograph.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.TPDM.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1392,9 +1392,9 @@ SCHEMA_PACKAGES='[
                 $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$" -Because "circuit-breaker override must still apply"
                 $content | Should -Not -Match "FAILURE_RATIO=0\.01"
                 $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
-                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.TPDM.ApiSchema"
+                $content | Should -Match "EdFi.DataStandard52.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
                 $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
             }
             finally {
@@ -1760,6 +1760,113 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             } | Should -Throw -ExpectedMessage "*No staged XSD files*"
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+        }
+
+        It "rejects invalid staged ApiSchema manifest paths before reading XSD metadata" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $outsideManifestPath = Join-Path $tmpRoot "outside-api-schema-manifest.json"
+                @{
+                    projects = @(
+                        @{ projectName = "Outside"; xsdDirectory = $outsideXsdDir }
+                    )
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outsideManifestPath -Encoding utf8
+
+                $invalidPaths = @(
+                    "../outside-api-schema-manifest.json",
+                    $outsideManifestPath,
+                    "ApiSchema//bootstrap-api-schema-manifest.json",
+                    "ApiSchema/./bootstrap-api-schema-manifest.json",
+                    "C:/outside/bootstrap-api-schema-manifest.json"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidPath in $invalidPaths) {
+                    $caseIndex++
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+                    $manifest = @{
+                        schema = @{ apiSchemaManifestPath = $invalidPath }
+                    }
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*schema.apiSchemaManifestPath*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
+        It "rejects invalid staged ApiSchema xsdDirectory paths before copying files" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
+                New-Item -ItemType Directory -Path $apiSchemaDir -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
+                $manifest = @{
+                    schema = @{ apiSchemaManifestPath = $manifestRelPath }
+                }
+
+                $invalidXsdDirectories = @(
+                    "../outside-xsd",
+                    $outsideXsdDir,
+                    "content//Ed-Fi/xsd",
+                    "content/./Ed-Fi/xsd",
+                    "C:/outside/xsd"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidXsdDirectory in $invalidXsdDirectories) {
+                    $caseIndex++
+                    @{
+                        projects = @(
+                            @{ projectName = "Ed-Fi"; xsdDirectory = $invalidXsdDirectory }
+                        )
+                    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*xsdDirectory*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
         }
 
         It "deduplicates shared XSD directories from staged ApiSchema manifests" {
@@ -2156,6 +2263,23 @@ EdFi.BulkLoadClient.Console fake
             # -n (--novalidation) MUST NOT be passed: sample XML and XSDs are now sourced from the same
             # Ed-Fi-Data-Standard tag, so validation is on by construction.
             $capture.args | Should -Not -Contain "-n"
+            # Tuning flags required to prevent circuit-breaker tripping and rate-limiter flooding.
+            # DMS's Polly breaker (FailureRatio=0.01, MinimumThroughput=2, 10s sampling, 30s break)
+            # opens almost immediately under unbounded concurrency; these conservative defaults keep
+            # the relational backend stable. See Invoke-BulkLoadClient in load-dms-seed-data.ps1.
+            $capture.args | Should -Contain "-c"
+            $capture.args | Should -Contain "-l"
+            $capture.args | Should -Contain "-t"
+            $capture.args | Should -Contain "-r"
+            # Verify the values are numeric strings (non-empty)
+            $cIndex = [array]::IndexOf($capture.args, "-c")
+            $lIndex = [array]::IndexOf($capture.args, "-l")
+            $tIndex = [array]::IndexOf($capture.args, "-t")
+            $rIndex = [array]::IndexOf($capture.args, "-r")
+            [int]($capture.args[$cIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$lIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$tIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$rIndex + 1]) | Should -BeGreaterOrEqual 1
         }
 
         It "invokes BulkLoadClient once for single instance and once per year for school-year range" {
@@ -2693,22 +2817,33 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "start-(local|published)-dms.ps1 still declare -LoadSeedData pending Story 04 verification gate" {
+        It "start-published-dms.ps1 still declares -LoadSeedData pending bootstrap verification gate" {
             # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
             # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
-            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Story 04
-            # owns the XSD staging that closes this gate. Until then, -LoadSeedData stays on
-            # start-(local|published)-dms.ps1 invoking the direct-SQL database-template path,
-            # so build-dms.ps1's smoke flow remains operational.
-            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
-                $startScript = Join-Path $script:sourceDockerComposeRoot $name
-                Test-Path -LiteralPath $startScript | Should -BeTrue
-                $content = Get-Content -LiteralPath $startScript -Raw
-                $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
-                $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
-                    ForEach-Object { $_.Groups[1].Value }
-                $declaredParams | Should -Contain "LoadSeedData" -Because "$name must retain -LoadSeedData until the Story 04 verification gate closes per bootstrap-design.md Section 6.4"
-            }
+            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
+            # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
+            # direct-SQL database-template path, so build-dms.ps1's smoke flow via the
+            # published image path remains operational.
+            $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            Test-Path -LiteralPath $startScript | Should -BeTrue
+            $content = Get-Content -LiteralPath $startScript -Raw
+            $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
+            $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
+                ForEach-Object { $_.Groups[1].Value }
+            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the bootstrap-design.md Section 6.4 verification gate closes"
+        }
+
+        It "start-local-dms.ps1 no longer declares -LoadSeedData (DMS-1153 de-scope)" {
+            # DMS-1153 removes -LoadSeedData from start-local-dms.ps1. The direct-SQL database-template
+            # path moves to the phase-command model; use load-dms-seed-data.ps1 directly or the
+            # bootstrap-local-dms.ps1 wrapper with -LoadSeedData for the API-based seed path.
+            $startScript = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            Test-Path -LiteralPath $startScript | Should -BeTrue
+            $content = Get-Content -LiteralPath $startScript -Raw
+            $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
+            $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
+                ForEach-Object { $_.Groups[1].Value }
+            $declaredParams | Should -Not -Contain "LoadSeedData" -Because "start-local-dms.ps1 must not declare -LoadSeedData after the DMS-1153 de-scope"
         }
 
         It "start-(local|published)-dms.ps1 derive CMS URL from env-utility's Resolve-CmsBaseUrl" {
@@ -2722,6 +2857,197 @@ EdFi.BulkLoadClient.Console fake
                 $content | Should -Match 'Resolve-CmsBaseUrl\s+-EnvValues\s+\$envValues' -Because "$name must resolve CMS URL via Resolve-CmsBaseUrl so a custom DMS_CONFIG_ASPNETCORE_HTTP_PORTS is honored"
                 $content | Should -Not -Match '"http://localhost:8081"' -Because "$name must not hard-code the default CMS URL; the resolver fallback already returns http://localhost:8081 when the env override is absent"
             }
+        }
+    }
+
+    Context "IDE workflow shapes (DMS-1153)" {
+        # Helpers shared across IDE workflow tests
+
+        function script:New-IdeWrapperFixture {
+            param(
+                [string]$StartScriptStub = "param([Parameter(ValueFromRemainingArguments)]\$rest)"
+            )
+            $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms-ide-$([Guid]::NewGuid().ToString('N'))"
+            $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
+            New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+
+            Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1") -Destination $tmpDockerCompose
+            Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+
+            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
+            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
+            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+
+            $StartScriptStub | Set-Content -LiteralPath (Join-Path $tmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            return [pscustomobject]@{
+                TmpRoot          = $tmpRoot
+                TmpDockerCompose = $tmpDockerCompose
+                WrapperScript    = Join-Path $tmpDockerCompose "bootstrap-local-dms.ps1"
+            }
+        }
+
+        It "bootstrap-local-dms.ps1 declares -InfraOnly and -DmsBaseUrl" {
+            $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
+            Test-Path -LiteralPath $wrapperScript | Should -BeTrue
+
+            $content = Get-Content -LiteralPath $wrapperScript -Raw
+            $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
+            $params = [regex]::Matches($paramBody, '\$(\w+)') | ForEach-Object { $_.Groups[1].Value }
+
+            $params | Should -Contain "InfraOnly" -Because "bootstrap-local-dms.ps1 must expose -InfraOnly (DMS-1153 AC)"
+            $params | Should -Contain "DmsBaseUrl" -Because "bootstrap-local-dms.ps1 must expose -DmsBaseUrl (DMS-1153 AC)"
+            $params | Should -Not -Contain "DataStoreId" -Because "-DataStoreId must never be public on the wrapper"
+        }
+
+        It "bootstrap-published-dms.ps1 does NOT declare -InfraOnly or -DmsBaseUrl (D5: IDE shapes are local-only)" {
+            $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
+            Test-Path -LiteralPath $wrapperScript | Should -BeTrue
+
+            $content = Get-Content -LiteralPath $wrapperScript -Raw
+            $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
+            $params = [regex]::Matches($paramBody, '\$(\w+)') | ForEach-Object { $_.Groups[1].Value }
+
+            $params | Should -Not -Contain "InfraOnly" -Because "bootstrap-published-dms.ps1 must not gain IDE workflow params (story D5)"
+            $params | Should -Not -Contain "DmsBaseUrl" -Because "bootstrap-published-dms.ps1 must not gain IDE workflow params (story D5)"
+        }
+
+        It "wrapper rejects -DmsBaseUrl without -InfraOnly before any phase invocation" {
+            $fixture = New-IdeWrapperFixture
+            $startProbe = Join-Path $fixture.TmpRoot "start-invoked.txt"
+            "param([Parameter(ValueFromRemainingArguments)]\$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            { & $fixture.WrapperScript -DmsBaseUrl "http://localhost:8080" } |
+                Should -Throw -ExpectedMessage "*InfraOnly*"
+
+            Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "start phase must not run when -DmsBaseUrl is used without -InfraOnly"
+
+            Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
+        }
+
+        It "wrapper rejects -LoadSeedData -InfraOnly without -DmsBaseUrl before any phase invocation" {
+            # -InfraOnly without -DmsBaseUrl is terminal (stops before any DMS process).
+            # -LoadSeedData needs a healthy DMS endpoint; combining these two without -DmsBaseUrl
+            # would schedule seed delivery against a DMS that does not exist.
+            $fixture = New-IdeWrapperFixture
+            $startProbe = Join-Path $fixture.TmpRoot "start-invoked.txt"
+            "param([Parameter(ValueFromRemainingArguments)]\$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            { & $fixture.WrapperScript -InfraOnly -LoadSeedData } |
+                Should -Throw -ExpectedMessage "*-DmsBaseUrl*"
+
+            Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "start phase must not run when -LoadSeedData -InfraOnly is missing -DmsBaseUrl"
+
+            Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
+        }
+
+        It "wrapper -InfraOnly (primary shape): runs infra, configure, provision then stops — does NOT invoke DMS-only startup" {
+            $fixture = New-IdeWrapperFixture
+            $sequencePath = Join-Path $fixture.TmpRoot "sequence.txt"
+
+            # Start stub writes which mode it was called in
+            @"
+param([switch] `$InfraOnly, [switch] `$DmsOnly, [switch] `$EnableConfig, [string] `$DmsBaseUrl, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+if (`$InfraOnly -and [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value 'start-infra' }
+elseif (`$InfraOnly -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value 'start-healthwait' }
+elseif (`$DmsOnly) { Add-Content -LiteralPath '$sequencePath' -Value 'start-dms' }
+"@ | Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'configure'; [pscustomobject]@{ SelectedDataStoreIds = [long[]]@(1); HasRouteQualifiedDataStores = `$false }" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "configure-local-data-store.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "provision-dms-schema.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'seed'" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+            & $fixture.WrapperScript -InfraOnly
+
+            $sequence = @(Get-Content -LiteralPath $sequencePath)
+            $sequence | Should -Contain "start-infra" -Because "infra phase must run"
+            $sequence | Should -Contain "configure" -Because "configure phase must run"
+            $sequence | Should -Contain "provision" -Because "provision phase must run"
+            $sequence | Should -Not -Contain "start-dms" -Because "-DmsOnly must NOT run in the -InfraOnly terminal shape"
+            $sequence | Should -Not -Contain "start-healthwait" -Because "health-wait must NOT run without -DmsBaseUrl"
+            $sequence | Should -Not -Contain "seed" -Because "seed must NOT run in the terminal pre-DMS shape"
+
+            Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
+        }
+
+        It "wrapper -InfraOnly -DmsBaseUrl (continuation shape): does NOT pass -DmsBaseUrl to initial infra invocation, passes it only to health-wait" {
+            $fixture = New-IdeWrapperFixture
+            $sequencePath = Join-Path $fixture.TmpRoot "sequence.txt"
+
+            # Start stub records whether DmsBaseUrl was present at each call point
+            @"
+param([switch] `$InfraOnly, [switch] `$DmsOnly, [switch] `$EnableConfig, [string] `$DmsBaseUrl, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+if (`$InfraOnly -and [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value 'start-infra-nodmsurl' }
+elseif (`$InfraOnly -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value "start-healthwait url=`$DmsBaseUrl" }
+elseif (`$DmsOnly) { Add-Content -LiteralPath '$sequencePath' -Value 'start-dms' }
+"@ | Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'configure'; [pscustomobject]@{ SelectedDataStoreIds = [long[]]@(1); HasRouteQualifiedDataStores = `$false }" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "configure-local-data-store.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "provision-dms-schema.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'seed'" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+            & $fixture.WrapperScript -InfraOnly -DmsBaseUrl "http://localhost:8080"
+
+            $sequence = @(Get-Content -LiteralPath $sequencePath)
+            $sequence | Should -Contain "start-infra-nodmsurl" -Because "initial infra invocation must NOT receive -DmsBaseUrl"
+            $sequence | Should -Contain "configure" -Because "configure phase must run"
+            $sequence | Should -Contain "provision" -Because "provision phase must run"
+            $sequence | Should -Contain "start-healthwait url=http://localhost:8080" -Because "health-wait invocation must receive -DmsBaseUrl after provision"
+            $sequence | Should -Not -Contain "start-dms" -Because "-DmsOnly must NOT run in the IDE continuation shape"
+            $sequence | Should -Not -Contain "seed" -Because "seed must NOT run when -LoadSeedData is absent"
+
+            Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
+        }
+
+        It "wrapper -InfraOnly -DmsBaseUrl -LoadSeedData: forwards -DmsBaseUrl to seed phase" {
+            $fixture = New-IdeWrapperFixture
+            $sequencePath = Join-Path $fixture.TmpRoot "sequence.txt"
+            $seedArgsPath = Join-Path $fixture.TmpRoot "seed-args.txt"
+
+            @"
+param([switch] `$InfraOnly, [switch] `$DmsOnly, [string] `$DmsBaseUrl, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+if (`$InfraOnly -and [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value 'start-infra' }
+elseif (`$InfraOnly -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)) { Add-Content -LiteralPath '$sequencePath' -Value 'start-healthwait' }
+"@ | Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'configure'; [pscustomobject]@{ SelectedDataStoreIds = [long[]]@(1); HasRouteQualifiedDataStores = `$false }" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "configure-local-data-store.ps1") -Encoding utf8
+
+            "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "provision-dms-schema.ps1") -Encoding utf8
+
+            # Seed stub captures its arguments
+            @"
+param([string] `$DmsBaseUrl, [string] `$IdentityProvider, [long[]] `$DataStoreId, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$sequencePath' -Value 'seed'
+Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataStoreId -join ',')" -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+            # Stage a fake bootstrap manifest so -LoadSeedData preflight passes
+            '{"schema":{"selectionMode":"Standard"}}' |
+                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose ".bootstrap/bootstrap-manifest.json") -Encoding utf8
+
+            & $fixture.WrapperScript -InfraOnly -DmsBaseUrl "http://localhost:8080" -LoadSeedData
+
+            $sequence = @(Get-Content -LiteralPath $sequencePath)
+            $sequence | Should -Contain "seed" -Because "seed phase must run when -LoadSeedData is set in the continuation shape"
+
+            $seedArgs = Get-Content -LiteralPath $seedArgsPath -Raw
+            $seedArgs | Should -Match "url=http://localhost:8080" -Because "-DmsBaseUrl must be forwarded to load-dms-seed-data.ps1"
+
+            Remove-Item -LiteralPath $fixture.TmpRoot -Recurse -Force
         }
     }
 
@@ -2803,13 +3129,30 @@ EdFi.BulkLoadClient.Console fake
             $script:wrapperModuleContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
         }
 
-        It "build-dms.ps1 -LoadSeedData routes to the direct-SQL path via start-(local|published)-dms.ps1" {
-            # Round 3: build-dms.ps1 forwards -LoadSeedData directly to start-(local|published)-dms.ps1,
-            # which loads the populated DB template via setup-database-template.psm1. The deletion of
-            # this path is gated on bootstrap-design.md Section 6.4 Story-04 XSD verification.
-            # The new API-based path (bootstrap-(local|published)-dms.ps1 + load-dms-seed-data.ps1)
-            # ships in parallel as the forward developer-facing contract.
-            $script:buildDmsContent | Should -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward -LoadSeedData to start-local-dms.ps1"
+        It "build-dms.ps1 -LoadSeedData local path runs the direct-SQL template seed, not start-local-dms.ps1 -LoadSeedData" {
+            # start-local-dms.ps1 is infrastructure-lifecycle-only as of DMS-1153 and no longer
+            # accepts -LoadSeedData. The local-image path in build-dms.ps1 hosts the relocated
+            # direct-SQL database-template seed (setup-database-template.psm1 LoadSeedData) until
+            # the bootstrap-design.md Section 6.4 Story-04 verification gate closes.
+            $script:buildDmsContent | Should -Not -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must not forward -LoadSeedData to start-local-dms.ps1 (de-scoped in DMS-1153)"
+            $script:buildDmsContent | Should -Match 'setup-database-template\.psm1' -Because "build-dms.ps1 local -LoadSeedData path must import the database-template module"
+            $script:buildDmsContent | Should -Match '(?m)^\s*LoadSeedData\s+-EnvironmentFile' -Because "build-dms.ps1 local -LoadSeedData path must invoke the module's LoadSeedData"
+        }
+
+        It "build-dms.ps1 local path must NOT call load-dms-seed-data.ps1 (manifest is guaranteed absent)" {
+            # The API-based load-dms-seed-data.ps1 hard-requires a staged bootstrap manifest, but
+            # Start-DockerEnvironment tears down with -RemoveBootstrap in the same invocation, so a
+            # manifest can never be present when the seed step runs. Routing this flow to
+            # load-dms-seed-data.ps1 would make build-dms.ps1 -LoadSeedData fail unconditionally
+            # with 'Bootstrap manifest not found'.
+            # Match the invocation form (./load-dms-seed-data.ps1) only; explanatory comments may
+            # still reference the script by name.
+            $script:buildDmsContent | Should -Not -Match '\./load-dms-seed-data\.ps1' -Because "build-dms.ps1 must not route seed loading through the manifest-requiring API path while its teardown removes the manifest"
+        }
+
+        It "build-dms.ps1 -LoadSeedData published-image path still forwards to start-published-dms.ps1" {
+            # Published-image behavior is unchanged: start-published-dms.ps1 retains -LoadSeedData
+            # until the bootstrap-design.md Section 6.4 verification gate closes.
             $script:buildDmsContent | Should -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward -LoadSeedData to start-published-dms.ps1 (UsePublishedImage branch)"
         }
 

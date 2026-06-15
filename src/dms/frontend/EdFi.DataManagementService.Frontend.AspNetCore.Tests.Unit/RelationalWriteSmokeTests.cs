@@ -157,6 +157,22 @@ public class Given_A_Host_Using_The_Relational_Backend
         _schemaDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_schemaDirectory);
         File.WriteAllText(Path.Combine(_schemaDirectory, "ApiSchema.json"), MinimalApiSchemaJson);
+        File.WriteAllText(
+            Path.Combine(_schemaDirectory, "bootstrap-api-schema-manifest.json"),
+            new JsonObject
+            {
+                ["version"] = 1,
+                ["projects"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["projectName"] = "TestProject",
+                        ["projectEndpointName"] = "testproject",
+                        ["isExtensionProject"] = false,
+                        ["schemaPath"] = "ApiSchema.json",
+                    }
+                ),
+            }.ToJsonString()
+        );
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), "relational-write-smoke-status.json");
         if (File.Exists(_startupStatusFilePath))
         {

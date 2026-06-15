@@ -78,7 +78,7 @@ also append `-v`. Examples:
 # Start everything
 ./start-local-dms.ps1
 
-# Start everything for E2E testing (DLL-backed schema packages)
+# Start everything for E2E testing (file-based schema packages)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes
@@ -96,8 +96,7 @@ it can serve requests. Because `provision-relational-e2e-database.ps1`
 provisions inside the running `dms-postgresql` container, the sequence is:
 
 1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
-   the DLL-backed `SCHEMA_PACKAGES` schema path until Story 04 adds runtime
-   loose-file content loading:
+   the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
 
    ```pwsh
    ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
@@ -129,7 +128,7 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 # Start everything (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -IdentityProvider self-contained
 
-# Start everything for E2E testing (Self-Contained/OpenIddict mode, DLL-backed schema by default)
+# Start everything for E2E testing (Self-Contained/OpenIddict mode, file-based schema by default)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes (Self-Contained/OpenIddict mode)
@@ -181,14 +180,14 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
  API_SCHEMA_PATH=/app/ApiSchema
  SCHEMA_PACKAGES='[
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.Sample.ApiSchema",
+    "name": "EdFi.DataStandard52.Sample.ApiSchema",
     "extensionName": "Sample"
   }
 ]'
@@ -211,20 +210,33 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 # 2. Point to the platform-appropriate executable
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
 
-# 3. Stage schema and claims, then start DMS
+# 3. Stage schema and claims, then run the bootstrap wrapper
+#    (sequences infrastructure -> configure -> provision -> DMS over the staged workspace)
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
 ./prepare-dms-claims.ps1 -ClaimsDirectoryPath <directory-with-tpdm-claimset-fragment>
-./start-local-dms.ps1
+./bootstrap-local-dms.ps1
+```
+
+As of DMS-1153, `start-local-dms.ps1` is infrastructure-lifecycle-only: it no
+longer creates data stores or provisions the DMS schema, and with a bootstrap
+manifest present it disables startup database provisioning. Running it bare
+after staging leaves the stack without a configured instance or provisioned
+schema. Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases
+manually:
+
+```pwsh
+./start-local-dms.ps1 -InfraOnly
+./configure-local-data-store.ps1
+./provision-dms-schema.ps1
+./start-local-dms.ps1 -DmsOnly
 ```
 
 `prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
-`.bootstrap/claims`. Story 00 validates the prepared manifest but does
-not point the Config Service at `.bootstrap/claims` during startup because
-DMS Docker startup still uses the non-staged schema path. When a bootstrap
-manifest is present, startup disables `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH`
-so the container falls back to its built-in DLL-backed schema assemblies.
-Runtime reads of `.bootstrap/ApiSchema` and matching staged claims activation
-land together in Story 04.
+`.bootstrap/claims`. When a bootstrap manifest is present, startup activates
+`USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` and mounts `.bootstrap/ApiSchema` into
+the DMS container via `bootstrap-dms.yml`; staged claims are activated per
+`claims.mode` in the manifest. The staged workspace is runtime-authoritative in
+bootstrap mode.
 
 The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM. Story
 00 automatically maps only Sample and Homograph extension claim fragments, so
@@ -232,10 +244,19 @@ the full in-repo schema requires `-ClaimsDirectoryPath` with a TPDM
 `*-claimset.json` fragment. For a schema set containing only core, Sample, and
 Homograph, the claims command can be run without `-ClaimsDirectoryPath`.
 
-The DMS E2E setup wrappers stay on the prior DLL-backed `SCHEMA_PACKAGES` flow
-because the DMS runtime ContentProvider does not yet load loose JSON content
-(Story 04). The wrappers should move to the staged `.bootstrap/ApiSchema` and
-`.bootstrap/claims` workspaces when Story 04 lands.
+In bootstrap mode the default Debezium source connector is **not** registered.
+The default connector targets the legacy document-store CDC path
+(`publication.name=to_debezium`, `table.include.list=dms.document,...`), which
+depends on tables and a publication created only by the legacy installer DDL —
+none of which exist in the redesigned relational schema that bootstrap mode
+provisions. Use `-SkipConnectorSetup` when running non-bootstrap harnesses that
+create their own connectors after provisioning (e.g. Instance Management E2E).
+
+The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
+Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
+file-based ApiSchema package content, and the wrappers clear any stale
+`.bootstrap/` workspace before startup to prevent bootstrap mode from activating
+unintentionally.
 
 If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
@@ -248,6 +269,143 @@ change, recover by running `./start-local-dms.ps1 -d -v -RemoveBootstrap`
 > workspace on teardown. Pass `-RemoveBootstrap` explicitly when you want the
 > workspace wiped (e.g. after a branch switch). The E2E teardown wrappers
 > always remove it unconditionally.
+
+## IDE Debugging Workflow
+
+Use the IDE debugging workflow when you want to run DMS from your IDE (e.g. Visual Studio or Rider)
+against Docker-managed infrastructure (PostgreSQL, Config Service, Keycloak/OpenIddict).
+
+### Starter configuration artifact
+
+Copy the starter file from the DMS frontend project into the same directory and rename it:
+
+```pwsh
+cp src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.Development.json.example `
+   src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.Development.json
+```
+
+The artifact includes:
+
+| Key | Value |
+|-----|-------|
+| `ConnectionStrings:DatabaseConnection` | `host=localhost;port=5435;...` (matches `.env.example` PostgreSQL port) |
+| `ConfigurationServiceSettings:BaseUrl` | `http://localhost:8081` (Config Service host port) |
+| `ConfigurationServiceSettings:ClientId` | `CMSReadOnlyAccess` (created by identity setup) |
+| `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
+| `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
+| `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `DefaultEncryptionKey32CharactersX1`) |
+| `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
+| `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
+| `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
+| `JwtAuthentication:Authority` | `http://localhost:8081` |
+| `JwtAuthentication:ClientRole` | `dms-client` |
+| `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
+
+Replace `<local-cms-readonly-secret>` with the `CMSReadOnlyAccess` client secret. Identity setup
+(`setup-keycloak.ps1` / `setup-openiddict.ps1`) creates the client with the local-dev default
+`ValidClientSecret1234567890!Abcd` and does not print the value; if you override the secret at
+client creation, use your override here. Replace `<dms-config-database-encryption-key>`
+with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
+default `DefaultEncryptionKey32CharactersX1`). Replace `<repo-root>` with the absolute path
+to the repository root on your machine.
+
+> **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
+> the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
+> JSON and XSD content from the staged workspace via the bootstrap asset manifest, with no
+> schema assemblies loaded on this path.
+
+### Pre-DMS infrastructure setup
+
+Run the bootstrap wrapper with `-InfraOnly` to start infrastructure, provision the schema, and
+stop before launching DMS:
+
+```pwsh
+cd eng/docker-compose
+./bootstrap-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained
+```
+
+The wrapper prints IDE next-step guidance (staged schema path and, when `CONFIG_SERVICE_CLIENT_*`
+keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
+after provisioning completes.
+
+### Two IDE workflow shapes
+
+**Shape 1 — Pre-DMS stop (terminal):** `-InfraOnly` alone starts infrastructure, creates or confirms the
+DMS instance in Config Service, provisions the schema, prints IDE configuration guidance, then stops.
+Start DMS in your IDE using the printed settings; this invocation does not wait for it.
+
+```pwsh
+cd eng/docker-compose
+./bootstrap-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
+# → prints appsettings guidance (see the starter configuration table for the CMSReadOnlyAccess secret); stops before DMS startup
+# Start DMS in your IDE now using the printed settings.
+```
+
+**Shape 2 — Health-wait continuation:** `-InfraOnly -DmsBaseUrl <url>` runs the same pre-DMS phases, then
+waits (up to 300 seconds) for the IDE-hosted DMS process to return HTTP 200 from `<url>/health`.
+`-DmsBaseUrl` is withheld from the initial infrastructure invocation and used only for the post-provision
+health wait. When `-LoadSeedData` is also requested, seed loading runs against `<url>` after the health
+wait passes.
+
+> [!IMPORTANT]
+> The two shapes are alternatives, not a sequence. If a previous wrapper run already created the
+> data store (for example a Shape 1 run on the same stack), add `-NoDataStore` to the follow-up run
+> so the configure phase reuses the existing data store instead of creating a duplicate:
+> `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]`
+>
+> `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
+> used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
+> wrapper — re-supplying `-SchoolYearRange` creates a new set of data stores instead of selecting
+> the existing ones. Use the explicit phase commands against the data stores the earlier run
+> created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>` for the health wait, then
+> `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...>` for seed loading.
+
+```pwsh
+cd eng/docker-compose
+./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained
+# → starts infra, provisions schema, waits for DMS at http://localhost:5198/health
+# Start DMS in your IDE before the 300-second timeout elapses.
+
+# With seed loading:
+./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained `
+    -LoadSeedData -SeedTemplate Minimal
+```
+
+**Manual phase flow:** When running phases individually, complete configure and provision before invoking
+the health wait, then start DMS in the IDE between phases:
+
+```pwsh
+cd eng/docker-compose
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
+./prepare-dms-claims.ps1
+./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
+./configure-local-data-store.ps1 -AddSmokeTestCredentials
+./provision-dms-schema.ps1
+# Start DMS in your IDE now.
+./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"  # post-provision health wait only
+```
+
+**Fail-fast rules:**
+
+- `-DmsBaseUrl` without `-InfraOnly` is rejected: `start-local-dms.ps1` and `bootstrap-local-dms.ps1`
+  both require `-InfraOnly` when `-DmsBaseUrl` is set.
+- `-LoadSeedData -InfraOnly` without `-DmsBaseUrl` is rejected on the wrapper: seed loading requires a
+  live DMS endpoint.
+- `bootstrap-published-dms.ps1` does not accept `-InfraOnly` or `-DmsBaseUrl`; these shapes are
+  local-only.
+
+### School-year token endpoint (self-contained `-SchoolYearRange` variant)
+
+When `configure-local-data-store.ps1` was run with `-SchoolYearRange`, each data store maps to
+a school-year-qualified route. In that configuration, clients obtain tokens using the
+school-year-scoped endpoint:
+
+```
+POST http://localhost:8081/connect/token/{schoolYear}
+```
+
+where `{schoolYear}` is the four-digit school year (e.g. `2025`). The standard
+`/connect/token` endpoint remains available for non-school-year-qualified data stores.
 
 ## Default URLs
 

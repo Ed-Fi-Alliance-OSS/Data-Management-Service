@@ -26,14 +26,14 @@ public class AppSettings
     public int MaximumPageSize { get; set; }
 
     /// <summary>
-    /// If true, uses the UseApiSchemaPath file system path to find and load ApiSchema.json
-    /// files. Otherwise, the bundled ApiSchema.json files will be loaded.
+    /// If true, loads manifest-backed ApiSchema workspace content from ApiSchemaPath.
+    /// Otherwise, loads the bundled manifest-backed ApiSchema workspace from the application output.
     /// </summary>
     public bool UseApiSchemaPath { get; set; }
 
     /// <summary>
-    /// Provides the file system path for ApiSchema.json files loaded at startup,
-    /// including both core and extension files.
+    /// Provides the file system path for a runtime ApiSchema workspace containing
+    /// bootstrap-api-schema-manifest.json and its declared core and extension schema files.
     /// </summary>
     public string? ApiSchemaPath { get; set; }
 

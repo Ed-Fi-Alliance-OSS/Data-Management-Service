@@ -3,16 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
+namespace EdFi.DataManagementService.ApiSchemaDownloader.Services;
+
+public interface IApiSchemaDownloader
 {
-    public interface IApiSchemaDownloader
-    {
-        Task<string> DownloadNuGetPackageAsync(
-            string packageId,
-            string? packageVersion,
-            string feedUrl,
-            string outputDir
-        );
-        void ExtractApiSchemaJsonFromAssembly(string packageId, string packagePath, string outputDir);
-    }
+    Task<string> DownloadNuGetPackageAsync(
+        string packageId,
+        string? packageVersion,
+        string feedUrl,
+        string outputDir
+    );
+    void ExtractApiSchemaFiles(string packageId, string packagePath, string outputDir);
 }

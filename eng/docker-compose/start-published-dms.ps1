@@ -52,8 +52,9 @@ param (
     $AddSmokeTestCredentials,
 
     # Load seed data via the direct-SQL database-template path. Retained pending the implementation
-    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on Story 04 XSD-staging
-    # verification. The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
+    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on the full bootstrap
+    # verification gate closing (XSD-staging verification and BulkLoadClient XML mode validation).
+    # The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
     # is the forward contract; the slice that closes the gate owns this switch's removal.
     [Switch]
     $LoadSeedData,
@@ -89,16 +90,17 @@ param (
     [Switch]
     $RemoveBootstrap,
 
-    # Transitional non-bootstrap helper: when no bootstrap manifest is present (DLL-backed startup),
+    # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
     # so that extension claimset fragments (e.g. Sample, Homograph) are loaded from the AdditionalClaimsets
     # directory that is already mounted at /app/additional-claims by published-config.yml.
-    # This flag is intentionally kept until Story 04 moves E2E runtime loading onto the staged bootstrap workspace.
+    # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata
 )
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -114,12 +116,13 @@ if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
 $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot
 try {
-Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+$bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
 $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
+$identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
@@ -208,9 +211,17 @@ if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 
-# Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
+# Include Configuration Service when requested, when needed for self-contained identity,
+# or when bootstrap mode activates the staged claims workspace mount.
+if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
     $files += @("-f", "published-config.yml")
+}
+
+if ($bootstrapMode) {
+    # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
+    # on the full environment (same pattern as keycloak.yml above). This mounts the staged
+    # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
+    $files += @("-f", "bootstrap-dms.yml")
 }
 
 if ($EnableSwaggerUI) {
@@ -301,7 +312,18 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
-        if (-not $SkipConnectorSetup) {
+        if ($bootstrapMode) {
+            # Bootstrap mode provisions the redesigned relational schema (dms."Document", "ResourceKey",
+            # etc.) via dms-schema ddl provision. The default Debezium connector targets the legacy
+            # document-store CDC path: publication.name=to_debezium, publication.autocreate.mode=disabled,
+            # and table.include.list=dms.document,dms.educationorganizationhierarchytermslookup. Those
+            # legacy tables and the to_debezium publication are created only by the legacy installer DDL
+            # (0009_Configure_Replication.sql), which bootstrap mode never runs. Registering the default
+            # connector in bootstrap mode would leave it permanently in a FAILED/ERROR state because the
+            # required publication and tables do not exist by design.
+            Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
+        }
+        elseif (-not $SkipConnectorSetup) {
             # Register the Debezium source connector now that the schema has been provisioned and
             # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
             # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
@@ -327,10 +349,10 @@ else {
         Write-Output "Running setup-keycloak.ps1 scripts..."
 
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-keycloak.ps1
+        ./setup-keycloak.ps1 -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
@@ -362,8 +384,8 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Starting self-contained initialization script..."
-            ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
         }
 
@@ -384,6 +406,19 @@ else {
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
+        }
+
+        # Claims-ready gate: prove CMS has applied the expected claims content before
+        # instance configuration begins. Runs only on bootstrap-manifest runs; skipped
+        # with an informational message on legacy no-manifest invocations.
+        if ($bootstrapManifestPresent) {
+            Write-Output "Running claims-ready gate..."
+            Test-CmsClaimsReady `
+                -EnvironmentFile $EnvironmentFile `
+                -IdentityProvider $IdentityProvider
+        }
+        else {
+            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run." -InformationAction Continue
         }
 
         Write-Output "Infrastructure phase complete. DMS service was not started."
@@ -447,16 +482,19 @@ else {
     {
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
 
-    if (-not $SkipConnectorSetup) {
+    if ($bootstrapMode) {
+        Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
+    }
+    elseif (-not $SkipConnectorSetup) {
         Write-Output "Running connector setup..."
         ./setup-connectors.ps1 $EnvironmentFile
     }

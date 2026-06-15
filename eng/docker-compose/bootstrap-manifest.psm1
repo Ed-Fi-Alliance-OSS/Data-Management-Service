@@ -424,7 +424,7 @@ function Read-RequiredJsonBoolean {
 function Set-BootstrapStartupEnvironment {
     <#
     .SYNOPSIS
-    Validates the on-disk bootstrap manifest for startup; returns $true when a manifest is present. DMS schema path and staged CMS claims activation are deferred to Story 04.
+    Validates the on-disk bootstrap manifest for startup; returns $true when a manifest is present. When a manifest is present, activates the staged schema and claims workspaces as the runtime-authoritative source (bootstrap-design.md §3 activation boundary).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper; the bootstrap scripts do not expose -WhatIf end to end, so a partial ShouldProcess opt-in would just enable silent no-ops.')]
     param(
@@ -466,26 +466,24 @@ function Set-BootstrapStartupEnvironment {
         throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafeText $apiSchemaManifestPath)"
     }
 
-    # NOTE (Story 04): Flipping DMS into staged-workspace runtime loading
-    # (USE_API_SCHEMA_PATH=true, API_SCHEMA_PATH=/app/ApiSchema, clearing SCHEMA_PACKAGES, and
-    # mounting .bootstrap/ApiSchema via bootstrap-dms.yml) is deferred to Story 04. ContentProvider
-    # still expects *.ApiSchema.dll assemblies, so activating that path here would cause
-    # discovery/XSD content fetches to fail in bootstrap mode.
-    #
-    # Story 00 validates the prepared manifest but does not activate the staged DMS schema workspace
-    # or staged CMS claims workspace at startup. Keep runtime vars blank in the process environment so
-    # `docker compose --env-file .env` cannot leak Story-04-shaped values into the DMS/CMS containers.
-    # Compose treats `${VAR:-default}` as "use default when VAR is empty."
-    $env:USE_API_SCHEMA_PATH = ""
-    $env:API_SCHEMA_PATH = ""
+    # Activate the staged schema workspace as runtime-authoritative (bootstrap-design.md §3 activation
+    # boundary). DMS_API_SCHEMA_MOUNT_SOURCE is the host-side source for the bootstrap-dms.yml volume
+    # mount; SCHEMA_PACKAGES is set to an empty JSON array so run.sh performs no second package
+    # download into the mounted workspace. Do not use an empty string: on Linux PowerShell that
+    # removes the process env var, allowing docker compose to fall back to SCHEMA_PACKAGES from
+    # the env file.
+    $env:USE_API_SCHEMA_PATH = "true"
+    $env:API_SCHEMA_PATH = "/app/ApiSchema"
+    $env:DMS_API_SCHEMA_MOUNT_SOURCE = $apiSchemaPath
+    $env:SCHEMA_PACKAGES = "[]"
 
     if (-not $manifest.ContainsKey("claims")) {
         if (-not $SkipArtifactValidation) {
             throw "Bootstrap manifest is missing the claims section. Run prepare-dms-claims.ps1 before starting services."
         }
 
-        # Keep any caller/env-file claims source settings intact for the current non-staged runtime path,
-        # but prevent a stale process value from mounting staged .bootstrap/claims in Story 00.
+        # No staged claims in manifest (only reachable with -SkipArtifactValidation / teardown).
+        # No staged claims workspace to mount; keep mount source blank.
         $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
         return $true
     }
@@ -536,10 +534,17 @@ function Set-BootstrapStartupEnvironment {
         }
     }
 
-    # Do not point CMS at staged .bootstrap/claims until DMS also reads the matching staged schema
-    # workspace. Leave ClaimsSource/ClaimsDirectory to the env-file or AddExtensionSecurityMetadata
-    # fallback so the current non-staged Hybrid claims path keeps working.
-    $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+    # Activate staged claims per manifest claims.mode (bootstrap-design.md §3 activation boundary).
+    # These process-env overrides govern in bootstrap mode regardless of .env-file Hybrid defaults.
+    if ($claimsMode -eq "Hybrid") {
+        $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
+        $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $claimsPath
+    } else {
+        $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
+        $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
+        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+    }
 
     return $true
 }
@@ -549,7 +554,9 @@ $script:BootstrapEnvVarNames = @(
     "DMS_CONFIG_CLAIMS_DIRECTORY",
     "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
     "USE_API_SCHEMA_PATH",
-    "API_SCHEMA_PATH"
+    "API_SCHEMA_PATH",
+    "DMS_API_SCHEMA_MOUNT_SOURCE",
+    "SCHEMA_PACKAGES"
 )
 
 function Get-BootstrapEnvSnapshot {
@@ -592,7 +599,12 @@ function Restore-BootstrapEnvSnapshot {
 function Invoke-BootstrapStartupConfiguration {
     <#
     .SYNOPSIS
-    Shared startup helper for start-local-dms.ps1 / start-published-dms.ps1: validates the bootstrap manifest (teardown-tolerant), and applies the transitional non-bootstrap Hybrid claims fallback. The caller owns the env snapshot so that Restore/Pop run cleanly even when this helper throws.
+    Shared startup helper for start-local-dms.ps1 / start-published-dms.ps1: validates the bootstrap
+    manifest (teardown-tolerant), applies the transitional non-bootstrap Hybrid claims fallback, and
+    returns a boolean indicating whether bootstrap mode is active. The caller owns the env snapshot so
+    that Restore/Pop run cleanly even when this helper throws.
+    .OUTPUTS
+    [bool] $true when a valid bootstrap manifest is present (bootstrap mode); $false otherwise.
     #>
     param(
         [switch]
@@ -623,23 +635,22 @@ function Invoke-BootstrapStartupConfiguration {
     }
 
     if ($bootstrapMode) {
-        Write-Output "Bootstrap manifest detected and validated. Staged schema and claims runtime startup remains deferred to Story 04; current bootstrap-present startup falls back to built-in DLL-backed schema assemblies."
+        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and CMS claims are governed by the manifest claims.mode." -InformationAction Continue
         if ($AddExtensionSecurityMetadata) {
-            # DLL-backed mode: activate Hybrid claims so extension claimset fragments
-            # are loaded from /app/additional-claims (already mounted by the Config Service compose file).
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
-            Write-Output "Extension Security Metadata: Hybrid claims mode enabled (DLL-backed startup; staged bootstrap claims remain inactive)."
+            # In bootstrap mode the manifest's claims.mode governs; -AddExtensionSecurityMetadata
+            # is ignored. Set-BootstrapStartupEnvironment already activated staged claims above.
+            Write-Information "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)." -InformationAction Continue
         }
     } elseif ($AddExtensionSecurityMetadata) {
-        # DLL-backed mode: activate Hybrid claims so extension claimset fragments
+        # Non-bootstrap mode: activate Hybrid claims so extension claimset fragments
         # are loaded from /app/additional-claims (already mounted by the Config Service compose file).
         $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
         $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
         $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
-        Write-Output "Extension Security Metadata: Hybrid claims mode enabled (DLL-backed startup)."
+        Write-Information "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)." -InformationAction Continue
     }
+
+    return $bootstrapMode
 }
 
 function Remove-BootstrapWorkspaceIfRequested {

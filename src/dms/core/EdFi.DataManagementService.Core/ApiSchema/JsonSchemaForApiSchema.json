@@ -22,6 +22,9 @@
                 },
                 "descriptors": {
                     "$ref": "#/definitions/openApiDocument"
+                },
+                "changeQueries": {
+                    "$ref": "#/definitions/openApiDocument"
                 }
             },
             "additionalProperties": false

@@ -19,17 +19,73 @@ function Get-QuotedEnvJson {
     return $match.Groups["value"].Value
 }
 
-function Get-NewSchemaFilePath {
+function Resolve-PackageRelativePath {
     param(
-        [string]$DirectoryPath,
-        [string[]]$ExistingFiles
+        [string]$PackageRoot,
+        [string]$RelativePath,
+        [string]$Description
     )
 
-    $currentFiles =
-        @(Get-ChildItem -Path $DirectoryPath -Filter "ApiSchema*.json" -File -ErrorAction SilentlyContinue) |
-        Select-Object -ExpandProperty FullName
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        throw "$Description path is missing from package manifest."
+    }
 
-    return @($currentFiles | Where-Object { $_ -notin $ExistingFiles })
+    if ([System.IO.Path]::IsPathRooted($RelativePath)) {
+        throw "$Description path '$RelativePath' from package manifest must be relative."
+    }
+
+    foreach ($pathPart in ($RelativePath -split "[/\\]")) {
+        if ($pathPart -eq "..") {
+            throw "$Description path '$RelativePath' from package manifest contains parent-directory traversal."
+        }
+    }
+
+    $fullPackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
+    $fullPath = [System.IO.Path]::GetFullPath((Join-Path $fullPackageRoot $RelativePath))
+    $relativeToPackageRoot = [System.IO.Path]::GetRelativePath($fullPackageRoot, $fullPath)
+
+    if (
+        [System.IO.Path]::IsPathRooted($relativeToPackageRoot) `
+            -or $relativeToPackageRoot -eq ".." `
+            -or $relativeToPackageRoot.StartsWith("..$([System.IO.Path]::DirectorySeparatorChar)", [StringComparison]::Ordinal) `
+            -or $relativeToPackageRoot.StartsWith("..$([System.IO.Path]::AltDirectorySeparatorChar)", [StringComparison]::Ordinal)
+    ) {
+        throw "$Description path '$RelativePath' from package manifest resolves outside the package directory."
+    }
+
+    return $fullPath
+}
+
+function Resolve-SchemaFileFromPackageManifest {
+    param(
+        [string]$SchemaDirectory,
+        [string]$PackageName
+    )
+
+    $packageRoot = Join-Path (Join-Path $SchemaDirectory "Packages") $PackageName
+    $manifestPath = Join-Path $packageRoot "package-manifest.json"
+
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "ApiSchema package manifest not found for package ${PackageName}: $manifestPath"
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifestVersion = [string]$manifest.version
+
+    if ($manifestVersion -ne "1") {
+        throw "Unsupported ApiSchema package manifest version '$manifestVersion' in $manifestPath."
+    }
+
+    $schemaFilePath = Resolve-PackageRelativePath `
+        -PackageRoot $packageRoot `
+        -RelativePath ([string]$manifest.schemaPath) `
+        -Description "ApiSchema"
+
+    if (-not (Test-Path -LiteralPath $schemaFilePath -PathType Leaf)) {
+        throw "ApiSchema file declared by package manifest was not found for package ${PackageName}: $schemaFilePath"
+    }
+
+    return $schemaFilePath
 }
 
 <#
@@ -77,10 +133,6 @@ function Resolve-SchemaFilesFromEnvironmentFile {
 
         Write-Information "Downloading schema package: $packageName $packageVersion" -InformationAction Continue
 
-        $existingFiles =
-            @(Get-ChildItem -Path $SchemaDirectory -Filter "ApiSchema*.json" -File -ErrorAction SilentlyContinue) |
-            Select-Object -ExpandProperty FullName
-
         $downloadArgs = @(
             "run"
         ) + @($DownloaderDotnetRunArgs) + @(
@@ -111,14 +163,9 @@ function Resolve-SchemaFilesFromEnvironmentFile {
             throw "ApiSchema download failed for package $packageName $packageVersion."
         }
 
-        $newFiles = @(Get-NewSchemaFilePath -DirectoryPath $SchemaDirectory -ExistingFiles $existingFiles)
-
-        if ($newFiles.Count -ne 1) {
-            $joinedFiles = if ($newFiles.Count -eq 0) { "<none>" } else { $newFiles -join ", " }
-            throw "Expected exactly one ApiSchema*.json file from package $packageName, found $($newFiles.Count): $joinedFiles"
-        }
-
-        $schemaFilePath = [System.IO.Path]::GetFullPath($newFiles[0])
+        $schemaFilePath = Resolve-SchemaFileFromPackageManifest `
+            -SchemaDirectory $SchemaDirectory `
+            -PackageName $packageName
         $schemaFiles.Add($schemaFilePath)
         Write-Information "Resolved schema file: $schemaFilePath" -InformationAction Continue
     }

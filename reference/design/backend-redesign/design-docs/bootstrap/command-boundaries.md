@@ -46,7 +46,7 @@ environment configuration.
 |---|---|
 | **Preconditions** | Story 00: filesystem ApiSchema source available directly through `-ApiSchemaPath`. Story 06: NuGet feed reachable for asset-only package materialization. No Docker services required. |
 | **Inputs** | Story 00: `-ApiSchemaPath <path>` (direct filesystem ApiSchema source). Story 06: `-Extensions <name>` (0..N, package-backed extension names), mutually exclusive with `-ApiSchemaPath`. |
-| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing normalized schema JSON files, optional schema-adjacent static content, and `bootstrap-api-schema-manifest.json`; the staged workspace itself is the downstream schema and runtime-asset contract consumed by later phases and by DMS runtime after Story 04 enables staged workspace loading |
+| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing normalized schema JSON files, optional schema-adjacent static content, and `bootstrap-api-schema-manifest.json`; the staged workspace itself is the downstream schema and runtime-asset contract consumed by later phases and by DMS runtime (staged workspace loading delivered by Story 04, DMS-1154) |
 | **Side effects** | Writes staged workspace; computes expected `EffectiveSchemaHash` via `dms-schema hash`; records manifest-relative paths for schema and optional static content in `bootstrap-api-schema-manifest.json`; writes the schema section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` with schema-selection mode, selected extensions, the effective schema hash, an ApiSchema workspace fingerprint, and the relative ApiSchema manifest path |
 | **Failure conditions** | Story 00: missing `-ApiSchemaPath`; `-Extensions` supplied before Story 06 behavior is implemented; normalized-path collision; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging. Story 06 adds: extension package/artifact resolution failure; `-Extensions` and `-ApiSchemaPath` both supplied; NuGet feed unreachable for package-backed materialization; selected package is missing the required asset-only ApiSchema payload; selected package contains only DLL-backed ApiSchema resources after the asset-only package switch-over. |
 | **Must NOT do** | Start or depend on Docker services; modify `.env` or Docker Compose variables; perform DDL work; contact the Config Service; accept claims-related parameters |
@@ -140,31 +140,30 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Current Story 00 startup may validate a bootstrap manifest when present, but staged claims startup is not activated until Story 04 enables DMS staged-schema runtime loading. |
-| **Inputs** | `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v`; transitional legacy flags still owned by the start scripts, including `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, `-AddSmokeTestCredentials`, and `-AddExtensionSecurityMetadata`; split-startup switches `-InfraOnly` and `-DmsOnly` (mutually exclusive; the bootstrap wrapper uses them to run schema provisioning between infrastructure startup and DMS startup) |
+| **Preconditions** | Story 00 stages and validates the bootstrap manifest; Story 04 (DMS-1154, delivered) activates staged-schema and staged-claims runtime loading when a valid manifest is present. |
+| **Inputs** | `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v`; `-AddExtensionSecurityMetadata` (applies only to no-manifest startup; in bootstrap mode staged claims activate from the manifest and this flag's non-bootstrap Hybrid fallback does not apply); split-startup switches `-InfraOnly` and `-DmsOnly` (mutually exclusive; the bootstrap wrapper uses them to run schema provisioning between infrastructure startup and DMS startup); `-DmsBaseUrl <url>` (valid only with `-InfraOnly`; when set, the script starts infrastructure without the DMS container, waits for Config Service readiness and the claims-ready gate, then polls `<DmsBaseUrl>/health` until HTTP 200 is returned, with a 300-second timeout) |
 | **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container |
-| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; validates the bootstrap manifest when present but does not apply manifest-selected staged claims to Config Service startup until Story 04 can also point DMS at the matching staged ApiSchema workspace; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path) |
+| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; activates manifest-selected staged claims and staged schema at startup when a valid bootstrap manifest is present (Story 04, delivered); calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); in bootstrap mode, skips default Debezium connector registration because the bootstrap relational schema does not include the legacy CDC tables the default connector targets |
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
-| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters. **End-state contract owned by DMS-1153** (see Boundary note): configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data — the transitional `-NoDataStore` / `-LoadSeedData` / `-AddSmokeTestCredentials` Inputs flags retain these on the start scripts until DMS-1153 de-scopes them |
+| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters; configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data. **Note:** `start-published-dms.ps1` retains `-NoDataStore`, `-LoadSeedData`, and `-AddSmokeTestCredentials` as transitional flags for the published-image workflow; the local `start-local-dms.ps1` is infrastructure-lifecycle-only as of DMS-1153. |
 
-**Boundary note:** Story 00 makes staged
-schema/security the prepared bootstrap contract, not the Docker runtime source of truth. It keeps staged
-schema and staged claims startup inactive as a pair, because activating only CMS claims while DMS remains
-DLL-backed can produce mismatched authorization metadata. Story 04 owns the claims-ready gate for staged
-bootstrap startup, including any CMS load/composition result or authorization metadata verification. DMS-1152
-does not add an IDE-hosted start/health-wait surface to `start-local-dms.ps1`; IDE continuation remains owned
-by the later entry-point workflow. Once DMS health is confirmed, any later step is owned by wrapper
-orchestration or by the developer invoking the next phase command explicitly.
+**Boundary note:** Story 00 makes staged schema/security the prepared bootstrap contract. Story 04 (DMS-1154,
+delivered) makes it the Docker runtime source of truth by activating staged schema and staged claims together
+at startup when a valid manifest is present — activating only one side while the other remains on the
+non-bootstrap env-file path could produce mismatched authorization metadata, so the two activations ship as
+one boundary. Story 03 owns
+the claims-ready gate mechanism: the manifest-driven authorization metadata check that verifies expected
+resource claim URIs and actions against `/authorizationMetadata` after CMS `/health` is green, running
+against currently-active claims sources. Because `/authorizationMetadata` serializes leaf resource claims
+only, the gate asserts non-parent checks and defers checks marked `isParent` (parent grants materialize on
+leaf descendants via hierarchy lineage); composed-hierarchy verification of parent grants belongs to the
+claims-composition work. Once DMS health is confirmed, any later step is owned by wrapper orchestration or
+by the developer invoking the next phase command explicitly.
 
-The Must-NOT row separates two kinds of prohibition. The first group (resolve/validate ApiSchema, touch the
-staged workspace, provision databases, enable the legacy installer path, accept schema/claims parameters) is
-permanent. The second group (configure DMS instances, create smoke-test/seed-loading credentials, load seed
-data) is the end-state contract owned by DMS-1153 (`epics/16-bootstrap/03-entry-point-and-ide-workflow.md`),
-which makes `start-local-dms.ps1` infrastructure-lifecycle-only. Until that story lands, the start scripts
-intentionally retain the transitional `-NoDataStore`, `-LoadSeedData`, and `-AddSmokeTestCredentials` flags
-listed in Inputs, so the apparent Inputs/Must-NOT overlap is deliberate and time-bounded rather than a
-contradiction. DMS-1151 adds the `-InfraOnly` / `-DmsOnly` split-startup switches and drives them from the
-wrapper, but does not remove these legacy flags.
+The Must-NOT row is permanent for `start-local-dms.ps1`. DMS-1153 (`epics/16-bootstrap/03-entry-point-and-ide-workflow.md`)
+made `start-local-dms.ps1` infrastructure-lifecycle-only by removing `-NoDataStore`, `-SchoolYearRange`,
+`-LoadSeedData`, and `-AddSmokeTestCredentials`. The published `start-published-dms.ps1` retains those
+transitional flags for the published-image workflow and is not subject to this de-scope.
 
 ---
 
@@ -245,7 +244,7 @@ successor story.
 | Item | Detail |
 |---|---|
 | **Preconditions** | None additional beyond what phase commands require. |
-| **Inputs** | `-EnvironmentFile <path>` (forwarded to the start and seed phases); `-IdentityProvider` (resolved once and forwarded to `start-local-dms.ps1` or `start-published-dms.ps1`, and also to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, and `-AddExtensionSecurityMetadata` (forwarded to the selected start phase; `-EnableConfig` is forced when seed loading is selected); `-SchoolYearRange <range>` (forwarded to the selected start phase and expanded to `-SchoolYear <int[]>` for the seed phase when seed loading is selected); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate`, `-SeedDataPath <path>`, and `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-NoDataStore` and `-AddSmokeTestCredentials` (forwarded to `configure-local-data-store.ps1` during the configure -> provision sequence) |
+| **Inputs** | `-EnvironmentFile <path>` (forwarded to the start and seed phases); `-IdentityProvider` (resolved once and forwarded to `start-local-dms.ps1` or `start-published-dms.ps1`, and also to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, and `-AddExtensionSecurityMetadata` (forwarded to the selected start phase; `-EnableConfig` is forced when seed loading is selected); `-SchoolYearRange <range>` (forwarded to the selected start phase and expanded to `-SchoolYear <int[]>` for the seed phase when seed loading is selected); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate`, `-SeedDataPath <path>`, and `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-NoDataStore` and `-AddSmokeTestCredentials` (forwarded to `configure-local-data-store.ps1` during the configure -> provision sequence); **`bootstrap-local-dms.ps1` only** (DMS-1153): `-InfraOnly` (pre-DMS stop shape: run infrastructure startup, configure, provision, print IDE next-step guidance, then stop; terminal for that invocation); `-DmsBaseUrl <url>` (health-wait continuation shape: valid only with `-InfraOnly`; withheld from the initial `start-local-dms.ps1` invocation and used only for the post-provision health-wait; when `-LoadSeedData` is also set, forwarded to `load-dms-seed-data.ps1`) — **`bootstrap-published-dms.ps1` does not gain these parameters in DMS-1153** |
 | **Outputs** | Delegated entirely to the phase commands it calls |
 | **Side effects** | Delegates to phase commands; prints next-step guidance when a phase is intentionally omitted |
 | **Failure conditions** | Propagates non-zero exit from any called phase command |
@@ -265,14 +264,14 @@ resolve the same CMS, tenant, DMS, and database defaults. It must not implement
 phase-specific behavior, retry or fallback logic, persisted resume state, schema provisioning, CMS
 configuration, or seed loading directly, and it never parses human-readable output to recover phase results.
 
-Broader wrapper consolidation flags such as `-Extensions`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`,
-`-DmsBaseUrl`, and `-Rebuild` remain deferred to their owning bootstrap stories. The wrapper-level
-`-InfraOnly` consolidation flag (a developer-facing infra-only entry point) likewise remains a later
-entry-point concern, and is distinct from the start-script `-InfraOnly` / `-DmsOnly` split-startup switches
-documented in §3.3 that the wrapper drives internally. DMS-1152 delivers the wrapper surface needed for
-API-based XML seed delivery; DMS-1151 additionally lets the wrapper forward `-NoDataStore` and
+Broader wrapper consolidation flags such as `-Extensions`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`, and `-Rebuild`
+remain deferred to their owning bootstrap stories. DMS-1153 delivered the local wrapper IDE workflow
+shapes: `-InfraOnly` (pre-DMS stop; distinct from the start-script split-startup switch of the same name
+that the wrapper drives internally) and `-DmsBaseUrl` (health-wait continuation, valid only with
+`-InfraOnly`, withheld from the initial start invocation) on `bootstrap-local-dms.ps1` only.
+`bootstrap-published-dms.ps1` does not gain these flags. The wrapper also forwards `-NoDataStore` and
 `-AddSmokeTestCredentials` to `configure-local-data-store.ps1` (which owns both per §3.4) as part of its
-configure → provision → DMS-only sequencing.
+configure → provision sequencing.
 
 ---
 
@@ -330,15 +329,16 @@ Each phase accepts only the parameters relevant to its concern.
 |---|---|
 | `prepare-dms-schema.ps1` | Story 00: `-ApiSchemaPath`; Story 06: `-Extensions` |
 | `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath` |
-| `start-local-dms.ps1` | `-EnvironmentFile <path>`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-EnableKafkaUI`, `-EnableSwaggerUI`, `-d`/`-v`, plus transitional legacy flags still owned by the start scripts: `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, `-AddSmokeTestCredentials`, and `-AddExtensionSecurityMetadata`, plus the split-startup switches `-InfraOnly` and `-DmsOnly` |
+| `start-local-dms.ps1` | `-EnvironmentFile <path>`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-EnableKafkaUI`, `-EnableSwaggerUI`, `-d`/`-v`, `-AddExtensionSecurityMetadata` (no-manifest startup only; bootstrap mode activates staged claims from manifest), split-startup switches `-InfraOnly` and `-DmsOnly`, `-DmsBaseUrl <url>` (valid only with `-InfraOnly`) |
 | `configure-local-data-store.ps1` | `-EnvironmentFile <path>`, `-NoDataStore`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |
 | `provision-dms-schema.ps1` | `-EnvironmentFile <path>`, `-DataStoreId <long[]>`, `-SchoolYear <int[]>` |
 | `load-dms-seed-data.ps1` | `-EnvironmentFile <path>`, `-BootstrapManifestPath <path>`, `-DataStoreId <long[]>`, `-DmsBaseUrl <url>`, `-IdentityProvider`, `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix <string[]>`, `-SchoolYear <int[]>` |
-| `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` | DMS-1152: `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-AddExtensionSecurityMetadata`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>`; DMS-1151: `-NoDataStore`, `-AddSmokeTestCredentials` (forwarded to configure) |
+| `bootstrap-local-dms.ps1` | DMS-1152: `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-AddExtensionSecurityMetadata`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>`; DMS-1151: `-NoDataStore`, `-AddSmokeTestCredentials` (forwarded to configure); DMS-1153: `-InfraOnly`, `-DmsBaseUrl <url>` (local wrapper only) |
+| `bootstrap-published-dms.ps1` | Same as `bootstrap-local-dms.ps1` except **does not** include `-InfraOnly` or `-DmsBaseUrl` (DMS-1153 IDE workflow parameters are local-only) |
 
-`-DmsBaseUrl` remains phase-owned by direct `load-dms-seed-data.ps1` invocation in DMS-1152. The IDE-hosted
-wrapper continuation flow is deferred to the entry-point workflow that owns `-InfraOnly`/`-DmsBaseUrl`
-orchestration.
+`-DmsBaseUrl` is phase-owned by direct `load-dms-seed-data.ps1` invocation for seed delivery. The local
+wrapper also accepts `-DmsBaseUrl` (with `-InfraOnly`) as a convenience input for the IDE health-wait
+continuation shape delivered by DMS-1153; this does not transfer seed-phase ownership.
 `-IdentityProvider` also remains phase-owned: startup uses it to configure the local auth environment, and
 seed loading uses the same value to resolve the BulkLoadClient OAuth endpoint. The wrapper forwards the
 same developer-selected value to both phases instead of requiring either phase to infer it from the other.

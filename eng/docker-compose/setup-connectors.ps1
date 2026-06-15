@@ -183,7 +183,7 @@ if (-not (Wait-ConnectEndpointReady -Url $sourceBase)) {
 
 # Replace any existing connector so the configuration below is applied cleanly.
 $existing = Invoke-RestMethod -Uri $sourceUrl -Method Get -SkipHttpErrorCheck
-if ($null -ne $existing.name) {
+if ($null -ne ($existing.PSObject.Properties['name'])) {
     Write-Output "Deleting existing source connector configuration."
     Invoke-RestMethod -Method Delete -Uri $sourceUrl | Out-Null
     # DELETE is asynchronous; wait until the connector is actually gone so the POST below does

@@ -44,7 +44,7 @@ filesystem inputs.
   canonical Data-Standard-qualified convention defined in
   [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md):
   the core package is `EdFi.DataStandard52.ApiSchema`, and extension packages follow
-  `EdFi.DataStandard52.ApiSchema.<Project>`. Version defaults are documented and validated against the feed
+  `EdFi.DataStandard52.<Project>.ApiSchema`. Version defaults are documented and validated against the feed
   during implementation.
 - Current repository package references and `SCHEMA_PACKAGES` examples may still use legacy unqualified
   extension IDs until the Story 04/06 migration updates those consumers.

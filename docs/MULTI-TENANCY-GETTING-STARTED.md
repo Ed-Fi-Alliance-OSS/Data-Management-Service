@@ -90,9 +90,10 @@ is included in the repository.
 > [!NOTE]
 > This guide uses a manual, API-driven workflow (via the `.http` file) because
 > it matches how environments are commonly configured in the field.
-> For local demos and quick setup, `start-local-dms.ps1` supports
+> For local demos and quick setup, `configure-local-data-store.ps1` supports
 > `-SchoolYearRange` to automatically create `dataStores` and their
-> `schoolYear` route contexts.
+> `schoolYear` route contexts (as of DMS-1153 this flag lives on the configure
+> phase command, not `start-local-dms.ps1`).
 > `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
 > If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
 > `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
@@ -110,12 +111,13 @@ pwsh ./start-local-dms.ps1 `
     -EnableConfig `
     -EnableSwaggerUI `
     -IdentityProvider self-contained `
-    -NoDataStore `
     -r
 ```
 
-The `-NoDataStore` flag prevents automatic instance creation since
-you'll create tenant-specific instances manually.
+As of DMS-1153, `start-local-dms.ps1` never creates instances (it is
+infrastructure-only), so no flag is needed to prevent automatic instance
+creation — you'll create tenant-specific instances manually in the steps
+below.
 
 Wait for all services to start (approximately 2-3 minutes):
 
@@ -186,11 +188,11 @@ Execute the requests in order:
 > to authenticate in Swagger UI (Step 7). If you lose them, use the
 > `reset-credential` request in the HTTP file to generate new ones.
 
-### Manual `schoolYear` instance setup (with `-NoDataStore`)
+### Manual `schoolYear` instance setup
 
-If you started the stack with `-NoDataStore` and want explicit school year
-routing (for example, `/{tenant}/2024/data/...`), create the instances and
-route contexts manually.
+If you started the stack without creating instances (the default — the start
+script never creates them) and want explicit school year routing (for example,
+`/{tenant}/2024/data/...`), create the instances and route contexts manually.
 
 Prerequisites:
 
