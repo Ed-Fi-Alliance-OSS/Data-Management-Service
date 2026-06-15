@@ -61,6 +61,15 @@ both materialize to the same workspace before runtime starts.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a
   file-based staged workspace with no `*.ApiSchema.dll` files present.
 
+## Implementation Notes
+
+- DMS temporarily maps resource-scoped tracked-change OpenAPI routes under
+  `/data/{projectNamespace}/{endpointName}/deletes` and
+  `/data/{projectNamespace}/{endpointName}/keyChanges` to an empty JSON-array frontend stub. This keeps
+  package-backed OpenAPI surfaces from breaking smoke and bulk-load tooling while the real Change Queries
+  runtime routes are still incomplete. The stub bypasses DMS core authorization and path parsing and must be
+  removed when the model-driven tracked-change implementation lands.
+
 ## Tasks
 
 1. Add a small manifest reader for `bootstrap-api-schema-manifest.json`, or extend an existing ApiSchema

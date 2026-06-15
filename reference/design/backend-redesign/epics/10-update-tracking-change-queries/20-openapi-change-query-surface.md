@@ -28,6 +28,8 @@ This ticket is intentionally cross-project because the API contract is split acr
 - DMS runtime route resolution for resource and descriptor `/deletes` and `/keyChanges` remains model-driven from the effective `ApiSchema.json` endpoint mappings and RelationalBackend `MappingSet.Model` / `ConcreteResourceModel` inventory.
 - DMS runtime route resolution for `/changeQueries/v1/availableChangeVersions` is hardcoded and does not depend on `ApiSchema.json` or OpenAPI path presence.
 - DMS does not require a separate hard-coded route list for resource and descriptor `/deletes` or `/keyChanges` endpoints.
+- The real DMS runtime implementation removes the temporary frontend stub that returns empty JSON arrays for
+  advertised resource and descriptor `/deletes` and `/keyChanges` paths.
 - Tests cover OpenAPI generation for core resources, including `SchoolYearType` as a regular Change Query resource, extension-defined resources, and descriptors.
 - DMS tests cover startup/loading of the updated OpenAPI and verify that advertised Change Query resource and descriptor paths align with model-driven route classification.
 
