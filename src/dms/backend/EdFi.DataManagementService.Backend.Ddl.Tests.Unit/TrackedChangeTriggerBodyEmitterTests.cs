@@ -389,6 +389,128 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// TrackedChangeTriggerBodyEmitter — nullable join rendering
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
+{
+    [Test]
+    public void It_should_render_nullable_descriptor_joins_as_left_joins()
+    {
+        var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var mssqlDialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var plan = TrackedChangeTriggerBodyEmitter.BuildPlan(
+            TrackedChangeEmitterFixture.BuildTrackedTable(nullableDescriptorJoin: true),
+            TrackedChangeEmitterFixture.BuildSourceTableModel()
+        );
+
+        var pgsql = RenderPgsqlKeyChange(pgsqlDialect, plan);
+        var mssql = RenderMssqlKeyChange(mssqlDialect, plan);
+
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DocumentId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
+            );
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"dms\".\"Descriptor\" newDj0 ON newDj0.\"DocumentId\" = NEW.\"GradeTypeDescriptor_DescriptorId\""
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]"
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]"
+            );
+    }
+
+    [Test]
+    public void It_should_render_nullable_person_join_chains_as_left_joins()
+    {
+        var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var mssqlDialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var plan = TrackedChangeTriggerBodyEmitter.BuildPlan(
+            TrackedChangeEmitterFixture.BuildTrackedTable(nullablePersonJoin: true),
+            TrackedChangeEmitterFixture.BuildSourceTableModel()
+        );
+
+        var pgsql = RenderPgsqlKeyChange(pgsqlDialect, plan);
+        var mssql = RenderMssqlKeyChange(mssqlDialect, plan);
+
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"edfi\".\"StudentSectionAssociation\" oldPj0s0 ON oldPj0s0.\"DocumentId\" = OLD.\"StudentSectionAssociation_DocumentId\""
+            );
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"edfi\".\"Student\" oldPj0s1 ON oldPj0s1.\"DocumentId\" = oldPj0s0.\"Student_DocumentId\""
+            );
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"edfi\".\"StudentSectionAssociation\" newPj0s0 ON newPj0s0.\"DocumentId\" = NEW.\"StudentSectionAssociation_DocumentId\""
+            );
+        pgsql
+            .Should()
+            .Contain(
+                "LEFT JOIN \"edfi\".\"Student\" newPj0s1 ON newPj0s1.\"DocumentId\" = newPj0s0.\"Student_DocumentId\""
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [edfi].[StudentSectionAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentSectionAssociation_DocumentId]"
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [edfi].[Student] oldPj0s1 ON oldPj0s1.[DocumentId] = oldPj0s0.[Student_DocumentId]"
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [edfi].[StudentSectionAssociation] newPj0s0 ON newPj0s0.[DocumentId] = i.[StudentSectionAssociation_DocumentId]"
+            );
+        mssql
+            .Should()
+            .Contain(
+                "LEFT JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId]"
+            );
+    }
+
+    private static string RenderPgsqlKeyChange(ISqlDialect dialect, TrackedChangeInsertPlan plan)
+    {
+        var writer = new SqlWriter(dialect);
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
+            writer,
+            dialect,
+            plan,
+            new DbColumnName("DocumentId")
+        );
+        return writer.ToString();
+    }
+
+    private static string RenderMssqlKeyChange(ISqlDialect dialect, TrackedChangeInsertPlan plan)
+    {
+        var writer = new SqlWriter(dialect);
+        TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
+            writer,
+            dialect,
+            plan,
+            new DbColumnName("DocumentId")
+        );
+        return writer.ToString();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // TrackedChangeTriggerBodyEmitter — scalar-only (no-joins) coverage
 // ═══════════════════════════════════════════════════════════════════
 
@@ -569,7 +691,9 @@ internal static class TrackedChangeEmitterFixture
         string? overrideScalarPath = null,
         string? overrideDescriptorJoinName = null,
         bool useInvalidPersonJoinPath = false,
-        DbColumnName? overrideCanonicalStorageColumn = null
+        DbColumnName? overrideCanonicalStorageColumn = null,
+        bool nullableDescriptorJoin = false,
+        bool nullablePersonJoin = false
     )
     {
         var descriptorJoinName = overrideDescriptorJoinName ?? "GradeTypeDescriptor";
@@ -595,7 +719,8 @@ internal static class TrackedChangeEmitterFixture
                 OldColumnName: new DbColumnName("Old_SchoolId"),
                 NewColumnName: new DbColumnName("New_SchoolId"),
                 SourceJsonPath: "$.schoolReference.schoolId",
-                CanonicalStorageColumn: overrideCanonicalStorageColumn ?? new DbColumnName("SchoolId_Unified"),
+                CanonicalStorageColumn: overrideCanonicalStorageColumn
+                    ?? new DbColumnName("SchoolId_Unified"),
                 IsOldColumnNullable: false,
                 IsNewColumnNullable: true,
                 ScalarType: new RelationalScalarType(ScalarKind.Int64),
@@ -608,7 +733,7 @@ internal static class TrackedChangeEmitterFixture
                 NewColumnName: new DbColumnName("New_GradeTypeDescriptor_Namespace"),
                 SourceJsonPath: "$.gradeTypeDescriptor",
                 CanonicalStorageColumn: null,
-                IsOldColumnNullable: false,
+                IsOldColumnNullable: nullableDescriptorJoin,
                 IsNewColumnNullable: true,
                 ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 255),
                 Role: TrackedChangeColumnRole.DescriptorNamespace,
@@ -621,7 +746,7 @@ internal static class TrackedChangeEmitterFixture
                 NewColumnName: new DbColumnName("New_GradeTypeDescriptor_CodeValue"),
                 SourceJsonPath: "$.gradeTypeDescriptor",
                 CanonicalStorageColumn: null,
-                IsOldColumnNullable: false,
+                IsOldColumnNullable: nullableDescriptorJoin,
                 IsNewColumnNullable: true,
                 ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50),
                 Role: TrackedChangeColumnRole.DescriptorCodeValue,
@@ -634,7 +759,7 @@ internal static class TrackedChangeEmitterFixture
                 NewColumnName: new DbColumnName("New_StudentSectionAssociation_Student_DocumentId"),
                 SourceJsonPath: "$.studentSectionAssociationReference.studentReference.studentUniqueId",
                 CanonicalStorageColumn: null,
-                IsOldColumnNullable: false,
+                IsOldColumnNullable: nullablePersonJoin,
                 IsNewColumnNullable: true,
                 ScalarType: new RelationalScalarType(ScalarKind.Int64),
                 Role: TrackedChangeColumnRole.PersonDocumentId,

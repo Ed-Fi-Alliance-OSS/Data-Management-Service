@@ -503,7 +503,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     }
 
     /// <summary>
-    /// Builds the INNER JOIN clause strings for all descriptor and person joins required by the
+    /// Builds the JOIN clause strings for all descriptor and person joins required by the
     /// plan under the given image binding, without writing to a <see cref="SqlWriter"/>.
     /// </summary>
     private static IEnumerable<string> BuildJoinLines(
@@ -518,22 +518,44 @@ internal static class TrackedChangeTriggerBodyEmitter
             var join = plan.Table.DescriptorJoins[i];
             var alias = $"{image.AliasPrefix}Dj{i}";
             var qualifiedDescriptor = dialect.QualifyTable(DmsTableNames.Descriptor);
-            yield return $"INNER JOIN {qualifiedDescriptor} {alias} ON {alias}.{dialect.QuoteIdentifier("DocumentId")} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceColumn.Value)}";
+            var joinKeyword = JoinKeyword(DescriptorJoinIsNullable(plan, i));
+            yield return $"{joinKeyword} {qualifiedDescriptor} {alias} ON {alias}.{dialect.QuoteIdentifier("DocumentId")} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceColumn.Value)}";
         }
 
         // Person joins
         for (int i = 0; i < plan.Table.PersonJoins.Count; i++)
         {
             var join = plan.Table.PersonJoins[i];
+            var joinKeyword = JoinKeyword(PersonJoinIsNullable(plan, i));
             for (int j = 0; j < join.JoinPath.Count; j++)
             {
                 var step = join.JoinPath[j];
                 var alias = $"{image.AliasPrefix}Pj{i}s{j}";
                 var leftRef = j == 0 ? image.RowRef : $"{image.AliasPrefix}Pj{i}s{j - 1}";
                 var qualifiedTarget = dialect.QualifyTable(step.TargetTable!.Value);
-                yield return $"INNER JOIN {qualifiedTarget} {alias} ON {alias}.{dialect.QuoteIdentifier(step.TargetColumnName!.Value.Value)} = {leftRef}.{dialect.QuoteIdentifier(step.SourceColumnName.Value)}";
+                yield return $"{joinKeyword} {qualifiedTarget} {alias} ON {alias}.{dialect.QuoteIdentifier(step.TargetColumnName!.Value.Value)} = {leftRef}.{dialect.QuoteIdentifier(step.SourceColumnName.Value)}";
             }
         }
+    }
+
+    private static string JoinKeyword(bool nullableJoin) => nullableJoin ? "LEFT JOIN" : "INNER JOIN";
+
+    private static bool DescriptorJoinIsNullable(TrackedChangeInsertPlan plan, int joinIndex)
+    {
+        return plan.Values.Any(value =>
+            value.Kind == TrackedChangeValueSourceKind.DescriptorJoin
+            && value.JoinIndex == joinIndex
+            && value.Column.IsOldColumnNullable
+        );
+    }
+
+    private static bool PersonJoinIsNullable(TrackedChangeInsertPlan plan, int joinIndex)
+    {
+        return plan.Values.Any(value =>
+            value.Kind == TrackedChangeValueSourceKind.PersonJoin
+            && value.JoinIndex == joinIndex
+            && value.Column.IsOldColumnNullable
+        );
     }
 
     // ── Core INSERT emitter ─────────────────────────────────────────

@@ -748,7 +748,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine("END IF;");
             }
 
-            EmitTriggerBody(writer, trigger, tableModelsByTableName, trackedChangeTablesByName, trackedChangePlan);
+            EmitTriggerBody(
+                writer,
+                trigger,
+                tableModelsByTableName,
+                trackedChangeTablesByName,
+                trackedChangePlan
+            );
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
@@ -812,6 +818,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
+            // SQL Server emits DELETE tombstones inside EmitMssqlDocumentStampingBody, where
+            // the tracked-change plan is built. PostgreSQL prebuilds it in the function
+            // wrapper because the PostgreSQL DELETE branch is emitted there.
             EmitTriggerBody(writer, trigger, tableModelsByTableName, trackedChangeTablesByName, null);
         }
         writer.AppendLine("END;");
@@ -939,7 +948,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             case TriggerKindParameters.DocumentStamping:
                 var tableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
-                EmitDocumentStampingBody(writer, trigger, tableModel, trackedChangeTablesByName, pgsqlTrackedChangePlan);
+                EmitDocumentStampingBody(
+                    writer,
+                    trigger,
+                    tableModel,
+                    trackedChangeTablesByName,
+                    pgsqlTrackedChangePlan
+                );
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var refIdTableModel))

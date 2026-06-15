@@ -136,7 +136,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
         var providers = Repository.Provider.GetCoreV3();
         var packageSource = new PackageSource(feedUrl);
         var sourceRepository = new SourceRepository(packageSource, providers);
-        var cacheContext = new SourceCacheContext();
+        using var cacheContext = new SourceCacheContext();
         var packageMetadataResource = await sourceRepository.GetResourceAsync<PackageMetadataResource>();
 
         if (string.IsNullOrWhiteSpace(packageVersion))
@@ -212,9 +212,10 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
         }
 
         var packageFilePath = Path.Combine(outputDir, $"{validatedPackageId}.{packageVersion}.nupkg");
+        using var packageStream = downloadResult.PackageStream;
         using (var fileStream = File.Create(packageFilePath))
         {
-            await downloadResult.PackageStream.CopyToAsync(fileStream);
+            await packageStream.CopyToAsync(fileStream);
         }
 
         _logger.LogInformation(
