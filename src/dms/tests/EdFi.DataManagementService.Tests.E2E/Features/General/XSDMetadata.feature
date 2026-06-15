@@ -106,16 +106,16 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/Interchange-StudentTranscript.xsd",
                       "http://localhost:8080/metadata/xsd/sample/Interchange-Survey.xsd",
                       "http://localhost:8080/metadata/xsd/sample/SchemaAnnotation.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Ed-Fi-Extended-Core.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-Contact-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-Descriptors-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-EducationOrganization-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StaffAssociation-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-Student-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentEnrollment-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentHealth-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentTranscript-Extension.xsd"
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Ed-Fi-Extended-Core.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-Contact-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-Descriptors-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-EducationOrganization-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StaffAssociation-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-Student-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentEnrollment-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentHealth-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentProgram-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentTranscript-Extension.xsd"
                     ]
                   """
         @relational-backend
@@ -190,19 +190,19 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/tpdm/Interchange-StudentTranscript.xsd",
                       "http://localhost:8080/metadata/xsd/tpdm/Interchange-Survey.xsd",
                       "http://localhost:8080/metadata/xsd/tpdm/SchemaAnnotation.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Ed-Fi-Extended-Core.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-Candidate-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-Descriptors-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-EducationOrganization-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-PerformanceEvaluation-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-StaffAssociation-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/tpdm/TPDM-EXTENSION-Interchange-Survey-Extension.xsd"
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Ed-Fi-Extended-Core.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-Candidate-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-Descriptors-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-EducationOrganization-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-PerformanceEvaluation-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-StaffAssociation-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-Survey-Extension.xsd"
                     ]
                   """
         @relational-backend
         @relational-ci-shard-4
         Scenario: 06 Ensure clients can retrieve XSD content of TPDM Extension
-             When a GET request is made to "/metadata/xsd/tpdm/EdFi.TPDM.ApiSchema.xsd.TPDM-EXTENSION-Interchange-Survey-Extension.xsd"
+             When a GET request is made to "/metadata/xsd/tpdm/EXTENSION-Interchange-Survey-Extension.xsd"
              Then it should respond with 200
               And the xsd response body is
                   """
@@ -241,7 +241,7 @@ Feature: XSD Metadata Endpoint
         @relational-backend
         @relational-ci-shard-4
         Scenario: 07 Ensure clients can retrieve XSD content of Sample Extension
-             When a GET request is made to "/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd"
+             When a GET request is made to "/metadata/xsd/sample/EXTENSION-Interchange-StudentProgram-Extension.xsd"
              Then it should respond with 200
               And the xsd response body is
                   """
@@ -275,7 +275,7 @@ Feature: XSD Metadata Endpoint
         @relational-backend
         @relational-ci-shard-4
         Scenario: 08 Ensure clients can retrieve XSD content of Core
-             When a GET request is made to "/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd"
+             When a GET request is made to "/metadata/xsd/ed-fi/Interchange-Survey.xsd"
              Then it should respond with 200
               And the xsd response body is
                   """

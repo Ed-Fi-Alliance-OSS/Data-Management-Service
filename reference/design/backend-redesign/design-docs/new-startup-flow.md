@@ -48,7 +48,7 @@ In the current DMS Core request pipeline:
 
 This means the first request can pay:
 
-- schema file/assembly IO + validation,
+- schema file IO + validation,
 - schema merge costs,
 - JSON schema compilation (validation cache priming),
 - (future) mapping pack load/compile and DB fingerprint validation.
@@ -101,7 +101,7 @@ that `IApiSchemaProvider.GetApiSchemaNodes()` is invoked at startup and treated 
 
 Key behavior:
 
-- ApiSchema source remains configurable (filesystem path vs embedded assemblies).
+- ApiSchema source remains configurable (configured filesystem path vs bundled application files).
 - Validation failures become “startup failures” rather than “first-request failures”.
 - `ApiSchemaProvider.SchemaLoadId` is stable for the lifetime of the process (schema reload has been removed).
 
@@ -220,7 +220,7 @@ For a single host process serving a single effective schema set:
 1. Host loads configuration.
 2. Host loads DMS instances (single-tenant or multi-tenant).
 3. Core loads ApiSchemas:
-   - filesystem or assembly source,
+   - configured filesystem path or bundled application files,
    - validate core + extensions,
    - fail startup on invalid schemas.
 4. Core builds effective schema view:

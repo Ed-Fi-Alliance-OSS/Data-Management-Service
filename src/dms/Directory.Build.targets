@@ -1,0 +1,500 @@
+<Project>
+    <UsingTask
+        TaskName="MaterializeBundledApiSchemaBootstrapManifestTask"
+        TaskFactory="RoslynCodeTaskFactory"
+        AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll"
+    >
+        <ParameterGroup>
+            <BundledPackages ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+            <ManifestPath ParameterType="System.String" Required="true" />
+        </ParameterGroup>
+        <Task>
+            <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
+            <Using Namespace="System" />
+            <Using Namespace="System.Collections.Generic" />
+            <Using Namespace="System.IO" />
+            <Using Namespace="System.Linq" />
+            <Using Namespace="System.Text" />
+            <Using Namespace="Newtonsoft.Json" />
+            <Using Namespace="Newtonsoft.Json.Linq" />
+            <Code Type="Fragment" Language="cs"><![CDATA[
+var projects = new List<Dictionary<string, object>>();
+
+foreach (var package in BundledPackages)
+{
+    var packageId = package.ItemSpec;
+    var packageRoot = package.GetMetadata("PackageRoot");
+
+    if (string.IsNullOrWhiteSpace(packageRoot))
+    {
+        Log.LogError($"ApiSchema package '{packageId}' has no PackageRoot metadata.");
+        return false;
+    }
+
+    var fullPackageRoot = Path.GetFullPath(packageRoot);
+    if (!Directory.Exists(fullPackageRoot))
+    {
+        Log.LogError($"ApiSchema package '{packageId}' root does not exist: {fullPackageRoot}");
+        return false;
+    }
+
+    var packageManifestPath = Path.Combine(fullPackageRoot, "package-manifest.json");
+    if (!File.Exists(packageManifestPath))
+    {
+        Log.LogError($"ApiSchema package '{packageId}' manifest does not exist: {packageManifestPath}");
+        return false;
+    }
+
+    JObject manifest;
+    try
+    {
+        manifest = ReadPackageManifest(packageManifestPath);
+    }
+    catch (InvalidOperationException exception)
+    {
+        Log.LogError(exception.Message);
+        return false;
+    }
+
+    if (!IsSupportedManifestVersion(manifest, packageManifestPath))
+    {
+        return false;
+    }
+
+    if (!TryReadOptionalString(manifest, "packageId", packageManifestPath, out var manifestPackageId))
+    {
+        return false;
+    }
+
+    if (
+        manifestPackageId is not null
+        && !string.Equals(manifestPackageId, packageId, StringComparison.OrdinalIgnoreCase)
+    )
+    {
+        Log.LogError(
+            $"ApiSchema package '{packageId}' manifest packageId '{manifestPackageId}' does not match the package reference."
+        );
+        return false;
+    }
+
+    var projectName = ReadRequiredString(manifest, "projectName", packageManifestPath);
+    var projectEndpointName = ReadRequiredString(manifest, "projectEndpointName", packageManifestPath);
+    var isExtensionProject = ReadRequiredBoolean(manifest, "isExtensionProject", packageManifestPath);
+    var schemaPath = ReadRequiredString(manifest, "schemaPath", packageManifestPath);
+
+    if (projectName is null || projectEndpointName is null || isExtensionProject is null || schemaPath is null)
+    {
+        return false;
+    }
+
+    if (
+        !TryResolveExistingPackagePath(
+            packageId,
+            fullPackageRoot,
+            schemaPath,
+            "schemaPath",
+            requiredFile: true,
+            out var manifestRelativeSchemaPath
+        )
+    )
+    {
+        return false;
+    }
+
+    if (
+        !TryResolveOptionalPackagePath(
+            packageId,
+            fullPackageRoot,
+            manifest,
+            "discoverySpecPath",
+            requiredFile: true,
+            out var manifestRelativeDiscoverySpecPath
+        )
+    )
+    {
+        return false;
+    }
+
+    if (
+        !TryResolveOptionalPackagePath(
+            packageId,
+            fullPackageRoot,
+            manifest,
+            "xsdDirectory",
+            requiredFile: false,
+            out var manifestRelativeXsdDirectory
+        )
+    )
+    {
+        return false;
+    }
+
+    projects.Add(
+        new Dictionary<string, object>
+        {
+            ["projectName"] = projectName,
+            ["projectEndpointName"] = projectEndpointName,
+            ["isExtensionProject"] = isExtensionProject.Value,
+            ["schemaPath"] = manifestRelativeSchemaPath,
+            ["discoverySpecPath"] = manifestRelativeDiscoverySpecPath,
+            ["xsdDirectory"] = manifestRelativeXsdDirectory,
+        }
+    );
+}
+
+var manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(ManifestPath));
+if (!string.IsNullOrEmpty(manifestDirectory))
+{
+    Directory.CreateDirectory(manifestDirectory);
+}
+File.WriteAllText(ManifestPath, BuildBootstrapManifestJson(projects), new UTF8Encoding(false));
+
+JObject ReadPackageManifest(string manifestPath)
+{
+    try
+    {
+        var manifest = JObject.Parse(File.ReadAllText(manifestPath));
+        if (manifest is not null)
+        {
+            return manifest;
+        }
+
+        throw new InvalidOperationException(
+            $"ApiSchema package manifest '{manifestPath}' must contain a JSON object."
+        );
+    }
+    catch (JsonReaderException exception)
+    {
+        throw new InvalidOperationException(
+            $"ApiSchema package manifest '{manifestPath}' contains invalid JSON: {exception.Message}",
+            exception
+        );
+    }
+}
+
+bool IsSupportedManifestVersion(JObject manifest, string manifestPath)
+{
+    if (!TryGetManifestProperty(manifest, "version", out var versionValue))
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' is missing version.");
+        return false;
+    }
+
+    string version = null;
+    if (versionValue.Type == JTokenType.String)
+    {
+        version = versionValue.ToString();
+    }
+    else if (versionValue.Type == JTokenType.Integer)
+    {
+        version = versionValue.ToString();
+    }
+
+    if (version != "1")
+    {
+        Log.LogError($"Unsupported ApiSchema package manifest version '{version}' in {manifestPath}.");
+        return false;
+    }
+
+    return true;
+}
+
+string ReadRequiredString(JObject manifest, string fieldName, string manifestPath)
+{
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
+        return null;
+    }
+
+    if (value.Type != JTokenType.String)
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string.");
+        return null;
+    }
+
+    var stringValue = value.ToString();
+    if (string.IsNullOrWhiteSpace(stringValue))
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare non-blank {fieldName}.");
+        return null;
+    }
+
+    return stringValue;
+}
+
+bool TryReadOptionalString(JObject manifest, string fieldName, string manifestPath, out string stringValue)
+{
+    stringValue = null;
+
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    {
+        return true;
+    }
+
+    if (value.Type != JTokenType.String)
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a string or null.");
+        return false;
+    }
+
+    stringValue = value.ToString();
+    return true;
+}
+
+bool? ReadRequiredBoolean(JObject manifest, string fieldName, string manifestPath)
+{
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    {
+        Log.LogError($"ApiSchema package manifest '{manifestPath}' must declare {fieldName} as a boolean.");
+        return null;
+    }
+
+    if (value.Type == JTokenType.Boolean)
+    {
+        return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    Log.LogError($"ApiSchema package manifest '{manifestPath}' field {fieldName} must be a boolean.");
+    return null;
+}
+
+bool TryGetManifestProperty(JObject manifest, string fieldName, out JToken value)
+{
+    value = null;
+    var found = false;
+
+    foreach (var property in manifest.Properties())
+    {
+        if (string.Equals(property.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            value = property.Value;
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+bool TryResolveOptionalPackagePath(
+    string packageId,
+    string packageRoot,
+    JObject manifest,
+    string fieldName,
+    bool requiredFile,
+    out string manifestRelativePath
+)
+{
+    manifestRelativePath = null;
+
+    if (!TryGetManifestProperty(manifest, fieldName, out var value) || value.Type == JTokenType.Null)
+    {
+        return true;
+    }
+
+    if (value.Type != JTokenType.String)
+    {
+        Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be a string or null.");
+        return false;
+    }
+
+    var packageRelativePath = value.ToString();
+    if (string.IsNullOrWhiteSpace(packageRelativePath))
+    {
+        Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be null or a non-blank path.");
+        return false;
+    }
+
+    return TryResolveExistingPackagePath(
+        packageId,
+        packageRoot,
+        packageRelativePath,
+        fieldName,
+        requiredFile,
+        out manifestRelativePath
+    );
+}
+
+bool TryResolveExistingPackagePath(
+    string packageId,
+    string packageRoot,
+    string packageRelativePath,
+    string fieldName,
+    bool requiredFile,
+    out string manifestRelativePath
+)
+{
+    manifestRelativePath = null;
+
+    if (Path.IsPathRooted(packageRelativePath))
+    {
+        Log.LogError($"ApiSchema package '{packageId}' manifest field {fieldName} must be relative: {packageRelativePath}");
+        return false;
+    }
+
+    var pathSegments = packageRelativePath.Split(new[] { '/', '\\' });
+    if (pathSegments.Any(segment => segment.Length == 0 || segment == "." || segment == ".."))
+    {
+        Log.LogError(
+            $"ApiSchema package '{packageId}' manifest field {fieldName} must not contain empty, current-directory, or parent-directory path segments: {packageRelativePath}"
+        );
+        return false;
+    }
+
+    var normalizedPackageRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(packageRoot));
+    var fullPath = Path.GetFullPath(Path.Combine(normalizedPackageRoot, packageRelativePath));
+    var pathComparison = Path.DirectorySeparatorChar == '\\'
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+    if (!fullPath.StartsWith(normalizedPackageRoot, pathComparison))
+    {
+        Log.LogError(
+            $"ApiSchema package '{packageId}' manifest field {fieldName} resolves outside the package root: {packageRelativePath}"
+        );
+        return false;
+    }
+
+    var exists = requiredFile ? File.Exists(fullPath) : Directory.Exists(fullPath);
+    if (!exists)
+    {
+        var expectedKind = requiredFile ? "file" : "directory";
+        Log.LogError(
+            $"ApiSchema package '{packageId}' manifest field {fieldName} declares {packageRelativePath}, but that {expectedKind} does not exist under {packageRoot}."
+        );
+        return false;
+    }
+
+    if (
+        !requiredFile
+        && string.Equals(fieldName, "xsdDirectory", StringComparison.Ordinal)
+        && !TryValidateFlatXsdDirectory(packageId, fullPath, packageRelativePath)
+    )
+    {
+        return false;
+    }
+
+    var relativeToPackageRoot = fullPath.Substring(normalizedPackageRoot.Length);
+    manifestRelativePath = $"Packages/{packageId}/{relativeToPackageRoot.Replace('\\', '/')}";
+    return true;
+}
+
+bool TryValidateFlatXsdDirectory(string packageId, string xsdDirectoryPath, string packageRelativePath)
+{
+    var allXsdFiles = Directory.EnumerateFiles(xsdDirectoryPath, "*.xsd", SearchOption.AllDirectories).ToList();
+    var nestedXsdFile = allXsdFiles.FirstOrDefault(file => IsNestedUnderDirectory(file, xsdDirectoryPath));
+    if (nestedXsdFile is null)
+    {
+        return true;
+    }
+
+    Log.LogError(
+        $"ApiSchema package '{packageId}' manifest field xsdDirectory '{packageRelativePath}' contains nested XSD file '{nestedXsdFile}'. XSD files must be flattened directly under the declared xsdDirectory."
+    );
+    return false;
+}
+
+bool IsNestedUnderDirectory(string filePath, string directoryPath)
+{
+    var normalizedDirectoryPath = EnsureTrailingDirectorySeparator(Path.GetFullPath(directoryPath));
+    var fullFilePath = Path.GetFullPath(filePath);
+    var pathComparison = Path.DirectorySeparatorChar == '\\'
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
+    if (!fullFilePath.StartsWith(normalizedDirectoryPath, pathComparison))
+    {
+        return false;
+    }
+
+    var relativePath = fullFilePath.Substring(normalizedDirectoryPath.Length);
+    return relativePath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }).Length > 1;
+}
+
+string EnsureTrailingDirectorySeparator(string path)
+{
+    if (path.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+    {
+        return path;
+    }
+
+    if (
+        Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar
+        && path.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+    )
+    {
+        return path;
+    }
+
+    return path + Path.DirectorySeparatorChar;
+}
+
+string BuildBootstrapManifestJson(List<Dictionary<string, object>> projects)
+{
+    return JsonConvert.SerializeObject(
+        new Dictionary<string, object> { ["version"] = 1, ["projects"] = projects },
+        Formatting.Indented
+    );
+}
+]]></Code>
+        </Task>
+    </UsingTask>
+
+    <ItemGroup>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.ApiSchema"
+            Condition="'$(PkgEdFi_DataStandard52_ApiSchema)' != ''"
+        >
+            <PackageRoot>$(PkgEdFi_DataStandard52_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.Homograph.ApiSchema"
+            Condition="'$(PkgEdFi_DataStandard52_Homograph_ApiSchema)' != ''"
+        >
+            <PackageRoot>$(PkgEdFi_DataStandard52_Homograph_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.Sample.ApiSchema"
+            Condition="'$(PkgEdFi_DataStandard52_Sample_ApiSchema)' != ''"
+        >
+            <PackageRoot>$(PkgEdFi_DataStandard52_Sample_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.TPDM.ApiSchema"
+            Condition="'$(PkgEdFi_DataStandard52_TPDM_ApiSchema)' != ''"
+        >
+            <PackageRoot>$(PkgEdFi_DataStandard52_TPDM_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+        </ApiSchemaBundledPackage>
+    </ItemGroup>
+
+    <Target
+        Name="MaterializeBundledApiSchemaBootstrapManifest"
+        BeforeTargets="GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems;ComputeFilesToPublish"
+        Condition="'@(ApiSchemaBundledPackage)' != ''"
+    >
+        <PropertyGroup>
+            <ApiSchemaBootstrapManifestPath>$(IntermediateOutputPath)ApiSchema/bootstrap-api-schema-manifest.json</ApiSchemaBootstrapManifestPath>
+        </PropertyGroup>
+        <MakeDir Directories="$(IntermediateOutputPath)ApiSchema" />
+        <MaterializeBundledApiSchemaBootstrapManifestTask
+            BundledPackages="@(ApiSchemaBundledPackage)"
+            ManifestPath="$(ApiSchemaBootstrapManifestPath)"
+        />
+        <ItemGroup>
+            <ApiSchemaPackageContent Include="%(ApiSchemaBundledPackage.PackageRoot)/**/*">
+                <PackageId>%(ApiSchemaBundledPackage.Identity)</PackageId>
+            </ApiSchemaPackageContent>
+            <ContentWithTargetPath Include="@(ApiSchemaPackageContent)">
+                <TargetPath>ApiSchema/Packages/%(ApiSchemaPackageContent.PackageId)/%(ApiSchemaPackageContent.RecursiveDir)%(ApiSchemaPackageContent.Filename)%(ApiSchemaPackageContent.Extension)</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+            <ContentWithTargetPath Include="$(ApiSchemaBootstrapManifestPath)">
+                <TargetPath>ApiSchema/bootstrap-api-schema-manifest.json</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+        </ItemGroup>
+    </Target>
+</Project>

@@ -12,8 +12,8 @@ The file contains two main sections:
 1. `projectSchemas`
 2. `projectNameMapping`
 
-This file is embedded in the DLL provided by NuGet package
-`EdFi.DataStandard51.ApiSchema`.
+This file is distributed as content in the ApiSchema NuGet packages, for example
+`EdFi.DataStandard52.ApiSchema`.
 
 ## projectSchemas
 

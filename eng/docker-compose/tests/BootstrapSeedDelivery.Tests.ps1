@@ -1332,7 +1332,7 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1379,9 +1379,9 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.Homograph.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.TPDM.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1392,9 +1392,9 @@ SCHEMA_PACKAGES='[
                 $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$" -Because "circuit-breaker override must still apply"
                 $content | Should -Not -Match "FAILURE_RATIO=0\.01"
                 $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
-                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.TPDM.ApiSchema"
+                $content | Should -Match "EdFi.DataStandard52.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
                 $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
             }
             finally {
@@ -1760,6 +1760,113 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             } | Should -Throw -ExpectedMessage "*No staged XSD files*"
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+        }
+
+        It "rejects invalid staged ApiSchema manifest paths before reading XSD metadata" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $outsideManifestPath = Join-Path $tmpRoot "outside-api-schema-manifest.json"
+                @{
+                    projects = @(
+                        @{ projectName = "Outside"; xsdDirectory = $outsideXsdDir }
+                    )
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outsideManifestPath -Encoding utf8
+
+                $invalidPaths = @(
+                    "../outside-api-schema-manifest.json",
+                    $outsideManifestPath,
+                    "ApiSchema//bootstrap-api-schema-manifest.json",
+                    "ApiSchema/./bootstrap-api-schema-manifest.json",
+                    "C:/outside/bootstrap-api-schema-manifest.json"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidPath in $invalidPaths) {
+                    $caseIndex++
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+                    $manifest = @{
+                        schema = @{ apiSchemaManifestPath = $invalidPath }
+                    }
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*schema.apiSchemaManifestPath*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
+        It "rejects invalid staged ApiSchema xsdDirectory paths before copying files" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
+                New-Item -ItemType Directory -Path $apiSchemaDir -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
+                $manifest = @{
+                    schema = @{ apiSchemaManifestPath = $manifestRelPath }
+                }
+
+                $invalidXsdDirectories = @(
+                    "../outside-xsd",
+                    $outsideXsdDir,
+                    "content//Ed-Fi/xsd",
+                    "content/./Ed-Fi/xsd",
+                    "C:/outside/xsd"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidXsdDirectory in $invalidXsdDirectories) {
+                    $caseIndex++
+                    @{
+                        projects = @(
+                            @{ projectName = "Ed-Fi"; xsdDirectory = $invalidXsdDirectory }
+                        )
+                    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*xsdDirectory*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
         }
 
         It "deduplicates shared XSD directories from staged ApiSchema manifests" {
@@ -2156,6 +2263,23 @@ EdFi.BulkLoadClient.Console fake
             # -n (--novalidation) MUST NOT be passed: sample XML and XSDs are now sourced from the same
             # Ed-Fi-Data-Standard tag, so validation is on by construction.
             $capture.args | Should -Not -Contain "-n"
+            # Tuning flags required to prevent circuit-breaker tripping and rate-limiter flooding.
+            # DMS's Polly breaker (FailureRatio=0.01, MinimumThroughput=2, 10s sampling, 30s break)
+            # opens almost immediately under unbounded concurrency; these conservative defaults keep
+            # the relational backend stable. See Invoke-BulkLoadClient in load-dms-seed-data.ps1.
+            $capture.args | Should -Contain "-c"
+            $capture.args | Should -Contain "-l"
+            $capture.args | Should -Contain "-t"
+            $capture.args | Should -Contain "-r"
+            # Verify the values are numeric strings (non-empty)
+            $cIndex = [array]::IndexOf($capture.args, "-c")
+            $lIndex = [array]::IndexOf($capture.args, "-l")
+            $tIndex = [array]::IndexOf($capture.args, "-t")
+            $rIndex = [array]::IndexOf($capture.args, "-r")
+            [int]($capture.args[$cIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$lIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$tIndex + 1]) | Should -BeGreaterThan 0
+            [int]($capture.args[$rIndex + 1]) | Should -BeGreaterOrEqual 1
         }
 
         It "invokes BulkLoadClient once for single instance and once per year for school-year range" {
@@ -2693,20 +2817,20 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "start-published-dms.ps1 still declares -LoadSeedData pending Story 04 verification gate" {
+        It "start-published-dms.ps1 still declares -LoadSeedData pending bootstrap verification gate" {
             # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
             # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
-            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Story 04
-            # owns the XSD staging that closes this gate. Until then, -LoadSeedData stays on
-            # start-published-dms.ps1 invoking the direct-SQL database-template path,
-            # so build-dms.ps1's smoke flow via the published image path remains operational.
+            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
+            # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
+            # direct-SQL database-template path, so build-dms.ps1's smoke flow via the
+            # published image path remains operational.
             $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             Test-Path -LiteralPath $startScript | Should -BeTrue
             $content = Get-Content -LiteralPath $startScript -Raw
             $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
             $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
                 ForEach-Object { $_.Groups[1].Value }
-            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the Story 04 verification gate closes per bootstrap-design.md Section 6.4"
+            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the bootstrap-design.md Section 6.4 verification gate closes"
         }
 
         It "start-local-dms.ps1 no longer declares -LoadSeedData (DMS-1153 de-scope)" {
@@ -3028,7 +3152,7 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
 
         It "build-dms.ps1 -LoadSeedData published-image path still forwards to start-published-dms.ps1" {
             # Published-image behavior is unchanged: start-published-dms.ps1 retains -LoadSeedData
-            # until the Story 04 verification gate closes (bootstrap-design.md Section 6.4).
+            # until the bootstrap-design.md Section 6.4 verification gate closes.
             $script:buildDmsContent | Should -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward -LoadSeedData to start-published-dms.ps1 (UsePublishedImage branch)"
         }
 

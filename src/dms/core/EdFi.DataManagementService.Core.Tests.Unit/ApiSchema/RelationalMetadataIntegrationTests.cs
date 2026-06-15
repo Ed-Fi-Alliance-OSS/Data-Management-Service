@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using FluentAssertions;
@@ -19,25 +18,22 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 public class RelationalMetadataIntegrationTests
 {
     private readonly string _packageId = "EdFi.DataStandard52.ApiSchema";
-    private Assembly _assembly = null!;
     private JsonNode _apiSchemaNode = null!;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
-        _assembly = Assembly.Load(_packageId);
-        _assembly.Should().NotBeNull("ApiSchema assembly should be loadable");
-
-        var resourceName = Array.Find(
-            _assembly.GetManifestResourceNames(),
-            name => name.EndsWith("ApiSchema.json")
+        var apiSchemaPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            "ApiSchema",
+            "Packages",
+            _packageId,
+            "ApiSchema.json"
         );
 
-        resourceName.Should().NotBeNull("ApiSchema.json should exist as embedded resource");
+        File.Exists(apiSchemaPath).Should().BeTrue("ApiSchema.json should be copied from the package");
 
-        using var stream = _assembly.GetManifestResourceStream(resourceName!);
-        using var reader = new StreamReader(stream!);
-        string jsonContent = reader.ReadToEnd();
+        string jsonContent = File.ReadAllText(apiSchemaPath);
         _apiSchemaNode = JsonNode.Parse(jsonContent)!;
         _apiSchemaNode.Should().NotBeNull();
     }

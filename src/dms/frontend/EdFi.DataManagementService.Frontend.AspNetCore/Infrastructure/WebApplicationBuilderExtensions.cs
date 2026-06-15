@@ -48,11 +48,10 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("DeadlockRetry"),
                 webAppBuilder.Configuration.GetSection("AppSettings").GetValue<bool>("MaskRequestBodyInLogs")
             )
-            .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
+            .AddTransient<IApiSchemaAssetManifestProvider, ApiSchemaAssetManifestProvider>()
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<ITenantValidator, TenantValidator>()
-            .AddTransient<IAssemblyProvider, AssemblyProvider>()
             .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<Frontend.AspNetCore.Configuration.AppSettings>(

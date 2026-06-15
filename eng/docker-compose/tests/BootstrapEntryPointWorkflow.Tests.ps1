@@ -529,5 +529,77 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             )
             $params | Should -Contain "EnableConfig" -Because "-EnableConfig must be retained for backward compatibility even though it is no longer a meaningful opt-out"
         }
+
+        It "start-published-dms.ps1 includes published-config.yml when bootstrap mode is active" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+            $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+        }
+
+        It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $guardMatch = [regex]::Match(
+                $startScript,
+                'if \((?<condition>[^\r\n]+)\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+            )
+            $guardMatch.Success | Should -BeTrue
+
+            $condition = $guardMatch.Groups["condition"].Value
+            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
+            $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+        }
+    }
+
+    Context "Published InfraOnly claims-ready gate" {
+        It "start-published-dms.ps1 imports and runs the claims-ready gate after CMS auth metadata setup" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "bootstrap-claims-gate\.psm1"\) -Force'
+
+            $infraStart = $startScript.IndexOf('if ($InfraOnly) {')
+            $infraStart | Should -BeGreaterThan -1
+            $infraComplete = $startScript.IndexOf(
+                'Write-Output "Infrastructure phase complete. DMS service was not started."',
+                $infraStart
+            )
+            $infraComplete | Should -BeGreaterThan $infraStart
+            $infraBlock = $startScript.Substring($infraStart, $infraComplete - $infraStart)
+
+            $healthIndex = $infraBlock.IndexOf('Write-Output "Configuration Service is healthy."')
+            $authMetadataClientIndex = $infraBlock.IndexOf('CMSAuthMetadataReadOnlyAccess')
+            $gateIndex = $infraBlock.IndexOf('Test-CmsClaimsReady')
+
+            $healthIndex | Should -BeGreaterThan -1
+            $authMetadataClientIndex | Should -BeGreaterThan -1
+            $gateIndex | Should -BeGreaterThan $healthIndex
+            $gateIndex | Should -BeGreaterThan $authMetadataClientIndex
+
+            $infraBlock | Should -Match 'if \(\$bootstrapManifestPresent\)\s*\{[\s\S]*?Test-CmsClaimsReady'
+            $infraBlock | Should -Match '-EnvironmentFile \$EnvironmentFile'
+            $infraBlock | Should -Match '-IdentityProvider \$IdentityProvider'
+        }
+
+        It "start-published-dms.ps1 skips the claims-ready gate with an informational message on no-manifest InfraOnly runs" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            $infraStart = $startScript.IndexOf('if ($InfraOnly) {')
+            $infraComplete = $startScript.IndexOf(
+                'Write-Output "Infrastructure phase complete. DMS service was not started."',
+                $infraStart
+            )
+            $infraBlock = $startScript.Substring($infraStart, $infraComplete - $infraStart)
+
+            $infraBlock | Should -Match 'else\s*\{[\s\S]*?Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run\." -InformationAction Continue'
+        }
     }
 }

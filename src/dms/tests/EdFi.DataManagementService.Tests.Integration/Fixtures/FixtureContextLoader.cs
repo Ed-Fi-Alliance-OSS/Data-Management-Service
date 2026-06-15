@@ -13,20 +13,27 @@ namespace EdFi.DataManagementService.Tests.Integration.Fixtures;
 /// <summary>
 /// Resolves a <see cref="FixtureKey"/> to a fully populated <see cref="FixtureContext"/>.
 /// The fixture's source ApiSchema files (named according to each fixture's manifest)
-/// are materialized into a process-cached temp directory whose file names match the
-/// <c>ApiSchema*.json</c> pattern the DMS host scans for when
-/// <c>AppSettings:UseApiSchemaPath</c> is enabled. The materialized files are
-/// augmented with neutral defaults for fields the DMS HTTP middleware expects on
-/// every <c>ResourceSchema</c>/<c>projectSchema</c> but which the DDL-only fixtures
-/// omit. Both the DMS host and the per-dialect baseline cache consume this same
-/// materialized directory so the effective schema seen by the host matches the
-/// schema the DDL pipeline runs against.
+/// are materialized into a process-cached temp directory with two manifests:
+/// <c>bootstrap-api-schema-manifest.json</c> for the DMS runtime host and
+/// <c>fixture.json</c> for the per-dialect baseline cache. The materialized files
+/// are augmented with neutral defaults for fields the DMS HTTP middleware expects
+/// on every <c>ResourceSchema</c>/<c>projectSchema</c> but which the DDL-only
+/// fixtures omit. Both manifests point at the same materialized schema documents
+/// so the effective schema seen by the host matches the schema the DDL pipeline
+/// runs against.
 /// </summary>
 internal static class FixtureContextLoader
 {
     private static readonly ConcurrentDictionary<FixtureKey, Lazy<FixtureContext>> _cache = new();
 
     private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
+
+    private sealed record BootstrapApiSchemaProject(
+        string ProjectName,
+        string ProjectEndpointName,
+        bool IsExtensionProject,
+        string SchemaPath
+    );
 
     public static FixtureContext Load(FixtureKey key) =>
         _cache
@@ -137,9 +144,9 @@ internal static class FixtureContextLoader
     /// Reads each source ApiSchema file, augments it with neutral defaults for
     /// runtime-required fields the DDL-only fixtures omit, and writes the
     /// augmented document under <c>%TEMP%/dms-api-integration-fixtures/&lt;key&gt;/inputs</c>.
-    /// A generated <c>fixture.json</c> manifest sits alongside the inputs so the
-    /// per-dialect baseline cache can discover the augmented files using the same
-    /// <c>EffectiveSchemaFixtureLoader</c> contract as the on-disk DDL fixtures.
+    /// Generated runtime and baseline manifests sit alongside the inputs: the DMS
+    /// host reads <c>bootstrap-api-schema-manifest.json</c>, while the per-dialect
+    /// baseline cache continues to use the existing <c>fixture.json</c> contract.
     /// </summary>
     private static (
         string MaterializedDirectory,
@@ -166,32 +173,38 @@ internal static class FixtureContextLoader
         Directory.CreateDirectory(inputsDirectory);
 
         var seenTargetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var manifestEntries = new List<string>(sourcePaths.Count);
+        var fixtureManifestEntries = new List<string>(sourcePaths.Count);
+        var bootstrapProjects = new List<BootstrapApiSchemaProject>(sourcePaths.Count);
         var materializedFilePaths = new List<string>(sourcePaths.Count);
 
         foreach (string sourcePath in sourcePaths)
         {
-            string targetName = BuildScannableFileName(Path.GetFileName(sourcePath), seenTargetNames);
+            string targetName = BuildMaterializedFileName(Path.GetFileName(sourcePath), seenTargetNames);
             string targetPath = Path.Combine(inputsDirectory, targetName);
 
             string sourceJson = File.ReadAllText(sourcePath);
-            JsonNode root =
+            JsonNode parsedRoot =
                 JsonNode.Parse(sourceJson)
                 ?? throw new InvalidOperationException(
                     $"ApiSchema file '{sourcePath}' parsed to a null JSON document."
                 );
 
-            if (root is JsonObject rootObject)
-            {
-                AugmentForRuntime(rootObject);
-            }
+            JsonObject root =
+                parsedRoot as JsonObject
+                ?? throw new InvalidOperationException(
+                    $"ApiSchema file '{sourcePath}' must contain a JSON object at the document root."
+                );
+
+            AugmentForRuntime(root);
+            bootstrapProjects.Add(ReadBootstrapProject(root, sourcePath, $"inputs/{targetName}"));
 
             File.WriteAllText(targetPath, root.ToJsonString(_writeOptions));
-            manifestEntries.Add(targetName);
+            fixtureManifestEntries.Add(targetName);
             materializedFilePaths.Add(targetPath);
         }
 
-        WriteManifest(materializedDirectory, manifestEntries, dialects);
+        WriteFixtureManifest(materializedDirectory, fixtureManifestEntries, dialects);
+        WriteBootstrapManifest(materializedDirectory, bootstrapProjects);
 
         return (materializedDirectory, materializedFilePaths);
     }
@@ -265,7 +278,91 @@ internal static class FixtureContextLoader
         }
     }
 
-    private static void WriteManifest(
+    private static BootstrapApiSchemaProject ReadBootstrapProject(
+        JsonObject root,
+        string sourcePath,
+        string schemaPath
+    )
+    {
+        JsonObject projectSchema =
+            root["projectSchema"] as JsonObject
+            ?? throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' is missing 'projectSchema'."
+            );
+
+        return new(
+            GetRequiredProjectString(projectSchema, "projectName", sourcePath),
+            GetRequiredProjectString(projectSchema, "projectEndpointName", sourcePath),
+            GetRequiredProjectBoolean(projectSchema, "isExtensionProject", sourcePath),
+            schemaPath
+        );
+    }
+
+    private static string GetRequiredProjectString(
+        JsonObject projectSchema,
+        string propertyName,
+        string sourcePath
+    )
+    {
+        JsonNode? valueNode = projectSchema[propertyName];
+        if (valueNode is null)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' is missing 'projectSchema.{propertyName}'."
+            );
+        }
+
+        string value;
+        try
+        {
+            value = valueNode.GetValue<string>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' has a non-string 'projectSchema.{propertyName}'.",
+                ex
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' has an empty 'projectSchema.{propertyName}'."
+            );
+        }
+
+        return value;
+    }
+
+    private static bool GetRequiredProjectBoolean(
+        JsonObject projectSchema,
+        string propertyName,
+        string sourcePath
+    )
+    {
+        JsonNode? valueNode = projectSchema[propertyName];
+        if (valueNode is null)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' is missing 'projectSchema.{propertyName}'."
+            );
+        }
+
+        try
+        {
+            return valueNode.GetValue<bool>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema file '{sourcePath}' has a non-boolean 'projectSchema.{propertyName}'.",
+                ex
+            );
+        }
+    }
+
+    private static void WriteFixtureManifest(
         string materializedDirectory,
         IReadOnlyList<string> apiSchemaFileNames,
         IReadOnlyList<string> dialects
@@ -285,17 +382,41 @@ internal static class FixtureContextLoader
         );
     }
 
-    /// <summary>
-    /// Produces a file name that matches the host's <c>ApiSchema*.json</c> scan pattern,
-    /// preserving the source name when it already conforms and otherwise prefixing it
-    /// with <c>ApiSchema-</c>. Collisions are disambiguated with a numeric suffix.
-    /// </summary>
-    private static string BuildScannableFileName(string sourceFileName, HashSet<string> seen)
+    private static void WriteBootstrapManifest(
+        string materializedDirectory,
+        IReadOnlyList<BootstrapApiSchemaProject> projects
+    )
     {
-        string candidate = sourceFileName.StartsWith("ApiSchema", StringComparison.OrdinalIgnoreCase)
-            ? sourceFileName
-            : $"ApiSchema-{Path.GetFileNameWithoutExtension(sourceFileName)}{Path.GetExtension(sourceFileName)}";
+        var manifest = new JsonObject
+        {
+            ["version"] = 1,
+            ["projects"] = new JsonArray([
+                .. projects.Select(project =>
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["projectName"] = project.ProjectName,
+                            ["projectEndpointName"] = project.ProjectEndpointName,
+                            ["isExtensionProject"] = project.IsExtensionProject,
+                            ["schemaPath"] = project.SchemaPath,
+                        }
+                ),
+            ]),
+        };
 
+        File.WriteAllText(
+            Path.Combine(materializedDirectory, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString(_writeOptions)
+        );
+    }
+
+    /// <summary>
+    /// Produces a stable materialized file name from the source name. Collisions are
+    /// disambiguated with a numeric suffix.
+    /// </summary>
+    private static string BuildMaterializedFileName(string sourceFileName, HashSet<string> seen)
+    {
+        string candidate = sourceFileName;
         if (seen.Add(candidate))
         {
             return candidate;

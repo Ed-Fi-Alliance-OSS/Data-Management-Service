@@ -133,11 +133,11 @@ param (
     [Switch]
     $RemoveBootstrap,
 
-    # Transitional non-bootstrap helper: when no bootstrap manifest is present (DLL-backed startup),
+    # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
     # so that extension claimset fragments (e.g. Sample, Homograph) are loaded from the AdditionalClaimsets
     # directory that is already mounted at /app/additional-claims by local-config.yml.
-    # This flag is intentionally kept until Story 04 moves E2E runtime loading onto the staged bootstrap workspace.
+    # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata,
 
@@ -177,7 +177,7 @@ if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
 $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot
 try {
-Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+$bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
 $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
 
 # Identity provider configuration
@@ -266,6 +266,13 @@ if ($EnableKafkaUI) {
 # (per the bootstrap entry-point spec, DMS-1153). Teardown uses the same $files list so that
 # follow-up up/down calls operate on the full environment (same pattern as keycloak.yml above).
 $files += @("-f", "local-config.yml")
+
+if ($bootstrapMode) {
+    # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
+    # on the full environment (same pattern as keycloak.yml above). This mounts the staged
+    # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
+    $files += @("-f", "bootstrap-dms.yml")
+}
 
 if ($EnableSwaggerUI) {
     $files += @("-f", "swagger-ui.yml")
@@ -362,7 +369,18 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
-        if (-not $SkipConnectorSetup) {
+        if ($bootstrapMode) {
+            # Bootstrap mode provisions the redesigned relational schema (dms."Document", "ResourceKey",
+            # etc.) via dms-schema ddl provision. The default Debezium connector targets the legacy
+            # document-store CDC path: publication.name=to_debezium, publication.autocreate.mode=disabled,
+            # and table.include.list=dms.document,dms.educationorganizationhierarchytermslookup. Those
+            # legacy tables and the to_debezium publication are created only by the legacy installer DDL
+            # (0009_Configure_Replication.sql), which bootstrap mode never runs. Registering the default
+            # connector in bootstrap mode would leave it permanently in a FAILED/ERROR state because the
+            # required publication and tables do not exist by design.
+            Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
+        }
+        elseif (-not $SkipConnectorSetup) {
             # Register the Debezium source connector now that the schema has been provisioned and
             # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
             # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
@@ -534,7 +552,10 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
-    if (-not $SkipConnectorSetup) {
+    if ($bootstrapMode) {
+        Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
+    }
+    elseif (-not $SkipConnectorSetup) {
         Write-Output "Running connector setup..."
         ./setup-connectors.ps1 $EnvironmentFile
     }

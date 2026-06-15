@@ -78,7 +78,7 @@ also append `-v`. Examples:
 # Start everything
 ./start-local-dms.ps1
 
-# Start everything for E2E testing (DLL-backed schema packages)
+# Start everything for E2E testing (file-based schema packages)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes
@@ -96,8 +96,7 @@ it can serve requests. Because `provision-relational-e2e-database.ps1`
 provisions inside the running `dms-postgresql` container, the sequence is:
 
 1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
-   the DLL-backed `SCHEMA_PACKAGES` schema path until Story 04 adds runtime
-   loose-file content loading:
+   the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
 
    ```pwsh
    ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
@@ -129,7 +128,7 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 # Start everything (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -IdentityProvider self-contained
 
-# Start everything for E2E testing (Self-Contained/OpenIddict mode, DLL-backed schema by default)
+# Start everything for E2E testing (Self-Contained/OpenIddict mode, file-based schema by default)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes (Self-Contained/OpenIddict mode)
@@ -181,14 +180,14 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
  API_SCHEMA_PATH=/app/ApiSchema
  SCHEMA_PACKAGES='[
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.328",
+    "version": "1.0.332",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.Sample.ApiSchema",
+    "name": "EdFi.DataStandard52.Sample.ApiSchema",
     "extensionName": "Sample"
   }
 ]'
@@ -233,13 +232,11 @@ manually:
 ```
 
 `prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
-`.bootstrap/claims`. Story 00 validates the prepared manifest but does
-not point the Config Service at `.bootstrap/claims` during startup because
-DMS Docker startup still uses the non-staged schema path. When a bootstrap
-manifest is present, startup disables `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH`
-so the container falls back to its built-in DLL-backed schema assemblies.
-Runtime reads of `.bootstrap/ApiSchema` and matching staged claims activation
-land together in Story 04.
+`.bootstrap/claims`. When a bootstrap manifest is present, startup activates
+`USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` and mounts `.bootstrap/ApiSchema` into
+the DMS container via `bootstrap-dms.yml`; staged claims are activated per
+`claims.mode` in the manifest. The staged workspace is runtime-authoritative in
+bootstrap mode.
 
 The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM. Story
 00 automatically maps only Sample and Homograph extension claim fragments, so
@@ -247,10 +244,19 @@ the full in-repo schema requires `-ClaimsDirectoryPath` with a TPDM
 `*-claimset.json` fragment. For a schema set containing only core, Sample, and
 Homograph, the claims command can be run without `-ClaimsDirectoryPath`.
 
-The DMS E2E setup wrappers stay on the prior DLL-backed `SCHEMA_PACKAGES` flow
-because the DMS runtime ContentProvider does not yet load loose JSON content
-(Story 04). The wrappers should move to the staged `.bootstrap/ApiSchema` and
-`.bootstrap/claims` workspaces when Story 04 lands.
+In bootstrap mode the default Debezium source connector is **not** registered.
+The default connector targets the legacy document-store CDC path
+(`publication.name=to_debezium`, `table.include.list=dms.document,...`), which
+depends on tables and a publication created only by the legacy installer DDL —
+none of which exist in the redesigned relational schema that bootstrap mode
+provisions. Use `-SkipConnectorSetup` when running non-bootstrap harnesses that
+create their own connectors after provisioning (e.g. Instance Management E2E).
+
+The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
+Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
+file-based ApiSchema package content, and the wrappers clear any stale
+`.bootstrap/` workspace before startup to prevent bootstrap mode from activating
+unintentionally.
 
 If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
@@ -304,11 +310,9 @@ default `DefaultEncryptionKey32CharactersX1`). Replace `<repo-root>` with the ab
 to the repository root on your machine.
 
 > **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
-> the staged bootstrap workspace, which contains JSON/XSD content. Until Story 04 (DMS-1154)
-> lands the staged-content runtime loader, the frontend metadata endpoints (Discovery `/`,
-> OpenAPI specs, XSD downloads) only load `*.ApiSchema.dll` and fail against this path — there
-> is no DLL fallback when these keys are set. If you need those endpoints before Story 04,
-> set `UseApiSchemaPath` to `false` so DMS uses its built-in DLL-backed schema assemblies.
+> the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
+> JSON and XSD content from the staged workspace via the bootstrap asset manifest, with no
+> schema assemblies loaded on this path.
 
 ### Pre-DMS infrastructure setup
 

@@ -800,33 +800,31 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     }
 
     # ===========================================================================
-    # Scenario (h3): staged-only deferral - checks marked stagedOnly come from
-    # user-supplied (-ClaimsDirectoryPath) fragments. CMS does not load the staged
-    # claims workspace until staged-claims activation (DMS-1154); it keeps the
-    # built-in AdditionalClaimsets mount, so asserting these checks would fail a
-    # valid bootstrap. The gate defers them (warning) like parent-claim checks.
+    # Scenario (h3): user-staged leaf checks are verified normally after Story 04
+    # activation. A baseline probe alone is not enough when the manifest records a
+    # user-supplied leaf claim from -ClaimsDirectoryPath.
     # ===========================================================================
-    Context "Scenario (h3) - staged-only checks are deferred while leaf checks still verify" {
+    Context "Scenario (h3) - user-staged leaf checks fail when authorization metadata omits them" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
             $tempDir = New-TempManifestDir
-            $script:manifestPath_h3 = New-ManifestFile `
+            $script:manifestPath_h3_missing = New-ManifestFile `
                 -Dir $tempDir `
                 -Checks @(
                     @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction },
-                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = "http://example.org/identity/claims/customWidget"; action = "Read"; stagedOnly = $true }
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = "http://example.org/identity/claims/customWidget"; action = "Read" }
                 ) `
                 -FileName "manifest-h3.json"
 
-            $script:authMetadataCalls_h3 = 0
+            $script:authMetadataCalls_h3_missing = 0
 
-            # Response carries ONLY the baseline leaf claim - the user-staged claim is never
-            # loaded by CMS before staged-claims activation (DMS-1154).
+            # Response carries ONLY the baseline leaf claim; the user-staged leaf check must
+            # still be asserted and fail when CMS authorization metadata omits it.
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
                 if ($Uri -match "/v3/authorizationMetadata") {
-                    $script:authMetadataCalls_h3++
+                    $script:authMetadataCalls_h3_missing++
                     return New-AuthMetadataResponse `
                         -ClaimSetName "EdFiSandbox" `
                         -Claims @(
@@ -835,33 +833,77 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
                 }
             }
 
-            $script:error_h3 = $null
-            $script:warnings_h3 = $null
+            $script:error_h3_missing = $null
             try {
                 Test-CmsClaimsReady `
                     -CmsBaseUrl $script:cmsBaseUrl `
                     -AccessToken $script:accessToken `
-                    -ManifestPath $script:manifestPath_h3 `
-                    -WarningVariable +warnings_h3 3>$null
-                $script:warnings_h3 = $warnings_h3
+                    -ManifestPath $script:manifestPath_h3_missing 3>$null
             }
             catch {
-                $script:error_h3 = $_.Exception.Message
+                $script:error_h3_missing = $_.Exception.Message
             }
         }
 
-        It "does not throw - the leaf check verifies and the staged-only check is deferred" {
-            $script:error_h3 | Should -BeNullOrEmpty
+        It "throws because the user-staged leaf claim is missing" {
+            $script:error_h3_missing | Should -Not -BeNullOrEmpty
         }
 
-        It "queries /authorizationMetadata only for the leaf check (staged-only check is skipped)" {
-            $script:authMetadataCalls_h3 | Should -Be 1
+        It "queries /authorizationMetadata for the baseline and user-staged leaf checks" {
+            $script:authMetadataCalls_h3_missing | Should -Be 2
         }
 
-        It "emits a deferral warning naming the user-staged resource claim and DMS-1154" {
-            $joinedWarnings = @($script:warnings_h3) -join "`n"
-            $joinedWarnings | Should -Match "customWidget"
-            $joinedWarnings | Should -Match "DMS-1154"
+        It "error message reports the missing user-staged resource claim" {
+            $script:error_h3_missing | Should -Match "customWidget"
+        }
+    }
+
+    Context "Scenario (h3) - user-staged leaf checks pass when authorization metadata contains them" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_h3_present = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction },
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = "http://example.org/identity/claims/customWidget"; action = "Read" }
+                ) `
+                -FileName "manifest-h3-present.json"
+
+            $script:authMetadataCalls_h3_present = 0
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    $script:authMetadataCalls_h3_present++
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") },
+                            @{ name = "http://example.org/identity/claims/customWidget"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_h3_present = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_h3_present 3>$null
+            }
+            catch {
+                $script:error_h3_present = $_.Exception.Message
+            }
+        }
+
+        It "does not throw when the user-staged leaf claim is present" {
+            $script:error_h3_present | Should -BeNullOrEmpty
+        }
+
+        It "queries /authorizationMetadata for both leaf checks" {
+            $script:authMetadataCalls_h3_present | Should -Be 2
         }
     }
 

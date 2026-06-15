@@ -1531,7 +1531,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $output | Should -Match "status=Provisioned"
         }
 
-        It "emits IDE next-step guidance labeled with the Story 04 dependency" {
+        It "emits IDE next-step guidance showing the staged workspace is runtime-authoritative" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -1559,8 +1559,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $output | Should -Match "IDE next-step guidance"
             $output | Should -Match "AppSettings__UseApiSchemaPath = true"
             $output | Should -Match "AppSettings__ApiSchemaPath"
-            $output | Should -Match "Story 04"
-            $output | Should -Match "deferred"
+            $output | Should -Match "runtime-authoritative"
         }
 
         It "guidance generator produces deterministic lines from a schema workspace and target list" {
@@ -1590,7 +1589,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             ($lines -join "`n") | Should -Match "Provisioned 1 database target"
             ($lines -join "`n") | Should -Match "database=td host=h port=5432 user=u"
-            ($lines -join "`n") | Should -Match "Story 04"
+            ($lines -join "`n") | Should -Match "runtime-authoritative"
         }
 
         It "Format-LogSafePath preserves backslashes so Windows paths survive sanitization" {

@@ -3,13 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
-using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
-using EdFi.DataManagementService.Core.Configuration;
-using Microsoft.Extensions.Options;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -32,20 +29,34 @@ public interface IContentProvider
     JsonNode LoadJsonContent(string fileNamePattern);
 
     /// <summary>
-    /// Provides xsd file stream.
+    /// Provides xsd file stream for the requested metadata section.
     /// </summary>
     /// <param name="fileName"></param>
-    /// <returns></returns>
-    Lazy<Stream> LoadXsdContent(string fileName);
-
-    /// <summary>
-    /// Provides list of files.
-    /// </summary>
-    /// <param name="fileNamePattern"></param>
-    /// <param name="fileExtension"></param>
     /// <param name="section"></param>
     /// <returns></returns>
-    IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section);
+    Lazy<Stream> LoadXsdContent(string fileName, string section);
+
+    /// <summary>
+    /// Provides xsd file stream for the requested metadata section, when found.
+    /// </summary>
+    /// <param name="fileName"></param>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    Lazy<Stream>? TryLoadXsdContent(string fileName, string section);
+
+    /// <summary>
+    /// Provides section-based xsd file list.
+    /// </summary>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    IEnumerable<string> ListXsdFiles(string section);
+
+    /// <summary>
+    /// Indicates whether the requested XSD metadata section is declared by the ApiSchema manifest.
+    /// </summary>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    bool IsXsdSectionKnown(string section);
 }
 
 /// <summary>
@@ -53,56 +64,23 @@ public interface IContentProvider
 /// </summary>
 public class ContentProvider(
     ILogger<ContentProvider> _logger,
-    IOptions<AppSettings> appSettings,
-    IAssemblyLoader assemblyLoader
+    IApiSchemaAssetManifestProvider manifestProvider
 ) : IContentProvider
 {
-    public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section)
+    public IEnumerable<string> ListXsdFiles(string section)
     {
-        string apiSchemaPath;
-        string[] assemblies;
-        var files = new List<string>();
-        if (appSettings.Value.UseApiSchemaPath)
-        {
-            apiSchemaPath =
-                appSettings.Value.ApiSchemaPath
-                ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
-        }
-        else
-        {
-            apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
-        }
+        var candidatePaths = ResolveXsdListingPathsForSection(section);
 
-        assemblies = Directory
-            .EnumerateFiles(apiSchemaPath, "*.*", SearchOption.AllDirectories)
-            .Where(f => Path.GetFileName(f).EndsWith(".ApiSchema.dll", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(Path.GetFileName)
-            .Select(g => g.First())
-            .OrderBy(f => f)
-            .ToArray();
+        return candidatePaths
+            .Select(p => Path.GetFileName(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 
-        foreach (var assemblyPath in assemblies)
-        {
-            _logger.LogInformation("assemblyPath is {AssemblyPath}", assemblyPath);
-            var assembly = assemblyLoader.Load(assemblyPath);
-            foreach (string resourceName in assembly.GetManifestResourceNames())
-            {
-                if (
-                    Regex.IsMatch(resourceName, fileNamePattern, RegexOptions.IgnoreCase)
-                    && resourceName.EndsWith(fileExtension)
-                )
-                {
-                    var fileName = resourceName.Replace($"{assembly.GetName().Name}.xsd.", string.Empty);
-                    if (!files.Contains(fileName))
-                    {
-                        files.Add(fileName);
-                    }
-                    _logger.LogInformation("fileName is {FileName}", fileName);
-                }
-            }
-        }
-
-        return files;
+    public bool IsXsdSectionKnown(string section)
+    {
+        var manifest = manifestProvider.GetManifest();
+        return FindProjectForSection(manifest, section) is not null;
     }
 
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
@@ -136,7 +114,7 @@ public class ContentProvider(
             ? $"{fileNamePattern}-spec"
             : fileNamePattern;
 
-        using StreamReader reader = new(GetStream(fileNamePattern, ".json"));
+        using StreamReader reader = new(GetJsonStreamFromManifest(fileNamePattern));
         var jsonContent = reader.ReadToEnd();
 
         JsonNode? jsonNodeFromFile = JsonNode.Parse(jsonContent);
@@ -149,76 +127,127 @@ public class ContentProvider(
         return jsonNodeFromFile;
     }
 
-    public Lazy<Stream> LoadXsdContent(string fileName)
+    public Lazy<Stream> LoadXsdContent(string fileName, string section)
     {
-        _logger.LogDebug("Entering Xsd FileLoader");
-        return new Lazy<Stream>(GetStream(fileName, ".xsd"));
+        return TryLoadXsdContent(fileName, section) ?? throw CreateXsdNotFoundException();
     }
 
-    public Stream GetStream(string fileNamePattern, string fileExtension)
+    public Lazy<Stream>? TryLoadXsdContent(string fileName, string section)
     {
-        string apiSchemaPath;
-        string searchPattern;
-        if (appSettings.Value.UseApiSchemaPath)
+        _logger.LogDebug("Entering Xsd FileLoader");
+        var matchedPath = ResolveXsdPathForSection(fileName, section);
+
+        if (matchedPath is null)
         {
-            apiSchemaPath =
-                appSettings.Value.ApiSchemaPath
-                ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
-        }
-        else
-        {
-            apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+            return null;
         }
 
-        searchPattern = "*.ApiSchema.dll";
-        var assemblies = Directory.GetFiles(apiSchemaPath, searchPattern, SearchOption.AllDirectories);
-        assemblies = assemblies.GroupBy(Path.GetFileName).Select(g => g.First()).ToArray();
+        return new Lazy<Stream>(() => File.OpenRead(matchedPath));
+    }
 
-        foreach (var assemblyPath in assemblies)
+    private Stream GetJsonStreamFromManifest(string fileNamePattern)
+    {
+        // Only discovery-spec JSON is served from the manifest.
+        // Other section names (resources-spec, descriptors-spec) come from IApiService, not ContentProvider.
+        // For unknown JSON sections in file mode, keep the legacy failure shape.
+        if (!fileNamePattern.Equals("discovery-spec", StringComparison.OrdinalIgnoreCase))
         {
-            var assembly = assemblyLoader.Load(assemblyPath);
-            var resourceName = assembly
-                .GetManifestResourceNames()
-                .SingleOrDefault(str =>
-                    str.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase)
-                    && str.EndsWith(fileExtension)
-                );
+            var unknownError = $"Unable to read and parse {fileNamePattern}.json";
+            _logger.LogCritical(unknownError);
+            throw new InvalidOperationException(unknownError);
+        }
 
-            if (resourceName != null)
+        var manifest = manifestProvider.GetManifest();
+        var project = GetCoreProject(manifest);
+
+        // Serve discovery-spec only from the core manifest project. Extension discovery specs are
+        // package-local assets, not the global DMS discovery document.
+        if (project.DiscoverySpecPath is not null)
+        {
+            var resolvedPath = manifestProvider.ResolveValidatedPath(project.DiscoverySpecPath);
+            if (!File.Exists(resolvedPath))
             {
-                var stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream != null)
-                {
-                    return stream;
-                }
+                var invalidWorkspaceError =
+                    $"Manifest project '{project.ProjectName}' declares discoverySpecPath "
+                    + $"'{project.DiscoverySpecPath}', but the resolved file '{resolvedPath}' does not exist.";
+                _logger.LogCritical(
+                    "Invalid ApiSchema workspace: {Error}",
+                    LoggingSanitizer.SanitizeForLogging(invalidWorkspaceError)
+                );
+                throw new InvalidOperationException(invalidWorkspaceError);
             }
+
+            _logger.LogDebug(
+                "Serving discovery-spec from manifest project {ProjectName}",
+                LoggingSanitizer.SanitizeForLogging(project.ProjectName)
+            );
+            return File.OpenRead(resolvedPath);
         }
 
+        // No project provides a discovery spec: keep the legacy failure shape.
         var error = $"Couldn't load find the resource";
         _logger.LogCritical(error);
         throw new InvalidOperationException(error);
     }
-}
 
-/// <summary>
-/// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
-/// </summary>
-public class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
-{
-    public ApiSchemaAssemblyLoadContext()
-        : base(isCollectible: true) { }
-}
-
-public interface IAssemblyLoader
-{
-    Assembly Load(string path);
-}
-
-public class ApiSchemaAssemblyLoader : IAssemblyLoader
-{
-    public Assembly Load(string path)
+    private string? ResolveXsdPathForSection(string fileNamePattern, string section)
     {
-        var requestData = new ApiSchemaAssemblyLoadContext();
-        return requestData.LoadFromAssemblyPath(path);
+        return ResolveXsdListingPathsForSection(section)
+            .FirstOrDefault(f =>
+                Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    private IEnumerable<string> ResolveXsdListingPathsForSection(string section)
+    {
+        var manifest = manifestProvider.GetManifest();
+        var sectionProject = FindProjectForSection(manifest, section);
+
+        if (sectionProject is null)
+        {
+            return [];
+        }
+
+        if (!sectionProject.IsExtensionProject)
+        {
+            return manifestProvider.EnumerateValidatedXsdFiles(sectionProject);
+        }
+
+        var xsdPaths = new List<string>();
+        var coreProject = GetCoreProject(manifest);
+
+        if (!IsSameProject(sectionProject, coreProject))
+        {
+            xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
+        }
+
+        xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(sectionProject));
+
+        return xsdPaths;
+    }
+
+    private static ApiSchemaProject GetCoreProject(ApiSchemaAssetManifest manifest)
+    {
+        return manifest.Projects.Single(p => !p.IsExtensionProject);
+    }
+
+    private static ApiSchemaProject? FindProjectForSection(ApiSchemaAssetManifest manifest, string section)
+    {
+        return manifest.Projects.FirstOrDefault(p =>
+            p.ProjectName.Equals(section, StringComparison.OrdinalIgnoreCase)
+            || p.ProjectEndpointName.Equals(section, StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
+    private static bool IsSameProject(ApiSchemaProject left, ApiSchemaProject right)
+    {
+        return left.ProjectName.Equals(right.ProjectName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private InvalidOperationException CreateXsdNotFoundException()
+    {
+        var error = $"Couldn't load find the resource";
+        _logger.LogCritical(error);
+        return new InvalidOperationException(error);
     }
 }
