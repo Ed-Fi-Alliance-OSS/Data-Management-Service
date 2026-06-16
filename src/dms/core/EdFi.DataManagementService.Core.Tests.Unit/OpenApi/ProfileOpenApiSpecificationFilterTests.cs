@@ -178,12 +178,7 @@ public class ProfileOpenApiSpecificationFilterTests
         paths["/availableChangeVersions"] = StandaloneChangeQueriesPath();
 
         schemas["EdFi_DeletedResource"] = SchemaWithProperties("id", "changeVersion", "notInProfile");
-        schemas["EdFi_StudentKeyChange"] = SchemaWithProperties(
-            "oldStudentUniqueId",
-            "newStudentUniqueId",
-            "changeVersion",
-            "notInProfile"
-        );
+        schemas["EdFi_StudentKeyChange"] = StudentKeyChangeSchema();
         schemas["EdFi_AvailableChangeVersions"] = SchemaWithProperties("newestChangeVersion");
 
         return specification;
@@ -273,6 +268,22 @@ public class ProfileOpenApiSpecificationFilterTests
         }
 
         return new JsonObject { ["type"] = "object", ["properties"] = properties };
+    }
+
+    private static JsonObject StudentKeyChangeSchema()
+    {
+        JsonObject schema = SchemaWithProperties(
+            "oldStudentUniqueId",
+            "newStudentUniqueId",
+            "changeVersion",
+            "notInProfile"
+        );
+        schema["properties"]!.AsObject()["student"] = new JsonObject
+        {
+            ["$ref"] = "#/components/schemas/EdFi_Student",
+        };
+
+        return schema;
     }
 
     private static JsonObject Paths(JsonNode specification)
@@ -617,6 +628,18 @@ public class ProfileOpenApiSpecificationFilterTests
             schemas.Should().ContainKey("EdFi_StudentKeyChange");
             schemas.Should().NotContainKey("EdFi_StudentKeyChange_readable");
             schemas["EdFi_StudentKeyChange"]!["properties"]!.AsObject().Should().ContainKey("notInProfile");
+        }
+
+        [Test]
+        public void It_preserves_component_schemas_reachable_from_tracked_change_responses()
+        {
+            JsonObject schemas = Schemas(result);
+
+            schemas.Should().ContainKey("EdFi_Student");
+            schemas["EdFi_StudentKeyChange"]!["properties"]!["student"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Student");
         }
 
         [Test]

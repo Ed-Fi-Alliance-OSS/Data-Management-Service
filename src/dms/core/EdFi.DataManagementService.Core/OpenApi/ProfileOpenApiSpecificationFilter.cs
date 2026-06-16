@@ -66,8 +66,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Step 4: Create _readable/_writable schemas and rewrite operations (avoids double suffixes)
         CreateProfileSchemasAndRewriteOperations(specification, profileDefinition);
 
-        // Step 5: Remove base schemas that now have suffixed versions
-        RemoveBaseSchemasWithSuffixedVersions(specification);
+        // Step 5: Remove base schemas that now have suffixed versions, unless Change Query
+        // responses still reference the unprofiled schema graph.
+        HashSet<string> schemasReferencedByChangeQueries =
+            GetSchemaNamesReachableFromRetainedChangeQueryPaths(specification);
+        RemoveBaseSchemasWithSuffixedVersions(specification, schemasReferencedByChangeQueries);
 
         // Step 6: Final cleanup - remove any schemas orphaned after profile schema creation
         RemoveUnusedSchemas(specification);
@@ -428,7 +431,10 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// <summary>
     /// Removes base schemas that have suffixed versions (cleanup after profile schema creation).
     /// </summary>
-    private static void RemoveBaseSchemasWithSuffixedVersions(JsonNode specification)
+    private static void RemoveBaseSchemasWithSuffixedVersions(
+        JsonNode specification,
+        HashSet<string> schemaNamesToPreserve
+    )
     {
         if (
             specification["components"] is not JsonObject components
@@ -453,6 +459,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
+            if (schemaNamesToPreserve.Contains(schemaName))
+            {
+                continue;
+            }
+
             // Check if suffixed version exists
             string readableName = $"{schemaName}_readable";
             string writableName = $"{schemaName}_writable";
@@ -467,6 +478,30 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         {
             schemas.Remove(schemaName);
         }
+    }
+
+    private static HashSet<string> GetSchemaNamesReachableFromRetainedChangeQueryPaths(JsonNode specification)
+    {
+        var schemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (
+            specification["components"] is not JsonObject components
+            || components["schemas"] is not JsonObject schemas
+            || specification["paths"] is not JsonObject paths
+        )
+        {
+            return schemaNames;
+        }
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (pathValue is not null && IsChangeQueryPath(pathKey))
+            {
+                CollectReachableSchemaNames(pathValue, components, schemas, schemaNames);
+            }
+        }
+
+        return schemaNames;
     }
 
     /// <summary>
@@ -874,10 +909,34 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Seed references from paths
+        if (specification["paths"] is JsonObject paths)
+        {
+            CollectReachableSchemaNames(paths, components, schemas, keep);
+        }
+
+        // Traverse schema graph to include transitive dependencies (handled during enqueue)
+
+        // Remove unreferenced schemas
+        var schemasToRemove = schemas.Where(kvp => !keep.Contains(kvp.Key)).Select(kvp => kvp.Key).ToList();
+
+        foreach (string schemaName in schemasToRemove)
+        {
+            schemas.Remove(schemaName);
+        }
+    }
+
+    private static void CollectReachableSchemaNames(
+        JsonNode node,
+        JsonObject components,
+        JsonObject schemas,
+        HashSet<string> schemaNames
+    )
+    {
         void EnqueueSchema(string name)
         {
             if (
-                keep.Add(name)
+                schemaNames.Add(name)
                 && schemas.TryGetPropertyValue(name, out JsonNode? schemaNode)
                 && schemaNode is not null
             )
@@ -886,9 +945,9 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        void ExploreNode(JsonNode node)
+        void ExploreNode(JsonNode currentNode)
         {
-            switch (node)
+            switch (currentNode)
             {
                 case JsonObject obj:
                     foreach ((string propertyName, JsonNode? child) in obj)
@@ -974,21 +1033,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        // Seed references from paths
-        if (specification["paths"] is JsonObject paths)
-        {
-            ExploreNode(paths);
-        }
-
-        // Traverse schema graph to include transitive dependencies (handled during enqueue)
-
-        // Remove unreferenced schemas
-        var schemasToRemove = schemas.Where(kvp => !keep.Contains(kvp.Key)).Select(kvp => kvp.Key).ToList();
-
-        foreach (string schemaName in schemasToRemove)
-        {
-            schemas.Remove(schemaName);
-        }
+        ExploreNode(node);
     }
 
     /// <summary>
