@@ -138,6 +138,7 @@ $targetDir = "coveragereport"
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
 
 function DotNetClean {
     Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
@@ -1170,10 +1171,13 @@ function DockerBuild {
     $versionArgs = @()
     if (-not [string]::IsNullOrEmpty($DMSVersion))
     {
+        # AssemblyVersion/FileVersion must be strictly numeric, so derive a numeric
+        # assembly version from the (possibly prerelease) package version.
+        $assemblyVersion = Convert-ToAssemblyVersion $DMSVersion
         $versionArgs += "--build-arg"
         $versionArgs += "VERSION=$DMSVersion"
         $versionArgs += "--build-arg"
-        $versionArgs += "ASSEMBLY_VERSION=$DMSVersion"
+        $versionArgs += "ASSEMBLY_VERSION=$assemblyVersion"
     }
 
     Push-Location src/dms/

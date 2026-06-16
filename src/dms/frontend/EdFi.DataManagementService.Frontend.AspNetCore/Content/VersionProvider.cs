@@ -18,11 +18,31 @@ public interface IVersionProvider
 
 public class VersionProvider : IVersionProvider
 {
+    private const string FallbackInformationalVersion = "8.0.0";
+
     public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.Build}";
 
     public string ApplicationName => "Ed-Fi API";
 
-    public string InformationalVersion => "8.0.0";
+    public string InformationalVersion
+    {
+        get
+        {
+            string? informationalVersion = Assembly
+                .GetEntryAssembly()
+                ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+
+            if (string.IsNullOrWhiteSpace(informationalVersion))
+            {
+                return FallbackInformationalVersion;
+            }
+
+            // Strip any build-metadata suffix (e.g. "+<git-sha>") so it does not leak into the response.
+            int metadataIndex = informationalVersion.IndexOf('+');
+            return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
+        }
+    }
 
     private static Version FullVersion
     {

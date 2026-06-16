@@ -37,4 +37,18 @@ public class VersionProviderTests
         // Assert
         Assert.That(applicationName, Is.EqualTo("Ed-Fi API"));
     }
+
+    [Test]
+    public void Given_VersionProvider_When_RetrievingInformationalVersion_Then_ReturnsNonEmptyValueWithoutBuildMetadata()
+    {
+        // Arrange
+        var versionProvider = new VersionProvider();
+
+        // Act
+        string informationalVersion = versionProvider.InformationalVersion;
+
+        // Assert
+        Assert.That(informationalVersion, Is.Not.Null.And.Not.Empty);
+        Assert.That(informationalVersion, Does.Not.Contain("+"));
+    }
 }

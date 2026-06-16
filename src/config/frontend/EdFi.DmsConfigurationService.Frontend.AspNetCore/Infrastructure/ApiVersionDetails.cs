@@ -9,6 +9,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class ApiVersionDetails
 {
+    private const string FallbackInformationalVersion = "8.0.0";
+
     private static readonly Version AssemblyVersion =
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
 
@@ -26,10 +28,27 @@ public static class ApiVersionDetails
     /// <summary>
     /// Informational version description
     /// </summary>
-    public const string InformationalVersion = "8.0.0";
+    public static readonly string InformationalVersion = ResolveInformationalVersion();
 
     /// <summary>
     /// Assembly version of the DMS Configuration Api.
     /// </summary>
     public static readonly string Build = AssemblyVersion.ToString();
+
+    private static string ResolveInformationalVersion()
+    {
+        string? informationalVersion = Assembly
+            .GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        if (string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return FallbackInformationalVersion;
+        }
+
+        // Strip any build-metadata suffix (e.g. "+<git-sha>") so it does not leak into the response.
+        int metadataIndex = informationalVersion.IndexOf('+');
+        return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
+    }
 }
