@@ -86,7 +86,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
         {
             logger.LogError(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart DMS after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
+                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart the Ed-Fi API service after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value

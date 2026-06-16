@@ -44,12 +44,22 @@ COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataM
 COPY backend/EdFi.DataManagementService.Old.Postgresql/ ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
-RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
-    -c Release --no-restore --self-contained false -o /app/Frontend && \
+ARG VERSION=""
+ARG ASSEMBLY_VERSION=""
+
+RUN version_args=""; \
+    if [ -n "$VERSION" ]; then \
+        version_args="$version_args /p:Version=$VERSION /p:InformationalVersion=$VERSION"; \
+    fi; \
+    if [ -n "$ASSEMBLY_VERSION" ]; then \
+        version_args="$version_args /p:AssemblyVersion=$ASSEMBLY_VERSION /p:FileVersion=$ASSEMBLY_VERSION"; \
+    fi; \
+    dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
+    -c Release --no-restore --self-contained false -o /app/Frontend $version_args && \
     dotnet publish backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj \
-    -c Release --no-restore --self-contained false -o /app/Installer && \
+    -c Release --no-restore --self-contained false -o /app/Installer $version_args && \
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
-    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader
+    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader $version_args
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25d6c60672e74b21bb6334f1402f71bae2d2cf02307163cd AS runtimebase
 

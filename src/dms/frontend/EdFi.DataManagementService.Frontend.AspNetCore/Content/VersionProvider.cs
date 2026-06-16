@@ -22,7 +22,7 @@ public class VersionProvider : IVersionProvider
 
     public string ApplicationName => "Ed-Fi API";
 
-    public string InformationalVersion => "Release Candidate 1";
+    public string InformationalVersion => "8.0.0";
 
     private static Version FullVersion
     {

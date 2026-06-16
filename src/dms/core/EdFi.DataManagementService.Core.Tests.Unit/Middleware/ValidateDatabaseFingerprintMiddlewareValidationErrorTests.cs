@@ -279,7 +279,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                 .Contain(entry =>
                     entry.Level == LogLevel.Error
                     && entry.Message.Contains("Malformed dms.EffectiveSchema fingerprint")
-                    && entry.Message.Contains("Restart DMS after repairing the database")
+                    && entry.Message.Contains("Restart the Ed-Fi API service after repairing the database")
                     && entry.Message.Contains("Test Instance")
                     && entry.Message.Contains("test-trace-id")
                 );

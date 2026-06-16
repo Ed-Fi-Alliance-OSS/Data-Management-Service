@@ -1167,8 +1167,17 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
+    $versionArgs = @()
+    if (-not [string]::IsNullOrEmpty($DMSVersion))
+    {
+        $versionArgs += "--build-arg"
+        $versionArgs += "VERSION=$DMSVersion"
+        $versionArgs += "--build-arg"
+        $versionArgs += "ASSEMBLY_VERSION=$DMSVersion"
+    }
+
     Push-Location src/dms/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../
+    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
     Pop-Location
 }
 

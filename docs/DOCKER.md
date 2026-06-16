@@ -2,7 +2,7 @@
 
 ## Dockerfile
 
-The [Dockerfile](../src/Dockerfile) in `src` builds the Ed-Fi API (DMS) image
+The [Dockerfile](../src/dms/Dockerfile) in `src/dms` builds the Ed-Fi API (DMS) image
 directly from source code, and
 [Nuget.Dockerfile](../src/dms/Nuget.Dockerfile) build the image from the
 pre-built NuGet packages. Both versions include both the API application and the
@@ -12,7 +12,7 @@ environments and for publishing to [Docker
 Hub](https://hub.docker.com/u/edfialliance).
 
 The runtime base image is `mcr.microsoft.com/dotnet/aspnet` on Alpine, running
-.NET 8. This image is maintained by Microsoft and considered trusted. Use of the
+.NET 10. This image is maintained by Microsoft and considered trusted. Use of the
 Alpine distribution means that the final image will be smaller than with other
 distributions, and the Alpine images tend to have fewer vulnerabilities.
 

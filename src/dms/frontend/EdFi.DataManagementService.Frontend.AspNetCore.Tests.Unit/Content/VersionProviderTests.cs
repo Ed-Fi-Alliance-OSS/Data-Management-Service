@@ -24,4 +24,17 @@ public class VersionProviderTests
         // Assert
         Assert.That(version, Is.Not.EqualTo("0.0.0"));
     }
+
+    [Test]
+    public void Given_VersionProvider_When_RetrievingApplicationName_Then_ReturnsEdFiApi()
+    {
+        // Arrange
+        var versionProvider = new VersionProvider();
+
+        // Act
+        string applicationName = versionProvider.ApplicationName;
+
+        // Assert
+        Assert.That(applicationName, Is.EqualTo("Ed-Fi API"));
+    }
 }

@@ -2,7 +2,7 @@
 <package >
   <metadata>
     <id>EdFi.DmsConfigurationService</id>
-    <version>1.0.0.0</version>
+    <version>$version$</version>
     <title>Ed-Fi API Configuration Service</title>
     <authors>Ed-Fi Alliance</authors>
     <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/DMS-Configuration-Service</projectUrl>

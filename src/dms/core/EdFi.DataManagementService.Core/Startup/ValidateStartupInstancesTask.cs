@@ -226,7 +226,7 @@ internal sealed class ValidateStartupInstancesTask(
                 "Malformed dms.EffectiveSchema fingerprint for data store "
                     + "{DataStoreId} ({Name}) tenant {Tenant}. "
                     + "Requests routed to this instance will receive 503. "
-                    + "Restart DMS after repairing the database",
+                    + "Restart the Ed-Fi API service after repairing the database",
                 instance.Id,
                 sanitizedName,
                 sanitizedTenant

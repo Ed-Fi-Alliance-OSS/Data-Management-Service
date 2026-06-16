@@ -3,6 +3,9 @@
         <AssemblyVersion>8.0.0</AssemblyVersion>
         <FileVersion>8.0.0</FileVersion>
         <InformationalVersion>8.0.0</InformationalVersion>
+        <Product>Ed-Fi API</Product>
+        <Authors>Ed-Fi Alliance, LLC and contributors</Authors>
+        <Company>Ed-Fi Alliance, LLC and contributors</Company>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
     </PropertyGroup>

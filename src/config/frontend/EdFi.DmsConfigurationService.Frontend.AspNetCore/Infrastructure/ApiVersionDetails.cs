@@ -26,7 +26,7 @@ public static class ApiVersionDetails
     /// <summary>
     /// Informational version description
     /// </summary>
-    public const string InformationalVersion = "Release Candidate 1";
+    public const string InformationalVersion = "8.0.0";
 
     /// <summary>
     /// Assembly version of the DMS Configuration Api.

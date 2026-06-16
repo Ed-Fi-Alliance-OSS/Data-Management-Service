@@ -2,7 +2,7 @@
 <package >
   <metadata>
     <id>EdFi.DataManagementService.Core</id>
-    <version>1.0.0.0</version>
+    <version>$version$</version>
     <title>Ed-Fi API Core</title>
     <authors>Ed-Fi Alliance</authors>
     <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</projectUrl>
