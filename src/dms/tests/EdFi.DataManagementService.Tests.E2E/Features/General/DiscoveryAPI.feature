@@ -84,6 +84,11 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Other"
                     },
                     {
+                      "name": "Change-Queries",
+                      "endpointUri": "{BASE_URL}/metadata/changequeries/v1/swagger.json",
+                      "prefix": "Other"
+                    },
+                    {
                       "name": "E2E-Test-School-IncludeOnly",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-IncludeOnly/resources-spec.json",
                       "prefix": "Profiles"
