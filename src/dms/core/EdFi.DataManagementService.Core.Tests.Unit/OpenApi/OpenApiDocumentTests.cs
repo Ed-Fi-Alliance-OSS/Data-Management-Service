@@ -15,6 +15,37 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 public class OpenApiDocumentTests
 {
+    private static JsonObject ChangeQueriesDocument(
+        string title,
+        bool includeAvailableChangeVersionsPath = true
+    )
+    {
+        JsonObject paths = [];
+        if (includeAvailableChangeVersionsPath)
+        {
+            paths["/availableChangeVersions"] = new JsonObject
+            {
+                ["get"] = new JsonObject
+                {
+                    ["description"] = "availableChangeVersions get description",
+                    ["tags"] = new JsonArray("changeQueries"),
+                },
+            };
+        }
+
+        return new JsonObject
+        {
+            ["openapi"] = "3.0.1",
+            ["info"] = new JsonObject { ["title"] = title, ["version"] = "5.0.0" },
+            ["paths"] = paths,
+            ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+            ["tags"] = new JsonArray
+            {
+                new JsonObject { ["name"] = "changeQueries", ["description"] = "Change Queries" },
+            },
+        };
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Simple_Core_Schema_Document : OpenApiDocumentTests
@@ -197,6 +228,184 @@ public class OpenApiDocumentTests
             result = result.Replace("\r\n", "\n");
 
             result.Should().Be(expectedResult);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_With_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
+
+        [SetUp]
+        public void Setup()
+        {
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(changeQueriesDoc: ChangeQueriesDocument("Ed-Fi Change Queries API"))
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_the_core_change_queries_document()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
+            changeQueriesResult["paths"]!.AsObject().Should().ContainKey("/availableChangeVersions");
+        }
+
+        [Test]
+        public void It_should_return_a_deep_clone()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"] = "Mutated Change Queries API";
+
+            JsonNode rawChangeQueriesDocument = apiSchemaDocumentNodes.CoreApiSchemaRootNode[
+                "projectSchema"
+            ]!["openApiBaseDocuments"]!["changeQueries"]!;
+
+            rawChangeQueriesDocument["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            JsonNode? secondResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+
+            secondResult.Should().NotBeNull();
+            secondResult!["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_With_A_Pathless_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesDocument(
+                        "Ed-Fi Pathless Change Queries API",
+                        includeAvailableChangeVersionsPath: false
+                    )
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_treat_the_document_as_present()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["paths"]!.AsObject().Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_Without_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            changeQueriesResult.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_Schema_With_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments()
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesDocument("Sample Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_ignore_the_extension_document()
+        {
+            changeQueriesResult.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Core_And_Extension_Change_Queries_Base_Documents : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(changeQueriesDoc: ChangeQueriesDocument("Ed-Fi Change Queries API"))
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesDocument("Sample Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_only_the_core_document()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
         }
     }
 

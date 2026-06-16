@@ -862,7 +862,8 @@ public class ApiSchemaBuilder
     /// </summary>
     public ApiSchemaBuilder WithOpenApiBaseDocuments(
         JsonNode? resourcesDoc = null,
-        JsonNode? descriptorsDoc = null
+        JsonNode? descriptorsDoc = null,
+        JsonNode? changeQueriesDoc = null
     )
     {
         if (_currentProjectNode == null)
@@ -870,11 +871,18 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException("Must be within a project context");
         }
 
-        _currentProjectNode["openApiBaseDocuments"] = new JsonObject
+        JsonObject openApiBaseDocuments = new()
         {
             ["resources"] = resourcesDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Resources API"),
             ["descriptors"] = descriptorsDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Descriptors API"),
         };
+
+        if (changeQueriesDoc is not null)
+        {
+            openApiBaseDocuments["changeQueries"] = changeQueriesDoc;
+        }
+
+        _currentProjectNode["openApiBaseDocuments"] = openApiBaseDocuments;
 
         return this;
     }

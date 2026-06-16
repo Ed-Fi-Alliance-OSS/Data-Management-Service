@@ -95,6 +95,11 @@ internal class ApiService : IApiService
     /// </summary>
     private readonly Lazy<JsonNode> _descriptorOpenApiSpecification;
 
+    /// <summary>
+    /// The standalone Change-Queries OpenAPI specification from the core ApiSchema, if present
+    /// </summary>
+    private readonly Lazy<JsonNode?> _changeQueriesOpenApiSpecification;
+
     public ApiService(
         IApiSchemaProvider apiSchemaProvider,
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
@@ -145,6 +150,7 @@ internal class ApiService : IApiService
         );
         _resourceOpenApiSpecification = new Lazy<JsonNode>(CreateResourceOpenApiSpecification);
         _descriptorOpenApiSpecification = new Lazy<JsonNode>(CreateDescriptorOpenApiSpecification);
+        _changeQueriesOpenApiSpecification = new Lazy<JsonNode?>(CreateChangeQueriesOpenApiSpecification);
     }
 
     private List<IPipelineStep> GetCommonInitialSteps()
@@ -433,6 +439,14 @@ internal class ApiService : IApiService
         );
     }
 
+    private JsonNode? CreateChangeQueriesOpenApiSpecification()
+    {
+        OpenApiDocument changeQueriesOpenApiDocument = new(_logger);
+        return changeQueriesOpenApiDocument.CreateChangeQueriesDocument(
+            _apiSchemaProvider.GetApiSchemaNodes()
+        );
+    }
+
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
@@ -575,13 +589,7 @@ internal class ApiService : IApiService
     /// </summary>
     public JsonNode GetResourceOpenApiSpecification(JsonArray servers)
     {
-        JsonNode specification = _resourceOpenApiSpecification.Value;
-        specification["servers"] = servers;
-
-        // Add OAuth2 Security Section
-        AddOAuth2SecuritySection(specification);
-
-        return specification;
+        return AddEndpointSpecificOpenApiMetadata(_resourceOpenApiSpecification.Value, servers);
     }
 
     /// <summary>
@@ -590,10 +598,27 @@ internal class ApiService : IApiService
     /// </summary>
     public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers)
     {
-        JsonNode specification = _descriptorOpenApiSpecification.Value;
-        specification["servers"] = servers;
+        return AddEndpointSpecificOpenApiMetadata(_descriptorOpenApiSpecification.Value, servers);
+    }
 
-        // Add OAuth2 Security Section
+    /// <summary>
+    /// DMS entry point to get the standalone Change-Queries OpenAPI specification from the core ApiSchema.
+    /// Servers array should be provided by the front end.
+    /// </summary>
+    public JsonNode? GetChangeQueriesOpenApiSpecification(JsonArray servers)
+    {
+        if (_changeQueriesOpenApiSpecification.Value is not JsonNode specification)
+        {
+            return null;
+        }
+
+        return AddEndpointSpecificOpenApiMetadata(specification, servers);
+    }
+
+    private JsonNode AddEndpointSpecificOpenApiMetadata(JsonNode cachedSpecification, JsonArray servers)
+    {
+        JsonNode specification = cachedSpecification.DeepClone();
+        specification["servers"] = servers.DeepClone();
         AddOAuth2SecuritySection(specification);
 
         return specification;

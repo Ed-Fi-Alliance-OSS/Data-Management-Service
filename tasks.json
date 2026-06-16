@@ -34,7 +34,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ApiService\"`.",
       "Inspect tests to confirm resource and descriptor OpenAPI generation still uses the existing resource/descriptor paths."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "metadata-endpoints",
