@@ -70,3 +70,9 @@ Key decisions: added private constants for data and changeQueries/v1 OpenAPI ser
 Files changed: tasks.json; progress.txt; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs
 Verification: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs; dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter "FullyQualifiedName~MetaDataModuleTests" passed 7 tests.
 Blockers/notes: none.
+
+Task completed: metadata catalog stale Change-Queries stubs cleanup for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: catalog tests now fake HasChangeQueriesOpenApiSpecification for absent Change-Queries metadata instead of stubbing full GetChangeQueriesOpenApiSpecification null documents; Swagger-route tests keep document getter stubs.
+Files changed: tasks.json; progress.txt; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs
+Verification: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs; dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter "FullyQualifiedName~MetaDataModuleTests" passed 7 tests.
+Blockers/notes: none. Remaining open tasks: static profile helper; consolidate OpenAPI test document builders.

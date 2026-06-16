@@ -36,8 +36,7 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
-            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns((JsonNode?)null);
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile", "SchoolProfile"]));
 
@@ -74,8 +73,7 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
-            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns((JsonNode?)null);
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
 
@@ -337,8 +335,7 @@ public class MetadataModuleTests
                         """
                     )!
                 );
-            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns((JsonNode?)null);
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
