@@ -29,7 +29,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         "urn:ed-fi:api:database-fingerprint-validation-error";
 
     private const string MalformedFingerprintDetail =
-        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart the Ed-Fi API service after the database has been repaired to clear the cached fingerprint validation failure.";
 
     private static RequestInfo CreateRequestInfoWithAuthorizations(
         IServiceProvider? scopedServiceProvider = null
@@ -382,7 +382,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_includes_restart_guidance_in_the_detail_message()
         {
-            _body["detail"]?.GetValue<string>().Should().Contain("Restart DMS");
+            _body["detail"]?.GetValue<string>().Should().Contain("Restart the Ed-Fi API service");
         }
 
         [Test]

@@ -622,7 +622,7 @@ internal class ApiService : IApiService
         var oauth2Scheme = new JsonObject
         {
             ["type"] = "oauth2",
-            ["description"] = "Ed-Fi DMS OAuth 2.0 Client Credentials Grant Type authorization",
+            ["description"] = "Ed-Fi API OAuth 2.0 Client Credentials Grant Type authorization",
             ["flows"] = new JsonObject
             {
                 ["clientCredentials"] = new JsonObject

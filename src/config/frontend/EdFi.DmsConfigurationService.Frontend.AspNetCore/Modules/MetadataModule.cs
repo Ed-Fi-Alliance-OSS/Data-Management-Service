@@ -32,9 +32,8 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                 // Update info section
                 document["info"] = new JsonObject
                 {
-                    ["title"] = "Ed-Fi DMS Configuration Service API",
-                    ["description"] =
-                        "API for configuring and managing the Ed-Fi Data Management Service (DMS).",
+                    ["title"] = "Ed-Fi API Configuration Service API",
+                    ["description"] = "API for configuring and managing the Ed-Fi API.",
                     ["contact"] = new JsonObject { ["url"] = "https://www.ed-fi.org/what-is-ed-fi/contact/" },
                     ["version"] = "1",
                 };
@@ -52,7 +51,7 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                 securitySchemes["oauth2_client_credentials"] = new JsonObject
                 {
                     ["type"] = "oauth2",
-                    ["description"] = "Ed-Fi DMS OAuth 2.0 Client Credentials Grant Type authorization",
+                    ["description"] = "Ed-Fi API OAuth 2.0 Client Credentials Grant Type authorization",
                     ["flows"] = new JsonObject
                     {
                         ["clientCredentials"] = new JsonObject

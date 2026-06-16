@@ -8,7 +8,7 @@ Feature: The Discovery API provides information about the application version, s
               And the discovery API root response body is
                   """
                   {
-                    "applicationName": "Ed-Fi Alliance Data Management Service",
+                    "applicationName": "Ed-Fi API",
                     "informationalVersion": "Release Candidate 1",
                     "dataModels": [
                       {

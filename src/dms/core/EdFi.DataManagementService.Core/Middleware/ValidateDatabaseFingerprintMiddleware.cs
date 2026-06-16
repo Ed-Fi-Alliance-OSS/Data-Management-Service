@@ -31,7 +31,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
 {
     private const string MalformedFingerprintTitle = "Database Provisioning Error";
     private const string MalformedFingerprintDetail =
-        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart the Ed-Fi API service after the database has been repaired to clear the cached fingerprint validation failure.";
 
     private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
     private const string SchemaHashMismatchDetail =
@@ -138,7 +138,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseNotProvisioned(
-                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
+                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart the Ed-Fi API service to clear the cached provisioning state.",
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

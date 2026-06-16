@@ -17,7 +17,7 @@ public static class ApiVersionDetails
     /// <summary>
     /// Application name
     /// </summary>
-    public const string ApplicationName = "Ed-Fi Alliance DMS Configuration Service";
+    public const string ApplicationName = "Ed-Fi API Configuration Service";
 
     /// <summary>
     /// Informational version description

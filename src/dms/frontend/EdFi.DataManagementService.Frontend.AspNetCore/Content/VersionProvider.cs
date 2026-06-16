@@ -20,7 +20,7 @@ public class VersionProvider : IVersionProvider
 {
     public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.MinorRevision}";
 
-    public string ApplicationName => "Ed-Fi Alliance Data Management Service";
+    public string ApplicationName => "Ed-Fi API";
 
     public string InformationalVersion => "Release Candidate 1";
 
