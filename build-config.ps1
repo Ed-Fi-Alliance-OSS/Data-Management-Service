@@ -130,7 +130,7 @@ function SetDMSAssemblyInfo {
     <PropertyGroup>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
-        <Product>Ed-Fi DMS Configuration Service</Product>
+        <Product>Ed-Fi API Configuration Service</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
         <Copyright>Copyright © ${(Get-Date).year)} Ed-Fi Alliance</Copyright>
