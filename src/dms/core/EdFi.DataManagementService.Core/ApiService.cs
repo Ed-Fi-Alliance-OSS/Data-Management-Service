@@ -776,14 +776,17 @@ internal class ApiService : IApiService
         JsonArray servers
     )
     {
-        // Delegate to IProfileService which handles caching and filtering
-        // The cache key includes apiSchemaLoadId so specs are regenerated when the schema changes
-        // We pass a Func to delay the base spec retrieval until needed (cache miss)
-        return await _profileService.GetProfileOpenApiSpecAsync(
+        // Delegate profile filtering and cache ownership to IProfileService. Endpoint-specific OpenAPI
+        // metadata is applied after cache retrieval so request-specific server URLs do not leak across requests.
+        JsonNode? profileSpecification = await _profileService.GetProfileOpenApiSpecAsync(
             profileName,
             tenantId,
-            () => GetResourceOpenApiSpecification(servers),
+            () => _resourceOpenApiSpecification.Value.DeepClone(),
             _apiSchemaProvider.SchemaLoadId
         );
+
+        return profileSpecification is null
+            ? null
+            : AddEndpointSpecificOpenApiMetadata(profileSpecification, servers);
     }
 }

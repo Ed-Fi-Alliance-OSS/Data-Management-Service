@@ -57,6 +57,8 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Step 1: Filter paths to only include resources covered by the profile and remove disallowed operations
         FilterPaths(specification, profileDefinition);
 
+        HashSet<string> retainedChangeQueryPathKeys = GetRetainedChangeQueryPathKeys(specification, logger);
+
         // Step 2: Remove unused component parameters now that paths are filtered
         RemoveUnusedParameters(specification);
 
@@ -69,7 +71,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Step 5: Remove base schemas that now have suffixed versions, unless Change Query
         // responses still reference the unprofiled schema graph.
         HashSet<string> schemasReferencedByChangeQueries =
-            GetSchemaNamesReachableFromRetainedChangeQueryPaths(specification);
+            GetSchemaNamesReachableFromRetainedChangeQueryPaths(specification, retainedChangeQueryPathKeys);
         RemoveBaseSchemasWithSuffixedVersions(specification, schemasReferencedByChangeQueries);
 
         // Step 6: Final cleanup - remove any schemas orphaned after profile schema creation
@@ -128,6 +130,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             r => r.ResourceName.ToLowerInvariant(),
             r => r
         );
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
 
         // Process each path and its operations
         foreach ((string pathKey, JsonNode? pathValue) in paths)
@@ -137,7 +140,10 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            if (IsChangeQueryPath(pathKey) || IsStandaloneChangeQueriesPath(pathKey))
+            if (
+                IsStandaloneChangeQueriesPath(pathKey)
+                || TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _)
+            )
             {
                 continue;
             }
@@ -480,7 +486,35 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         }
     }
 
-    private static HashSet<string> GetSchemaNamesReachableFromRetainedChangeQueryPaths(JsonNode specification)
+    private static HashSet<string> GetRetainedChangeQueryPathKeys(JsonNode specification, ILogger logger)
+    {
+        var changeQueryPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (specification["paths"] is not JsonObject paths)
+        {
+            return changeQueryPathKeys;
+        }
+
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (
+                pathValue is not null
+                && TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _)
+            )
+            {
+                changeQueryPathKeys.Add(pathKey);
+            }
+        }
+
+        return changeQueryPathKeys;
+    }
+
+    private static HashSet<string> GetSchemaNamesReachableFromRetainedChangeQueryPaths(
+        JsonNode specification,
+        HashSet<string> retainedChangeQueryPathKeys
+    )
     {
         var schemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -495,7 +529,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         foreach ((string pathKey, JsonNode? pathValue) in paths)
         {
-            if (pathValue is not null && IsChangeQueryPath(pathKey))
+            if (pathValue is not null && retainedChangeQueryPathKeys.Contains(pathKey))
             {
                 CollectReachableSchemaNames(pathValue, components, schemas, schemaNames);
             }
@@ -537,7 +571,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            if (TryGetChangeQueryBasePath(pathKey, out string basePath))
+            if (TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string basePath))
             {
                 if (
                     !resourceNamesByBasePath.TryGetValue(basePath, out string? changeQueryResourceName)
@@ -598,11 +632,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         foreach ((string pathKey, JsonNode? pathValue) in paths)
         {
-            if (
-                pathValue is not JsonObject pathObject
-                || IsChangeQueryPath(pathKey)
-                || IsStandaloneChangeQueriesPath(pathKey)
-            )
+            if (pathValue is not JsonObject pathObject || IsStandaloneChangeQueriesPath(pathKey))
             {
                 continue;
             }
@@ -614,12 +644,26 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        return resourceNamesByBasePath;
+        var nonChangeQueryResourceNamesByBasePath = new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach ((string pathKey, string resourceName) in resourceNamesByBasePath)
+        {
+            if (!TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _))
+            {
+                nonChangeQueryResourceNamesByBasePath[pathKey] = resourceName;
+            }
+        }
+
+        return nonChangeQueryResourceNamesByBasePath;
     }
 
-    private static bool IsChangeQueryPath(string pathKey) => TryGetChangeQueryBasePath(pathKey, out string _);
-
-    private static bool TryGetChangeQueryBasePath(string pathKey, out string basePath)
+    private static bool TryGetChangeQueryBasePath(
+        string pathKey,
+        IReadOnlyDictionary<string, string> resourceNamesByBasePath,
+        out string basePath
+    )
     {
         string? suffix = Array.Find(
             _changeQueryPathSuffixes,
@@ -628,8 +672,12 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         if (suffix is not null)
         {
-            basePath = pathKey[..^suffix.Length];
-            return basePath.Length > 0;
+            string candidateBasePath = pathKey[..^suffix.Length];
+            if (resourceNamesByBasePath.ContainsKey(candidateBasePath))
+            {
+                basePath = candidateBasePath;
+                return true;
+            }
         }
 
         basePath = string.Empty;

@@ -208,7 +208,10 @@ public class OpenApiDocumentTests
     }
 
     private static bool IsChangeQueryPath(string path) =>
-        _changeQueryPathSuffixes.Any(suffix => path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        Array.Exists(
+            _changeQueryPathSuffixes,
+            suffix => path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
 
     private static string GetChangeQueryBasePath(string path)
     {

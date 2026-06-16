@@ -714,6 +714,99 @@ public class ProfileOpenApiSpecificationFilterTests
     }
 
     [TestFixture]
+    public class Given_Profile_With_Resource_Path_Ending_In_Change_Query_Suffix
+        : ProfileOpenApiSpecificationFilterTests
+    {
+        private const string DeleteReadableContentType =
+            "application/vnd.ed-fi.delete.deleteprofile.readable+json";
+
+        private static JsonNode GetBaseSpecWithDeleteResource()
+        {
+            JsonNode specification = GetBaseSpec();
+            JsonObject paths = Paths(specification);
+            JsonObject schemas = specification["components"]!["schemas"]!.AsObject();
+
+            paths["/ed-fi/deletes"] = new JsonObject
+            {
+                ["get"] = new JsonObject
+                {
+                    ["tags"] = new JsonArray("deletes"),
+                    ["responses"] = new JsonObject
+                    {
+                        ["200"] = new JsonObject
+                        {
+                            ["content"] = new JsonObject
+                            {
+                                ["application/json"] = new JsonObject
+                                {
+                                    ["schema"] = new JsonObject
+                                    {
+                                        ["$ref"] = "#/components/schemas/EdFi_Delete",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            schemas["EdFi_Delete"] = SchemaWithProperties(
+                "id",
+                "deleteName",
+                "notInProfile",
+                "_etag",
+                "_lastModifiedDate"
+            );
+
+            return specification;
+        }
+
+        private static ProfileDefinition CreateReadableDeleteProfile()
+        {
+            return new ProfileDefinition(
+                "DeleteProfile",
+                [
+                    new ResourceProfile(
+                        "Delete",
+                        null,
+                        new ContentTypeDefinition(
+                            MemberSelection.IncludeOnly,
+                            [new PropertyRule("deleteName")],
+                            [],
+                            [],
+                            []
+                        ),
+                        null
+                    ),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_treats_the_suffix_path_as_a_normal_resource_when_no_base_resource_path_exists()
+        {
+            var filter = CreateFilter();
+
+            JsonNode result = filter.CreateProfileSpecification(
+                GetBaseSpecWithDeleteResource(),
+                CreateReadableDeleteProfile()
+            );
+
+            JsonObject paths = Paths(result);
+            paths.Should().ContainKey("/ed-fi/deletes");
+
+            JsonObject responseContent = paths["/ed-fi/deletes"]!["get"]!["responses"]!["200"]![
+                "content"
+            ]!.AsObject();
+            responseContent.Should().ContainKey(DeleteReadableContentType);
+            responseContent.Should().NotContainKey("application/json");
+            responseContent[DeleteReadableContentType]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Delete_readable");
+        }
+    }
+
+    [TestFixture]
     public class Given_Profile_With_IncludeOnly_Properties : ProfileOpenApiSpecificationFilterTests
     {
         private static ProfileDefinition CreateIncludeOnlyProfile()

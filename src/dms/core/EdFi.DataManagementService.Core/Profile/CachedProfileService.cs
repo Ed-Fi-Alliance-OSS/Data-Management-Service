@@ -806,7 +806,7 @@ internal class CachedProfileService(
                     apiSchemaLoadId
                 );
 
-                // Get the base OpenAPI spec with servers from the provider
+                // Get the base OpenAPI spec from the provider before request-specific endpoint metadata
                 JsonNode baseSpecification = baseSpecificationProvider();
 
                 // Apply profile filtering to the OpenAPI spec

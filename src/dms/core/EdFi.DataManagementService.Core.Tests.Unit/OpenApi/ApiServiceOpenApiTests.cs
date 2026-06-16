@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
@@ -39,7 +40,10 @@ public class ApiServiceOpenApiTests
         return services.BuildServiceProvider().GetRequiredService<HybridCache>();
     }
 
-    private static ApiService CreateApiService(ApiSchemaDocumentNodes apiSchemaDocumentNodes)
+    private static ApiService CreateApiService(
+        ApiSchemaDocumentNodes apiSchemaDocumentNodes,
+        IProfileService? profileService = null
+    )
     {
         var apiSchemaProvider = A.Fake<IApiSchemaProvider>();
         A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(apiSchemaDocumentNodes);
@@ -76,8 +80,60 @@ public class ApiServiceOpenApiTests
             A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider,
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            A.Fake<IProfileService>()
+            profileService ?? A.Fake<IProfileService>()
         );
+    }
+
+    private sealed class CachingProfileOpenApiService : IProfileService
+    {
+        private JsonNode? _cachedSpecification;
+
+        public int BaseSpecificationRequestCount { get; private set; }
+
+        public Task<ProfileResolutionResult> ResolveProfileAsync(
+            ParsedProfileHeader? parsedHeader,
+            RequestMethod method,
+            string resourceName,
+            long applicationId,
+            string? tenantId
+        )
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<CachedApplicationProfiles> GetOrFetchApplicationProfilesAsync(
+            long applicationId,
+            string? tenantId
+        )
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ProfileDefinition?> GetProfileDefinitionAsync(string profileName, string? tenantId)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<JsonNode?> GetProfileOpenApiSpecAsync(
+            string profileName,
+            string? tenantId,
+            Func<JsonNode> baseSpecificationProvider,
+            Guid apiSchemaLoadId
+        )
+        {
+            if (_cachedSpecification is null)
+            {
+                BaseSpecificationRequestCount++;
+                _cachedSpecification = baseSpecificationProvider().DeepClone();
+            }
+
+            return Task.FromResult<JsonNode?>(_cachedSpecification.DeepClone());
+        }
     }
 
     [TestFixture]
@@ -298,6 +354,65 @@ public class ApiServiceOpenApiTests
                 .GetValue<string>()
                 .Should()
                 .Be("https://example.org/data/second");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_ApiService_With_A_Cached_Profile_OpenApi_Document : ApiServiceOpenApiTests
+    {
+        private ApiService apiService = null!;
+        private CachingProfileOpenApiService profileService = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            profileService = new CachingProfileOpenApiService();
+            apiService = CreateApiService(apiSchemaDocumentNodes, profileService);
+        }
+
+        [Test]
+        public async Task It_should_apply_endpoint_metadata_after_profile_cache_retrieval()
+        {
+            JsonNode? firstResult = await apiService.GetProfileOpenApiSpecificationAsync(
+                "StudentProfile",
+                tenantId: null,
+                Servers("https://example.org/data/first")
+            );
+
+            JsonNode? secondResult = await apiService.GetProfileOpenApiSpecificationAsync(
+                "StudentProfile",
+                tenantId: null,
+                Servers("https://example.org/data/second")
+            );
+
+            firstResult.Should().NotBeNull();
+            firstResult!["servers"]![0]!["url"]!
+                .GetValue<string>()
+                .Should()
+                .Be("https://example.org/data/first");
+
+            secondResult.Should().NotBeNull();
+            secondResult!["servers"]![0]!["url"]!
+                .GetValue<string>()
+                .Should()
+                .Be("https://example.org/data/second");
+            secondResult["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be(TokenUrl);
+            profileService.BaseSpecificationRequestCount.Should().Be(1);
         }
     }
 }
