@@ -615,6 +615,14 @@ internal class ApiService : IApiService
         return AddEndpointSpecificOpenApiMetadata(specification, servers);
     }
 
+    /// <summary>
+    /// DMS entry point to determine whether the standalone Change-Queries OpenAPI specification is present.
+    /// </summary>
+    public bool HasChangeQueriesOpenApiSpecification()
+    {
+        return _changeQueriesOpenApiSpecification.Value is not null;
+    }
+
     private JsonNode AddEndpointSpecificOpenApiMetadata(JsonNode cachedSpecification, JsonArray servers)
     {
         JsonNode specification = cachedSpecification.DeepClone();

@@ -776,8 +776,7 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
-            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns(JsonNode.Parse("""{"openapi": "3.0.0"}"""));
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
 
@@ -808,6 +807,9 @@ public class MetadataModuleTests
                 .GetValue<string>()
                 .Should()
                 .Be("http://localhost/metadata/changequeries/v1/swagger.json");
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .MustNotHaveHappened();
         }
 
         [Test]
@@ -815,8 +817,7 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
-            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns((JsonNode?)null);
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
 
@@ -842,6 +843,9 @@ public class MetadataModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             changeQueries.Should().BeNull();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .MustNotHaveHappened();
         }
 
         [Test]

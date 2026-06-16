@@ -85,6 +85,11 @@ public interface IApiService
     JsonNode? GetChangeQueriesOpenApiSpecification(JsonArray servers);
 
     /// <summary>
+    /// Returns whether the selected core ApiSchema provides a standalone Change-Queries OpenAPI specification.
+    /// </summary>
+    bool HasChangeQueriesOpenApiSpecification();
+
+    /// <summary>
     /// DMS entry point to reload the claimsets cache
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>

@@ -414,7 +414,7 @@ public partial class MetadataEndpointModule : IEndpointModule
             );
         }
 
-        if (apiService.GetChangeQueriesOpenApiSpecification([]) is not null)
+        if (apiService.HasChangeQueriesOpenApiSpecification())
         {
             sections.Add(
                 new RouteInformation(

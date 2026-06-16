@@ -96,6 +96,7 @@ public class ApiServiceOpenApiTests
     public class Given_ApiService_With_A_Core_Change_Queries_OpenApi_Document : ApiServiceOpenApiTests
     {
         private ApiService apiService = null!;
+        private bool hasChangeQueriesOpenApiSpecification;
         private JsonNode? result;
 
         private static JsonObject ChangeQueriesDocument(string title)
@@ -122,9 +123,16 @@ public class ApiServiceOpenApiTests
                 .AsApiSchemaNodes();
 
             apiService = CreateApiService(apiSchemaDocumentNodes);
+            hasChangeQueriesOpenApiSpecification = apiService.HasChangeQueriesOpenApiSpecification();
             result = apiService.GetChangeQueriesOpenApiSpecification(
                 Servers("https://example.org/changeQueries/v1")
             );
+        }
+
+        [Test]
+        public void It_should_report_the_change_queries_document_is_present()
+        {
+            hasChangeQueriesOpenApiSpecification.Should().BeTrue();
         }
 
         [Test]
@@ -170,6 +178,7 @@ public class ApiServiceOpenApiTests
     [Parallelizable]
     public class Given_ApiService_Without_A_Core_Change_Queries_OpenApi_Document : ApiServiceOpenApiTests
     {
+        private bool hasChangeQueriesOpenApiSpecification;
         private JsonNode? result;
 
         [SetUp]
@@ -185,9 +194,63 @@ public class ApiServiceOpenApiTests
                 .AsApiSchemaNodes();
 
             ApiService apiService = CreateApiService(apiSchemaDocumentNodes);
+            hasChangeQueriesOpenApiSpecification = apiService.HasChangeQueriesOpenApiSpecification();
             result = apiService.GetChangeQueriesOpenApiSpecification(
                 Servers("https://example.org/changeQueries/v1")
             );
+        }
+
+        [Test]
+        public void It_should_report_the_change_queries_document_is_absent()
+        {
+            hasChangeQueriesOpenApiSpecification.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            result.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_ApiService_With_Only_An_Extension_Change_Queries_OpenApi_Document
+        : ApiServiceOpenApiTests
+    {
+        private bool hasChangeQueriesOpenApiSpecification;
+        private JsonNode? result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: OpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: OpenApiDocument("Ed-Fi Descriptors API")
+                )
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: OpenApiDocument("Sample Resources API"),
+                    descriptorsDoc: OpenApiDocument("Sample Descriptors API"),
+                    changeQueriesDoc: OpenApiDocument("Sample Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            ApiService apiService = CreateApiService(apiSchemaDocumentNodes);
+            hasChangeQueriesOpenApiSpecification = apiService.HasChangeQueriesOpenApiSpecification();
+            result = apiService.GetChangeQueriesOpenApiSpecification(
+                Servers("https://example.org/changeQueries/v1")
+            );
+        }
+
+        [Test]
+        public void It_should_report_the_change_queries_document_is_absent()
+        {
+            hasChangeQueriesOpenApiSpecification.Should().BeFalse();
         }
 
         [Test]

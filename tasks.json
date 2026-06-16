@@ -182,5 +182,25 @@
       "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ProfileOpenApiSpecificationFilterTests.cs`."
     ],
     "completed": true
+  },
+  {
+    "category": "metadata-endpoints",
+    "description": "Low: Avoid cloning and mutating the Change-Queries OpenAPI document when only checking metadata catalog presence.",
+    "acceptance-criteria": [
+      "`IApiService` exposes a dedicated Change-Queries OpenAPI presence check for catalog listing decisions.",
+      "`ApiService` implements the presence check from the cached core Change-Queries document without deep-cloning the document, replacing `servers`, or injecting OAuth security metadata.",
+      "`MetadataEndpointModule.GetSections` uses the presence check to decide whether to list `Change-Queries` under `Other`.",
+      "`MetadataEndpointModule.GetChangeQueriesOpenApiSpec` continues to use `GetChangeQueriesOpenApiSpecification` so actual document serving still applies server URL and OAuth security injection.",
+      "Existing behavior is preserved when the core Change-Queries OpenAPI document is present, missing, or present only in an extension schema."
+    ],
+    "steps-to-verify": [
+      "Review and update `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IApiService.cs`, `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`, and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs`.",
+      "Add or update `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ApiServiceOpenApiTests.cs` coverage for the new presence check.",
+      "Update metadata endpoint tests in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs` so catalog listing uses the presence check while the canonical Swagger route still uses `GetChangeQueriesOpenApiSpecification`.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiServiceOpenApiTests\"`.",
+      "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
+      "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.External src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ApiServiceOpenApiTests.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs`."
+    ],
+    "completed": true
   }
 ]
