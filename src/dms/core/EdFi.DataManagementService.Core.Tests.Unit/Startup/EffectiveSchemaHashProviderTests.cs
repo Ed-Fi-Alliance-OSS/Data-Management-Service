@@ -470,9 +470,12 @@ public class EffectiveSchemaHashProviderTests
         private EffectiveSchemaHashProvider _provider = null!;
         private ApiSchemaInputNormalizer _normalizer = null!;
         private string _hashWithOpenApi = null!;
+        private string _hashWithChangedChangeQueriesOpenApi = null!;
         private string _hashWithoutOpenApi = null!;
 
-        private static JsonNode CreateSchemaWithOpenApi()
+        private static JsonNode CreateSchemaWithOpenApi(
+            string changeQueriesSummary = "Get available change versions"
+        )
         {
             return new JsonObject
             {
@@ -487,6 +490,17 @@ public class EffectiveSchemaHashProviderTests
                     {
                         ["resources"] = new JsonObject { ["openapi"] = "3.0.0" },
                         ["descriptors"] = new JsonObject { ["openapi"] = "3.0.0" },
+                        ["changeQueries"] = new JsonObject
+                        {
+                            ["openapi"] = "3.0.0",
+                            ["paths"] = new JsonObject
+                            {
+                                ["/availableChangeVersions"] = new JsonObject
+                                {
+                                    ["get"] = new JsonObject { ["summary"] = changeQueriesSummary },
+                                },
+                            },
+                        },
                     },
                     ["resourceSchemas"] = new JsonObject
                     {
@@ -547,18 +561,35 @@ public class EffectiveSchemaHashProviderTests
             var nodesWithOpenApi = new ApiSchemaDocumentNodes(CreateSchemaWithOpenApi(), []);
             var normalizedWithOpenApi = _normalizer.Normalize(nodesWithOpenApi);
 
+            // Same schema with only changeQueries OpenAPI content changed
+            var nodesWithChangedChangeQueriesOpenApi = new ApiSchemaDocumentNodes(
+                CreateSchemaWithOpenApi("Changed summary"),
+                []
+            );
+            var normalizedWithChangedChangeQueriesOpenApi = _normalizer.Normalize(
+                nodesWithChangedChangeQueriesOpenApi
+            );
+
             // Schema WITHOUT OpenAPI payloads - normalize for consistency
             var nodesWithoutOpenApi = new ApiSchemaDocumentNodes(CreateSchemaWithoutOpenApi(), []);
             var normalizedWithoutOpenApi = _normalizer.Normalize(nodesWithoutOpenApi);
 
             // Both should be successful
             normalizedWithOpenApi.Should().BeOfType<ApiSchemaNormalizationResult.SuccessResult>();
+            normalizedWithChangedChangeQueriesOpenApi
+                .Should()
+                .BeOfType<ApiSchemaNormalizationResult.SuccessResult>();
             normalizedWithoutOpenApi.Should().BeOfType<ApiSchemaNormalizationResult.SuccessResult>();
 
             var successWithOpenApi = (ApiSchemaNormalizationResult.SuccessResult)normalizedWithOpenApi;
+            var successWithChangedChangeQueriesOpenApi =
+                (ApiSchemaNormalizationResult.SuccessResult)normalizedWithChangedChangeQueriesOpenApi;
             var successWithoutOpenApi = (ApiSchemaNormalizationResult.SuccessResult)normalizedWithoutOpenApi;
 
             _hashWithOpenApi = _provider.ComputeHash(successWithOpenApi.NormalizedNodes);
+            _hashWithChangedChangeQueriesOpenApi = _provider.ComputeHash(
+                successWithChangedChangeQueriesOpenApi.NormalizedNodes
+            );
             _hashWithoutOpenApi = _provider.ComputeHash(successWithoutOpenApi.NormalizedNodes);
         }
 
@@ -568,6 +599,12 @@ public class EffectiveSchemaHashProviderTests
             // OpenAPI payloads are stripped by the normalizer before hashing,
             // so schemas with and without OpenAPI should produce the same hash
             _hashWithOpenApi.Should().Be(_hashWithoutOpenApi);
+        }
+
+        [Test]
+        public void It_produces_identical_hashes_when_only_changeQueries_openApi_changes()
+        {
+            _hashWithChangedChangeQueriesOpenApi.Should().Be(_hashWithOpenApi);
         }
     }
 

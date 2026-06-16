@@ -446,6 +446,66 @@ public class Given_manifest_backed_workspace_with_duplicate_extension_schema_nam
 }
 
 [TestFixture]
+public class Given_manifest_backed_workspace_with_changeQueries_openapi_base_documents
+    : ApiSchemaProviderWorkspaceTestBase
+{
+    private ApiSchemaDocumentNodes _nodes = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        WriteSchemaFile(
+            "Packages/Core/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchemaWithChangeQueriesOpenApiBaseDocument(
+                "Ed-Fi",
+                "ed-fi",
+                isExtensionProject: false,
+                operationId: "getAvailableChangeVersions"
+            )
+        );
+        WriteSchemaFile(
+            "Packages/Sample/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchemaWithChangeQueriesOpenApiBaseDocument(
+                "Sample",
+                "sample",
+                isExtensionProject: true,
+                operationId: "extensionOnly"
+            )
+        );
+        WriteManifest(
+            ("Ed-Fi", "ed-fi", false, "Packages/Core/ApiSchema.json"),
+            ("Sample", "sample", true, "Packages/Sample/ApiSchema.json")
+        );
+
+        _nodes = CreateFileModeProvider().GetApiSchemaNodes();
+    }
+
+    [Test]
+    public void It_preserves_the_core_changeQueries_openApi_base_document_on_raw_loaded_nodes()
+    {
+        _nodes
+            .CoreApiSchemaRootNode["projectSchema"]
+            ?["openApiBaseDocuments"]?["changeQueries"]?["paths"]?["/availableChangeVersions"]?["get"]?[
+                "operationId"
+            ]?.GetValue<string>()
+            .Should()
+            .Be("getAvailableChangeVersions");
+    }
+
+    [Test]
+    public void It_preserves_extension_changeQueries_openApi_base_documents_on_raw_loaded_nodes()
+    {
+        _nodes
+            .ExtensionApiSchemaRootNodes[0]["projectSchema"]
+            ?["openApiBaseDocuments"]?["changeQueries"]?["paths"]?["/availableChangeVersions"]?["get"]?[
+                "operationId"
+            ]?.GetValue<string>()
+            .Should()
+            .Be("extensionOnly");
+    }
+}
+
+[TestFixture]
 public class Given_manifest_declares_a_missing_schema_file_with_a_legacy_fallback_schema
     : ApiSchemaProviderWorkspaceTestBase
 {
@@ -950,6 +1010,34 @@ internal static class ApiSchemaProviderTestFixtures
                 ["resourceSchemas"] = new JsonObject(),
             },
         };
+    }
+
+    public static JsonNode CreateApiSchemaWithChangeQueriesOpenApiBaseDocument(
+        string projectName,
+        string projectEndpointName,
+        bool isExtensionProject,
+        string operationId
+    )
+    {
+        var schema = CreateApiSchema(projectName, projectEndpointName, isExtensionProject);
+        schema["projectSchema"]!.AsObject()["openApiBaseDocuments"] = new JsonObject
+        {
+            ["resources"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
+            ["descriptors"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
+            ["changeQueries"] = new JsonObject
+            {
+                ["openapi"] = "3.0.1",
+                ["paths"] = new JsonObject
+                {
+                    ["/availableChangeVersions"] = new JsonObject
+                    {
+                        ["get"] = new JsonObject { ["operationId"] = operationId },
+                    },
+                },
+            },
+        };
+
+        return schema;
     }
 
     public static string GetCoreEndpointName(ApiSchemaDocumentNodes nodes)

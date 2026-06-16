@@ -41,6 +41,17 @@ public class ApiSchemaInputNormalizerTests
             projectSchema["openApiBaseDocuments"] = new JsonObject
             {
                 ["resources"] = new JsonObject { ["info"] = "test" },
+                ["descriptors"] = new JsonObject { ["info"] = "descriptor test" },
+                ["changeQueries"] = new JsonObject
+                {
+                    ["paths"] = new JsonObject
+                    {
+                        ["/availableChangeVersions"] = new JsonObject
+                        {
+                            ["get"] = new JsonObject { ["operationId"] = "getAvailableChangeVersions" },
+                        },
+                    },
+                },
             };
             projectSchema["resourceSchemas"] = new JsonObject
             {
@@ -89,6 +100,16 @@ public class ApiSchemaInputNormalizerTests
             projectSchema["openApiBaseDocuments"] = new JsonObject
             {
                 ["resources"] = new JsonObject { ["info"] = "extension test" },
+                ["changeQueries"] = new JsonObject
+                {
+                    ["paths"] = new JsonObject
+                    {
+                        ["/extensionAvailableChangeVersions"] = new JsonObject
+                        {
+                            ["get"] = new JsonObject { ["operationId"] = "extensionOnly" },
+                        },
+                    },
+                },
             };
             projectSchema["resourceSchemas"] = new JsonObject
             {
@@ -607,6 +628,14 @@ public class ApiSchemaInputNormalizerTests
         }
 
         [Test]
+        public void It_strips_changeQueries_with_openApiBaseDocuments_from_core()
+        {
+            var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
+            var coreProjectSchema = success.NormalizedNodes.CoreApiSchemaRootNode["projectSchema"];
+            coreProjectSchema?["openApiBaseDocuments"]?["changeQueries"].Should().BeNull();
+        }
+
+        [Test]
         public void It_strips_openApiFragments_from_resourceSchemas()
         {
             var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
@@ -647,10 +676,23 @@ public class ApiSchemaInputNormalizerTests
         }
 
         [Test]
+        public void It_strips_extension_changeQueries_with_openApiBaseDocuments()
+        {
+            var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
+            var extension = success.NormalizedNodes.ExtensionApiSchemaRootNodes[0];
+            var extProjectSchema = extension["projectSchema"];
+
+            extProjectSchema?["openApiBaseDocuments"]?["changeQueries"].Should().BeNull();
+        }
+
+        [Test]
         public void It_does_not_mutate_original_core_schema()
         {
             // Original should still have the OpenAPI payloads
             _originalCoreSchema["projectSchema"]?["openApiBaseDocuments"].Should().NotBeNull();
+            _originalCoreSchema["projectSchema"]
+                ?["openApiBaseDocuments"]?["changeQueries"].Should()
+                .NotBeNull();
             _originalCoreSchema["projectSchema"]
                 ?["resourceSchemas"]?["students"]?["openApiFragments"].Should()
                 .NotBeNull();

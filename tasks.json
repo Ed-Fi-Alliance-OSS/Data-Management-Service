@@ -15,7 +15,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaValidatorTests|FullyQualifiedName~ApiSchemaInputNormalizerTests|FullyQualifiedName~EffectiveSchemaHashProviderTests\"`.",
       "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "core-openapi",
