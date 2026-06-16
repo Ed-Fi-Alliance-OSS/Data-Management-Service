@@ -146,6 +146,6 @@
       "Run the targeted unit and integration test projects touched by the implementation.",
       "Run `dotnet csharpier format src/dms/core src/dms/frontend src/dms/tests` after test edits."
     ],
-    "completed": false
+    "completed": true
   }
 ]
