@@ -24,34 +24,30 @@ public class VersionProvider : IVersionProvider
 
     public string ApplicationName => "Ed-Fi API";
 
-    public string InformationalVersion
+    public string InformationalVersion =>
+        NormalizeInformationalVersion(
+            Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
+        );
+
+    /// <summary>
+    /// Strips any build-metadata suffix (e.g. "+&lt;git-sha&gt;") from the informational version so it
+    /// does not leak into the response, falling back to the release version when none is present.
+    /// </summary>
+    internal static string NormalizeInformationalVersion(string? informationalVersion)
     {
-        get
+        if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            string? informationalVersion = Assembly
-                .GetEntryAssembly()
-                ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion;
-
-            if (string.IsNullOrWhiteSpace(informationalVersion))
-            {
-                return FallbackInformationalVersion;
-            }
-
-            // Strip any build-metadata suffix (e.g. "+<git-sha>") so it does not leak into the response.
-            int metadataIndex = informationalVersion.IndexOf('+');
-            return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
+            return FallbackInformationalVersion;
         }
+
+        int metadataIndex = informationalVersion.IndexOf('+');
+        return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
     }
 
-    private static Version FullVersion
-    {
-        get
-        {
-            var version =
-                (Assembly.GetEntryAssembly()?.GetName().Version)
-                ?? throw new InvalidOperationException("Unable to retrieve assembly version");
-            return version;
-        }
-    }
+    private static Version FullVersion =>
+        Assembly.GetExecutingAssembly().GetName().Version
+        ?? throw new InvalidOperationException("Unable to retrieve assembly version");
 }

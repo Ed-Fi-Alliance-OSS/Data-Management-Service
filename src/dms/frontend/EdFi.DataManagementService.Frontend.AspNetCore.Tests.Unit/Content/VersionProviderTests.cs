@@ -38,17 +38,30 @@ public class VersionProviderTests
         Assert.That(applicationName, Is.EqualTo("Ed-Fi API"));
     }
 
-    [Test]
-    public void Given_VersionProvider_When_RetrievingInformationalVersion_Then_ReturnsNonEmptyValueWithoutBuildMetadata()
+    [TestCase("8.0.1+0a1b2c3", "8.0.1")]
+    [TestCase("8.0.1-rc.1+0a1b2c3", "8.0.1-rc.1")]
+    [TestCase("8.0.1", "8.0.1")]
+    public void Given_InformationalVersionWithMetadata_When_Normalizing_Then_StripsBuildMetadata(
+        string raw,
+        string expected
+    )
     {
-        // Arrange
-        var versionProvider = new VersionProvider();
-
         // Act
-        string informationalVersion = versionProvider.InformationalVersion;
+        string normalized = VersionProvider.NormalizeInformationalVersion(raw);
 
         // Assert
-        Assert.That(informationalVersion, Is.Not.Null.And.Not.Empty);
-        Assert.That(informationalVersion, Does.Not.Contain("+"));
+        Assert.That(normalized, Is.EqualTo(expected));
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void Given_MissingInformationalVersion_When_Normalizing_Then_ReturnsReleaseFallback(string? raw)
+    {
+        // Act
+        string normalized = VersionProvider.NormalizeInformationalVersion(raw);
+
+        // Assert
+        Assert.That(normalized, Is.EqualTo("8.0.0"));
     }
 }
