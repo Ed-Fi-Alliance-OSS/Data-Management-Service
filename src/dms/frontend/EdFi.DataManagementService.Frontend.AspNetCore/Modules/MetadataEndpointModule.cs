@@ -27,7 +27,8 @@ public partial class MetadataEndpointModule : IEndpointModule
     private static JsonArray GetServers(
         HttpContext httpContext,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<Configuration.AppSettings> appSettings,
+        string openApiRouteBase
     )
     {
         string scheme = httpContext.Request.Scheme;
@@ -72,7 +73,10 @@ public partial class MetadataEndpointModule : IEndpointModule
             }
         }
 
-        urlSegments.Add("data");
+        foreach (string segment in openApiRouteBase.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            urlSegments.Add(segment);
+        }
 
         var serverObject = new JsonObject { ["url"] = string.Join("/", urlSegments) };
 
@@ -332,7 +336,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, "data");
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -344,7 +348,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, "data");
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -356,7 +360,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, "changeQueries/v1");
         JsonNode? content = apiService.GetChangeQueriesOpenApiSpecification(servers);
 
         if (content is null)
@@ -380,7 +384,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, "data");
 
         JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
             profileName,
@@ -466,7 +470,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = GetServers(httpContext, dataStoreProvider, options);
+            content["servers"] = GetServers(httpContext, dataStoreProvider, options, "data");
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

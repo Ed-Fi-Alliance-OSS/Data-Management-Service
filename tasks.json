@@ -71,7 +71,7 @@
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiService\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "discovery",

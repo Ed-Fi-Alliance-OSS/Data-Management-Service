@@ -5,7 +5,9 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
@@ -13,6 +15,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -397,6 +400,204 @@ public class MetadataModuleTests
                 var server = servers[0];
                 server.Should().NotBeNull();
                 server?["url"]?.GetValue<string>().Should().Be("http://localhost/data");
+            }
+        }
+    }
+
+    [TestFixture]
+    public class When_Building_OpenApi_Server_Urls
+    {
+        private static JsonObject OpenApiWithServers(JsonArray servers)
+        {
+            return new JsonObject { ["openapi"] = "3.0.0", ["servers"] = servers.DeepClone() };
+        }
+
+        private static DataStore DataStoreWithRouteContext(
+            long id,
+            params (string Key, string Value)[] routeContext
+        )
+        {
+            return new DataStore(
+                id,
+                "Test",
+                $"TestInstance{id}",
+                "test-connection-string",
+                routeContext.ToDictionary(
+                    item => new RouteQualifierName(item.Key),
+                    item => new RouteQualifierValue(item.Value)
+                )
+            );
+        }
+
+        [Test]
+        public async Task It_uses_the_data_route_base_for_resource_descriptor_and_profile_documents()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "StudentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .ReturnsLazily(
+                    (string profileName, string? tenantId, JsonArray servers) =>
+                        Task.FromResult<JsonNode?>(OpenApiWithServers(servers))
+                );
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            string[] endpointUris =
+            [
+                "/metadata/specifications/resources-spec.json",
+                "/metadata/specifications/descriptors-spec.json",
+                "/metadata/specifications/profiles/StudentProfile/resources-spec.json",
+            ];
+
+            foreach (string endpointUri in endpointUris)
+            {
+                // Act
+                var response = await client.GetAsync(endpointUri);
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonContent = JsonNode.Parse(content);
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                jsonContent!["servers"]![0]!["url"]!.GetValue<string>().Should().Be("http://localhost/data");
+            }
+        }
+
+        [TestCase(false, "", "http://localhost/changeQueries/v1")]
+        [TestCase(true, "", "http://localhost/{tenant}/changeQueries/v1")]
+        [TestCase(
+            false,
+            "districtId,schoolYear",
+            "http://localhost/{districtId}/{schoolYear}/changeQueries/v1"
+        )]
+        [TestCase(
+            true,
+            "districtId,schoolYear",
+            "http://localhost/{tenant}/{districtId}/{schoolYear}/changeQueries/v1"
+        )]
+        public async Task It_uses_the_change_queries_route_base_with_configured_prefixes(
+            bool multiTenancy,
+            string routeQualifierSegments,
+            string expectedServerUrl
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var tenantADataStore = DataStoreWithRouteContext(
+                1,
+                ("districtId", "255901"),
+                ("schoolYear", "2024")
+            );
+            var tenantBDataStore = DataStoreWithRouteContext(
+                2,
+                ("districtId", "255902"),
+                ("schoolYear", "2025")
+            );
+            A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored))
+                .Returns([tenantADataStore, tenantBDataStore]);
+            A.CallTo(() => dataStoreProvider.LoadTenants())
+                .Returns(new List<string> { "tenantA", "tenantB" });
+            A.CallTo(() => dataStoreProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
+                .Returns(tenantADataStore);
+            A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>.Ignored)).Returns(true);
+            A.CallTo(() => dataStoreProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
+
+            if (multiTenancy)
+            {
+                A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+                    .Returns(new List<string> { "tenantB", "tenantA" }.AsReadOnly());
+                A.CallTo(() => dataStoreProvider.GetAll("tenantA")).Returns([tenantADataStore]);
+                A.CallTo(() => dataStoreProvider.GetAll("tenantB")).Returns([tenantBDataStore]);
+            }
+            else
+            {
+                A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+                    .Returns(new List<string> { "" }.AsReadOnly());
+                A.CallTo(() => dataStoreProvider.GetAll(null)).Returns([tenantADataStore, tenantBDataStore]);
+            }
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
+                                ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => dataStoreProvider);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonContent = JsonNode.Parse(content);
+            var server = jsonContent!["servers"]![0]!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            server["url"]!.GetValue<string>().Should().Be(expectedServerUrl);
+
+            if (multiTenancy)
+            {
+                var tenantVariable = server["variables"]!["tenant"]!;
+                tenantVariable["default"]!.GetValue<string>().Should().Be("tenantA");
+                tenantVariable["enum"]!
+                    .AsArray()
+                    .Select(value => value!.GetValue<string>())
+                    .Should()
+                    .Equal("tenantA", "tenantB");
+            }
+
+            if (!string.IsNullOrWhiteSpace(routeQualifierSegments))
+            {
+                var variables = server["variables"]!;
+                variables["districtId"]!["default"]!.GetValue<string>().Should().Be("255902");
+                variables["districtId"]!["enum"]!
+                    .AsArray()
+                    .Select(value => value!.GetValue<string>())
+                    .Should()
+                    .Equal("255902", "255901");
+                variables["schoolYear"]!["default"]!.GetValue<string>().Should().Be("2025");
+                variables["schoolYear"]!["enum"]!
+                    .AsArray()
+                    .Select(value => value!.GetValue<string>())
+                    .Should()
+                    .Equal("2025", "2024");
             }
         }
     }
