@@ -144,6 +144,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                 ["oauth"] = BuildOAuthUrl(appSettings.Value.AuthenticationService, routeQualifierPrefix),
                 ["tokenInfo"] = $"{rootUrl}{routeQualifierPrefix}/oauth/token_info",
                 ["dataManagementApi"] = $"{rootUrl}{routeQualifierPrefix}/data",
+                ["changeQueries"] = $"{rootUrl}{routeQualifierPrefix}/changeQueries/v1/",
                 ["xsdMetadata"] = $"{rootUrl}{routeQualifierPrefix}/metadata/xsd",
             },
         };

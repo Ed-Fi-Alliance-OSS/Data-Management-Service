@@ -65,9 +65,11 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
         apiDetails?["urls"]?["tokenInfo"].Should().NotBeNull();
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("/oauth/token_info");
+        GetUrl(apiDetails, "dataManagementApi").Should().Be("http://localhost/data");
+        GetUrl(apiDetails, "changeQueries").Should().Be("http://localhost/changeQueries/v1/");
         apiDetails?["applicationName"]?.GetValue<string>().Should().Be("Ed-Fi API");
         apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("8.0.0");
         apiDetails?["dataModels"].Should().NotBeNull();
@@ -125,7 +127,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
         var dependenciesUrl = apiDetails?["urls"]?["dependencies"];
         dependenciesUrl.Should().NotBeNull();
         dependenciesUrl?.GetValue<string>().Should().Contain(pathBase);
@@ -133,6 +135,7 @@ public class DiscoveryModuleTests
         tokenInfoUrl.Should().NotBeNull();
         tokenInfoUrl?.GetValue<string>().Should().Contain(pathBase);
         tokenInfoUrl?.GetValue<string>().Should().Contain("/oauth/token_info");
+        GetUrl(apiDetails, "changeQueries").Should().Be($"http://localhost/{pathBase}/changeQueries/v1/");
         apiDetails?["applicationName"]?.GetValue<string>().Should().Be("Ed-Fi API");
         apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("8.0.0");
         apiDetails?["dataModels"].Should().NotBeNull();
@@ -194,9 +197,10 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
         // Verify URLs include tenant
         apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("valid-tenant");
+        GetUrl(apiDetails, "changeQueries").Should().Be("http://localhost/valid-tenant/changeQueries/v1/");
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("valid-tenant");
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("/oauth/token_info");
     }
@@ -310,7 +314,116 @@ public class DiscoveryModuleTests
         apiDetails.Should().NotBeNull();
         // Verify URLs include tenant placeholder
         apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("{tenant}");
+        GetUrl(apiDetails, "changeQueries").Should().Be("http://localhost/{tenant}/changeQueries/v1/");
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("{tenant}");
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("/oauth/token_info");
     }
+
+    [Test]
+    public async Task When_Route_Qualifier_Partially_Provided_Discovery_Endpoint_Returns_ChangeQueries_Url_With_Placeholder()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([]);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                        }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/255901");
+        var content = await response.Content.ReadAsStringAsync();
+        var apiDetails = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        GetUrl(apiDetails, "dataManagementApi").Should().Be("http://localhost/255901/{schoolYear}/data");
+        GetUrl(apiDetails, "changeQueries")
+            .Should()
+            .Be("http://localhost/255901/{schoolYear}/changeQueries/v1/");
+    }
+
+    [Test]
+    public async Task When_MultiTenancy_And_Route_Qualifiers_Provided_Discovery_Endpoint_Returns_ChangeQueries_Url_With_Route_Context()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([]);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("valid-tenant")).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:MultiTenancy"] = "true",
+                            ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                        }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/valid-tenant/255901/2026");
+        var content = await response.Content.ReadAsStringAsync();
+        var apiDetails = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        GetUrl(apiDetails, "dataManagementApi").Should().Be("http://localhost/valid-tenant/255901/2026/data");
+        GetUrl(apiDetails, "changeQueries")
+            .Should()
+            .Be("http://localhost/valid-tenant/255901/2026/changeQueries/v1/");
+    }
+
+    private static string GetUrl(JsonNode? apiDetails, string name) =>
+        apiDetails?["urls"]?[name]?.GetValue<string>() ?? string.Empty;
 }

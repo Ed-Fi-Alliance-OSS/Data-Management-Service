@@ -89,7 +89,7 @@
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~DiscoveryModuleTests\"`.",
       "If E2E discovery assertions include exact `urls` payloads, update the relevant feature expectations without adding runtime Change Query behavior assertions."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "resource-descriptor-openapi",
