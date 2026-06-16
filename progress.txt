@@ -76,3 +76,9 @@ Key decisions: catalog tests now fake HasChangeQueriesOpenApiSpecification for a
 Files changed: tasks.json; progress.txt; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs
 Verification: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs; dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter "FullyQualifiedName~MetaDataModuleTests" passed 7 tests.
 Blockers/notes: none. Remaining open tasks: static profile helper; consolidate OpenAPI test document builders.
+
+Task completed: static profile Change Query base-path helper for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: made BuildResourceNamesByBasePath static; made ExtractResourceNameFromPath static with explicit logger argument so JSON-path logging stays unchanged. No profile filtering behavior intended to change.
+Files changed: tasks.json; progress.txt; src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs
+Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs; dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~ProfileOpenApiSpecificationFilter" passed 42 tests.
+Blockers/notes: none. Remaining open tasks: consolidate OpenAPI test document builders.

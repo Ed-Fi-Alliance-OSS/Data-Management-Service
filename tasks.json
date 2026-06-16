@@ -231,7 +231,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileOpenApiSpecificationFilter\"`.",
       "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "test-cleanup",

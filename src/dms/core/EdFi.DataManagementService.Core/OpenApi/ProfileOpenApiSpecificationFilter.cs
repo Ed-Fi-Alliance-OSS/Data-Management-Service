@@ -142,7 +142,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
             if (resourceName is null)
             {
                 continue;
@@ -521,7 +521,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             r => r
         );
 
-        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths);
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
         var pathsToRemove = new List<string>();
 
         foreach ((string pathKey, JsonNode? pathValue) in paths)
@@ -555,7 +555,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
 
             // Extract resource name from path (e.g., "/ed-fi/students" -> "student")
-            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
             if (resourceName is null)
             {
                 continue;
@@ -592,7 +592,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         }
     }
 
-    private Dictionary<string, string> BuildResourceNamesByBasePath(JsonObject paths)
+    private static Dictionary<string, string> BuildResourceNamesByBasePath(JsonObject paths, ILogger logger)
     {
         var resourceNamesByBasePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -607,7 +607,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
             if (resourceName is not null)
             {
                 resourceNamesByBasePath[pathKey] = resourceName;
@@ -696,7 +696,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// <summary>
     /// Extracts the singular resource name from an OpenAPI path object by inspecting the GET operation's response schema.
     /// </summary>
-    private string? ExtractResourceNameFromPath(JsonObject pathObject)
+    private static string? ExtractResourceNameFromPath(JsonObject pathObject, ILogger logger)
     {
         const string SchemaJsonPath = "$.get.responses['200'].content[\"application/json\"].schema";
         const string SchemaPrefix = "#/components/schemas/";
