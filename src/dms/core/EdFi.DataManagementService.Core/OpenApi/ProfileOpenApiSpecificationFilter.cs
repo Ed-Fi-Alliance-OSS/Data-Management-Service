@@ -23,6 +23,20 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static readonly string[] _identityFieldSuffixes = ["Reference", "UniqueId"];
 
+    private static readonly string[] _changeQueryPathSuffixes = ["/deletes", "/keyChanges"];
+
+    private static readonly string[] _httpMethodNames =
+    [
+        "delete",
+        "get",
+        "head",
+        "options",
+        "patch",
+        "post",
+        "put",
+        "trace",
+    ];
+
     /// <summary>
     /// Creates a profile-filtered OpenAPI specification from a base specification.
     /// </summary>
@@ -116,6 +130,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         foreach ((string pathKey, JsonNode? pathValue) in paths)
         {
             if (pathValue is not JsonObject pathObject)
+            {
+                continue;
+            }
+
+            if (IsChangeQueryPath(pathKey) || IsStandaloneChangeQueriesPath(pathKey))
             {
                 continue;
             }
@@ -467,12 +486,36 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             r => r
         );
 
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths);
         var pathsToRemove = new List<string>();
 
         foreach ((string pathKey, JsonNode? pathValue) in paths)
         {
             if (pathValue is not JsonObject pathObject)
             {
+                continue;
+            }
+
+            if (IsStandaloneChangeQueriesPath(pathKey))
+            {
+                pathsToRemove.Add(pathKey);
+                continue;
+            }
+
+            if (TryGetChangeQueryBasePath(pathKey, out string basePath))
+            {
+                if (
+                    !resourceNamesByBasePath.TryGetValue(basePath, out string? changeQueryResourceName)
+                    || !resourceProfilesByName.TryGetValue(
+                        changeQueryResourceName.ToLowerInvariant(),
+                        out ResourceProfile? changeQueryResourceProfile
+                    )
+                    || changeQueryResourceProfile.ReadContentType is null
+                )
+                {
+                    pathsToRemove.Add(pathKey);
+                }
+
                 continue;
             }
 
@@ -497,6 +540,10 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
             // Remove disallowed operations based on profile content types without rewriting schemas yet
             RemoveDisallowedOperations(pathObject, resourceProfile, resourceName);
+            if (!HasHttpOperation(pathObject))
+            {
+                pathsToRemove.Add(pathKey);
+            }
         }
 
         // Remove paths for resources not in the profile
@@ -509,6 +556,61 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             );
         }
     }
+
+    private Dictionary<string, string> BuildResourceNamesByBasePath(JsonObject paths)
+    {
+        var resourceNamesByBasePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (
+                pathValue is not JsonObject pathObject
+                || IsChangeQueryPath(pathKey)
+                || IsStandaloneChangeQueriesPath(pathKey)
+            )
+            {
+                continue;
+            }
+
+            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            if (resourceName is not null)
+            {
+                resourceNamesByBasePath[pathKey] = resourceName;
+            }
+        }
+
+        return resourceNamesByBasePath;
+    }
+
+    private static bool IsChangeQueryPath(string pathKey) => TryGetChangeQueryBasePath(pathKey, out string _);
+
+    private static bool TryGetChangeQueryBasePath(string pathKey, out string basePath)
+    {
+        string? suffix = Array.Find(
+            _changeQueryPathSuffixes,
+            suffix => pathKey.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (suffix is not null)
+        {
+            basePath = pathKey[..^suffix.Length];
+            return basePath.Length > 0;
+        }
+
+        basePath = string.Empty;
+        return false;
+    }
+
+    private static bool IsStandaloneChangeQueriesPath(string pathKey) =>
+        pathKey.Equals("/availableChangeVersions", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasHttpOperation(JsonObject pathObject) =>
+        pathObject.Any(pathProperty =>
+            Array.Exists(
+                _httpMethodNames,
+                methodName => pathProperty.Key.Equals(methodName, StringComparison.OrdinalIgnoreCase)
+            )
+        );
 
     /// <summary>
     /// Removes operations that are not allowed by the profile (read/write) without rewriting content types.

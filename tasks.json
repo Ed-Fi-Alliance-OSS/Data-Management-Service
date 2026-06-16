@@ -128,7 +128,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileOpenApiSpecificationFilter\"`.",
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"` for profile metadata endpoint coverage."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",

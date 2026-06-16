@@ -34,3 +34,9 @@ Key decisions: no production change needed; OpenApiDocument already clones raw r
 Files changed: tasks.json; progress.txt; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/OpenApiDocumentTests.cs
 Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/OpenApiDocumentTests.cs; dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~OpenApiDocumentTests" passed 23 tests.
 Blockers/notes: none. Next likely profile-openapi task.
+
+Task completed: profile-openapi for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: profile resource metadata now associates /deletes and /keyChanges by the live base resource path, only keeps them for readable resources, skips profile content-type/schema rewriting for tracked-change paths, and drops standalone /availableChangeVersions from profile specs. Domain-filtered base specs are not reintroduced.
+Files changed: tasks.json; progress.txt; src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ProfileOpenApiSpecificationFilterTests.cs
+Verification: dotnet csharpier format touched profile OpenAPI files; dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~ProfileOpenApiSpecificationFilter" passed 41 tests; dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter "FullyQualifiedName~MetaDataModuleTests" passed 7 tests.
+Blockers/notes: none. Next likely integration-tests task.
