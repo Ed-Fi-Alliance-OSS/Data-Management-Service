@@ -18,7 +18,7 @@ public interface IVersionProvider
 
 public class VersionProvider : IVersionProvider
 {
-    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.MinorRevision}";
+    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.Build}";
 
     public string ApplicationName => "Ed-Fi API";
 

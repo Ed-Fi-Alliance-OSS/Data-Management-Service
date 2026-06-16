@@ -9,10 +9,14 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class ApiVersionDetails
 {
+    private static readonly Version AssemblyVersion =
+        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+
     /// <summary>
     /// Semantic version of the DMS Configuration Api.
     /// </summary>
-    public const string Version = "0.7.0";
+    public static readonly string Version =
+        $"{AssemblyVersion.Major}.{AssemblyVersion.Minor}.{AssemblyVersion.Build}";
 
     /// <summary>
     /// Application name
@@ -27,6 +31,5 @@ public static class ApiVersionDetails
     /// <summary>
     /// Assembly version of the DMS Configuration Api.
     /// </summary>
-    public static readonly string Build =
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Version;
+    public static readonly string Build = AssemblyVersion.ToString();
 }

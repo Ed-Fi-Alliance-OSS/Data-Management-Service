@@ -61,7 +61,7 @@ param(
     # current package number is configured in the build automation tool and
     # passed to this script.
     [string]
-    $DMSVersion = "0.1",
+    $DMSVersion = "8.0.0",
 
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
