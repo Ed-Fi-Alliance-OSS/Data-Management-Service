@@ -16,6 +16,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 public class OpenApiDocumentTests
 {
+    private static readonly string[] _changeQueryPathSuffixes = ["/deletes", "/keyChanges"];
+
     private static JsonObject BaseOpenApiDocument(
         string title,
         JsonObject paths,
@@ -132,6 +134,89 @@ public class OpenApiDocumentTests
             .AsArray()
             .Select(tag => tag!["name"]!.GetValue<string>())
             .ToArray();
+    }
+
+    private static void ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+        JsonNode openApiSpecification,
+        ApiSchemaDocumentNodes apiSchemaDocumentNodes,
+        bool expectedDescriptor
+    )
+    {
+        JsonObject paths = openApiSpecification["paths"]!.AsObject();
+        string[] changeQueryPaths = paths.Select(path => path.Key).Where(IsChangeQueryPath).ToArray();
+
+        changeQueryPaths.Should().NotBeEmpty();
+
+        foreach (string changeQueryPath in changeQueryPaths)
+        {
+            string basePath = GetChangeQueryBasePath(changeQueryPath);
+            string[] pathSegments = basePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            pathSegments
+                .Should()
+                .HaveCount(
+                    2,
+                    $"Change Query path '{changeQueryPath}' should be based on a data endpoint path"
+                );
+
+            string projectEndpointName = pathSegments[0];
+            string endpointName = pathSegments[1];
+            JsonNode? projectSchema = ProjectSchemas(apiSchemaDocumentNodes)
+                .FirstOrDefault(project =>
+                    project["projectEndpointName"]!
+                        .GetValue<string>()
+                        .Equals(projectEndpointName, StringComparison.OrdinalIgnoreCase)
+                );
+
+            projectSchema
+                .Should()
+                .NotBeNull($"Change Query path '{changeQueryPath}' should map to a project endpoint");
+
+            JsonObject endpointNameMapping = projectSchema!["caseInsensitiveEndpointNameMapping"]!.AsObject();
+            string endpointLookupKey = endpointName.ToLowerInvariant();
+            endpointNameMapping
+                .Should()
+                .ContainKey(
+                    endpointLookupKey,
+                    $"Change Query path '{changeQueryPath}' should map to an ApiSchema endpoint"
+                );
+
+            string mappedEndpointName = endpointNameMapping[endpointLookupKey]!.GetValue<string>();
+            mappedEndpointName.Should().Be(endpointName);
+
+            JsonObject resourceSchemas = projectSchema["resourceSchemas"]!.AsObject();
+            resourceSchemas
+                .Should()
+                .ContainKey(
+                    mappedEndpointName,
+                    $"Change Query path '{changeQueryPath}' should have a resource schema"
+                );
+            resourceSchemas[mappedEndpointName]!["isDescriptor"]!
+                .GetValue<bool>()
+                .Should()
+                .Be(expectedDescriptor);
+        }
+    }
+
+    private static IEnumerable<JsonNode> ProjectSchemas(ApiSchemaDocumentNodes apiSchemaDocumentNodes)
+    {
+        yield return apiSchemaDocumentNodes.CoreApiSchemaRootNode["projectSchema"]!;
+
+        foreach (JsonNode extensionApiSchemaRootNode in apiSchemaDocumentNodes.ExtensionApiSchemaRootNodes)
+        {
+            yield return extensionApiSchemaRootNode["projectSchema"]!;
+        }
+    }
+
+    private static bool IsChangeQueryPath(string path) =>
+        _changeQueryPathSuffixes.Any(suffix => path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+
+    private static string GetChangeQueryBasePath(string path)
+    {
+        string suffix = _changeQueryPathSuffixes.Single(suffix =>
+            path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+
+        return path[..^suffix.Length];
     }
 
     [TestFixture]
@@ -505,6 +590,7 @@ public class OpenApiDocumentTests
     [Parallelizable]
     public class Given_Core_Resource_And_Descriptor_OpenApi_With_Change_Query_Paths : OpenApiDocumentTests
     {
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
         private JsonNode openApiResourcesResult = new JsonObject();
         private JsonNode openApiDescriptorsResult = new JsonObject();
 
@@ -559,8 +645,14 @@ public class OpenApiDocumentTests
                 ),
             };
 
-            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
+                .WithStartResource("Student")
+                .WithEndResource()
+                .WithStartResource("SchoolYearType", isSchoolYearEnumeration: true)
+                .WithEndResource()
+                .WithStartResource("AccommodationDescriptor", isDescriptor: true)
+                .WithEndResource()
                 .WithOpenApiBaseDocuments(
                     resourcesDoc: BaseOpenApiDocument(
                         "Ed-Fi Resources API",
@@ -651,6 +743,21 @@ public class OpenApiDocumentTests
                 .Should()
                 .Be("#/components/schemas/EdFi_DescriptorKeyChange");
         }
+
+        [Test]
+        public void It_should_advertise_only_change_query_paths_with_model_backed_base_endpoints()
+        {
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiResourcesResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: false
+            );
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiDescriptorsResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: true
+            );
+        }
     }
 
     [TestFixture]
@@ -658,6 +765,7 @@ public class OpenApiDocumentTests
     public class Given_Extension_Resource_And_Descriptor_OpenApi_With_Change_Query_Paths
         : OpenApiDocumentTests
     {
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
         private JsonNode openApiResourcesResult = new JsonObject();
         private JsonNode openApiDescriptorsResult = new JsonObject();
 
@@ -702,7 +810,7 @@ public class OpenApiDocumentTests
                 ),
             };
 
-            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
                     resourcesDoc: BaseOpenApiDocument(
@@ -785,6 +893,21 @@ public class OpenApiDocumentTests
             ResponseSchemaRef(openApiDescriptorsResult, "/sample/absenceReasonDescriptors/keyChanges")
                 .Should()
                 .Be("#/components/schemas/Sample_AbsenceReasonDescriptorKeyChange");
+        }
+
+        [Test]
+        public void It_should_advertise_only_change_query_paths_with_model_backed_base_endpoints()
+        {
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiResourcesResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: false
+            );
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiDescriptorsResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: true
+            );
         }
     }
 

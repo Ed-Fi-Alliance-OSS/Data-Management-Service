@@ -16,7 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
+using static EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 

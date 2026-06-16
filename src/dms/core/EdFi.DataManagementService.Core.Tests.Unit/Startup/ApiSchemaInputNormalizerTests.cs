@@ -599,6 +599,7 @@ public class ApiSchemaInputNormalizerTests
         private ApiSchemaInputNormalizer _normalizer = null!;
         private ApiSchemaDocumentNodes _inputNodes = null!;
         private JsonNode _originalCoreSchema = null!;
+        private JsonNode _originalExtensionSchema = null!;
         private ApiSchemaNormalizationResult _result = null!;
 
         [SetUp]
@@ -607,9 +608,9 @@ public class ApiSchemaInputNormalizerTests
             _normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
 
             _originalCoreSchema = CreateValidCoreSchema(includeOpenApi: true);
-            var extensionWithOpenApi = CreateValidExtensionSchema("tpdm", includeOpenApi: true);
+            _originalExtensionSchema = CreateValidExtensionSchema("tpdm", includeOpenApi: true);
 
-            _inputNodes = new ApiSchemaDocumentNodes(_originalCoreSchema, [extensionWithOpenApi]);
+            _inputNodes = new ApiSchemaDocumentNodes(_originalCoreSchema, [_originalExtensionSchema]);
             _result = _normalizer.Normalize(_inputNodes);
         }
 
@@ -625,14 +626,6 @@ public class ApiSchemaInputNormalizerTests
             var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
             var coreProjectSchema = success.NormalizedNodes.CoreApiSchemaRootNode["projectSchema"];
             coreProjectSchema?["openApiBaseDocuments"].Should().BeNull();
-        }
-
-        [Test]
-        public void It_strips_changeQueries_with_openApiBaseDocuments_from_core()
-        {
-            var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
-            var coreProjectSchema = success.NormalizedNodes.CoreApiSchemaRootNode["projectSchema"];
-            coreProjectSchema?["openApiBaseDocuments"]?["changeQueries"].Should().BeNull();
         }
 
         [Test]
@@ -676,17 +669,7 @@ public class ApiSchemaInputNormalizerTests
         }
 
         [Test]
-        public void It_strips_extension_changeQueries_with_openApiBaseDocuments()
-        {
-            var success = (ApiSchemaNormalizationResult.SuccessResult)_result;
-            var extension = success.NormalizedNodes.ExtensionApiSchemaRootNodes[0];
-            var extProjectSchema = extension["projectSchema"];
-
-            extProjectSchema?["openApiBaseDocuments"]?["changeQueries"].Should().BeNull();
-        }
-
-        [Test]
-        public void It_does_not_mutate_original_core_schema()
+        public void It_does_not_mutate_original_schemas()
         {
             // Original should still have the OpenAPI payloads
             _originalCoreSchema["projectSchema"]?["openApiBaseDocuments"].Should().NotBeNull();
@@ -698,6 +681,10 @@ public class ApiSchemaInputNormalizerTests
                 .NotBeNull();
             _originalCoreSchema["projectSchema"]
                 ?["abstractResources"]?["educationOrganization"]?["openApiFragment"].Should()
+                .NotBeNull();
+            _originalExtensionSchema["projectSchema"]?["openApiBaseDocuments"].Should().NotBeNull();
+            _originalExtensionSchema["projectSchema"]
+                ?["openApiBaseDocuments"]?["changeQueries"].Should()
                 .NotBeNull();
         }
 
