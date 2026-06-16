@@ -249,7 +249,7 @@
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_real_ApiSchema_change_queries_metadata\"`.",
       "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "test-cleanup",

@@ -9,43 +9,13 @@ using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
 using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.OpenApiDocumentTestBase;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 public class OpenApiDocumentTests
 {
-    private static JsonObject ChangeQueriesDocument(
-        string title,
-        bool includeAvailableChangeVersionsPath = true
-    )
-    {
-        JsonObject paths = [];
-        if (includeAvailableChangeVersionsPath)
-        {
-            paths["/availableChangeVersions"] = new JsonObject
-            {
-                ["get"] = new JsonObject
-                {
-                    ["description"] = "availableChangeVersions get description",
-                    ["tags"] = new JsonArray("changeQueries"),
-                },
-            };
-        }
-
-        return new JsonObject
-        {
-            ["openapi"] = "3.0.1",
-            ["info"] = new JsonObject { ["title"] = title, ["version"] = "5.0.0" },
-            ["paths"] = paths,
-            ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
-            ["tags"] = new JsonArray
-            {
-                new JsonObject { ["name"] = "changeQueries", ["description"] = "Change Queries" },
-            },
-        };
-    }
-
     private static JsonObject BaseOpenApiDocument(
         string title,
         JsonObject paths,
@@ -361,7 +331,9 @@ public class OpenApiDocumentTests
         {
             apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
-                .WithOpenApiBaseDocuments(changeQueriesDoc: ChangeQueriesDocument("Ed-Fi Change Queries API"))
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Ed-Fi Change Queries API")
+                )
                 .WithEndProject()
                 .AsApiSchemaNodes();
 
@@ -415,7 +387,7 @@ public class OpenApiDocumentTests
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
-                    changeQueriesDoc: ChangeQueriesDocument(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument(
                         "Ed-Fi Pathless Change Queries API",
                         includeAvailableChangeVersionsPath: false
                     )
@@ -476,7 +448,7 @@ public class OpenApiDocumentTests
                 .WithEndProject()
                 .WithStartProject("Sample", "1.0.0")
                 .WithOpenApiBaseDocuments(
-                    changeQueriesDoc: ChangeQueriesDocument("Sample Change Queries API")
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Sample Change Queries API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();
@@ -503,11 +475,13 @@ public class OpenApiDocumentTests
         {
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
-                .WithOpenApiBaseDocuments(changeQueriesDoc: ChangeQueriesDocument("Ed-Fi Change Queries API"))
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Ed-Fi Change Queries API")
+                )
                 .WithEndProject()
                 .WithStartProject("Sample", "1.0.0")
                 .WithOpenApiBaseDocuments(
-                    changeQueriesDoc: ChangeQueriesDocument("Sample Change Queries API")
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Sample Change Queries API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();

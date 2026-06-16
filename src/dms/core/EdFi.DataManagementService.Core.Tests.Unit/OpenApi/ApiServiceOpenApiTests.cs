@@ -18,24 +18,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using Polly;
+using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 public class ApiServiceOpenApiTests
 {
     private const string TokenUrl = "https://example.org/oauth/token";
-
-    private static JsonObject OpenApiDocument(string title)
-    {
-        return new JsonObject
-        {
-            ["openapi"] = "3.0.1",
-            ["info"] = new JsonObject { ["title"] = title, ["version"] = "5.0.0" },
-            ["paths"] = new JsonObject(),
-            ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
-            ["tags"] = new JsonArray(),
-        };
-    }
 
     private static JsonArray Servers(string url)
     {
@@ -99,25 +88,15 @@ public class ApiServiceOpenApiTests
         private bool hasChangeQueriesOpenApiSpecification;
         private JsonNode? result;
 
-        private static JsonObject ChangeQueriesDocument(string title)
-        {
-            JsonObject document = OpenApiDocument(title);
-            document["paths"] = new JsonObject
-            {
-                ["/availableChangeVersions"] = new JsonObject { ["get"] = new JsonObject() },
-            };
-            return document;
-        }
-
         [SetUp]
         public void Setup()
         {
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
-                    resourcesDoc: OpenApiDocument("Ed-Fi Resources API"),
-                    descriptorsDoc: OpenApiDocument("Ed-Fi Descriptors API"),
-                    changeQueriesDoc: ChangeQueriesDocument("Ed-Fi Change Queries API")
+                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API"),
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Ed-Fi Change Queries API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();
@@ -187,8 +166,8 @@ public class ApiServiceOpenApiTests
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
-                    resourcesDoc: OpenApiDocument("Ed-Fi Resources API"),
-                    descriptorsDoc: OpenApiDocument("Ed-Fi Descriptors API")
+                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();
@@ -227,15 +206,15 @@ public class ApiServiceOpenApiTests
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
-                    resourcesDoc: OpenApiDocument("Ed-Fi Resources API"),
-                    descriptorsDoc: OpenApiDocument("Ed-Fi Descriptors API")
+                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
                 )
                 .WithEndProject()
                 .WithStartProject("Sample", "1.0.0")
                 .WithOpenApiBaseDocuments(
-                    resourcesDoc: OpenApiDocument("Sample Resources API"),
-                    descriptorsDoc: OpenApiDocument("Sample Descriptors API"),
-                    changeQueriesDoc: OpenApiDocument("Sample Change Queries API")
+                    resourcesDoc: MinimalOpenApiDocument("Sample Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Sample Descriptors API"),
+                    changeQueriesDoc: MinimalOpenApiDocument("Sample Change Queries API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();
@@ -272,8 +251,8 @@ public class ApiServiceOpenApiTests
             var apiSchemaDocumentNodes = new ApiSchemaBuilder()
                 .WithStartProject("ed-fi", "5.0.0")
                 .WithOpenApiBaseDocuments(
-                    resourcesDoc: OpenApiDocument("Ed-Fi Resources API"),
-                    descriptorsDoc: OpenApiDocument("Ed-Fi Descriptors API")
+                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
                 )
                 .WithEndProject()
                 .AsApiSchemaNodes();

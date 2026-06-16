@@ -29,6 +29,7 @@
         <PackageReference Include="Microsoft.CodeAnalysis" />
     </ItemGroup>
     <ItemGroup>
+        <Compile Include="..\..\core\EdFi.DataManagementService.Core.Tests.Unit\OpenApi\ChangeQueriesOpenApiDocumentTestHelper.cs" Link="OpenApi\ChangeQueriesOpenApiDocumentTestHelper.cs" />
         <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
 </Project>

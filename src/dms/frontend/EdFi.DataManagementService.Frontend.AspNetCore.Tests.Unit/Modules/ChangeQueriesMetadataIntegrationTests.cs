@@ -16,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -184,9 +185,10 @@ public class Given_real_ApiSchema_change_queries_metadata
                 projectEndpointName: "ed-fi",
                 isExtensionProject: false,
                 changeQueriesDocument: coreChangeQueries
-                    ? CreateChangeQueriesDocument(
+                    ? ChangeQueriesOpenApiDocument(
                         title: "Ed-Fi Change Queries API",
-                        summary: "Core available change versions"
+                        availableChangeVersionsSummary: "Core available change versions",
+                        includeServers: true
                     )
                     : null
             )
@@ -200,9 +202,10 @@ public class Given_real_ApiSchema_change_queries_metadata
                         projectName: "Sample",
                         projectEndpointName: "sample",
                         isExtensionProject: true,
-                        changeQueriesDocument: CreateChangeQueriesDocument(
+                        changeQueriesDocument: ChangeQueriesOpenApiDocument(
                             title: "Sample Change Queries API",
-                            summary: "Extension available change versions"
+                            availableChangeVersionsSummary: "Extension available change versions",
+                            includeServers: true
                         )
                     )
                 ),
@@ -226,8 +229,8 @@ public class Given_real_ApiSchema_change_queries_metadata
     {
         var openApiBaseDocuments = new JsonObject
         {
-            ["resources"] = CreateOpenApiDocument($"{projectName} Resources API"),
-            ["descriptors"] = CreateOpenApiDocument($"{projectName} Descriptors API"),
+            ["resources"] = MinimalOpenApiDocument($"{projectName} Resources API", includeServers: true),
+            ["descriptors"] = MinimalOpenApiDocument($"{projectName} Descriptors API", includeServers: true),
         };
 
         if (changeQueriesDocument is not null)
@@ -250,37 +253,6 @@ public class Given_real_ApiSchema_change_queries_metadata
             ["projectVersion"] = "5.0.0",
             ["resourceNameMapping"] = new JsonObject(),
             ["resourceSchemas"] = new JsonObject(),
-        };
-    }
-
-    private static JsonObject CreateChangeQueriesDocument(string title, string summary)
-    {
-        JsonObject document = CreateOpenApiDocument(title);
-        document["paths"] = new JsonObject
-        {
-            ["/availableChangeVersions"] = new JsonObject
-            {
-                ["get"] = new JsonObject
-                {
-                    ["summary"] = summary,
-                    ["responses"] = new JsonObject { ["200"] = new JsonObject { ["description"] = "OK" } },
-                },
-            },
-        };
-        document["tags"] = new JsonArray(new JsonObject { ["name"] = "changeQueries" });
-        return document;
-    }
-
-    private static JsonObject CreateOpenApiDocument(string title)
-    {
-        return new JsonObject
-        {
-            ["openapi"] = "3.0.1",
-            ["info"] = new JsonObject { ["title"] = title, ["version"] = "5.0.0" },
-            ["servers"] = new JsonArray(),
-            ["paths"] = new JsonObject(),
-            ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
-            ["tags"] = new JsonArray(),
         };
     }
 }
