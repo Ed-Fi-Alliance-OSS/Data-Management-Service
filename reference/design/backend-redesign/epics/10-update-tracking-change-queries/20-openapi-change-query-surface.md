@@ -110,3 +110,19 @@ The following items are the input contract DMS consumes; they are not new DMS im
 - Snapshot runtime support or advertising snapshot behavior.
 - Runtime feature-flagging for Change Queries.
 - Synthesizing Change-Queries OpenAPI in DMS when the core ApiSchema document is absent.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. Should the DMS-convention alias `/metadata/specifications/changequeries-spec.json` be required in this story, or should implementation and tests target only the canonical `/metadata/changequeries/v1/swagger.json` route?
+2. If a core ApiSchema contains `projectSchema.openApiBaseDocuments.changeQueries` but that document is structurally incomplete or lacks the `/availableChangeVersions` path, should DMS serve it with only `servers`/security injection, reject the ApiSchema at validation/startup, or treat it as absent for catalog/404 behavior?
+3. For profile OpenAPI filtering, should Change Query `/deletes` and `/keyChanges` paths be associated to a profile by the base resource/descriptor endpoint path rather than by the tracked-change response schema name, with tracked-change response schemas and `application/json` content left unchanged?
+4. Should `DomainsExcludedFromOpenApi` filtering apply to MetaEd-emitted `/deletes` and `/keyChanges` paths, including profile OpenAPI copies, the same way it applies to live resource and descriptor paths?
+
+### Answers 1
+
+1. Target only the canonical `/metadata/changequeries/v1/swagger.json` route in this story. Do not require or test `/metadata/specifications/changequeries-spec.json`; if that alias is added later, it should be a separate compatibility task and serve the same document as the canonical route.
+2. If `projectSchema.openApiBaseDocuments.changeQueries` is present and passes the existing ApiSchema JSON schema validation, DMS should treat it as present and serve it with only the standard `servers` and security injection. Do not add DMS validation for the `/availableChangeVersions` path, do not reject startup for a pathless-but-schema-valid document, and do not treat it as absent. A missing or malformed path is a MetaEd contract defect, not a DMS runtime route decision.
+3. Yes. Profile OpenAPI filtering should associate `/deletes` and `/keyChanges` with the profiled base resource or descriptor path, not with the tracked-change response schema name. Include those GET paths when the base resource/descriptor is readable in the profile, and leave the tracked-change response schemas and `application/json` content unchanged rather than creating profile-specific readable schemas for them.
+4. Yes. Apply `DomainsExcludedFromOpenApi` to MetaEd-emitted `/deletes` and `/keyChanges` paths using the same path-level `x-Ed-Fi-domains` rule as live resource and descriptor paths, including the existing behavior for paths with multiple domains. Profile OpenAPI documents should inherit that filtered path set so excluded-domain change-query paths are not reintroduced under profiles.
