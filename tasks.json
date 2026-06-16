@@ -108,7 +108,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~OpenApiDocumentTests\"`.",
       "Review any generated OpenAPI sample fixture used by tests to confirm it is MetaEd-style input rather than DMS-synthesized Change Query paths."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "profile-openapi",
