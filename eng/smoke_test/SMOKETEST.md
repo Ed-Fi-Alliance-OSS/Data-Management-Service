@@ -29,11 +29,6 @@ Models.All folder. The Smoke test tool will be specifically looking for the
 Apis.All and Models.All namespaces. Once the files are rearranged, the
 `EdFi.OdsApi.Sdk.dll` can be built and used.
 
-> [!NOTE]
-> The generated SDK for DMS metadata specifications (ODS API version 7.2
-> with Data standard 5.1.0) is available
-> [here](https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/EdFi.OdsApi.Sdk.zip).
-
 ## Automatic Credential Creation
 
 The SmokeTest module includes a `Get-SmokeTestCredentials` function that

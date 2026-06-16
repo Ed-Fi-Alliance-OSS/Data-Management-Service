@@ -1,6 +1,6 @@
 # School Year Loader
 
-The School Year Loader is a PowerShell-based utility that loads school year data into the Ed-Fi Data Management Service (DMS). This replaces the previous C# application with a more maintainable PowerShell solution that is automatically tested through the database template management system.
+The School Year Loader is a PowerShell-based utility that loads school year data into the Ed-Fi API (DMS). This replaces the previous C# application with a more maintainable PowerShell solution that is automatically tested through the database template management system.
 
 ## Components
 
@@ -59,7 +59,7 @@ Invoke-SchoolYearLoader -StartYear 2020 -EndYear 2037 -CurrentSchoolYear 2024 -D
 | `StartYear` | int | 1991 | The first school year to load |
 | `EndYear` | int | 2037 | The last school year to load |
 | `CurrentSchoolYear` | int | 0 | The school year to mark as current. If 0, automatically calculated based on current date: if after June, uses next year; otherwise uses current year. |
-| `DmsUrl` | string | "http://localhost:8080" | Data Management Service URL |
+| `DmsUrl` | string | "http://localhost:8080" | Ed-Fi API URL |
 | `CmsUrl` | string | "http://localhost:8081" | Configuration Management Service URL |
 | `ClaimSetName` | string | 'BootstrapDescriptorsandEdOrgs' | Claim set for authentication |
 
@@ -72,7 +72,7 @@ The `Invoke-SchoolYearLoader` function accepts:
 | `StartYear` | int | No | 1991 | The first school year to load |
 | `EndYear` | int | No | 2037 | The last school year to load |
 | `CurrentSchoolYear` | int | No | 0 (auto-calculate) | The school year to mark as current. If 0, automatically calculated based on current date: if after June, uses next year; otherwise uses current year |
-| `DmsUrl` | string | Yes | - | Data Management Service URL |
+| `DmsUrl` | string | Yes | - | Ed-Fi API URL |
 | `DmsToken` | string | Yes | - | DMS authentication token |
 
 ## Prerequisites
@@ -81,7 +81,7 @@ The `Invoke-SchoolYearLoader` function accepts:
 2. **Network Access** - Both DMS and CMS services must be accessible
 3. **Running Services**:
    - Configuration Management Service (CMS) for authentication
-   - Data Management Service (DMS) for data loading
+   - Ed-Fi API (DMS) for data loading
 4. **Authentication** - Valid claim set configured in CMS
 
 ## How It Works

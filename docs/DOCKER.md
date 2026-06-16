@@ -2,8 +2,8 @@
 
 ## Dockerfile
 
-The [Dockerfile](../src/Dockerfile) in `src` builds the Ed-Fi Data Management
-Service (DMS) image directly from source code, and
+The [Dockerfile](../src/Dockerfile) in `src` builds the Ed-Fi API (DMS) image
+directly from source code, and
 [Nuget.Dockerfile](../src/dms/Nuget.Dockerfile) build the image from the
 pre-built NuGet packages. Both versions include both the API application and the
 database installer. The source code version is primarily used in local and
@@ -25,8 +25,8 @@ distributions, and the Alpine images tend to have fewer vulnerabilities.
 
 ## Environment Variables
 
-The following environment variables are needed when starting the Data Management
-Service container.
+The following environment variables are needed when starting the Ed-Fi API
+container.
 
 ```none
 NEED_DATABASE_SETUP=<Flag (true or false) to decide whether the DMS database setup needs to be executed as part of the container setup>
@@ -76,7 +76,7 @@ instructions.
 
 ## Identity Provider Configuration
 
-The Data Management Service supports two identity provider modes: **keycloak** and **self-contained (OpenIddict)**. The relevant environment variables are:
+The Ed-Fi API supports two identity provider modes: **keycloak** and **self-contained (OpenIddict)**. The relevant environment variables are:
 
 ```none
 # keycloak

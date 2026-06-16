@@ -21,14 +21,14 @@ echo "PostgreSQL is ready."
 
 if [ "$NEED_DATABASE_SETUP" = true ]; then
 
-  echo "Installing Data Management Service schema."
+  echo "Installing Ed-Fi API schema."
 
   dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
 
   export NEED_DATABASE_SETUP=false
 
 else
-  echo "Skipping Data Management Service schema installation."
+  echo "Skipping Ed-Fi API schema installation."
 fi
 
 if [ "$AppSettings__UseApiSchemaPath" = true ]; then

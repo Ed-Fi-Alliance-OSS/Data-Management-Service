@@ -6,7 +6,7 @@
 
 <#
 .SYNOPSIS
-    Standalone script to load school year data into the Ed-Fi Data Management Service (DMS).
+    Standalone script to load school year data into the Ed-Fi API (DMS).
 
 .DESCRIPTION
     This script loads school year types into the DMS API. It provides a simple command-line
@@ -23,7 +23,7 @@
     Optional. The school year to mark as the current one. If not provided, it will be automatically calculated based on the current date: if current month is after June, uses next year; otherwise uses current year.
 
 .PARAMETER DmsUrl
-    The base URL of the Data Management Service API. Defaults to http://localhost:8080.
+    The base URL of the Ed-Fi API. Defaults to http://localhost:8080.
 
 .PARAMETER CmsUrl
     The base URL of the Configuration Management Service API. Defaults to http://localhost:8081.
@@ -66,7 +66,7 @@ param(
 #Requires -Version 7
 
 try {
-    Write-Host "Ed-Fi Data Management Service - School Year Loader" -ForegroundColor Cyan
+    Write-Host "Ed-Fi API - School Year Loader" -ForegroundColor Cyan
     Write-Host
 
     # Validate parameters

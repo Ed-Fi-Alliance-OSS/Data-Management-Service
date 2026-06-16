@@ -1,6 +1,6 @@
 # Logging Policy
 
-This section describes the logging policy in the Data Management Service source
+This section describes the logging policy in the Ed-Fi API source
 code. In general, this policy seeks to balance the goals of providing sufficient
 information for an administrator to understand the health of the system and
 understand user interaction with the system with the equally important goals of
