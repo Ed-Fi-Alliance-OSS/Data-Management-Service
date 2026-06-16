@@ -164,7 +164,7 @@
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
       "Run `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "profile-openapi",

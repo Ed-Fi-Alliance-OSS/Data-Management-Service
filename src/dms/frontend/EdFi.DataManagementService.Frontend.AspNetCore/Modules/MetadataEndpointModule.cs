@@ -31,9 +31,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         string openApiRouteBase
     )
     {
-        string scheme = httpContext.Request.Scheme;
-        string host = httpContext.Request.Host.ToString();
-        string baseUrl = $"{scheme}://{host}";
+        string baseUrl = httpContext.Request.RootUrl();
 
         bool multiTenancyEnabled = appSettings.Value.MultiTenancy;
         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();

@@ -481,21 +481,98 @@ public class MetadataModuleTests
             }
         }
 
-        [TestCase(false, "", "http://localhost/changeQueries/v1")]
-        [TestCase(true, "", "http://localhost/{tenant}/changeQueries/v1")]
+        [Test]
+        public async Task It_includes_PathBase_once_for_metadata_OpenApi_documents()
+        {
+            // Arrange
+            string pathBase = "dms-api";
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily((JsonArray servers) => OpenApiWithServers(servers));
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "StudentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .ReturnsLazily(
+                    (string profileName, string? tenantId, JsonArray servers) =>
+                        Task.FromResult<JsonNode?>(OpenApiWithServers(servers))
+                );
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?> { ["AppSettings:PathBase"] = pathBase }
+                        );
+                    }
+                );
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            var endpointExpectedServers = new Dictionary<string, string>
+            {
+                [$"/{pathBase}/metadata/specifications/resources-spec.json"] =
+                    $"http://localhost/{pathBase}/data",
+                [$"/{pathBase}/metadata/specifications/descriptors-spec.json"] =
+                    $"http://localhost/{pathBase}/data",
+                [$"/{pathBase}/metadata/specifications/profiles/StudentProfile/resources-spec.json"] =
+                    $"http://localhost/{pathBase}/data",
+                [$"/{pathBase}/metadata/changequeries/v1/swagger.json"] =
+                    $"http://localhost/{pathBase}/changeQueries/v1",
+            };
+
+            foreach ((string endpointUri, string expectedServerUrl) in endpointExpectedServers)
+            {
+                // Act
+                var response = await client.GetAsync(endpointUri);
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonContent = JsonNode.Parse(content);
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                jsonContent!["servers"]![0]!["url"]!.GetValue<string>().Should().Be(expectedServerUrl);
+            }
+        }
+
+        [TestCase(false, "", "", "http://localhost/changeQueries/v1")]
+        [TestCase(true, "", "", "http://localhost/{tenant}/changeQueries/v1")]
         [TestCase(
             false,
             "districtId,schoolYear",
+            "",
             "http://localhost/{districtId}/{schoolYear}/changeQueries/v1"
         )]
         [TestCase(
             true,
             "districtId,schoolYear",
+            "",
             "http://localhost/{tenant}/{districtId}/{schoolYear}/changeQueries/v1"
+        )]
+        [TestCase(
+            true,
+            "districtId,schoolYear",
+            "dms-api",
+            "http://localhost/dms-api/{tenant}/{districtId}/{schoolYear}/changeQueries/v1"
         )]
         public async Task It_uses_the_change_queries_route_base_with_configured_prefixes(
             bool multiTenancy,
             string routeQualifierSegments,
+            string pathBase,
             string expectedServerUrl
         )
         {
@@ -549,6 +626,7 @@ public class MetadataModuleTests
                             {
                                 ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
                                 ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
+                                ["AppSettings:PathBase"] = pathBase,
                             }
                         );
                     }
@@ -561,9 +639,12 @@ public class MetadataModuleTests
                 });
             });
             using var client = factory.CreateClient();
+            string requestPath = string.IsNullOrWhiteSpace(pathBase)
+                ? "/metadata/changequeries/v1/swagger.json"
+                : $"/{pathBase}/metadata/changequeries/v1/swagger.json";
 
             // Act
-            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+            var response = await client.GetAsync(requestPath);
             var content = await response.Content.ReadAsStringAsync();
             var jsonContent = JsonNode.Parse(content);
             var server = jsonContent!["servers"]![0]!;
