@@ -600,6 +600,17 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."School" (
+            "Old_SchoolId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."SchoolId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
@@ -624,6 +635,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."School" (
+            "Old_SchoolId",
+            "New_SchoolId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."SchoolId",
+            NEW."SchoolId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;

@@ -618,6 +618,47 @@ public class Given_Deterministic_Tracked_Change_Derivation
 }
 
 /// <summary>
+/// Test fixture for person securable chains whose optional hop is after the first reference.
+/// </summary>
+[TestFixture]
+public class Given_A_Transitive_Person_Securable_With_Optional_Middle_Hop_For_Tracked_Change_Derivation
+{
+    private TrackedChangeTableInfo _enrollment = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var set = TrackedChangeDerivationTestHelpers.BuildSet(
+            TransitivePersonSecurableSchemaBuilder.BuildProjectSchema()
+        );
+
+        _enrollment = TrackedChangeDerivationTestHelpers.TableBySourceName(set, "Enrollment");
+    }
+
+    /// <summary>
+    /// It should mark the old person DocumentId column nullable when any join-path hop is optional.
+    /// </summary>
+    [Test]
+    public void It_should_mark_the_old_person_document_id_column_nullable_when_any_join_path_hop_is_optional()
+    {
+        var join = _enrollment.PersonJoins.Single();
+        join.JoinPath.Select(step => step.SourceColumnName.Value)
+            .Should()
+            .Equal("StudentProgram_DocumentId", "Student_DocumentId");
+
+        var personColumn = _enrollment.ValueColumnsInTableOrder.Single(column =>
+            column.Role == TrackedChangeColumnRole.PersonDocumentId
+        );
+
+        personColumn.PersonJoinName.Should().Be(join.PersonJoinName);
+        personColumn.IsOldColumnNullable.Should().BeTrue();
+    }
+}
+
+/// <summary>
 /// Test fixture for the strict-resolution invariant: every identity and securable path must resolve to a
 /// stored column, otherwise derivation fails loudly rather than silently dropping the column.
 /// </summary>
@@ -647,6 +688,169 @@ public class Given_An_Unresolvable_Securable_Path_For_Tracked_Change_Derivation
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*could not resolve identity/securable path*$.unresolvableSecurablePath*");
+    }
+}
+
+internal static class TransitivePersonSecurableSchemaBuilder
+{
+    internal static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildEnrollmentSchema(),
+                ["studentPrograms"] = BuildStudentProgramSchema(),
+                ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildEnrollmentSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["enrollmentId"] = new JsonObject { ["type"] = "integer" },
+                ["studentProgramReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                    },
+                },
+            },
+            ["required"] = new JsonArray("enrollmentId", "studentProgramReference"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Enrollment",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.enrollmentId" },
+            ["securableElements"] = new JsonObject
+            {
+                ["Student"] = new JsonArray { "$.studentProgramReference.programId" },
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EnrollmentId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.enrollmentId" },
+                ["StudentProgram"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "StudentProgram",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programId",
+                            ["referenceJsonPath"] = "$.studentProgramReference.programId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildStudentProgramSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["programId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                ["studentReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                    },
+                },
+            },
+            ["required"] = new JsonArray("programId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "StudentProgram",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.programId" },
+            ["securableElements"] = new JsonObject
+            {
+                ["Student"] = new JsonArray { "$.studentReference.studentUniqueId" },
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ProgramId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.programId" },
+                ["Student"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Student",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.studentUniqueId",
+                            ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildStudentSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+            },
+            ["required"] = new JsonArray("studentUniqueId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Student",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["StudentUniqueId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.studentUniqueId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
     }
 }
 

@@ -29,9 +29,46 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// </list>
 /// </para>
 /// </summary>
-public sealed class CoreDdlEmitter(ISqlDialect dialect)
+public sealed class CoreDdlEmitter
 {
-    private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
+    private readonly ISqlDialect _dialect;
+    private readonly TrackedChangeTableInfo? _sharedDescriptorTrackedChangeTable;
+
+    /// <summary>
+    /// Initializes a new <see cref="CoreDdlEmitter"/> for the specified dialect,
+    /// optionally wiring the shared descriptor tracked-change tombstone.
+    /// </summary>
+    /// <param name="dialect">The SQL dialect to render DDL for.</param>
+    /// <param name="sharedDescriptorTrackedChangeTable">
+    /// When non-null, the tombstone <c>INSERT</c> is appended to the <c>DELETE</c> branch of
+    /// the descriptor stamping trigger. Must have <see cref="TrackedChangeTableKind.SharedDescriptor"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="dialect"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="sharedDescriptorTrackedChangeTable"/> is non-null but its
+    /// <see cref="TrackedChangeTableInfo.Kind"/> is not <see cref="TrackedChangeTableKind.SharedDescriptor"/>.
+    /// </exception>
+    public CoreDdlEmitter(
+        ISqlDialect dialect,
+        TrackedChangeTableInfo? sharedDescriptorTrackedChangeTable = null
+    )
+    {
+        _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
+
+        if (
+            sharedDescriptorTrackedChangeTable is not null
+            && sharedDescriptorTrackedChangeTable.Kind != TrackedChangeTableKind.SharedDescriptor
+        )
+        {
+            throw new InvalidOperationException(
+                $"CoreDdlEmitter only accepts a tracked-change table with kind SharedDescriptor; "
+                    + $"received kind '{sharedDescriptorTrackedChangeTable.Kind}' for table "
+                    + $"'{sharedDescriptorTrackedChangeTable.Table.Schema.Value}.{sharedDescriptorTrackedChangeTable.Table.Name}'."
+            );
+        }
+
+        _sharedDescriptorTrackedChangeTable = sharedDescriptorTrackedChangeTable;
+    }
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
 
@@ -931,6 +968,16 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.Append(" = OLD.");
                 writer.Append(Quote("DocumentId"));
                 writer.AppendLine(";");
+                if (_sharedDescriptorTrackedChangeTable is not null)
+                {
+                    TrackedChangeTriggerBodyEmitter.EmitDescriptorTombstoneInsert(
+                        writer,
+                        _dialect,
+                        _sharedDescriptorTrackedChangeTable,
+                        imageRef: "OLD",
+                        fromDeletedSet: false
+                    );
+                }
                 writer.AppendLine("RETURN OLD;");
             }
             writer.AppendLine("END IF;");
@@ -1104,6 +1151,24 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine(";");
             }
             writer.AppendLine("END");
+            if (_sharedDescriptorTrackedChangeTable is not null)
+            {
+                writer.AppendLine(
+                    "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)"
+                );
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    TrackedChangeTriggerBodyEmitter.EmitDescriptorTombstoneInsert(
+                        writer,
+                        _dialect,
+                        _sharedDescriptorTrackedChangeTable,
+                        imageRef: "del",
+                        fromDeletedSet: true
+                    );
+                }
+                writer.AppendLine("END");
+            }
         }
         writer.AppendLine("END;");
         // Close the batch so that subsequent DDL starts in a fresh batch.

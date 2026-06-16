@@ -254,6 +254,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         List<IReadOnlyDictionary<string, object?>> rows = [];
@@ -284,6 +285,10 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
+        // dms.Document is referenced by ON DELETE CASCADE FKs from every resource root
+        // table, so even a single-row delete compiles a plan spanning the full cascade
+        // graph — on cold CI runners that can exceed the 30s driver default.
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         return await command.ExecuteNonQueryAsync();
@@ -307,6 +312,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         await connection.OpenAsync();
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         var result = await command.ExecuteScalarAsync();

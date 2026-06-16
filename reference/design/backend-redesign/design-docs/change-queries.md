@@ -1148,7 +1148,7 @@ Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNul
 
 If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for old and new row images. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition.
 
-If a path is backed by a column that participates in key unification, include the canonical column instead of the generated column.
+If a path is backed by a column that participates in key unification, include the canonical storage column instead of the generated alias column. This is both a de-duplication rule and an ODS compatibility rule: tracked-change rows record the shared stored identity value, not each presence-gated binding-site value.
 
 If the same canonical column has been included multiple times (because of key unification) only include it once.
 
@@ -1288,7 +1288,11 @@ The existing `*_Stamp` trigger inventory entries will be updated to store tombst
 
 The dialect trigger emitters must use the tracked-change inventory directly. They must not re-derive old/new columns, descriptor joins, person joins, or key-change predicates from SQL text or from ad hoc DDL-only metadata.
 
-For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. This is the same workset used to decide which documents receive identity stamp updates. Under key unification, emitters use the presence-gated canonical expressions defined in [key-unification.md](key-unification.md).
+For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. This is the same workset used to decide which documents receive identity stamp updates. Under key unification, Change Query key-change detection uses the canonical storage columns, not the presence-gated alias expressions from [key-unification.md](key-unification.md). This intentionally follows legacy ODS behavior: ODS also stores equality-constrained identity parts once and reuses the same physical value across unified paths, but its tracked key-change triggers compare the stored key columns rather than a per-reference or per-path presence-gated value.
+
+A presence-only change, such as attaching or detaching an optional reference while the shared canonical key value remains unchanged, is a representation change and receives a new content `ChangeVersion`, but it is not a Change Queries key-change event. A key-change row is inserted only when the effective resource identity storage values change.
+
+This is a Change Queries-specific exception to the generic trigger guidance in [key-unification.md](key-unification.md). This `DocumentStamping` / `ChangeTracking` trigger path intentionally uses ODS-compatible canonical storage semantics for its shared identity-stamp and key-change workset. Other identity-maintenance trigger paths that need API binding-path semantics remain governed by the presence-gated alias guidance in [key-unification.md](key-unification.md).
 
 Descriptor paths use the table-level `TrackedChangeDescriptorJoinInfo` entries to join with `dms.Descriptor` and store the descriptor's `Namespace` and `CodeValue`. Value columns identify the needed descriptor join by `DescriptorJoinName`.
 
@@ -1916,7 +1920,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `TriggerKindParameters.ChangeTracking` attachment to the correct `DbTriggerKind.DocumentStamping` trigger entries.
-- ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates.
+- ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
 - Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).

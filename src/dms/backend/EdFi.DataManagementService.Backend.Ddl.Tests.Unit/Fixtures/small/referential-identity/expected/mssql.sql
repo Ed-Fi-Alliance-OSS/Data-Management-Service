@@ -1214,14 +1214,45 @@ BEGIN
         FROM [edfi].[DateTimeKeyResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EventTimestamp]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[DateTimeKeyResource] (
+            [Old_EventTimestamp],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EventTimestamp],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[EventTimestamp] <> del.[EventTimestamp] OR (i.[EventTimestamp] IS NULL AND del.[EventTimestamp] IS NOT NULL) OR (i.[EventTimestamp] IS NOT NULL AND del.[EventTimestamp] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[DateTimeKeyResource] (
+            [Old_EventTimestamp],
+            [New_EventTimestamp],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EventTimestamp],
+            i.[EventTimestamp],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1297,14 +1328,45 @@ BEGIN
         FROM [edfi].[DecimalKeyResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([DecimalKey]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[DecimalKeyResource] (
+            [Old_DecimalKey],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[DecimalKey],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[DecimalKey] <> del.[DecimalKey] OR (i.[DecimalKey] IS NULL AND del.[DecimalKey] IS NOT NULL) OR (i.[DecimalKey] IS NOT NULL AND del.[DecimalKey] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[DecimalKeyResource] (
+            [Old_DecimalKey],
+            [New_DecimalKey],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[DecimalKey],
+            i.[DecimalKey],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1380,14 +1442,51 @@ BEGIN
         FROM [edfi].[DecimalRefResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([RefResourceId]) OR UPDATE([DecimalKeyReference_DecimalKey]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[DecimalRefResource] (
+            [Old_RefResourceId],
+            [Old_DecimalKeyReference_DecimalKey],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[RefResourceId],
+            del.[DecimalKeyReference_DecimalKey],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[RefResourceId] AS varbinary(max)) <> CAST(del.[RefResourceId] AS varbinary(max)) OR (i.[RefResourceId] IS NULL AND del.[RefResourceId] IS NOT NULL) OR (i.[RefResourceId] IS NOT NULL AND del.[RefResourceId] IS NULL)) OR (i.[DecimalKeyReference_DecimalKey] <> del.[DecimalKeyReference_DecimalKey] OR (i.[DecimalKeyReference_DecimalKey] IS NULL AND del.[DecimalKeyReference_DecimalKey] IS NOT NULL) OR (i.[DecimalKeyReference_DecimalKey] IS NOT NULL AND del.[DecimalKeyReference_DecimalKey] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[DecimalRefResource] (
+            [Old_RefResourceId],
+            [Old_DecimalKeyReference_DecimalKey],
+            [New_RefResourceId],
+            [New_DecimalKeyReference_DecimalKey],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[RefResourceId],
+            del.[DecimalKeyReference_DecimalKey],
+            i.[RefResourceId],
+            i.[DecimalKeyReference_DecimalKey],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1463,14 +1562,57 @@ BEGIN
         FROM [edfi].[EdOrgDependentChildResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EdOrgDependentChildResourceId]) OR UPDATE([EdOrgDependentResourceReference_EdOrgDependentResourceId]) OR UPDATE([EdOrgDependentResourceReference_EducationOrganizationId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[EdOrgDependentChildResource] (
+            [Old_EdOrgDependentChildResourceId],
+            [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [Old_EdOrgDependentResourceReference_EducationOrganizationId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EdOrgDependentChildResourceId],
+            del.[EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            del.[EdOrgDependentResourceReference_EducationOrganizationId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[EdOrgDependentChildResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentChildResourceId] AS varbinary(max)) OR (i.[EdOrgDependentChildResourceId] IS NULL AND del.[EdOrgDependentChildResourceId] IS NOT NULL) OR (i.[EdOrgDependentChildResourceId] IS NOT NULL AND del.[EdOrgDependentChildResourceId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL)) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] <> del.[EdOrgDependentResourceReference_EducationOrganizationId] OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[EdOrgDependentChildResource] (
+            [Old_EdOrgDependentChildResourceId],
+            [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [Old_EdOrgDependentResourceReference_EducationOrganizationId],
+            [New_EdOrgDependentChildResourceId],
+            [New_EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [New_EdOrgDependentResourceReference_EducationOrganizationId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EdOrgDependentChildResourceId],
+            del.[EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            del.[EdOrgDependentResourceReference_EducationOrganizationId],
+            i.[EdOrgDependentChildResourceId],
+            i.[EdOrgDependentResourceReference_EdOrgDependentResourceId],
+            i.[EdOrgDependentResourceReference_EducationOrganizationId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1570,14 +1712,51 @@ BEGIN
         FROM [edfi].[EdOrgDependentResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EdOrgDependentResourceId]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[EdOrgDependentResource] (
+            [Old_EdOrgDependentResourceId],
+            [Old_EducationOrganization_EducationOrganizationId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EdOrgDependentResourceId],
+            del.[EducationOrganization_EducationOrganizationId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[EdOrgDependentResource] (
+            [Old_EdOrgDependentResourceId],
+            [Old_EducationOrganization_EducationOrganizationId],
+            [New_EdOrgDependentResourceId],
+            [New_EducationOrganization_EducationOrganizationId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[EdOrgDependentResourceId],
+            del.[EducationOrganization_EducationOrganizationId],
+            i.[EdOrgDependentResourceId],
+            i.[EducationOrganization_EducationOrganizationId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1677,14 +1856,63 @@ BEGIN
         FROM [edfi].[KeyUnifiedResource] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([KeyUnifiedResourceId]) OR UPDATE([ResourceAReference_ResourceAId]) OR UPDATE([StudentUniqueId_Unified]) OR UPDATE([ResourceBReference_ResourceBId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[KeyUnifiedResource] (
+            [Old_KeyUnifiedResourceId],
+            [Old_ResourceAReference_ResourceAId],
+            [Old_StudentUniqueId_Unified],
+            [Old_ResourceBReference_ResourceBId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[KeyUnifiedResourceId],
+            del.[ResourceAReference_ResourceAId],
+            del.[StudentUniqueId_Unified],
+            del.[ResourceBReference_ResourceBId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[KeyUnifiedResource] (
+            [Old_KeyUnifiedResourceId],
+            [Old_ResourceAReference_ResourceAId],
+            [Old_StudentUniqueId_Unified],
+            [Old_ResourceBReference_ResourceBId],
+            [New_KeyUnifiedResourceId],
+            [New_ResourceAReference_ResourceAId],
+            [New_StudentUniqueId_Unified],
+            [New_ResourceBReference_ResourceBId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[KeyUnifiedResourceId],
+            del.[ResourceAReference_ResourceAId],
+            del.[StudentUniqueId_Unified],
+            del.[ResourceBReference_ResourceBId],
+            i.[KeyUnifiedResourceId],
+            i.[ResourceAReference_ResourceAId],
+            i.[StudentUniqueId_Unified],
+            i.[ResourceBReference_ResourceBId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1784,14 +2012,51 @@ BEGIN
         FROM [edfi].[ResourceA] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[ResourceA] (
+            [Old_ResourceAId],
+            [Old_StudentReference_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ResourceAId],
+            del.[StudentReference_StudentUniqueId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[ResourceA] (
+            [Old_ResourceAId],
+            [Old_StudentReference_StudentUniqueId],
+            [New_ResourceAId],
+            [New_StudentReference_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ResourceAId],
+            del.[StudentReference_StudentUniqueId],
+            i.[ResourceAId],
+            i.[StudentReference_StudentUniqueId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -1891,14 +2156,51 @@ BEGIN
         FROM [edfi].[ResourceB] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[ResourceB] (
+            [Old_ResourceBId],
+            [Old_StudentReference_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ResourceBId],
+            del.[StudentReference_StudentUniqueId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[ResourceB] (
+            [Old_ResourceBId],
+            [Old_StudentReference_StudentUniqueId],
+            [New_ResourceBId],
+            [New_StudentReference_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ResourceBId],
+            del.[StudentReference_StudentUniqueId],
+            i.[ResourceBId],
+            i.[StudentReference_StudentUniqueId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -2072,6 +2374,20 @@ BEGIN
         FROM [edfi].[School] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        INSERT INTO [tracked_changes_edfi].[School] (
+            [Old_SchoolId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[SchoolId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
         UPDATE d
@@ -2187,14 +2503,45 @@ BEGIN
         FROM [edfi].[Student] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[Student] (
+            [Old_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[Student] (
+            [Old_StudentUniqueId],
+            [New_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            i.[StudentUniqueId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -2270,14 +2617,51 @@ BEGIN
         FROM [edfi].[StudentSchoolAssociation] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]) OR UPDATE([SchoolReference_SchoolId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation] (
+            [Old_StudentUniqueId],
+            [Old_SchoolReference_SchoolId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            del.[SchoolReference_SchoolId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation] (
+            [Old_StudentUniqueId],
+            [Old_SchoolReference_SchoolId],
+            [New_StudentUniqueId],
+            [New_SchoolReference_SchoolId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            del.[SchoolReference_SchoolId],
+            i.[StudentUniqueId],
+            i.[SchoolReference_SchoolId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO

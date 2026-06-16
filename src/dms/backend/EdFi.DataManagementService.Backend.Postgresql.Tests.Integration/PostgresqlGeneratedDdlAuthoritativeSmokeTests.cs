@@ -34,6 +34,16 @@ internal sealed record DocumentStampState(
     DateTimeOffset IdentityLastModifiedAt
 );
 
+internal sealed record TrackedChangeKeyChangeAssociationSeedData(
+    long AssociationDocumentId,
+    Guid AssociationDocumentUuid,
+    long StudentDocumentId,
+    string StudentUniqueId,
+    long OriginalEducationOrganizationId,
+    long ReplacementSchoolDocumentId,
+    long ReplacementEducationOrganizationId
+);
+
 [TestFixture]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage
 {
@@ -936,6 +946,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
 
+        var schoolDocumentUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var associationDocumentUuid = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var schoolTrackedBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
+        var associationTrackedBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
+
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -960,6 +983,48 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+
+        // School is concrete-abstract: its identity change bumps stamps but must not
+        // insert a key-change row (tombstones only). The FK-cascaded SEOA identity
+        // change inserts exactly one key-change row with three-way linkage.
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(schoolTrackedBefore);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                associationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(associationTrackedBefore + 1);
+
+        var associationTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
+        Convert
+            .ToInt64(
+                associationTrackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(100);
+        Convert
+            .ToInt64(
+                associationTrackedRow["New_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(101);
+        associationTrackedRow["Old_Student_StudentUniqueId"].Should().Be("10001");
+        associationTrackedRow["New_Student_StudentUniqueId"].Should().Be("10001");
+        Convert
+            .ToInt64(associationTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(after.ContentVersion);
     }
 
     [Test]
@@ -1333,6 +1398,1238 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
     }
+
+    // GUID allocation convention for tracked-change tests:
+    //   c* seeds  → SeedKeyChangeStudentEducationOrganizationAssociationAsync (key-change)
+    //   d1-d4 seeds → It_should_insert_one_key_change_row_per_row_in_a_multi_row_update
+    //   d5-d8 seeds → It_should_insert_key_change_rows_only_for_identity_changed_rows_in_a_mixed_workset_update
+    //   e1-e3 seeds → It_should_use_canonical_columns_for_key_unified_paths
+    //   e4 seed   → It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change (SchoolYearType)
+    //   e5 seed   → It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change (original descriptor)
+    //   e6 seed   → It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change (replacement descriptor)
+    //   e7 seed   → It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change (GradingPeriod)
+    //   b5 seed   → It_should_project_a_null_to_value_transition_in_the_key_change_row (Assessment)
+    //   b6 seed   → It_should_project_a_null_to_value_transition_in_the_key_change_row (Student)
+    //   b7 seed   → It_should_project_a_null_to_value_transition_in_the_key_change_row (StudentAssessment)
+    //   f* seeds  → tombstone tests (see #region Tracked-change tombstones)
+    // Per-test ResetAsync wipes all transient rows before each test, so collisions with
+    // the permanent seeds planted in SeedSmokeRowsAsync (1*/2*/…/9* and the full-byte
+    // a*–f* patterns such as cccccccc-…) are impossible.
+    #region Tracked-change key-change rows
+
+    [Test]
+    public async Task It_should_insert_a_key_change_row_with_three_way_linkage_on_identity_update()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+
+        await DelayForDistinctTimestampsAsync();
+        await RepointAssociationEducationOrganizationAsync(seed);
+
+        var afterDocument = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+        var afterMirror = await GetRootMirrorStampStateAsync(
+            _studentEducationOrganizationAssociationTable,
+            seed.AssociationDocumentId
+        );
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterDocument.ContentVersion);
+        afterMirror.ContentVersion.Should().Be(afterDocument.ContentVersion);
+        trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
+        Convert
+            .ToInt64(
+                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.OriginalEducationOrganizationId);
+        Convert
+            .ToInt64(
+                trackedRow["New_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.ReplacementEducationOrganizationId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        trackedRow["New_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+    }
+
+    [Test]
+    public async Task It_should_store_the_person_document_id_on_key_change_rows()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+
+        await DelayForDistinctTimestampsAsync();
+        await RepointAssociationEducationOrganizationAsync(seed);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+        Convert
+            .ToInt64(trackedRow["New_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+    }
+
+    [Test]
+    public async Task It_should_not_insert_tracked_rows_for_non_identity_updates()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+        var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociation"
+            SET "LoginId" = @loginId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("loginId", "key-change-login-001"),
+            new NpgsqlParameter("documentId", seed.AssociationDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_should_insert_one_key_change_row_per_row_in_a_multi_row_update()
+    {
+        const int SchoolYear = 2025;
+        const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+        const string GradingPeriodDescriptorCodeValue = "FirstSixWeeks";
+
+        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+            Guid.Parse("d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1"),
+            schoolYearTypeResourceKeyId
+        );
+        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2024-2025");
+
+        // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
+        // EducationOrganizationIdentity projection, so read the seeded school's id back
+        // instead of hard-coding the seed literal.
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            """SELECT "SchoolId" FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
+            GradingPeriodDescriptorNamespace,
+            GradingPeriodDescriptorCodeValue,
+            "First Six Weeks"
+        );
+
+        var firstGradingPeriodDocumentUuid = Guid.Parse("d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3");
+        var firstGradingPeriodDocumentId = await InsertDocumentAsync(
+            firstGradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            firstGradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "First Grading Period"
+        );
+
+        var secondGradingPeriodDocumentUuid = Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4");
+        var secondGradingPeriodDocumentId = await InsertDocumentAsync(
+            secondGradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            secondGradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Second Grading Period"
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."GradingPeriod"
+            SET "GradingPeriodName" = "GradingPeriodName" || '-renamed'
+            WHERE "DocumentId" IN (@firstDocumentId, @secondDocumentId);
+            """,
+            new NpgsqlParameter("firstDocumentId", firstGradingPeriodDocumentId),
+            new NpgsqlParameter("secondDocumentId", secondGradingPeriodDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var firstAfter = await GetDocumentStampStateAsync(firstGradingPeriodDocumentId);
+        var secondAfter = await GetDocumentStampStateAsync(secondGradingPeriodDocumentId);
+        firstAfter.ContentVersion.Should().NotBe(secondAfter.ContentVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                firstGradingPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                secondGradingPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var firstTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            firstGradingPeriodDocumentUuid
+        );
+        var secondTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            secondGradingPeriodDocumentUuid
+        );
+
+        Convert
+            .ToInt64(firstTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(firstAfter.ContentVersion);
+        Convert
+            .ToInt64(secondTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(secondAfter.ContentVersion);
+
+        firstTrackedRow["Old_GradingPeriodName"].Should().Be("First Grading Period");
+        firstTrackedRow["New_GradingPeriodName"].Should().Be("First Grading Period-renamed");
+        secondTrackedRow["Old_GradingPeriodName"].Should().Be("Second Grading Period");
+        secondTrackedRow["New_GradingPeriodName"].Should().Be("Second Grading Period-renamed");
+
+        foreach (var trackedRow in new[] { firstTrackedRow, secondTrackedRow })
+        {
+            trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+            trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+        }
+    }
+
+    [Test]
+    public async Task It_should_insert_key_change_rows_only_for_identity_changed_rows_in_a_mixed_workset_update()
+    {
+        // The core statement-level-trigger risk: one UPDATE whose workset contains
+        // multiple rows where only SOME change identity. The identity-changed gate
+        // must admit exactly the changed row — no key-change row and no stamps at
+        // all for the row whose values were self-assigned. PG triggers are row-level
+        // today, so this pins the contract ahead of any statement-level migration.
+        const int SchoolYear = 2026;
+        const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+        const string GradingPeriodDescriptorCodeValue = "SecondSixWeeks";
+
+        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+            Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
+            schoolYearTypeResourceKeyId
+        );
+        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2026-2027");
+
+        // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
+        // EducationOrganizationIdentity projection, so read the seeded school's id back
+        // instead of hard-coding the seed literal.
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            """SELECT "SchoolId" FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
+            GradingPeriodDescriptorNamespace,
+            GradingPeriodDescriptorCodeValue,
+            "Second Six Weeks"
+        );
+
+        var changedDocumentUuid = Guid.Parse("d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7");
+        var changedDocumentId = await InsertDocumentAsync(changedDocumentUuid, gradingPeriodResourceKeyId);
+        await InsertGradingPeriodAsync(
+            changedDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Mixed Changed Period"
+        );
+
+        var unchangedDocumentUuid = Guid.Parse("d8d8d8d8-d8d8-d8d8-d8d8-d8d8d8d8d8d8");
+        var unchangedDocumentId = await InsertDocumentAsync(
+            unchangedDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            unchangedDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Mixed Unchanged Period"
+        );
+
+        var changedBefore = await GetDocumentStampStateAsync(changedDocumentId);
+        var unchangedBefore = await GetDocumentStampStateAsync(unchangedDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."GradingPeriod"
+            SET "GradingPeriodName" = CASE
+                WHEN "DocumentId" = @changedDocumentId THEN "GradingPeriodName" || '-renamed'
+                ELSE "GradingPeriodName" END
+            WHERE "DocumentId" IN (@changedDocumentId, @unchangedDocumentId);
+            """,
+            new NpgsqlParameter("changedDocumentId", changedDocumentId),
+            new NpgsqlParameter("unchangedDocumentId", unchangedDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var changedAfter = await GetDocumentStampStateAsync(changedDocumentId);
+        var unchangedAfter = await GetDocumentStampStateAsync(unchangedDocumentId);
+
+        changedAfter.ContentVersion.Should().BeGreaterThan(changedBefore.ContentVersion);
+        changedAfter.IdentityVersion.Should().BeGreaterThan(changedBefore.IdentityVersion);
+        // The self-assigned row is a stored-value no-op: no stamps at all.
+        unchangedAfter.Should().Be(unchangedBefore);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", changedDocumentUuid))
+            .Should()
+            .Be(1);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", unchangedDocumentUuid))
+            .Should()
+            .Be(0);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            changedDocumentUuid
+        );
+        trackedRow["Old_GradingPeriodName"].Should().Be("Mixed Changed Period");
+        trackedRow["New_GradingPeriodName"].Should().Be("Mixed Changed Period-renamed");
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(changedAfter.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change()
+    {
+        // The descriptor element of the identity actually CHANGES here, so the
+        // key-change row's Old_* descriptor projection must come from the deleted
+        // image and New_* from the inserted image — equal-value tests cannot tell.
+        const int SchoolYear = 2027;
+        const string DescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+
+        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+            Guid.Parse("e4e4e4e4-e4e4-e4e4-e4e4-e4e4e4e4e4e4"),
+            schoolYearTypeResourceKeyId
+        );
+        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, "2027-2028");
+
+        // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to the
+        // EducationOrganizationIdentity projection, so read the seeded school's id back
+        // instead of hard-coding the seed literal.
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            """SELECT "SchoolId" FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var originalDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{DescriptorNamespace}#FourthSixWeeks",
+            DescriptorNamespace,
+            "FourthSixWeeks",
+            "Fourth Six Weeks"
+        );
+        var replacementDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{DescriptorNamespace}#FifthSixWeeks",
+            DescriptorNamespace,
+            "FifthSixWeeks",
+            "Fifth Six Weeks"
+        );
+
+        var gradingPeriodDocumentUuid = Guid.Parse("e7e7e7e7-e7e7-e7e7-e7e7-e7e7e7e7e7e7");
+        var gradingPeriodDocumentId = await InsertDocumentAsync(
+            gradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            gradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            originalDescriptorDocumentId,
+            "Descriptor Swap Period"
+        );
+
+        var before = await GetDocumentStampStateAsync(gradingPeriodDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."GradingPeriod"
+            SET "GradingPeriodDescriptor_DescriptorId" = @replacementDescriptorDocumentId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("replacementDescriptorDocumentId", replacementDescriptorDocumentId),
+            new NpgsqlParameter("documentId", gradingPeriodDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(gradingPeriodDocumentId);
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                gradingPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            gradingPeriodDocumentUuid
+        );
+        trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be("FourthSixWeeks");
+        trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be("FifthSixWeeks");
+        trackedRow["Old_GradingPeriodName"].Should().Be("Descriptor Swap Period");
+        trackedRow["New_GradingPeriodName"].Should().Be("Descriptor Swap Period");
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(after.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_project_a_null_to_value_transition_in_the_key_change_row()
+    {
+        // ReportedSchool is a nullable securable projection on StudentAssessment.
+        // Change the identity (StudentAssessmentIdentifier) and set ReportedSchool
+        // from NULL to a value in the same UPDATE: the key-change row must read the
+        // old image as NULL and the new image as the value — a bug reading both
+        // images from the post-update row projects the value on both sides.
+        const string AssessmentNamespace = "uri://ed-fi.org/Assessment";
+        const string AssessmentIdentifier = "ASMT-NULLT-001";
+        const string StudentUniqueId = "20001";
+
+        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var studentAssessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAssessment");
+
+        var assessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            assessmentDocumentId,
+            AssessmentIdentifier,
+            "Null Transition Assessment",
+            AssessmentNamespace
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Nola", "Vale");
+
+        var studentAssessmentDocumentUuid = Guid.Parse("b7b7b7b7-b7b7-b7b7-b7b7-b7b7b7b7b7b7");
+        var studentAssessmentDocumentId = await InsertDocumentAsync(
+            studentAssessmentDocumentUuid,
+            studentAssessmentResourceKeyId
+        );
+        await InsertStudentAssessmentAsync(
+            studentAssessmentDocumentId,
+            assessmentDocumentId,
+            AssessmentIdentifier,
+            AssessmentNamespace,
+            studentDocumentId,
+            StudentUniqueId,
+            "SA-001"
+        );
+
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            """SELECT "SchoolId" FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+        var before = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentAssessment"
+            SET "StudentAssessmentIdentifier" = @replacementIdentifier,
+                "ReportedSchool_DocumentId" = @schoolDocumentId,
+                "ReportedSchool_SchoolId" = @schoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("replacementIdentifier", "SA-001-renamed"),
+            new NpgsqlParameter("schoolDocumentId", _seedData.SchoolDocumentId),
+            new NpgsqlParameter("schoolId", seededSchoolId),
+            new NpgsqlParameter("documentId", studentAssessmentDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentAssessment",
+                studentAssessmentDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentAssessment",
+            studentAssessmentDocumentUuid
+        );
+        trackedRow["Old_StudentAssessmentIdentifier"].Should().Be("SA-001");
+        trackedRow["New_StudentAssessmentIdentifier"].Should().Be("SA-001-renamed");
+        trackedRow["Old_ReportedSchool_SchoolId"].Should().BeNull();
+        Convert
+            .ToInt64(trackedRow["New_ReportedSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seededSchoolId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
+        trackedRow["New_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(after.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_use_canonical_columns_for_key_unified_paths()
+    {
+        const string AssessmentNamespace = "uri://ed-fi.org/Assessment";
+        const string OriginalAssessmentIdentifier = "ASMT-001";
+        const string ReplacementAssessmentIdentifier = "ASMT-002";
+        const string ScoreRangeId = "SR-001";
+
+        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
+        var scoreRangeResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "AssessmentScoreRangeLearningStandard"
+        );
+
+        var originalAssessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            originalAssessmentDocumentId,
+            OriginalAssessmentIdentifier,
+            "Original Assessment",
+            AssessmentNamespace
+        );
+
+        var replacementAssessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            replacementAssessmentDocumentId,
+            ReplacementAssessmentIdentifier,
+            "Replacement Assessment",
+            AssessmentNamespace
+        );
+
+        var scoreRangeDocumentUuid = Guid.Parse("e3e3e3e3-e3e3-e3e3-e3e3-e3e3e3e3e3e3");
+        var scoreRangeDocumentId = await InsertDocumentAsync(scoreRangeDocumentUuid, scoreRangeResourceKeyId);
+        await InsertAssessmentScoreRangeLearningStandardAsync(
+            scoreRangeDocumentId,
+            OriginalAssessmentIdentifier,
+            AssessmentNamespace,
+            originalAssessmentDocumentId,
+            ScoreRangeId
+        );
+
+        // The Assessment_AssessmentIdentifier/Assessment_Namespace alias columns are
+        // GENERATED from the canonical *_Unified columns, and the FK to edfi.Assessment
+        // pairs the canonical columns with Assessment_DocumentId (ON UPDATE NO ACTION).
+        // Re-pointing the reference and the canonical identifier in a single UPDATE is
+        // the direct-SQL simulation of an upstream assessment key change reaching this
+        // key-unified resource; the trigger's identity gate keys off the canonical column.
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."AssessmentScoreRangeLearningStandard"
+            SET "AssessmentIdentifier_Unified" = @replacementAssessmentIdentifier,
+                "Assessment_DocumentId" = @replacementAssessmentDocumentId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("replacementAssessmentIdentifier", ReplacementAssessmentIdentifier),
+            new NpgsqlParameter("replacementAssessmentDocumentId", replacementAssessmentDocumentId),
+            new NpgsqlParameter("documentId", scoreRangeDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var afterDocument = await GetDocumentStampStateAsync(scoreRangeDocumentId);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "AssessmentScoreRangeLearningStandard",
+                scoreRangeDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "AssessmentScoreRangeLearningStandard",
+            scoreRangeDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterDocument.ContentVersion);
+        trackedRow["Id"].Should().Be(scoreRangeDocumentUuid);
+        trackedRow["Old_AssessmentIdentifier_Unified"].Should().Be(OriginalAssessmentIdentifier);
+        trackedRow["New_AssessmentIdentifier_Unified"].Should().Be(ReplacementAssessmentIdentifier);
+        trackedRow["Old_Namespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["New_Namespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["Old_ScoreRangeId"].Should().Be(ScoreRangeId);
+        trackedRow["New_ScoreRangeId"].Should().Be(ScoreRangeId);
+    }
+
+    #endregion
+
+    // f* GUID seeds used here — see the GUID allocation comment above #region Tracked-change key-change rows.
+    #region Tracked-change tombstones
+
+    [Test]
+    public async Task It_should_insert_a_tombstone_with_the_bumped_content_version_on_delete()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+        var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        // DMS-1180 two-statement order, statement 1: delete the resource row while the
+        // dms.Document row still exists, so the stamping trigger can read the doc-stamp
+        // linkage for the tombstone.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.AssociationDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
+        Convert
+            .ToInt64(
+                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.OriginalEducationOrganizationId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        Convert
+            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.AssociationDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(0);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
+    {
+        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
+        const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
+        const string DescriptorCodeValue = "Summer";
+
+        var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
+        var descriptorDocumentUuid = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
+        var descriptorDocumentId = await InsertDescriptorAsync(
+            descriptorDocumentUuid,
+            termDescriptorResourceKeyId,
+            DescriptorDiscriminator,
+            $"{DescriptorNamespace}#{DescriptorCodeValue}",
+            DescriptorNamespace,
+            DescriptorCodeValue,
+            "Summer"
+        );
+        var before = await GetDocumentStampStateAsync(descriptorDocumentId);
+
+        // Statement 1: delete the shared descriptor row while the dms.Document row
+        // still exists.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", descriptorDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "Descriptor",
+            descriptorDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(descriptorDocumentUuid);
+        trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
+        trackedRow["Old_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["Old_CodeValue"].Should().Be(DescriptorCodeValue);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", descriptorDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "Descriptor",
+            descriptorDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_tombstone_concrete_abstract_resources_in_their_own_table()
+    {
+        // 400 chosen distinct from the seeded SchoolId=100 to avoid PK collisions.
+        const int FreshSchoolId = 400;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolDocumentUuid = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Delta Academy");
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        // Statement 1: delete the concrete-abstract resource row while the dms.Document
+        // row still exists. School tombstones into its OWN tracked-change table.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", schoolDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(schoolDocumentUuid);
+        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", schoolDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_not_insert_key_change_rows_for_concrete_abstract_identity_updates()
+    {
+        // 500/501 chosen distinct from the seeded SchoolId=100 and the tombstone test's 400.
+        const int OriginalSchoolId = 500;
+        const int ReplacementSchoolId = 501;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolDocumentUuid = Guid.Parse("f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, OriginalSchoolId, "Epsilon Academy");
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(0);
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        // A successful identity-value change on a concrete-abstract resource must bump
+        // IdentityVersion but never insert a key-change row: deletes are the only writes
+        // that land in tracked_changes for concrete-abstract resources.
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = @replacementSchoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("replacementSchoolId", ReplacementSchoolId),
+            new NpgsqlParameter("documentId", schoolDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_should_emit_exactly_one_root_tombstone_for_cascaded_deletes()
+    {
+        // The per-test seed builds a fresh SEOA with an edfi child-collection row
+        // (StudentEducationOrganizationAssociationAddress), a sample _ext row
+        // (StudentEducationOrganizationAssociationExtensionAddress), and _ext
+        // grandchildren (SchoolDistrict/Term) — all FK-cascaded from the root row.
+        var associationDocumentId = _seedData.StudentEducationOrganizationAssociationDocumentId;
+        var associationDocumentUuid = await GetDocumentUuidAsync(associationDocumentId);
+
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."StudentEducationOrganizationAssociationAddress" WHERE "StudentEducationOrganizationAssociation_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."StudentEducationOrganizationAssociationExtensionAddress" WHERE "StudentEducationOrganizationAssociation_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var before = await GetDocumentStampStateAsync(associationDocumentId);
+
+        // Statement 1: delete the root resource row; FK cascades remove the child and
+        // _ext rows and fire their stamping triggers.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", associationDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."StudentEducationOrganizationAssociationAddress" WHERE "StudentEducationOrganizationAssociation_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."StudentEducationOrganizationAssociationExtensionAddress" WHERE "StudentEducationOrganizationAssociation_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                associationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        trackedRow["Id"].Should().Be(associationDocumentUuid);
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // The tombstone must be the final visible root delete stamp. Cascaded child trigger
+        // activity must not advance the document extraction watermark past the tombstone.
+        (await CountDocumentRowsAsync(associationDocumentId))
+            .Should()
+            .Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
+        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid,
+            tombstoneChangeVersion
+        );
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", associationDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(associationDocumentId)).Should().Be(0);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."StudentEducationOrganizationAssociation" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                associationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        // No later visible tracked row may advance an extraction watermark past the
+        // tombstone.
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_emit_exactly_one_root_tombstone_for_cascaded_abstract_family_deletes()
+    {
+        // Abstract-resource-family cascade (AC): a concrete-abstract root (School)
+        // carrying a cascaded _ext row and _ext grandchild. The root delete must
+        // produce exactly one School tombstone and no key-change rows, regardless
+        // of cascaded extension-trigger activity.
+        const int FreshSchoolId = 401;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
+
+        var schoolDocumentUuid = Guid.Parse("f7f7f7f7-f7f7-f7f7-f7f7-f7f7f7f7f7f7");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Zeta Academy");
+        await InsertSchoolExtensionAsync(schoolDocumentId);
+
+        var busDocumentId = await InsertDocumentAsync(
+            Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8"),
+            busResourceKeyId
+        );
+        await InsertBusAsync(busDocumentId, "BUS-401");
+        _ = await InsertSchoolExtensionDirectlyOwnedBusAsync(schoolDocumentId, 1, busDocumentId, "BUS-401");
+
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."SchoolExtension" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."SchoolExtensionDirectlyOwnedBus" WHERE "School_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+
+        // Statement 1: delete the root School row; FK cascades remove the _ext row
+        // and its grandchild and fire their stamping triggers.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "edfi"."School" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", schoolDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."SchoolExtension" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "sample"."SchoolExtensionDirectlyOwnedBus" WHERE "School_DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        trackedRow["Id"].Should().Be(schoolDocumentUuid);
+        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        AssertAllNewColumnsAreNull(trackedRow);
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        // The tombstone must be the final visible root delete stamp. Cascaded extension trigger
+        // activity must not advance the document extraction watermark past the tombstone.
+        (await CountDocumentRowsAsync(schoolDocumentId))
+            .Should()
+            .Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
+        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", schoolDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
+        (
+            await CountRowsAsync(
+                """SELECT COUNT(*) FROM "edfi"."EducationOrganizationIdentity" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    #endregion
 
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
     {
@@ -1828,6 +3125,343 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             ),
             new NpgsqlParameter("ordinal", ordinal),
             new NpgsqlParameter("termDescriptorDocumentId", termDescriptorDocumentId)
+        );
+    }
+
+    private async Task<TrackedChangeKeyChangeAssociationSeedData> SeedKeyChangeStudentEducationOrganizationAssociationAsync()
+    {
+        const string StudentUniqueId = "20001";
+        const long OriginalEducationOrganizationId = 100;
+        const long ReplacementEducationOrganizationId = 200;
+
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var associationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "StudentEducationOrganizationAssociation"
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Riley", "Quinn");
+
+        var replacementSchoolDocumentId = await InsertDocumentAsync(
+            Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2"),
+            schoolResourceKeyId
+        );
+        await InsertSchoolAsync(
+            replacementSchoolDocumentId,
+            (int)ReplacementEducationOrganizationId,
+            "Gamma Academy"
+        );
+
+        var associationDocumentUuid = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
+        var associationDocumentId = await InsertDocumentAsync(
+            associationDocumentUuid,
+            associationResourceKeyId
+        );
+        await InsertStudentEducationOrganizationAssociationAsync(
+            associationDocumentId,
+            _seedData.SchoolDocumentId,
+            (int)OriginalEducationOrganizationId,
+            studentDocumentId,
+            StudentUniqueId
+        );
+
+        return new(
+            associationDocumentId,
+            associationDocumentUuid,
+            studentDocumentId,
+            StudentUniqueId,
+            OriginalEducationOrganizationId,
+            replacementSchoolDocumentId,
+            ReplacementEducationOrganizationId
+        );
+    }
+
+    private async Task RepointAssociationEducationOrganizationAsync(
+        TrackedChangeKeyChangeAssociationSeedData seed
+    )
+    {
+        // The stored EdOrg identity value is FK-paired with its DocumentId against
+        // edfi.EducationOrganizationIdentity, so the direct-SQL simulation of a cascaded
+        // identity key change must re-point both columns in a single UPDATE.
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociation"
+            SET "EducationOrganization_DocumentId" = @replacementSchoolDocumentId,
+                "EducationOrganization_EducationOrganizationId" = @replacementEducationOrganizationId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("replacementSchoolDocumentId", seed.ReplacementSchoolDocumentId),
+            new NpgsqlParameter(
+                "replacementEducationOrganizationId",
+                seed.ReplacementEducationOrganizationId
+            ),
+            new NpgsqlParameter("documentId", seed.AssociationDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+    }
+
+    private async Task InsertSchoolYearTypeAsync(
+        long documentId,
+        int schoolYear,
+        string schoolYearDescription
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."SchoolYearType" ("DocumentId", "CurrentSchoolYear", "SchoolYear", "SchoolYearDescription")
+            VALUES (@documentId, @currentSchoolYear, @schoolYear, @schoolYearDescription);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("currentSchoolYear", true),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
+        );
+    }
+
+    private async Task InsertGradingPeriodAsync(
+        long documentId,
+        long schoolYearTypeDocumentId,
+        int schoolYear,
+        long schoolDocumentId,
+        long schoolId,
+        long gradingPeriodDescriptorDocumentId,
+        string gradingPeriodName
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."GradingPeriod" (
+                "DocumentId",
+                "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear",
+                "School_DocumentId",
+                "School_SchoolId",
+                "GradingPeriodDescriptor_DescriptorId",
+                "BeginDate",
+                "EndDate",
+                "GradingPeriodName",
+                "TotalInstructionalDays"
+            )
+            VALUES (
+                @documentId,
+                @schoolYearTypeDocumentId,
+                @schoolYear,
+                @schoolDocumentId,
+                @schoolId,
+                @gradingPeriodDescriptorDocumentId,
+                @beginDate,
+                @endDate,
+                @gradingPeriodName,
+                @totalInstructionalDays
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolYearTypeDocumentId", schoolYearTypeDocumentId),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("schoolId", schoolId),
+            new NpgsqlParameter("gradingPeriodDescriptorDocumentId", gradingPeriodDescriptorDocumentId),
+            new NpgsqlParameter("beginDate", new DateOnly(2025, 8, 1)),
+            new NpgsqlParameter("endDate", new DateOnly(2025, 9, 15)),
+            new NpgsqlParameter("gradingPeriodName", gradingPeriodName),
+            new NpgsqlParameter("totalInstructionalDays", 30)
+        );
+    }
+
+    private async Task InsertAssessmentAsync(
+        long documentId,
+        string assessmentIdentifier,
+        string assessmentTitle,
+        string @namespace
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "AssessmentTitle", "Namespace")
+            VALUES (@documentId, @assessmentIdentifier, @assessmentTitle, @namespace);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
+            new NpgsqlParameter("assessmentTitle", assessmentTitle),
+            new NpgsqlParameter("namespace", @namespace)
+        );
+    }
+
+    private async Task InsertStudentAssessmentAsync(
+        long documentId,
+        long assessmentDocumentId,
+        string assessmentIdentifier,
+        string assessmentNamespace,
+        long studentDocumentId,
+        string studentUniqueId,
+        string studentAssessmentIdentifier
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."StudentAssessment" (
+                "DocumentId",
+                "Assessment_DocumentId",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace",
+                "Student_DocumentId",
+                "Student_StudentUniqueId",
+                "StudentAssessmentIdentifier"
+            )
+            VALUES (
+                @documentId,
+                @assessmentDocumentId,
+                @assessmentIdentifier,
+                @assessmentNamespace,
+                @studentDocumentId,
+                @studentUniqueId,
+                @studentAssessmentIdentifier
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("assessmentDocumentId", assessmentDocumentId),
+            new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
+            new NpgsqlParameter("assessmentNamespace", assessmentNamespace),
+            new NpgsqlParameter("studentDocumentId", studentDocumentId),
+            new NpgsqlParameter("studentUniqueId", studentUniqueId),
+            new NpgsqlParameter("studentAssessmentIdentifier", studentAssessmentIdentifier)
+        );
+    }
+
+    private async Task InsertAssessmentScoreRangeLearningStandardAsync(
+        long documentId,
+        string assessmentIdentifier,
+        string @namespace,
+        long assessmentDocumentId,
+        string scoreRangeId
+    )
+    {
+        // The Assessment_AssessmentIdentifier/Assessment_Namespace alias columns are
+        // GENERATED ALWAYS from the canonical *_Unified columns and must not be inserted.
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."AssessmentScoreRangeLearningStandard" (
+                "DocumentId",
+                "AssessmentIdentifier_Unified",
+                "Namespace_Unified",
+                "Assessment_DocumentId",
+                "MaximumScore",
+                "MinimumScore",
+                "ScoreRangeId"
+            )
+            VALUES (
+                @documentId,
+                @assessmentIdentifier,
+                @namespace,
+                @assessmentDocumentId,
+                @maximumScore,
+                @minimumScore,
+                @scoreRangeId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("assessmentIdentifier", assessmentIdentifier),
+            new NpgsqlParameter("namespace", @namespace),
+            new NpgsqlParameter("assessmentDocumentId", assessmentDocumentId),
+            new NpgsqlParameter("maximumScore", "100"),
+            new NpgsqlParameter("minimumScore", "0"),
+            new NpgsqlParameter("scoreRangeId", scoreRangeId)
+        );
+    }
+
+    private async Task<long> CountTrackedChangeRowsAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)
+            FROM "{schemaName}"."{tableName}"
+            WHERE "Id" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> GetLatestTrackedChangeRowAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            $"""
+            SELECT *
+            FROM "{schemaName}"."{tableName}"
+            WHERE "Id" = @documentUuid
+            ORDER BY "ChangeVersion" DESC
+            LIMIT 1;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Single();
+    }
+
+    // No tracked row may advance an extraction watermark past the tombstone
+    // (extraction-watermark contract). This helper makes that invariant explicit at
+    // every call site so it cannot be mistaken for a duplicate of GetLatestTrackedChangeRowAsync.
+    private async Task AssertMaxTrackedChangeVersionAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid,
+        long expectedChangeVersion
+    )
+    {
+        var maxChangeVersion = await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT max("ChangeVersion")
+            FROM "{schemaName}"."{tableName}"
+            WHERE "Id" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+        maxChangeVersion
+            .Should()
+            .Be(
+                expectedChangeVersion,
+                "no tracked row may advance an extraction watermark past the tombstone"
+            );
+    }
+
+    private static void AssertAllNewColumnsAreNull(IReadOnlyDictionary<string, object?> trackedRow)
+    {
+        var newColumns = trackedRow
+            .Keys.Where(columnName => columnName.StartsWith("New_", StringComparison.Ordinal))
+            .ToList();
+
+        newColumns.Should().NotBeEmpty();
+        foreach (var columnName in newColumns)
+        {
+            trackedRow[columnName].Should().BeNull($"tombstone column \"{columnName}\" must be NULL");
+        }
+    }
+
+    private async Task<long> CountDocumentRowsAsync(long documentId)
+    {
+        return await CountRowsAsync(
+            """SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
+
+    private async Task<Guid> GetDocumentUuidAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<Guid>(
+            """SELECT "DocumentUuid" FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
         );
     }
 

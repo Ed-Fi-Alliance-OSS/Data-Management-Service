@@ -317,6 +317,7 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
@@ -346,6 +347,9 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        // Single-row dms.Document deletes cascade across the full FK graph; keep the
+        // generous shared timeout so cold CI runners don't trip the driver default.
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         return await command.ExecuteNonQueryAsync();
@@ -368,6 +372,7 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
         command.Parameters.AddRange(parameters);
 
         var result = await command.ExecuteScalarAsync();

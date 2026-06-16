@@ -554,14 +554,45 @@ BEGIN
         FROM [edfi].[NamingStressItem] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([NamingStressItemId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[NamingStressItem] (
+            [Old_NamingStressItemId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[NamingStressItemId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[NamingStressItem] (
+            [Old_NamingStressItemId],
+            [New_NamingStressItemId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[NamingStressItemId],
+            i.[NamingStressItemId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
