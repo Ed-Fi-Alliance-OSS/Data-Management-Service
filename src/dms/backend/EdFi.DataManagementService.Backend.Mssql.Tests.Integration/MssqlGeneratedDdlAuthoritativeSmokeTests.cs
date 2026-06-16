@@ -1477,7 +1477,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var unchangedDocumentUuid = Guid.Parse("d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7");
-        var unchangedDocumentId = await InsertDocumentAsync(unchangedDocumentUuid, gradingPeriodResourceKeyId);
+        var unchangedDocumentId = await InsertDocumentAsync(
+            unchangedDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
         await InsertGradingPeriodAsync(
             unchangedDocumentId,
             schoolYearTypeDocumentId,
@@ -1606,7 +1609,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
 
-        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", gradingPeriodDocumentUuid))
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                gradingPeriodDocumentUuid
+            )
+        )
             .Should()
             .Be(1);
 
@@ -2236,14 +2245,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
         AssertAllNewColumnsAreNull(trackedRow);
 
-        // The doc stamp may have advanced past the tombstone if child triggers fired
-        // before stmt 2 — allowed; the tombstone itself must remain the latest tracked
-        // row for the document.
+        // The tombstone must be the final visible root delete stamp. Cascaded child trigger
+        // activity must not advance the document extraction watermark past the tombstone.
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThanOrEqualTo(tombstoneChangeVersion);
+        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -2383,12 +2391,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         AssertAllNewColumnsAreNull(trackedRow);
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
 
-        // The doc stamp may have advanced past the tombstone if extension triggers
-        // fired before stmt 2 — allowed; the tombstone itself must remain the latest
-        // tracked row for the document.
-        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        // The tombstone must be the final visible root delete stamp. Cascaded extension trigger
+        // activity must not advance the document extraction watermark past the tombstone.
+        (await CountDocumentRowsAsync(schoolDocumentId))
+            .Should()
+            .Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThanOrEqualTo(tombstoneChangeVersion);
+        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",

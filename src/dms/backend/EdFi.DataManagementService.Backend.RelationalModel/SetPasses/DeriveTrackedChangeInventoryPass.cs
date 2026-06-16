@@ -675,7 +675,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             }
 
             // Nullability follows whether any source FK in the resolved chain is optional.
-            var isOldNullable = JoinPathNullable(concreteModel, chain) ?? false;
+            var isOldNullable = JoinPathNullable(resourceLookup, chain) ?? false;
 
             var personColumn = BuildValueColumn(
                 joinBaseName + DocumentIdSuffix,
@@ -877,7 +877,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     }
 
     private static bool? JoinPathNullable(
-        ConcreteResourceModel concreteModel,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         IReadOnlyList<ColumnPathStep> chain
     )
     {
@@ -885,9 +885,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
         foreach (var step in chain)
         {
-            var sourceTable = concreteModel.RelationalModel.TablesInDependencyOrder.FirstOrDefault(table =>
-                table.Table.Equals(step.SourceTable)
-            );
+            var sourceTable = FindSourceTable(resourceLookup, step.SourceTable);
             var nullable = sourceTable is null
                 ? null
                 : FindColumnNullable(sourceTable, step.SourceColumnName);
@@ -904,6 +902,25 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         }
 
         return sawUnknown ? null : false;
+    }
+
+    private static DbTableModel? FindSourceTable(
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        DbTableName tableName
+    )
+    {
+        foreach (var resource in resourceLookup.Values)
+        {
+            var table = resource.RelationalModel.TablesInDependencyOrder.FirstOrDefault(table =>
+                table.Table.Equals(tableName)
+            );
+            if (table is not null)
+            {
+                return table;
+            }
+        }
+
+        return null;
     }
 
     private static DbTableName BuildTrackedChangeTableName(DbSchemaName projectSchema, string tableName)
