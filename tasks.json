@@ -202,5 +202,69 @@
       "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.External src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ApiServiceOpenApiTests.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs`."
     ],
     "completed": true
+  },
+  {
+    "category": "metadata-endpoints",
+    "description": "Low: Centralize OpenAPI route-base literals in metadata endpoint server URL generation.",
+    "acceptance-criteria": [
+      "`MetadataEndpointModule` defines private constants for the data OpenAPI route base and the Change-Queries OpenAPI route base.",
+      "Resource, descriptor, profile, legacy section, and standalone Change-Queries metadata handlers pass the constants to `GetServers` instead of repeating string literals.",
+      "The served `servers` URLs are unchanged for resource, descriptor, profile, legacy section, and Change-Queries OpenAPI metadata."
+    ],
+    "steps-to-verify": [
+      "Review and update `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs` to replace repeated route-base string literals with private constants.",
+      "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
+      "Run `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "profile-openapi",
+    "description": "Low: Make the stateless profile Change Query base-path helper static.",
+    "acceptance-criteria": [
+      "`ProfileOpenApiSpecificationFilter.BuildResourceNamesByBasePath` is declared `static` because it does not use instance state.",
+      "Call sites are updated without changing profile OpenAPI filtering behavior.",
+      "Existing profile OpenAPI tests continue to cover readable, write-only, and Change Query path scenarios."
+    ],
+    "steps-to-verify": [
+      "Review and update `src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs` so `BuildResourceNamesByBasePath` is static.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileOpenApiSpecificationFilter\"`.",
+      "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "test-cleanup",
+    "description": "Low: Consolidate duplicated Change Queries OpenAPI test document builders.",
+    "acceptance-criteria": [
+      "Repeated minimal OpenAPI document creation used by Change Queries metadata tests is moved into a shared test helper in the OpenAPI test support area.",
+      "`ApiServiceOpenApiTests`, `OpenApiDocumentTests`, and `ChangeQueriesMetadataIntegrationTests` reuse the shared helper where the generated document shape is the same.",
+      "Scenario-specific test data remains local when it differs materially from the shared minimal OpenAPI shape.",
+      "Test behavior and assertions remain unchanged."
+    ],
+    "steps-to-verify": [
+      "Review duplicated minimal OpenAPI document builders in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ApiServiceOpenApiTests.cs`, `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/OpenApiDocumentTests.cs`, and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs`.",
+      "Add or update a shared helper under `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/` and replace equivalent local builders with calls to it.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiServiceOpenApiTests|FullyQualifiedName~OpenApiDocumentTests\"`.",
+      "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_real_ApiSchema_change_queries_metadata\"`.",
+      "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "test-cleanup",
+    "description": "Low: Remove stale Change-Queries OpenAPI document stubs from metadata catalog tests.",
+    "acceptance-criteria": [
+      "`/metadata/specifications` tests in `MetaDataModuleTests` do not stub `IApiService.GetChangeQueriesOpenApiSpecification` unless the test exercises the canonical Change-Queries Swagger route.",
+      "Catalog listing tests explicitly stub `IApiService.HasChangeQueriesOpenApiSpecification` when they depend on Change-Queries presence or absence.",
+      "Tests continue to verify that `/metadata/specifications` uses the presence check and does not clone or mutate the standalone Change-Queries OpenAPI document."
+    ],
+    "steps-to-verify": [
+      "Review `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs` for stale `GetChangeQueriesOpenApiSpecification` stubs in `/metadata/specifications` test setup.",
+      "Remove stale stubs and add explicit `HasChangeQueriesOpenApiSpecification` stubs where catalog behavior depends on Change-Queries presence.",
+      "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
+      "Run `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs`."
+    ],
+    "completed": false
   }
 ]
