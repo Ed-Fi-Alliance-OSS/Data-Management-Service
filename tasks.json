@@ -147,5 +147,40 @@
       "Run `dotnet csharpier format src/dms/core src/dms/frontend src/dms/tests` after test edits."
     ],
     "completed": true
+  },
+  {
+    "category": "metadata-endpoints",
+    "description": "Medium: Include PathBase in OpenAPI server URLs for resource, descriptor, profile, and standalone Change-Queries metadata.",
+    "acceptance-criteria": [
+      "`MetadataEndpointModule.GetServers` builds OpenAPI server URLs from the request root including `Request.PathBase` exactly once.",
+      "Resource, descriptor, and profile OpenAPI metadata served under a configured PathBase emits a `servers` URL ending in `/{PathBase}/data`.",
+      "Standalone Change-Queries OpenAPI metadata served under a configured PathBase emits a `servers` URL ending in `/{PathBase}/changeQueries/v1`.",
+      "Existing multi-tenancy and route-qualifier placeholders, defaults, enum values, and route bases remain unchanged except for the added PathBase prefix.",
+      "Server URLs do not contain duplicate slashes when PathBase is empty or configured."
+    ],
+    "steps-to-verify": [
+      "Review and update `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs` so `GetServers` includes PathBase through `RootUrl()` or equivalent request-root construction.",
+      "Add or update `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs` coverage for PathBase on resource, descriptor, profile, and Change-Queries OpenAPI metadata routes.",
+      "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
+      "Run `dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "profile-openapi",
+    "description": "Medium: Preserve schemas reachable from unprofiled Change Query responses during profile OpenAPI cleanup.",
+    "acceptance-criteria": [
+      "Profile OpenAPI filtering keeps every component schema reachable from retained `/deletes` and `/keyChanges` response schemas, even when a base resource schema also has readable or writable profile-specific variants.",
+      "Retained `/deletes` and `/keyChanges` responses do not contain dangling `$ref` values after base schema cleanup and unused schema cleanup complete.",
+      "Retained `/deletes` and `/keyChanges` responses continue to use `application/json` and are not rewritten to profile-specific media types or `_readable` schema variants.",
+      "Profile OpenAPI tests include a ref-based tracked-change response schema that references a component also involved in normal profile schema suffixing."
+    ],
+    "steps-to-verify": [
+      "Review and update `src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs` so cleanup preserves component schemas reachable from retained Change Query response paths.",
+      "Add or update `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ProfileOpenApiSpecificationFilterTests.cs` coverage for a retained `/keyChanges` or `/deletes` response with nested `$ref` dependencies that would otherwise be removed by profile schema cleanup.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileOpenApiSpecificationFilter\"`.",
+      "Run `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OpenApi/ProfileOpenApiSpecificationFilterTests.cs`."
+    ],
+    "completed": false
   }
 ]
