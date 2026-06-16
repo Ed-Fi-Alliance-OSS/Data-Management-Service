@@ -52,7 +52,7 @@
       "Run `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~MetaDataModuleTests\"`.",
       "Manually inspect the route table or endpoint tests to confirm existing resources, descriptors, discovery, profile metadata routes, and the absence of `/metadata/specifications/changequeries-spec.json` compatibility alias behavior still match story scope."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "metadata-endpoints",

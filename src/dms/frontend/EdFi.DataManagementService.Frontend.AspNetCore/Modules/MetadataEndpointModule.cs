@@ -258,6 +258,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
+        endpoints.MapGet("/metadata/changequeries/v1/swagger.json", GetChangeQueriesOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
 
         endpoints.MapGet(
@@ -348,6 +349,25 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
+    internal static async Task GetChangeQueriesOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDataStoreProvider dataStoreProvider,
+        IOptions<Configuration.AppSettings> appSettings
+    )
+    {
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonNode? content = apiService.GetChangeQueriesOpenApiSpecification(servers);
+
+        if (content is null)
+        {
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return;
+        }
+
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
     /// <summary>
     /// Returns resource OpenAPI spec for a specific profile (cached).
     /// </summary>
@@ -388,6 +408,17 @@ public partial class MetadataEndpointModule : IEndpointModule
                     section.name,
                     $"{baseUrl}/{section.name.ToLower()}-spec.json",
                     section.prefix
+                )
+            );
+        }
+
+        if (apiService.GetChangeQueriesOpenApiSpecification([]) is not null)
+        {
+            sections.Add(
+                new RouteInformation(
+                    "Change-Queries",
+                    $"{httpContext.Request.RootUrl()}/metadata/changequeries/v1/swagger.json",
+                    "Other"
                 )
             );
         }

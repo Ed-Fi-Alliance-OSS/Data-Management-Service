@@ -33,6 +33,8 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns((JsonNode?)null);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile", "SchoolProfile"]));
 
@@ -69,6 +71,8 @@ public class MetadataModuleTests
         {
             // Arrange
             var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns((JsonNode?)null);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
 
@@ -330,6 +334,8 @@ public class MetadataModuleTests
                         """
                     )!
                 );
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns((JsonNode?)null);
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
@@ -392,6 +398,189 @@ public class MetadataModuleTests
                 server.Should().NotBeNull();
                 server?["url"]?.GetValue<string>().Should().Be("http://localhost/data");
             }
+        }
+    }
+
+    [TestFixture]
+    public class When_Getting_Change_Queries_OpenApi_Metadata
+    {
+        [Test]
+        public async Task It_returns_the_standalone_OpenApi_document_when_present()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns(
+                    JsonNode.Parse(
+                        """
+                        {
+                          "openapi": "3.0.0",
+                          "info": {
+                            "title": "Ed-Fi Change Queries API"
+                          },
+                          "paths": {
+                            "/availableChangeVersions": {}
+                          },
+                          "servers": [
+                            {
+                              "url": "http://localhost/data"
+                            }
+                          ]
+                        }
+                        """
+                    )
+                );
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonContent = JsonNode.Parse(content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonContent.Should().NotBeNull();
+            jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
+            jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
+            jsonContent["paths"]!.AsObject().Should().ContainKey("/availableChangeVersions");
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_returns_404_when_the_standalone_document_is_absent()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns((JsonNode?)null);
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class When_Getting_Specifications_With_Change_Queries_Metadata
+    {
+        [Test]
+        public async Task It_lists_Change_Queries_when_the_standalone_document_is_present()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns(JsonNode.Parse("""{"openapi": "3.0.0"}"""));
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            var changeQueries = jsonArray!.SingleOrDefault(node =>
+                node!["name"]!.GetValue<string>() == "Change-Queries"
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            changeQueries.Should().NotBeNull();
+            changeQueries!["prefix"]!.GetValue<string>().Should().Be("Other");
+            changeQueries["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .Be("http://localhost/metadata/changequeries/v1/swagger.json");
+        }
+
+        [Test]
+        public async Task It_omits_Change_Queries_when_the_standalone_document_is_absent()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .Returns((JsonNode?)null);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            var changeQueries = jsonArray!.SingleOrDefault(node =>
+                node!["name"]!.GetValue<string>() == "Change-Queries"
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            changeQueries.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_does_not_expose_the_specifications_alias()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications/changequeries-spec.json");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 
