@@ -31,13 +31,13 @@ internal class ValidateDatabaseFingerprintMiddleware(
 {
     private const string MalformedFingerprintTitle = "Database Provisioning Error";
     private const string MalformedFingerprintDetail =
-        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart the Ed-Fi API service after the database has been repaired to clear the cached fingerprint validation failure.";
 
     private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
     private const string SchemaHashMismatchDetail =
-        "The database was provisioned for a different effective schema than this DMS process expects. "
+        "The database was provisioned for a different effective schema than the Ed-Fi API service expects. "
         + "The database must be reprovisioned with 'ddl provision' against a fresh database "
-        + "and DMS restarted to clear the cached validation state.";
+        + "and the Ed-Fi API service restarted to clear the cached validation state.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -86,7 +86,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
         {
             logger.LogError(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart DMS after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
+                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart the Ed-Fi API service after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
@@ -138,7 +138,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseNotProvisioned(
-                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
+                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after the Ed-Fi API service first tried to use it, restart the Ed-Fi API service to clear the cached provisioning state.",
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

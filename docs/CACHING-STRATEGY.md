@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ed-Fi Data Management Service (DMS) implements a comprehensive caching
+The Ed-Fi API (DMS) implements a comprehensive caching
 strategy to optimize performance and reduce latency for frequently accessed
 data. All caching in DMS is **in-memory** and **local to each instance**,
 meaning there is no distributed cache. This design provides simplicity and

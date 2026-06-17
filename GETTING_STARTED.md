@@ -1,14 +1,13 @@
-# Getting Started Using the Ed-Fi Data Management Service Platform
+# Getting Started Using the Ed-Fi API
 
-This file is a lab walkthrough on using the Ed-Fi Data Management (DMS)
-Platform. These instructions rely on a compatible `docker compose` command, for
+This file is a lab walkthrough on using the Ed-Fi API (DMS). These instructions
+rely on a compatible `docker compose` command, for
 example coming from Docker Desktop or Podman. See the [docs/](./docs/) for
 additional developer information.
 
 There are two parts to the lab:
 
-* This markdown file provides context and instructions on running the DMS
-  Platform.
+* This markdown file provides context and instructions on running the Ed-Fi API.
 * File `getting-started.http` provides annotated HTTP commands demonstrating how
   to interact with the DMS and the DMS Configuration Service.
 

@@ -89,7 +89,7 @@ The following section discusses explicit segmentation in detail.
 
 ## Context-Based Routing for Segmented Datastores
 
-The Ed-Fi Data Management Service (DMS) supports explicit data segmentation
+The Ed-Fi API (DMS) supports explicit data segmentation
 through context-based routing using route qualifiers. This approach allows
 API requests to include contextual values (such as school year, district ID, or
 other identifiers) in the URL path, enabling the same API client to access

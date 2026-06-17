@@ -9,24 +9,54 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class ApiVersionDetails
 {
+    // Keep in sync with <InformationalVersion> in src/config/Directory.Build.props; only used when
+    // the assembly attribute is absent (e.g. an unstamped build).
+    private const string FallbackInformationalVersion = "8.0.0";
+
+    private static readonly Version AssemblyVersion =
+        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+
     /// <summary>
     /// Semantic version of the DMS Configuration Api.
     /// </summary>
-    public const string Version = "0.7.0";
+    public static readonly string Version =
+        $"{AssemblyVersion.Major}.{AssemblyVersion.Minor}.{AssemblyVersion.Build}";
 
     /// <summary>
     /// Application name
     /// </summary>
-    public const string ApplicationName = "Ed-Fi Alliance DMS Configuration Service";
+    public const string ApplicationName = "Ed-Fi API Configuration Service";
 
     /// <summary>
     /// Informational version description
     /// </summary>
-    public const string InformationalVersion = "Release Candidate 1";
+    public static readonly string InformationalVersion = ResolveInformationalVersion();
 
     /// <summary>
     /// Assembly version of the DMS Configuration Api.
     /// </summary>
-    public static readonly string Build =
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Version;
+    public static readonly string Build = AssemblyVersion.ToString();
+
+    private static string ResolveInformationalVersion() =>
+        NormalizeInformationalVersion(
+            Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
+        );
+
+    /// <summary>
+    /// Strips any build-metadata suffix (e.g. "+&lt;git-sha&gt;") from the informational version so it
+    /// does not leak into the response, falling back to the release version when none is present.
+    /// </summary>
+    internal static string NormalizeInformationalVersion(string? informationalVersion)
+    {
+        if (string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return FallbackInformationalVersion;
+        }
+
+        int metadataIndex = informationalVersion.IndexOf('+');
+        return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
+    }
 }

@@ -1,7 +1,7 @@
 # Reference validation
 
-Please refer [Referential integrity
-checking](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS/PRIMARY-DATA-STORAGE/README.md#references-table)
+Please refer to [Reference
+Validation](../reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#reference-validation)
 for more details.
 
 ## Remove reference validation

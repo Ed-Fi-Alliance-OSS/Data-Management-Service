@@ -9,7 +9,7 @@ Import-Module (Join-Path $PSScriptRoot "Dms-Management.psm1") -Force
 
 <#
 .SYNOPSIS
-    Loads school year types into the Ed-Fi Data Management Service (DMS).
+    Loads school year types into the Ed-Fi API (DMS).
 
 .DESCRIPTION
     Iterates through a range of school years and posts each as a `schoolYearType` entity
@@ -26,7 +26,7 @@ Import-Module (Join-Path $PSScriptRoot "Dms-Management.psm1") -Force
     The school year to mark as the current one. If set to 0, it will be automatically calculated based on the current date: if current month is after June, uses next year; otherwise uses current year. Defaults to 0 (auto-calculate).
 
 .PARAMETER DmsUrl
-    The base URL of the Data Management Service API.
+    The base URL of the Ed-Fi API.
 
 .PARAMETER DmsToken
     The authentication token used to authorize requests to the DMS API.

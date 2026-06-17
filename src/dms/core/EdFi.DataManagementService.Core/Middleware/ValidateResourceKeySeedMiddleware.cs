@@ -38,7 +38,7 @@ internal class ValidateResourceKeySeedMiddleware(
     private const string ResourceKeySeedMismatchDetail =
         "The database resource key seed does not match the expected schema. "
         + "The database must be reprovisioned with 'ddl provision' against a fresh database "
-        + "and DMS restarted to clear the cached validation state.";
+        + "and the Ed-Fi API service restarted to clear the cached validation state.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {

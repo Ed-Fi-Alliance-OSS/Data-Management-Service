@@ -61,7 +61,7 @@ param(
     # current package number is configured in the build automation tool and
     # passed to this script.
     [string]
-    $DMSVersion = "0.1",
+    $DMSVersion = "8.0.0",
 
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
@@ -138,6 +138,7 @@ $targetDir = "coveragereport"
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
 
 function DotNetClean {
     Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
@@ -157,7 +158,7 @@ function SetDMSAssemblyInfo {
     <PropertyGroup>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
-        <Product>Ed-Fi Data Management Service</Product>
+        <Product>Ed-Fi API</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
         <Copyright>Copyright © ${(Get-Date).year)} Ed-Fi Alliance</Copyright>
@@ -1167,8 +1168,20 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
+    $versionArgs = @()
+    if (-not [string]::IsNullOrEmpty($DMSVersion))
+    {
+        # AssemblyVersion/FileVersion must be strictly numeric, so derive a numeric
+        # assembly version from the (possibly prerelease) package version.
+        $assemblyVersion = Convert-ToAssemblyVersion $DMSVersion
+        $versionArgs += "--build-arg"
+        $versionArgs += "VERSION=$DMSVersion"
+        $versionArgs += "--build-arg"
+        $versionArgs += "ASSEMBLY_VERSION=$assemblyVersion"
+    }
+
     Push-Location src/dms/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../
+    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
     Pop-Location
 }
 

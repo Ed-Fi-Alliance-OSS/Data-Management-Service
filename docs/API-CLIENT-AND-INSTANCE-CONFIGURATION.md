@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ed-Fi Data Management Service (DMS) Configuration Service manages API client
+The Ed-Fi API Configuration Service manages API client
 credentials and data store routing through a dedicated configuration database.
 This database stores vendor and application information, API client credentials,
 data store connection strings, and route context mappings for multi-tenant

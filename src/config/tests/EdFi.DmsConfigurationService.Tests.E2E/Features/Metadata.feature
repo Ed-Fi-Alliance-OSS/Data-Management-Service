@@ -10,7 +10,7 @@ Feature: Metadata endpoints
                   """
                   {
                       "version": "{*}",
-                      "applicationName": "Ed-Fi Alliance DMS Configuration Service",
+                      "applicationName": "Ed-Fi API Configuration Service",
                       "informationalVersion": "{*}",
                       "build": "{*}",
                       "urls": {
@@ -29,7 +29,7 @@ Feature: Metadata endpoints
               And the response body contains OpenAPI specification
                   | Field      | Value                               |
                   | openapi    | 3.1.1                               |
-                  | info.title | Ed-Fi DMS Configuration Service API |
+                  | info.title | Ed-Fi API Configuration Service API |
 
         Scenario: 03 Verify OpenAPI specification structure
              When a GET request is made to "/metadata/specifications"

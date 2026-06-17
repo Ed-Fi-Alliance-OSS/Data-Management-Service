@@ -1,7 +1,7 @@
 # Getting Started with Multi-Tenancy
 
-This guide walks you through deploying and configuring a multi-tenant Ed-Fi Data
-Management Service (DMS) environment.
+This guide walks you through deploying and configuring a multi-tenant Ed-Fi API
+(DMS) environment.
 
 ## Overview
 

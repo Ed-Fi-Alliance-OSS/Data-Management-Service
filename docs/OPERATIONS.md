@@ -49,7 +49,7 @@ the services.
 
 Rate limiting should be employed to limit both denial of service (DoS) attacks
 and brute-force authentication attempts. While the application gateway is the
-best place to apply rate limiting, the Ed-Fi Data Management Service and Ed-Fi
+best place to apply rate limiting, the Ed-Fi API and Ed-Fi API
 Configuration Service will both have built-in rate limiting capabilities to fall
 back on.
 

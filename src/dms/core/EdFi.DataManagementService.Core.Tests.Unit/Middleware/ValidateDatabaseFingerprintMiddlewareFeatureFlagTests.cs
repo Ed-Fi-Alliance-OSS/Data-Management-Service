@@ -291,7 +291,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         public void It_returns_error_body_with_restart_guidance()
         {
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
-            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("restart DMS");
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("restart the Ed-Fi API service");
         }
     }
 

@@ -18,20 +18,38 @@ public interface IVersionProvider
 
 public class VersionProvider : IVersionProvider
 {
-    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.MinorRevision}";
+    // Keep in sync with <InformationalVersion> in src/dms/Directory.Build.props; only used when the
+    // assembly attribute is absent (e.g. an unstamped build).
+    private const string FallbackInformationalVersion = "8.0.0";
 
-    public string ApplicationName => "Ed-Fi Alliance Data Management Service";
+    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.Build}";
 
-    public string InformationalVersion => "Release Candidate 1";
+    public string ApplicationName => "Ed-Fi API";
 
-    private static Version FullVersion
+    public string InformationalVersion =>
+        NormalizeInformationalVersion(
+            Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
+        );
+
+    /// <summary>
+    /// Strips any build-metadata suffix (e.g. "+&lt;git-sha&gt;") from the informational version so it
+    /// does not leak into the response, falling back to the release version when none is present.
+    /// </summary>
+    internal static string NormalizeInformationalVersion(string? informationalVersion)
     {
-        get
+        if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            var version =
-                (Assembly.GetEntryAssembly()?.GetName().Version)
-                ?? throw new InvalidOperationException("Unable to retrieve assembly version");
-            return version;
+            return FallbackInformationalVersion;
         }
+
+        int metadataIndex = informationalVersion.IndexOf('+');
+        return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
     }
+
+    private static Version FullVersion =>
+        Assembly.GetExecutingAssembly().GetName().Version
+        ?? throw new InvalidOperationException("Unable to retrieve assembly version");
 }

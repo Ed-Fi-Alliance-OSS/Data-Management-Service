@@ -62,7 +62,7 @@ window.onload = function () {
     });
 
     // Update the title of the page
-    document.title = "Ed-Fi DMS API Documentation";
+    document.title = "Ed-Fi API Documentation";
 
     // Update the label
     const updateLabel = () => {

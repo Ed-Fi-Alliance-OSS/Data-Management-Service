@@ -24,4 +24,44 @@ public class VersionProviderTests
         // Assert
         Assert.That(version, Is.Not.EqualTo("0.0.0"));
     }
+
+    [Test]
+    public void Given_VersionProvider_When_RetrievingApplicationName_Then_ReturnsEdFiApi()
+    {
+        // Arrange
+        var versionProvider = new VersionProvider();
+
+        // Act
+        string applicationName = versionProvider.ApplicationName;
+
+        // Assert
+        Assert.That(applicationName, Is.EqualTo("Ed-Fi API"));
+    }
+
+    [TestCase("8.0.1+0a1b2c3", "8.0.1")]
+    [TestCase("8.0.1-rc.1+0a1b2c3", "8.0.1-rc.1")]
+    [TestCase("8.0.1", "8.0.1")]
+    public void Given_InformationalVersionWithMetadata_When_Normalizing_Then_StripsBuildMetadata(
+        string raw,
+        string expected
+    )
+    {
+        // Act
+        string normalized = VersionProvider.NormalizeInformationalVersion(raw);
+
+        // Assert
+        Assert.That(normalized, Is.EqualTo(expected));
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void Given_MissingInformationalVersion_When_Normalizing_Then_ReturnsReleaseFallback(string? raw)
+    {
+        // Act
+        string normalized = VersionProvider.NormalizeInformationalVersion(raw);
+
+        // Assert
+        Assert.That(normalized, Is.EqualTo("8.0.0"));
+    }
 }

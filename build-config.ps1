@@ -52,7 +52,7 @@ param(
     # The current package number is configured in the build automation tool and
     # passed to this script.
     [string]
-    $DmsCSVersion = "0.1",
+    $DmsCSVersion = "8.0.0",
 
     # Normalized four-part assembly version (Major.Minor.Patch.Height, e.g. "0.7.1.83").
     # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion.
@@ -130,7 +130,7 @@ function SetDMSAssemblyInfo {
     <PropertyGroup>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
-        <Product>Ed-Fi DMS Configuration Service</Product>
+        <Product>Ed-Fi API Configuration Service</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
         <Copyright>Copyright © ${(Get-Date).year)} Ed-Fi Alliance</Copyright>

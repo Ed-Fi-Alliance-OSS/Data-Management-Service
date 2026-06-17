@@ -1,36 +1,36 @@
-# Data-Management-Service
+# Ed-Fi API
 
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Ed-Fi-Alliance-OSS/Data-Management-Service)
 
-This repository contains two applications:
+This repository contains the **Ed-Fi API**, version 8 — the next major version of
+the Ed-Fi API platform, continuing the lineage from the Ed-Fi ODS/API. It comprises
+two applications:
 
-1. The Ed-Fi Data Management Service (DMS), which is a functional implementation
-   of the following API specifications: Ed-Fi Resources API, Ed-Fi Descriptors
-   API, and Ed-Fi Discovery API.
-2. The Ed-FI DMS Configuration Service, which is a functional implementation of
-   the Ed-Fi Management API specification.
+1. The Ed-Fi API (the Data Management Service, or "DMS", as the internal codebase
+   name), a functional implementation of the Ed-Fi Resources API, Ed-Fi Descriptors
+   API, and Ed-Fi Discovery API specifications.
+2. The Ed-Fi API Configuration Service (internally, the DMS Configuration Service),
+   a functional implementation of the Ed-Fi Management API specification.
 
-These two applications and other services that support them are collectively
-known as the "DMS Platform".
-
-These two applications are being built to replace the legacy Ed-Fi ODS/API and
-Ed-Fi ODS Admin API applications. The target time line for production ready 1.0
-releases is Q4 of 2025. These applications and related documentation, startup
-scripts, etc., are being developed under the code name "Project Tanager".
-Tanager is just a project to get to 1.0; it is not a product.
+These applications replace the legacy Ed-Fi ODS/API and Ed-Fi ODS Admin API
+applications.
 
 See [Getting Started](./GETTING_STARTED.md) for a detailed tutorial on starting
-the DMS Platform and interacting with it.
+the Ed-Fi API and interacting with it.
 
-See the [Project Tanager](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager)
-repository for detailed design documents.
+See the [reference folder](./reference/) for detailed design documents.
 
 See the [docs folder](./docs/) for additional developer-oriented documentation.
+
+## Contributing
+
+The Ed-Fi Alliance welcomes code contributions from the community. Please read
+the [Ed-Fi Contribution Guidelines](https://docs.ed-fi.org/community/sdlc/code-contribution-guidelines/)
+for detailed information on how to contribute source code.
 
 ## Repository Metadata
 
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [How to Contribute](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/CONTRIBUTING.md)
 - [List of Contributors](./CONTRIBUTORS.md)
 - [Copyright and License Notices](./NOTICES.md)
 - [Security](./SECURITY.md)

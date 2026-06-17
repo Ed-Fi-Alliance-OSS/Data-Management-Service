@@ -81,7 +81,7 @@ public static class Program
             parseResult,
             h =>
             {
-                h.Heading = "Ed-Fi Data Management Service Backend Installer";
+                h.Heading = "Ed-Fi API Configuration Service Backend Installer";
                 h.Copyright = string.Empty;
                 h.AutoVersion = false;
                 return h;
