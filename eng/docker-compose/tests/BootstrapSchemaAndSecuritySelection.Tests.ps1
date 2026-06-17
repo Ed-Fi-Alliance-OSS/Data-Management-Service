@@ -1300,6 +1300,25 @@ exit 0
             $buildScript | Should -Match "start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
         }
 
+        It "build-dms.ps1 relational E2E startup clears schema process env overrides around compose calls" {
+            # Docker Compose gives process env vars precedence over --env-file values. Relational E2E
+            # startup must let .env.e2e.relational provide the schema package settings, even when an
+            # earlier compose helper left empty schema env vars in the process.
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+
+            $buildScript | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings"
+            $buildScript | Should -Match '"USE_API_SCHEMA_PATH"'
+            $buildScript | Should -Match '"API_SCHEMA_PATH"'
+            $buildScript | Should -Match '"SCHEMA_PACKAGES"'
+            $buildScript | Should -Match 'Remove-Item "Env:\$name"'
+            $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 6
+            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
+            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
+            $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.UseRelationalBackend'
+        }
+
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {
             # Confirm that both E2E setup wrappers defensively remove .bootstrap/ before invoking
             # start-local-dms.ps1 so a stale bootstrap workspace cannot hijack the non-bootstrap run

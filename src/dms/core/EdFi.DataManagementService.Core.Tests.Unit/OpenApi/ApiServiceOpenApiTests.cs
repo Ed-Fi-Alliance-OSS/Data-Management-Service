@@ -329,7 +329,7 @@ public class ApiServiceOpenApiTests
                 Servers("https://example.org/data/second")
             );
 
-            secondResult["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Resources API");
+            secondResult["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi API");
             secondResult["servers"]![0]!["url"]!
                 .GetValue<string>()
                 .Should()
@@ -349,7 +349,7 @@ public class ApiServiceOpenApiTests
                 Servers("https://example.org/data/second")
             );
 
-            secondResult["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Descriptors API");
+            secondResult["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi API");
             secondResult["servers"]![0]!["url"]!
                 .GetValue<string>()
                 .Should()

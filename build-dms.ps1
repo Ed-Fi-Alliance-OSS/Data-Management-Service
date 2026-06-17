@@ -501,6 +501,50 @@ function Invoke-WithE2ETestProcessContext {
     }
 }
 
+function Invoke-WithEnvironmentFileSchemaSettings {
+    param(
+        [switch]
+        $Enabled,
+
+        [scriptblock]
+        $Action
+    )
+
+    if (-not $Enabled) {
+        & $Action
+        return
+    }
+
+    $schemaEnvironmentVariableNames = @(
+        "USE_API_SCHEMA_PATH",
+        "API_SCHEMA_PATH",
+        "SCHEMA_PACKAGES"
+    )
+    $previousValues = @{}
+
+    foreach ($name in $schemaEnvironmentVariableNames) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+    }
+
+    try {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        & $Action
+    }
+    finally {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            if ($null -eq $previousValues[$name]) {
+                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
+            }
+        }
+    }
+}
+
 function RunTests {
     param (
         # File search filter
@@ -820,7 +864,10 @@ function Start-DockerEnvironment {
         $IdentityProvider="self-contained",
 
         [string]
-        $ResolvedEnvironmentFile
+        $ResolvedEnvironmentFile,
+
+        [switch]
+        $UseEnvironmentFileSchemaSettings
     )
 
     $environmentFilePath =
@@ -839,8 +886,12 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            }
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            }
         }
         finally {
             Pop-Location
@@ -852,10 +903,14 @@ function Start-DockerEnvironment {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             if ($UsePublishedImage) {
                 if ($LoadSeedData) {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
                 else {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
             }
             else {
@@ -886,7 +941,9 @@ function Start-DockerEnvironment {
                         $env:NEED_DATABASE_SETUP = "false"
                         $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
                         $env:AppSettings__DeployDatabaseOnStartup = "false"
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        }
                     }
                     finally {
                         [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
@@ -909,7 +966,9 @@ function Start-DockerEnvironment {
                     }
                 }
                 else {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
@@ -981,7 +1040,8 @@ function E2ETests {
             -SkipDockerBuild:$SkipDockerBuild `
             -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
-            -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile
+            -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
+            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.UseRelationalBackend
     }
 
     if ($e2eTestSettings.UseRelationalBackend) {
