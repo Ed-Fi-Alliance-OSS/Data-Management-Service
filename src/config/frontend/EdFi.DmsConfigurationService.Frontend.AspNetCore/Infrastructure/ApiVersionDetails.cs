@@ -9,6 +9,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class ApiVersionDetails
 {
+    // Keep in sync with <InformationalVersion> in src/config/Directory.Build.props; only used when
+    // the assembly attribute is absent (e.g. an unstamped build).
     private const string FallbackInformationalVersion = "8.0.0";
 
     private static readonly Version AssemblyVersion =
@@ -35,19 +37,25 @@ public static class ApiVersionDetails
     /// </summary>
     public static readonly string Build = AssemblyVersion.ToString();
 
-    private static string ResolveInformationalVersion()
-    {
-        string? informationalVersion = Assembly
-            .GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion;
+    private static string ResolveInformationalVersion() =>
+        NormalizeInformationalVersion(
+            Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
+        );
 
+    /// <summary>
+    /// Strips any build-metadata suffix (e.g. "+&lt;git-sha&gt;") from the informational version so it
+    /// does not leak into the response, falling back to the release version when none is present.
+    /// </summary>
+    internal static string NormalizeInformationalVersion(string? informationalVersion)
+    {
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
             return FallbackInformationalVersion;
         }
 
-        // Strip any build-metadata suffix (e.g. "+<git-sha>") so it does not leak into the response.
         int metadataIndex = informationalVersion.IndexOf('+');
         return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
     }

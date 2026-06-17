@@ -18,6 +18,8 @@ public interface IVersionProvider
 
 public class VersionProvider : IVersionProvider
 {
+    // Keep in sync with <InformationalVersion> in src/dms/Directory.Build.props; only used when the
+    // assembly attribute is absent (e.g. an unstamped build).
     private const string FallbackInformationalVersion = "8.0.0";
 
     public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.Build}";

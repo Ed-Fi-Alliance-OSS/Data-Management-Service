@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Claims",
-  "description": "Schema for Ed-Fi DMS Configuration Service Claims structure",
+  "description": "Schema for Ed-Fi API Configuration Service Claims structure",
   "type": "object",
   "required": ["claimSets", "claimsHierarchy"],
   "properties": {

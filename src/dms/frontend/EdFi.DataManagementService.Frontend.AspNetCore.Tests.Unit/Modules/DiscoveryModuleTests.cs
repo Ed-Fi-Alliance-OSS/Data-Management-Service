@@ -29,8 +29,8 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("Ed-Fi API");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("8.0.0");
 
         IDataModelInfo expectedDataModelInfo = (
             new
@@ -68,8 +68,8 @@ public class DiscoveryModuleTests
         apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         apiDetails?["urls"]?["tokenInfo"].Should().NotBeNull();
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("/oauth/token_info");
-        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
-        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
+        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("Ed-Fi API");
+        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("8.0.0");
         apiDetails?["dataModels"].Should().NotBeNull();
         apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
         apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
@@ -81,8 +81,8 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("Ed-Fi API");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("8.0.0");
         IDataModelInfo expectedDataModelInfo = (
             new
             {
@@ -133,8 +133,8 @@ public class DiscoveryModuleTests
         tokenInfoUrl.Should().NotBeNull();
         tokenInfoUrl?.GetValue<string>().Should().Contain(pathBase);
         tokenInfoUrl?.GetValue<string>().Should().Contain("/oauth/token_info");
-        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
-        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
+        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("Ed-Fi API");
+        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("8.0.0");
         apiDetails?["dataModels"].Should().NotBeNull();
         apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
         apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
@@ -146,8 +146,8 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("Ed-Fi API");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("8.0.0");
 
         IDataModelInfo expectedDataModelInfo = (
             new
@@ -207,8 +207,8 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("Ed-Fi API");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("8.0.0");
 
         IDataModelInfo expectedDataModelInfo = (
             new
@@ -264,8 +264,8 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("Ed-Fi API");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("8.0.0");
 
         IDataModelInfo expectedDataModelInfo = (
             new
