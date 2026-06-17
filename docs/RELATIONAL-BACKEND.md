@@ -1,0 +1,301 @@
+# Relational Backend Developer Guide
+
+This is a developer runbook for the **relational backend** — the tables-per-resource
+storage model for the Ed-Fi API (DMS). It explains how to provision a database for a
+given effective schema, how DMS validates that schema on first use, how to debug the
+write/read paths and update tracking, and how to run the relevant tests locally.
+
+It is a hub: the deep design rationale lives under
+[`reference/design/backend-redesign/design-docs/`](../reference/design/backend-redesign/design-docs/overview.md),
+and command/option details live in the
+[`dms-schema` CLI README](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md).
+This guide ties those together for day-to-day work and links to them rather than
+restating them.
+
+## Contents
+
+- [1. Overview](#1-overview)
+- [2. Provisioning a database for an effective schema](#2-provisioning-a-database-for-an-effective-schema)
+- [3. Schema-fingerprint validation — how DMS validates schema on first use](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)
+- [4. Debugging the write/read paths and update tracking (stored stamps)](#4-debugging-the-writeread-paths-and-update-tracking-stored-stamps)
+- [5. Mapping packs (optional)](#5-mapping-packs-optional)
+- [6. Running the relevant tests locally](#6-running-the-relevant-tests-locally)
+- [7. E2E setup/teardown and the "no hot reload" rule](#7-e2e-setupteardown-and-the-no-hot-reload-rule)
+
+## 1. Overview
+
+The legacy DMS storage model keeps all resources and descriptors together in a single
+`dms.document` table. The **relational backend** instead derives a dedicated set of
+tables, views, constraints, and triggers **per resource** from the effective schema
+(the normalized combination of the core `ApiSchema.json` plus any extension schemas).
+
+The relational backend is **opt-in**. The bound setting is `AppSettings:UseRelationalBackend`
+(see [`AppSettings.cs`](../src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs)),
+so the direct environment variable is `AppSettings__UseRelationalBackend=true`. In the
+Docker Compose / E2E environment files the variable is spelled `USE_RELATIONAL_BACKEND=true`
+and is mapped to `AppSettings__UseRelationalBackend` by
+[`local-dms.yml`](../eng/docker-compose/local-dms.yml) and
+[`published-dms.yml`](../eng/docker-compose/published-dms.yml).
+
+For the design rationale, start with these:
+
+- [`overview.md`](../reference/design/backend-redesign/design-docs/overview.md) — the redesign at a glance
+- [`data-model.md`](../reference/design/backend-redesign/design-docs/data-model.md) — the relational schema (`dms.*` core tables, per-resource tables, descriptor projections)
+- [`new-startup-flow.md`](../reference/design/backend-redesign/design-docs/new-startup-flow.md) — how the service starts up against a provisioned database
+
+## 2. Provisioning a database for an effective schema
+
+Provisioning is done with the **`dms-schema`** CLI
+([project](../src/dms/clis/EdFi.DataManagementService.SchemaTools),
+[README](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md)). The CLI is
+deterministic and does not require a database for artifact generation — only `ddl provision`
+connects to one. See the CLI README for the full option tables; the essentials follow.
+
+### Compute the effective schema hash
+
+A provisioned database is keyed to one effective schema, identified by its hash. To see
+that hash for a set of inputs:
+
+```bash
+dms-schema hash core/ApiSchema.json [extensions/.../ApiSchema.json ...]
+```
+
+The first path is the core schema; any additional paths are extensions.
+
+### Inspect the generated artifacts (`ddl emit`)
+
+`ddl emit` writes the DDL and manifests to a directory without touching a database —
+useful for review, diffing, and golden-file testing:
+
+```bash
+dms-schema ddl emit --schema core/ApiSchema.json --output ./ddl-output --dialect both
+```
+
+| Output file | When | Contents |
+|---|---|---|
+| `pgsql.sql` / `mssql.sql` | per selected dialect | the full DDL script for that engine |
+| `effective-schema.manifest.json` | always | the schema fingerprint, components, and resource-key seed summary |
+| `relational-model.{dialect}.manifest.json` | per selected dialect | the derived relational model inventory (tables, columns, constraints, indexes, views, triggers) |
+| `ddl.manifest.json` | only with `--ddl-manifest` | dialect-independent summary (normalized-SQL hash + statement count per dialect) for diagnostics |
+
+`--dialect` accepts `pgsql`, `mssql`, or `both` (default `both`). All output uses Unix
+line endings so the same inputs produce byte-for-byte identical files.
+
+### Apply the DDL to a database (`ddl provision`)
+
+`ddl provision` generates the DDL for one dialect and executes it against a target
+database in a single transaction:
+
+```bash
+# PostgreSQL (create the database if it does not exist)
+dms-schema ddl provision \
+  --schema core/ApiSchema.json \
+  --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" \
+  --dialect pgsql --create-database
+
+# SQL Server (database must already exist)
+dms-schema ddl provision \
+  --schema core/ApiSchema.json \
+  --connection-string "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" \
+  --dialect mssql
+```
+
+`--dialect` here is `pgsql` or `mssql` (not `both` — provision one database at a time).
+`--create-database` creates the target if missing; `--timeout` (default `300` seconds)
+bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
+Isolation on newly created databases.
+
+### Scripted local provisioning
+
+For the local Docker E2E stack, the helper
+[`provision-relational-e2e-database.ps1`](../eng/docker-compose/provision-relational-e2e-database.ps1)
+wraps the above; see [`eng/docker-compose/README.md`](../eng/docker-compose/README.md).
+
+## 3. Schema-fingerprint validation — how DMS validates schema on first use
+
+The relational backend records a **fingerprint** of the effective schema in the database
+at provisioning time, then verifies it before serving traffic. This guarantees the
+running service and the database agree on exactly one effective schema.
+
+### Where the fingerprint lives
+
+The fingerprint is a single row in the `dms.EffectiveSchema` singleton table
+([`EffectiveSchemaTableDefinition.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/EffectiveSchemaTableDefinition.cs)):
+
+| Column | Meaning |
+|---|---|
+| `EffectiveSchemaSingletonId` | always `1` (a `CHECK` constraint enforces the single row) |
+| `ApiSchemaFormatVersion` | the ApiSchema format version |
+| `EffectiveSchemaHash` | 64-char lowercase hex SHA-256 of the effective schema |
+| `ResourceKeyCount` | number of resource keys |
+| `ResourceKeySeedHash` | 32-byte SHA-256 over the resource-key seed |
+| `AppliedAt` | when the row was written |
+
+The hash algorithm versions are pinned in
+[`SchemaHashConstants.cs`](../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs)
+(`HashVersion`, `RelationalMappingVersion`, `ResourceKeySeedHashVersion`) — bumping any of
+them deliberately forces a new hash even for identical schema content.
+
+### Guards baked into the DDL (provision time)
+
+The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/SeedDmlEmitter.cs),
+assembled by [`FullDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs))
+protects the database in two places:
+
+- **Phase 0 — preflight.** Before any DDL runs, if `dms.EffectiveSchema` already exists with a
+  *different* hash, the script raises an error and aborts. You cannot accidentally re-provision
+  an existing database for a different effective schema.
+- **Phase 7 — insert-if-missing + validate.** The fingerprint row is inserted only if absent
+  (`ON CONFLICT DO NOTHING` / `IF NOT EXISTS`), then the stored `ApiSchemaFormatVersion`,
+  `ResourceKeyCount`, and `ResourceKeySeedHash` are validated against the expected values and
+  the script fails on any mismatch.
+
+### The runtime first-use check
+
+When DMS starts with the relational backend enabled, it reads the stored fingerprint
+([`DatabaseFingerprintReaderSupport.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DatabaseFingerprintReaderSupport.cs),
+with PostgreSQL/SQL Server reader implementations in the respective backend projects) and
+compares it to the effective schema it loaded. The check runs in
+[`ValidateDatabaseFingerprintMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateDatabaseFingerprintMiddleware.cs):
+
+- If `dms.EffectiveSchema` does not exist, the database is treated as not yet provisioned.
+- If the stored hash does **not** match the loaded effective schema, requests receive **HTTP 503**
+  with a detail explaining that the database was provisioned for a different effective schema and
+  that it **must be reprovisioned with `ddl provision` against a fresh database and the service
+  restarted** to clear the cached validation state.
+
+> [!IMPORTANT]
+> The mismatch result is cached for the process lifetime. Reprovisioning alone does not clear
+> a 503 — you must also restart the DMS process. See
+> [§7, "no hot reload"](#7-e2e-setupteardown-and-the-no-hot-reload-rule).
+
+## 4. Debugging the write/read paths and update tracking (stored stamps)
+
+### Write and read at a glance
+
+On **write**, a document's JSON is *flattened* into the per-resource relational tables; on
+**read**, the rows are *reconstituted* back into JSON. The mapping rules and their rationale
+are in the design docs:
+
+- [`flattening-reconstitution.md`](../reference/design/backend-redesign/design-docs/flattening-reconstitution.md)
+- [`update-tracking.md`](../reference/design/backend-redesign/design-docs/update-tracking.md)
+- [`change-queries.md`](../reference/design/backend-redesign/design-docs/change-queries.md)
+
+### Stored stamps and tracked-change tables
+
+Each document carries a `ContentVersion` stamp. **Stamping triggers** on the document tables
+populate per-project **tracked-change tables** named `tracked_changes_<projectSchema>` (for
+example `tracked_changes_edfi`) with the old/new identity and securable values plus a
+`ChangeVersion`. When debugging a stamp or a tracked-change row, these are the sources of truth:
+
+- [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write tracked-change rows
+- [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
+
+Inspect the relevant `tracked_changes_<schema>` table directly to see the `Old_*`/`New_*`
+columns, the document `Id`, and the `ChangeVersion` for a given write.
+
+> [!NOTE]
+> **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers
+> are real and populated, but the runtime read side is a placeholder. `IChangeQueryRepository`'s
+> relational implementation
+> ([`RelationalChangeQueryRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalChangeQueryRepository.cs))
+> only returns the newest change version via `SELECT dms.GetMaxChangeVersion()`, and the
+> `/deletes` and `/keyChanges` endpoints are a temporary empty-response shim
+> ([`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs))
+> that returns `[]` with `Total-Count: 0`. Do not expect `/deletes` or `/keyChanges` to read the
+> tracked-change tables yet.
+
+## 5. Mapping packs (optional)
+
+A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load
+precompiled mapping sets instead of compiling them at runtime.
+
+**Current behavior:** mapping sets are always **compiled at runtime** from the effective schema.
+Mapping packs are **not available yet** — the pack store is a no-op and pack decoding is not
+implemented, so there is no `pack build` workflow to run today. The configuration surface,
+however, already exists and is bound and validated.
+
+The `MappingPacks` configuration section
+([`appsettings.json`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json),
+bound to [`MappingSetProviderOptions`](../src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetProviderOptions.cs)):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` | `false` | Load mapping packs. When `false`, runtime compilation is used directly. |
+| `Required` | `false` | Fail fast if a pack is missing/invalid (only meaningful when `Enabled=true`). |
+| `RootPath` | `null` | Filesystem root for `.mpack` files (used only when `Enabled=true`). |
+| `AllowRuntimeCompileFallback` | `true` | Allow runtime compilation when a pack is enabled but not found. |
+| `FailureCooldownSeconds` | `0` | Seconds a faulted cache entry is retained; `0` evicts immediately. |
+| `CacheMode` | `InMemory` | Cache strategy (currently only `InMemory`). |
+
+Validation rule: `Required` cannot be `true` while `Enabled` is `false`
+([`MappingSetProviderOptionsValidator`](../src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProviderOptionsValidator.cs)).
+
+For the planned format and compilation model, see
+[`aot-compilation.md`](../reference/design/backend-redesign/design-docs/aot-compilation.md) and
+[`mpack-format-v1.md`](../reference/design/backend-redesign/design-docs/mpack-format-v1.md).
+
+## 6. Running the relevant tests locally
+
+### Unit tests
+
+The DDL generator has extensive deterministic / golden-file unit coverage (the
+`EdFi.DataManagementService.Backend.Ddl.Tests.Unit` project and related relational-model
+tests). Run them with the standard `dotnet test` against the project.
+
+### Integration tests (real databases, in-process)
+
+- **`dms-schema` CLI integration** —
+  [`EdFi.DataManagementService.SchemaTools.Tests.Integration`](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#integration-tests).
+  PostgreSQL is **required** (tests fail if it is unreachable, by design). SQL Server is
+  **opt-in**: provide an `MssqlAdmin` connection string in a gitignored `appsettings.Test.json`,
+  otherwise those tests report as skipped.
+- **Backend integration** — `EdFi.DataManagementService.Backend.Postgresql.Tests.Integration` and
+  `EdFi.DataManagementService.Backend.Mssql.Tests.Integration` provision a fresh database from the
+  generated DDL, run against it, and drop it on teardown.
+- **API-level integration** —
+  [`EdFi.DataManagementService.Tests.Integration`](../src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md)
+  exercises an in-process DMS against real databases (not the Docker stack).
+
+### Relational end-to-end (E2E) tests
+
+Relational E2E runs against the Docker stack with the relational backend enabled. The full
+setup is documented in [`eng/docker-compose/README.md`](../eng/docker-compose/README.md); the
+suite itself is described in
+[`src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md).
+A typical run from the repo root:
+
+```powershell
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational
+```
+
+> [!NOTE]
+> The environment file physically lives at
+> [`eng/docker-compose/.env.e2e.relational`](../eng/docker-compose/.env.e2e.relational). You pass
+> it as `./.env.e2e.relational` from the **repo root** — `build-dms.ps1`'s resolver locates it
+> under `eng/docker-compose`. The setup/teardown helpers
+> [`setup-local-dms.ps1`](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1)
+> and `teardown-local-dms.ps1` start and stop the local stack.
+
+## 7. E2E setup/teardown and the "no hot reload" rule
+
+The effective schema is **fixed at provisioning time**. There is no in-place schema migration
+and **no hot reload**: changing any `ApiSchema.json` input changes the effective schema hash, and
+a DMS instance running against a database provisioned for the old hash will fail the first-use
+fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)).
+
+So, after **any** schema change, the developer loop is:
+
+1. **Re-provision a fresh database** for the new effective schema (`dms-schema ddl provision`
+   against a clean database, or the scripted helper).
+2. **Restart the DMS process** so it reloads the schema and clears the cached fingerprint
+   validation state.
+
+This is exactly what the test infrastructure does: integration fixtures create a fresh database
+from the generated DDL per run and drop it on teardown, and the E2E setup tears down stale state
+(including removing a stale `.bootstrap` workspace) before starting. Because each run provisions
+cleanly, tests never rely on updating an already-provisioned database in place.
+
+> [!WARNING]
+> If you change a schema and only restart the service (without reprovisioning), or only
+> reprovision (without restarting), you will still see 503s. Both steps are required.
