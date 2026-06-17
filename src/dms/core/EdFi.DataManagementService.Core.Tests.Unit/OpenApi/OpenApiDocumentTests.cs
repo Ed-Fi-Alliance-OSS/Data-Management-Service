@@ -44,8 +44,8 @@ public class OpenApiDocumentTests
                 {
                   "openapi": "3.0.1",
                   "info": {
-                    "title": "Ed-Fi Resources API",
-                    "version": "5.0.0"
+                    "title": "Ed-Fi API",
+                    "version": "8.0.0"
                   },
                   "components": {
                     "schemas": {
@@ -125,8 +125,8 @@ public class OpenApiDocumentTests
                 {
                   "openapi": "3.0.1",
                   "info": {
-                    "title": "Ed-Fi Descriptors API",
-                    "version": "5.0.0"
+                    "title": "Ed-Fi API",
+                    "version": "8.0.0"
                   },
                   "components": {
                     "schemas": {

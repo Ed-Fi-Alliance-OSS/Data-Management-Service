@@ -18,6 +18,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 {
     private readonly string[] _excludedDomains = excludedDomains ?? [];
 
+    // Public branding for the served OpenAPI document (DMS-1192). The cloned ApiSchema base document
+    // carries the upstream "Ed-Fi Data Management Service API" title and a data-standard version,
+    // neither of which should surface on this public API. Keep in sync with VersionProvider and
+    // src/dms/Directory.Build.props.
+    private const string OpenApiInfoTitle = "Ed-Fi API";
+    private const string OpenApiInfoVersion = "8.0.0";
+
     /// <summary>
     /// Determines if a path should be excluded based on the excluded domains configuration
     /// </summary>
@@ -1786,6 +1793,14 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         JsonNode openApiSpecification = apiSchemas
             .CoreApiSchemaRootNode.SelectRequiredNodeFromPath(baseDocumentPath, _logger)
             .DeepClone();
+
+        // Rebrand the served OpenAPI metadata. Profile-specific documents override the title again
+        // afterward in ProfileOpenApiSpecificationFilter, so this only affects the general document.
+        if (openApiSpecification["info"] is JsonObject info)
+        {
+            info["title"] = OpenApiInfoTitle;
+            info["version"] = OpenApiInfoVersion;
+        }
 
         // Collect fragments from core project resource schemas
         CollectFragmentsFromResourceSchemas(apiSchemas, openApiDocumentType, openApiSpecification, false);

@@ -35,9 +35,9 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
     private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
     private const string SchemaHashMismatchDetail =
-        "The database was provisioned for a different effective schema than this DMS process expects. "
+        "The database was provisioned for a different effective schema than the Ed-Fi API service expects. "
         + "The database must be reprovisioned with 'ddl provision' against a fresh database "
-        + "and DMS restarted to clear the cached validation state.";
+        + "and the Ed-Fi API service restarted to clear the cached validation state.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
