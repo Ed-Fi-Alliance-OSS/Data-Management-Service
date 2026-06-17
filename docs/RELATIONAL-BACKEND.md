@@ -93,7 +93,7 @@ dms-schema ddl provision \
   --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" \
   --dialect pgsql --create-database
 
-# SQL Server (database must already exist)
+# SQL Server (targets an existing database; --create-database works for either dialect)
 dms-schema ddl provision \
   --schema core/ApiSchema.json \
   --connection-string "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" \
@@ -142,10 +142,12 @@ The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementS
 assembled by [`FullDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs))
 protects the database in two places:
 
-- **Phase 0 — preflight.** Before any DDL runs, if `dms.EffectiveSchema` already exists with a
-  *different* hash, the script raises an error and aborts. You cannot accidentally re-provision
-  an existing database for a different effective schema.
-- **Phase 7 — insert-if-missing + validate.** The fingerprint row is inserted only if absent
+- **Preflight** (search the script for the `-- Phase 0: Preflight` header). Before any DDL runs,
+  if `dms.EffectiveSchema` already exists with a *different* hash, the script raises an error and
+  aborts. You cannot accidentally re-provision an existing database for a different effective schema.
+- **Seed insert-if-missing + validate** (search for the full `-- Phase 7: Seed Data (insert-if-missing
+  + validation)` header — the bare "Phase 7" number is reused by other emitters for unrelated
+  sections, so match on the label text). The fingerprint row is inserted only if absent
   (`ON CONFLICT DO NOTHING` / `IF NOT EXISTS`), then the stored `ApiSchemaFormatVersion`,
   `ResourceKeyCount`, and `ResourceKeySeedHash` are validated against the expected values and
   the script fails on any mismatch.
