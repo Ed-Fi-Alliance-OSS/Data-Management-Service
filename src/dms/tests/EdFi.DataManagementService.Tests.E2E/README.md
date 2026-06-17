@@ -9,7 +9,7 @@ the codebase.
 > pass the relational environment file from the repo root:
 >
 > ```powershell
-> ./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational
+> ./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter 'Category=@relational-backend'
 > ```
 >
 > The file physically lives at `eng/docker-compose/.env.e2e.relational`; you pass it as

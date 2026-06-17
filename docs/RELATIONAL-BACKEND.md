@@ -166,8 +166,15 @@ compares it to the effective schema it loaded. The check runs in
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
 
+Immediately after the fingerprint check, the routed pipeline runs a second first-use check,
+[`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
+(pipeline order in [`ApiService.cs`](../src/dms/core/EdFi.DataManagementService.Core/ApiService.cs)), which
+compares the stored `ResourceKeyCount` and `ResourceKeySeedHash` against the loaded effective schema.
+A resource-key-seed mismatch also returns **HTTP 503** with the same remediation — reprovision against
+a fresh database and restart the service.
+
 > [!IMPORTANT]
-> The mismatch result is cached for the process lifetime. Reprovisioning alone does not clear
+> Both mismatch results are cached for the process lifetime. Reprovisioning alone does not clear
 > a 503 — you must also restart the DMS process. See
 > [§7, "no hot reload"](#7-e2e-setupteardown-and-the-no-hot-reload-rule).
 
@@ -186,15 +193,17 @@ are in the design docs:
 ### Stored stamps and tracked-change tables
 
 Each document carries a `ContentVersion` stamp. **Stamping triggers** on the document tables
-populate per-project **tracked-change tables** named `tracked_changes_<projectSchema>` (for
-example `tracked_changes_edfi`) with the old/new identity and securable values plus a
-`ChangeVersion`. When debugging a stamp or a tracked-change row, these are the sources of truth:
+populate per-resource **tracked-change tables** that live under a per-project schema named
+`tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
+old/new identity and securable values plus a `ChangeVersion`. When debugging a stamp or a
+tracked-change row, these are the sources of truth:
 
 - [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write tracked-change rows
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
-Inspect the relevant `tracked_changes_<schema>` table directly to see the `Old_*`/`New_*`
-columns, the document `Id`, and the `ChangeVersion` for a given write.
+Inspect the relevant per-resource table under that schema (for example
+`tracked_changes_edfi.<resourceTable>`) directly to see the `Old_*`/`New_*` columns, the document
+`Id`, and the `ChangeVersion` for a given write.
 
 > [!NOTE]
 > **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers
@@ -268,7 +277,7 @@ suite itself is described in
 A typical run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter 'Category=@relational-backend'
 ```
 
 > [!NOTE]
