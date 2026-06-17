@@ -138,7 +138,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseNotProvisioned(
-                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart the Ed-Fi API service to clear the cached provisioning state.",
+                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after the Ed-Fi API service first tried to use it, restart the Ed-Fi API service to clear the cached provisioning state.",
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
