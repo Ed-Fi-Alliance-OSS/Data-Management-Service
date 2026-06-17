@@ -4,6 +4,9 @@ Command-line tool for Ed-Fi DMS schema hashing and DDL generation. Generates
 deterministic SQL artifacts and manifests from `ApiSchema.json` inputs without
 requiring database connectivity.
 
+> For the end-to-end provisioning, schema-fingerprint validation, and testing
+> workflow, see the [Relational Backend Developer Guide](../../../../docs/RELATIONAL-BACKEND.md).
+
 ## Installation
 
 Build from source:
@@ -51,7 +54,7 @@ Generates dialect-specific DDL scripts and manifest files to an output directory
 Does not require database connectivity.
 
 ```bash
-dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect>]
+dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect>] [--ddl-manifest]
 ```
 
 **Options:**
@@ -61,6 +64,7 @@ dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect
 | `--schema` | `-s` | Yes | — | `ApiSchema.json` path(s). First is core, rest are extensions. |
 | `--output` | `-o` | Yes | — | Output directory for generated files |
 | `--dialect` | `-d` | No | `both` | SQL dialect: `pgsql`, `mssql`, or `both` |
+| `--ddl-manifest` | — | No | `false` | Also emit `ddl.manifest.json` (dialect-independent normalized-SQL hash + statement count) for diagnostics |
 
 **Examples:**
 
@@ -83,6 +87,7 @@ dms-schema ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o 
 | `mssql.sql` | `--dialect mssql` or `both` | SQL Server DDL script |
 | `relational-model.{dialect}.manifest.json` | Per selected dialect | Derived relational model inventory (tables, columns, constraints, indexes, views, triggers) |
 | `effective-schema.manifest.json` | Always | Schema fingerprint, components, and resource key seed summary |
+| `ddl.manifest.json` | Only with `--ddl-manifest` | Dialect-independent summary: normalized-SQL SHA-256 and statement count per dialect, for diagnostics |
 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms.

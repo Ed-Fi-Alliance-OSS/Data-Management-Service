@@ -3,6 +3,15 @@
 API-level integration tests that exercise the real DMS HTTP pipeline against
 real provisioned PostgreSQL and SQL Server databases.
 
+> [!NOTE]
+> These are **API-level, in-process** integration tests. For **Docker-stack relational
+> E2E**, see [`eng/docker-compose/README.md`](../../../../eng/docker-compose/README.md) and
+> the [Relational Backend Developer Guide](../../../../docs/RELATIONAL-BACKEND.md). The
+> relational backend has **no hot reload** — the effective schema is fixed at provisioning,
+> so a schema change requires reprovisioning a fresh database and restarting the service.
+> These tests already follow that model: every test starts from a freshly provisioned
+> schema-only database (see [Invariants](#invariants)).
+
 ## What this is
 
 These tests boot the production DMS host via

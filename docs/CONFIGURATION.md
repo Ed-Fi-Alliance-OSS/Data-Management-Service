@@ -26,6 +26,24 @@ file.
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
+| UseRelationalBackend             | When `true`, DMS uses the relational (tables-per-resource) backend instead of the legacy single `dms.document` store. Default: `false`. In the Docker Compose / E2E environment files this is set via `USE_RELATIONAL_BACKEND`, which maps to `AppSettings__UseRelationalBackend`. See the [Relational Backend Developer Guide](./RELATIONAL-BACKEND.md). |
+
+## MappingPacks
+
+DMS can load precompiled mapping packs (`.mpack`) instead of compiling mapping sets at
+runtime. **Mapping packs are not available yet** — mapping sets are always compiled at
+runtime today — but the configuration surface exists and is validated. These settings
+apply only when the relational backend is enabled. See the
+[Relational Backend Developer Guide](./RELATIONAL-BACKEND.md#5-mapping-packs-optional).
+
+| Parameter                   | Description                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enabled                     | When `true`, load mapping packs. When `false` (default), mapping sets are compiled at runtime.                                               |
+| Required                    | When `true`, fail fast if a pack is missing or invalid. Only meaningful when `Enabled` is `true`; cannot be `true` while `Enabled` is `false`. Default: `false`. |
+| RootPath                    | Filesystem root directory for `.mpack` files. Used only when `Enabled` is `true`. Default: none.                                            |
+| AllowRuntimeCompileFallback | When `true` (default), allow runtime compilation when a pack is enabled but not found.                                                      |
+| FailureCooldownSeconds      | Seconds a faulted cache entry is retained before eviction. `0` (default) evicts immediately.                                                |
+| CacheMode                   | Cache strategy for compiled mapping sets. Currently only `InMemory` (default).                                                              |
 
 ## Configuration Service AppSettings
 

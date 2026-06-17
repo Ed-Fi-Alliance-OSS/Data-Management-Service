@@ -47,8 +47,11 @@ diagrams in Code's built-in Markdown preview tool.
       Management API, whose specification is derived from the legacy Ed-Fi Admin
       API 2 application.
 2. Both systems use PostgreSQL for online transaction processing (OLTP) data
-   storage. All Ed-Fi Resources and Descriptors are stored together in a single
-   table, called `dms.document`.
+   storage. In the default (document-store) configuration used by this lab, all
+   Ed-Fi Resources and Descriptors are stored together in a single table, called
+   `dms.document`. DMS also has an opt-in relational backend that stores each
+   resource in its own set of tables; see the [Relational Backend Developer
+   Guide](./docs/RELATIONAL-BACKEND.md).
 3. There are also optional user interfaces for viewing data in Kafka.
 
 ```mermaid
