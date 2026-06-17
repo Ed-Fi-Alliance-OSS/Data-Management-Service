@@ -278,6 +278,13 @@ if ($EnableSwaggerUI) {
     $files += @("-f", "swagger-ui.yml")
 }
 
+$composeOperation = if ($d) { "down" } else { "up" }
+Write-DmsComposeSchemaDiagnostics `
+    -Stage "dms-local before compose $composeOperation" `
+    -ComposeFiles $files `
+    -EnvironmentFile $EnvironmentFile `
+    -ProjectName "dms-local"
+
 if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
@@ -354,6 +361,11 @@ else {
             $env:NEED_DATABASE_SETUP = "false"
             $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
             $env:AppSettings__DeployDatabaseOnStartup = "false"
+            Write-DmsComposeSchemaDiagnostics `
+                -Stage "dms-local before DMS-only compose up" `
+                -ComposeFiles $files `
+                -EnvironmentFile $EnvironmentFile `
+                -ProjectName "dms-local"
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs $dmsServices
         }
         finally {
@@ -522,6 +534,11 @@ else {
             $env:NEED_DATABASE_SETUP = "false"
             $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
             $env:AppSettings__DeployDatabaseOnStartup = "false"
+            Write-DmsComposeSchemaDiagnostics `
+                -Stage "dms-local before final bootstrap DMS compose up" `
+                -ComposeFiles $files `
+                -EnvironmentFile $EnvironmentFile `
+                -ProjectName "dms-local"
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
         }
         finally {
@@ -532,6 +549,11 @@ else {
     }
     else {
         Write-Output "No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file."
+        Write-DmsComposeSchemaDiagnostics `
+            -Stage "dms-local before final non-bootstrap DMS compose up" `
+            -ComposeFiles $files `
+            -EnvironmentFile $EnvironmentFile `
+            -ProjectName "dms-local"
         docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
     }
 
