@@ -169,6 +169,7 @@ public class ClaimSetRepository(
     {
         ["id"] = "c.Id",
         ["name"] = "c.ClaimSetName",
+        ["claimSetName"] = "c.ClaimSetName",
     };
 
     private static string BuildOrderByClause(ClaimSetQuery query)

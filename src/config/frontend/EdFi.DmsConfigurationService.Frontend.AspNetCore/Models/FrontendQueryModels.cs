@@ -155,7 +155,11 @@ public class FrontendClaimSetQuery : FrontendPagingQuery
     [FromQuery(Name = "name")]
     public string? Name { get; set; }
 
-    public ClaimSetQuery ToQuery() => ApplyPagingTo(new ClaimSetQuery { Id = Id, Name = Name });
+    [FromQuery(Name = "claimSetName")]
+    public string? ClaimSetName { get; set; }
+
+    public ClaimSetQuery ToQuery() =>
+        ApplyPagingTo(new ClaimSetQuery { Id = Id, Name = ClaimSetName ?? Name });
 }
 
 public class FrontendProfileQuery : FrontendPagingQuery

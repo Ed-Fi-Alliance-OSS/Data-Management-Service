@@ -92,4 +92,16 @@ public class Given_PagingQueryValidators
         var result = scenario.Validate();
         result.IsValid.Should().BeTrue();
     }
+
+    [Test]
+    public void Claim_set_orderBy_accepts_claim_set_name_alias()
+    {
+        var scenario = new ValidationScenario<FrontendClaimSetQuery>(
+            new ClaimSetPagingQueryValidator(),
+            new FrontendClaimSetQuery { OrderBy = "claimSetName" },
+            true
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeTrue();
+    }
 }

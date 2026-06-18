@@ -134,6 +134,7 @@ public class ClaimSetPagingQueryValidator : PagingQueryValidator<FrontendClaimSe
     {
         "id",
         "name",
+        "claimSetName",
     };
 
     public ClaimSetPagingQueryValidator()

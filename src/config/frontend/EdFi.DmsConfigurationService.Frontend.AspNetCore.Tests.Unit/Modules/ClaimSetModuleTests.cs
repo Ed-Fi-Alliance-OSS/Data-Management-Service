@@ -1505,11 +1505,59 @@ public class ClaimSetModuleTests
         }
 
         [Test]
+        public async Task Should_return_200_with_claim_set_name_orderBy_alias()
+        {
+            ClaimSetQuery? capturedQuery = null;
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
+                .Invokes(call => capturedQuery = call.GetArgument<ClaimSetQuery>(0))
+                .Returns(new ClaimSetQueryResult.Success([]));
+
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/claimSets?orderBy=claimSetName&direction=DESC");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.OrderBy.Should().Be("claimSetName");
+        }
+
+        [Test]
         public async Task Should_return_200_when_filter_name_is_provided()
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/claimSets?name=MyClaimSet");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_bind_claim_set_name_filter_alias_to_repository_query()
+        {
+            ClaimSetQuery? capturedQuery = null;
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
+                .Invokes(call => capturedQuery = call.GetArgument<ClaimSetQuery>(0))
+                .Returns(new ClaimSetQueryResult.Success([]));
+
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/claimSets?claimSetName=MyClaimSet");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.Name.Should().Be("MyClaimSet");
+        }
+
+        [Test]
+        public async Task Should_prefer_claim_set_name_filter_when_both_aliases_are_provided()
+        {
+            ClaimSetQuery? capturedQuery = null;
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
+                .Invokes(call => capturedQuery = call.GetArgument<ClaimSetQuery>(0))
+                .Returns(new ClaimSetQueryResult.Success([]));
+
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/claimSets?name=OldName&claimSetName=PreferredName");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedQuery.Should().NotBeNull();
+            capturedQuery!.Name.Should().Be("PreferredName");
         }
 
         [Test]
