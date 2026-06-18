@@ -453,6 +453,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
+    [Then(@"the response body is an object where")]
+    public async Task ThenTheResponseBodyIsAnObjectWhere(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonObject = JsonNode.Parse(content)?.AsObject();
+
+        jsonObject.Should().NotBeNull();
+        ValidateResponseBodyObject(table, jsonObject);
+    }
+
     private static void ValidateResponseBodyObject(Table table, JsonNode? obj)
     {
         foreach (var row in table.Rows)
@@ -776,9 +786,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         // Find the claim set with the matching name
         foreach (var claimSet in claimSets.RootElement.EnumerateArray())
         {
+            var matchesByClaimSetName =
+                claimSet.TryGetProperty("claimSetName", out var claimSetNameProperty)
+                && claimSetNameProperty.GetString() == claimSetName;
+
+            var matchesByLegacyName =
+                claimSet.TryGetProperty("name", out var legacyNameProperty)
+                && legacyNameProperty.GetString() == claimSetName;
+
             if (
-                claimSet.TryGetProperty("name", out var nameProperty)
-                && nameProperty.GetString() == claimSetName
+                (matchesByClaimSetName || matchesByLegacyName)
                 && claimSet.TryGetProperty("id", out var idProperty)
             )
             {

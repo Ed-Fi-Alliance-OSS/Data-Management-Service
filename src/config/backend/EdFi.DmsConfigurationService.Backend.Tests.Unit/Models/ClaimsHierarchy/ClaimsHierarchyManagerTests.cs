@@ -72,7 +72,7 @@ public class ClaimsHierarchyManagerTests
                 {
                     Name = "Claim1",
                     Actions = [new() { Name = "Read", Enabled = true }],
-                    AuthorizationStrategyOverridesForCRUD =
+                    AuthorizationStrategyOverrides =
                     [
                         new()
                         {
@@ -179,5 +179,149 @@ public class ClaimsHierarchyManagerTests
         claims[1].Claims[0].ClaimSets[0].Actions.Should().ContainSingle(a => a.Name == "Read");
         claims[1].Claims[0].ClaimSets[0].Actions.Should().ContainSingle(a => a.Name == "Update");
         claims[1].Claims[0].ClaimSets[0].Actions.Should().ContainSingle(a => a.Name == "Delete");
+    }
+
+    [Test]
+    public void ApplyImportedClaimSetToHierarchy_ShouldSkipExistingClaimSetAndReturnWarnings()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new()
+            {
+                Name = "Claim1",
+                ClaimSets = new List<ClaimSet> { new() { Name = "ExistingClaimSet" } },
+            },
+        };
+
+        var command = new ClaimSetImportCommand
+        {
+            Name = "ExistingClaimSet",
+            ResourceClaims = new List<ResourceClaim>
+            {
+                new()
+                {
+                    Name = "Claim1",
+                    Actions = new List<ResourceClaimAction>
+                    {
+                        new() { Name = "Read", Enabled = true },
+                    },
+                },
+            },
+        };
+
+        // Act
+        var warnings = _claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claims);
+
+        // Assert
+        warnings.Should().ContainSingle().Which.Should().Be("Claim1");
+        claims[0].ClaimSets.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void CloneClaimSetInHierarchy_ShouldCloneActionsAndOverrides()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/school",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "Original",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides =
+                                [
+                                    new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.AuthorizationStrategy
+                                    {
+                                        Name = "NoFurtherAuthorizationRequired",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        // Act
+        _claimsHierarchyManager.CloneClaimSetInHierarchy("Original", "Copy", claims);
+
+        // Assert
+        claims[0].ClaimSets.Should().ContainSingle(cs => cs.Name == "Original");
+        var copied = claims[0].ClaimSets.Should().ContainSingle(cs => cs.Name == "Copy").Which;
+        copied.Actions.Should().ContainSingle(a => a.Name == "Read");
+        copied
+            .Actions[0]
+            .AuthorizationStrategyOverrides.Should()
+            .ContainSingle(s => s.Name == "NoFurtherAuthorizationRequired");
+    }
+
+    [Test]
+    public void ApplyImportedClaimSetToHierarchy_ShouldUseClaimNameBeforeDisplayName()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new() { Name = "http://ed-fi.org/identity/claims/ed-fi/school", ClaimSets = [] },
+        };
+        var command = new ClaimSetImportCommand
+        {
+            Name = "Imported",
+            ResourceClaims =
+            [
+                new ResourceClaim
+                {
+                    Name = "wrong-short-name",
+                    ClaimName = "http://ed-fi.org/identity/claims/ed-fi/school",
+                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                },
+            ],
+        };
+
+        // Act
+        var warnings = _claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claims);
+
+        // Assert
+        warnings.Should().BeEmpty();
+        claims[0].ClaimSets.Should().ContainSingle(cs => cs.Name == "Imported");
+    }
+
+    [Test]
+    public void ApplyImportedClaimSetToHierarchy_ShouldMatchClaimUrisAndClaimSetNames_IgnoringCase()
+    {
+        // Arrange
+        var claims = new List<Claim>
+        {
+            new() { Name = "HTTP://ED-FI.ORG/IDENTITY/CLAIMS/ED-FI/SCHOOL", ClaimSets = [] },
+        };
+
+        var command = new ClaimSetImportCommand
+        {
+            Name = "mixedcase-claimset",
+            ResourceClaims =
+            [
+                new ResourceClaim
+                {
+                    ClaimName = "http://ed-fi.org/identity/claims/ed-fi/school",
+                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                },
+            ],
+        };
+
+        // Act
+        var warnings = _claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claims);
+
+        // Assert
+        warnings.Should().BeEmpty();
+        claims[0].ClaimSets.Should().ContainSingle(cs => cs.Name == "mixedcase-claimset");
+        claims[0].ClaimSets[0].Actions.Should().ContainSingle(action => action.Name == "Read");
     }
 }

@@ -1,0 +1,350 @@
+# Claim Sets CMS/DMS smoke tests
+#
+# This file exercises the claim set endpoints added or updated on this branch:
+# - CMS claim set CRUD, copy, export, and import endpoints
+# - CMS claims management upload/reload endpoints
+# - DMS claimset reload/view endpoints
+# - Full v3 claim set payloads described in reference/design/claimset-export-import
+#
+# Prerequisites:
+# - Start the local DMS/CMS stack as described in `eng/docker-compose`
+# - Ensure the Configuration Service is available on port 8081 and DMS on port 8080
+# - Run the requests top-to-bottom with the VS Code REST Client extension
+
+@configPort=8081
+@dmsPort=8080
+@claimSetRunId={{$datetime 'yyyyMMddHHmmss'}}-{{$randomInt 0 999999}}
+@claimSetName=RestClient-ClaimSet-{{claimSetRunId}}
+@updatedClaimSetName=RestClient-ClaimSet-Updated-{{claimSetRunId}}
+@copiedClaimSetName=RestClient-ClaimSet-Copy-{{claimSetRunId}}
+@importedClaimSetName=DistrictHostedSISVendor-{{claimSetRunId}}
+@importedUpsertClaimSetName=DistrictHostedSISVendor-{{claimSetRunId}}
+@importedWarningClaimSetName=DistrictHostedSISVendor-Warnings-{{claimSetRunId}}
+@uploadClaimSetName=RestClientUploadClaimSet-{{claimSetRunId}}
+
+@educationOrganizationsClaim=http://ed-fi.org/identity/claims/domains/educationOrganizations
+@schoolClaim=http://ed-fi.org/identity/claims/ed-fi/school
+@academicHonorCategoryClaim=http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor
+@missingClaim=http://ed-fi.org/identity/claims/ed-fi/claim-that-does-not-exist
+@namespaceBasedStrategy=NamespaceBased
+@noFurtherAuthRequiredStrategy=NoFurtherAuthorizationRequired
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# -----------------------------------------------------------------------------
+# 1. Bootstrap CMS authentication
+# -----------------------------------------------------------------------------
+
+### 1.1 Get a Configuration Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+# @ref configTokenRequest
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# -----------------------------------------------------------------------------
+# 2. CMS claim set CRUD
+# -----------------------------------------------------------------------------
+
+### 2.1 Create a claim set
+# @name createClaimSet
+POST http://localhost:{{configPort}}/v3/claimSets/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "claimSetName": "{{claimSetName}}"
+}
+
+###
+# @ref createClaimSet
+@claimSetLocation={{createClaimSet.response.headers.location}}
+
+### 2.2 Create a duplicate claim set with the same name
+# Expected: 409 Identifying Values Are Not Unique
+POST http://localhost:{{configPort}}/v3/claimSets/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "claimSetName": "{{claimSetName}}"
+}
+
+### 2.3 Read the created claim set
+# @name getClaimSet
+GET {{claimSetLocation}}
+Authorization: bearer {{configToken}}
+
+###
+# @ref getClaimSet
+@claimSetId={{getClaimSet.response.body.id}}
+
+### 2.4 Update the claim set
+PUT http://localhost:{{configPort}}/v3/claimSets/{{claimSetId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "id": {{claimSetId}},
+  "claimSetName": "{{updatedClaimSetName}}"
+}
+
+### 2.5 List claim sets with paging and sorting
+GET http://localhost:{{configPort}}/v3/claimSets?offset=0&limit=5&orderBy=name&direction=ASC
+Authorization: bearer {{configToken}}
+
+### 2.6 Export the claim set
+# Expected: 200 OK with the same v3 payload shape as GET /v3/claimSets/{id}
+GET http://localhost:{{configPort}}/v3/claimSets/{{claimSetId}}/export
+Authorization: bearer {{configToken}}
+
+### 2.7 Copy the claim set
+# @name copyClaimSet
+POST http://localhost:{{configPort}}/v3/claimSets/copy
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "originalId": {{claimSetId}},
+  "claimSetName": "{{copiedClaimSetName}}"
+}
+
+###
+# @ref copyClaimSet
+@copyClaimSetLocation={{copyClaimSet.response.headers.location}}
+
+### 2.8 Read the copied claim set
+# @name getCopiedClaimSet
+GET {{copyClaimSetLocation}}
+Authorization: bearer {{configToken}}
+
+###
+# @ref getCopiedClaimSet
+@copiedClaimSetId={{getCopiedClaimSet.response.body.id}}
+
+### 2.9 Delete the copied claim set
+DELETE http://localhost:{{configPort}}/v3/claimSets/{{copiedClaimSetId}}
+Authorization: bearer {{configToken}}
+
+### 2.10 Import a new claim set with the complete v3 payload from the design
+# @name importClaimSet
+POST http://localhost:{{configPort}}/v3/claimSets/import
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "claimSetName": "{{importedClaimSetName}}",
+  "resourceClaims": [
+    {
+      "name": "educationOrganizations",
+      "claimName": "{{educationOrganizationsClaim}}",
+      "parentClaimName": null,
+      "actions": [
+        { "name": "Read", "enabled": true }
+      ],
+      "_defaultAuthorizationStrategies": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Update",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        }
+      ],
+      "authorizationStrategyOverrides": []
+    },
+    {
+      "name": "school",
+      "claimName": "{{schoolClaim}}",
+      "parentClaimName": "{{educationOrganizationsClaim}}",
+      "actions": [
+        { "name": "Create", "enabled": true },
+        { "name": "Read", "enabled": true },
+        { "name": "Update", "enabled": true },
+        { "name": "Delete", "enabled": true }
+      ],
+      "_defaultAuthorizationStrategies": [
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Update",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{namespaceBasedStrategy}}" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+###
+# @ref importClaimSet
+@importedClaimSetLocation={{importClaimSet.response.headers.location}}
+
+### 2.11 Read back the imported claim set
+# @name getImportedClaimSet
+GET {{importedClaimSetLocation}}
+Authorization: bearer {{configToken}}
+
+###
+# @ref getImportedClaimSet
+@importedClaimSetId={{getImportedClaimSet.response.body.id}}
+
+### 2.12 Export the imported claim set
+# Expected: the same JSON payload shape as GET and the nested strategy names use authStrategyName
+GET http://localhost:{{configPort}}/v3/claimSets/{{importedClaimSetId}}/export
+Authorization: bearer {{configToken}}
+
+### 2.13 Re-import the same claim set name with a reduced payload to validate upsert/replacement
+# @name importClaimSetUpsert
+POST http://localhost:{{configPort}}/v3/claimSets/import
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "claimSetName": "{{importedUpsertClaimSetName}}",
+  "resourceClaims": [
+    {
+      "name": "educationOrganizations",
+      "claimName": "{{educationOrganizationsClaim}}",
+      "parentClaimName": null,
+      "actions": [
+        { "name": "Read", "enabled": true }
+      ],
+      "_defaultAuthorizationStrategies": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        }
+      ],
+      "authorizationStrategyOverrides": []
+    }
+  ]
+}
+
+###
+# @ref importClaimSetUpsert
+@importedUpsertClaimSetLocation={{importClaimSetUpsert.response.headers.location}}
+
+### 2.14 Read back the upserted claim set
+# @name getUpsertedClaimSet
+GET {{importedUpsertClaimSetLocation}}
+Authorization: bearer {{configToken}}
+
+###
+# @ref getUpsertedClaimSet
+@importedUpsertClaimSetId={{getUpsertedClaimSet.response.body.id}}
+
+### 2.15 Import a claim set with a missing node and a bad parent to validate warning handling
+# @name importClaimSetWithWarnings
+POST http://localhost:{{configPort}}/v3/claimSets/import
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "claimSetName": "{{importedWarningClaimSetName}}",
+  "resourceClaims": [
+    {
+      "name": "missingClaim",
+      "claimName": "{{missingClaim}}",
+      "parentClaimName": "{{educationOrganizationsClaim}}",
+      "actions": [
+        { "name": "Read", "enabled": true }
+      ],
+      "_defaultAuthorizationStrategies": [],
+      "authorizationStrategyOverrides": []
+    },
+    {
+      "name": "academicHonorCategoryDescriptor",
+      "claimName": "{{academicHonorCategoryClaim}}",
+      "parentClaimName": "{{educationOrganizationsClaim}}",
+      "actions": [
+        { "name": "Read", "enabled": true },
+        { "name": "Update", "enabled": true }
+      ],
+      "_defaultAuthorizationStrategies": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        },
+        {
+          "actionName": "Update",
+          "authorizationStrategies": [
+            { "authStrategyName": "{{noFurtherAuthRequiredStrategy}}" }
+          ]
+        }
+      ],
+      "authorizationStrategyOverrides": []
+    }
+  ]
+}
+
+###
+# @ref importClaimSetWithWarnings
+@importedWarningClaimSetLocation={{importClaimSetWithWarnings.response.headers.location}}
+
+### 2.16 Read back the warning import
+# @name getWarningClaimSet
+GET {{importedWarningClaimSetLocation}}
+Authorization: bearer {{configToken}}
+
+###
+# @ref getWarningClaimSet
+@importedWarningClaimSetId={{getWarningClaimSet.response.body.id}}
+
+### 2.17 Clean up imported claim sets
+DELETE http://localhost:{{configPort}}/v3/claimSets/{{importedWarningClaimSetId}}
+Authorization: bearer {{configToken}}

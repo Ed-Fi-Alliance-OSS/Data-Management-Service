@@ -3,11 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Serialization;
+
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ClaimSetUpdateCommand : IClaimSetCommand
 {
     public long Id { get; set; }
+
+    [JsonPropertyName("claimSetName")]
     public required string Name { get; set; }
 
     public class Validator() : ClaimSetCommandValidator<ClaimSetUpdateCommand>();

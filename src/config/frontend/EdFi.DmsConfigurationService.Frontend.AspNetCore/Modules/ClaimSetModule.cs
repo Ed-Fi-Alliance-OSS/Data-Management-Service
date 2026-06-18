@@ -18,6 +18,18 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ClaimSetModule : IEndpointModule
 {
+    private static IResult DuplicateClaimSetName(HttpContext httpContext)
+    {
+        return Results.Json(
+            FailureResponse.ForNonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A claim set with this name already exists."]
+            ),
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+    }
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/claimSets/", InsertClaimSet);
@@ -48,19 +60,7 @@ public class ClaimSetModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            ClaimSetInsertResult.FailureDuplicateClaimSetName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    new[]
-                    {
-                        new ValidationFailure(
-                            "Name",
-                            "A claim set with this name already exists in the database. Please enter a unique name."
-                        ),
-                    },
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
-            ),
+            ClaimSetInsertResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -94,7 +94,7 @@ public class ClaimSetModule : IEndpointModule
 
         return result switch
         {
-            ClaimSetGetResult.Success success => Results.Ok(success.ClaimSetResponse),
+            ClaimSetGetResult.Success success => Results.Json(success.ClaimSetResponse),
             ClaimSetGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
@@ -128,18 +128,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetUpdateResult.Success => Results.NoContent(),
-            ClaimSetUpdateResult.FailureDuplicateClaimSetName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A claim set with this name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
-            ),
+            ClaimSetUpdateResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
             ClaimSetUpdateResult.FailureMultiUserConflict => Results.Json(
                 FailureResponse.ForConflict(
                     $"Unable to update claim set due to multi-user conflicts. Retry the request.",
@@ -200,6 +189,17 @@ public class ClaimSetModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
+            ClaimSetDeleteResult.FailureMultiUserConflict => Results.Json(
+                FailureResponse.ForConflict(
+                    "Unable to delete claim set due to multi-user conflicts. Retry the request.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
+            ClaimSetDeleteResult.FailureMultipleHierarchiesFound => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -216,7 +216,7 @@ public class ClaimSetModule : IEndpointModule
 
         return result switch
         {
-            ClaimSetExportResult.Success success => Results.Ok(success.ClaimSetExportResponse),
+            ClaimSetExportResult.Success success => Results.Json(success.ClaimSetExportResponse),
             ClaimSetExportResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
@@ -244,7 +244,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetCopyResult.Success success => Results.Created(
-                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath(request)}/{success.Id}",
                 null
             ),
             ClaimSetCopyResult.FailureNotFound => Results.Json(
@@ -253,6 +253,18 @@ public class ClaimSetModule : IEndpointModule
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ClaimSetCopyResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
+            ClaimSetCopyResult.FailureMultiUserConflict => Results.Json(
+                FailureResponse.ForConflict(
+                    "Unable to copy claim set due to multi-user conflicts. Retry the request.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
+            ClaimSetCopyResult.FailureMultipleHierarchiesFound => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -335,27 +347,53 @@ public class ClaimSetModule : IEndpointModule
 
         var request = httpContext.Request;
 
-        return importResult switch
+        switch (importResult)
         {
-            ClaimSetImportResult.Success success => Results.Created(
-                $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath()}/{success.Id}",
-                null
-            ),
-            ClaimSetImportResult.FailureDuplicateClaimSetName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    new[]
-                    {
-                        new ValidationFailure(
-                            "Name",
-                            "A claim set with this name already exists in the database. Please enter a unique name."
-                        ),
-                    },
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
+            case ClaimSetImportResult.Success success:
+                // Combine repository warnings with validator-detected warnings (skipped resources and parent mismatches)
+                var validatorWarnings = new List<string>();
+
+                if (
+                    validationContext.RootContextData.TryGetValue("SkippedResourceClaims", out var skippedObj)
+                    && skippedObj is List<string> skipped
+                )
+                {
+                    validatorWarnings.AddRange(skipped);
+                }
+
+                if (
+                    validationContext.RootContextData.TryGetValue("ParentWarnings", out var parentObj)
+                    && parentObj is List<string> parentWarnings
+                )
+                {
+                    validatorWarnings.AddRange(parentWarnings);
+                }
+
+                var combined = (success.Warnings ?? Enumerable.Empty<string>())
+                    .Concat(validatorWarnings)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                return Results.Created(
+                    $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath(request)}/{success.Id}",
+                    new { Id = success.Id, Warnings = combined }
+                );
+
+            case ClaimSetImportResult.FailureDuplicateClaimSetName:
+                return DuplicateClaimSetName(httpContext);
+
+            case ClaimSetImportResult.FailureSystemReserved:
+                return Results.Json(
+                    FailureResponse.ForBadRequest(
+                        "The specified claim set is system-reserved and cannot be imported.",
+                        httpContext.TraceIdentifier
+                    ),
+                    statusCode: (int)HttpStatusCode.BadRequest
+                );
+
+            default:
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
 
         static IEnumerable<KeyValuePair<string, string?>> ExtractClaimHierarchyTuples(List<Claim> rootClaims)
         {
@@ -371,27 +409,24 @@ public class ClaimSetModule : IEndpointModule
                 }
             }
         }
+    }
 
-        string? GetClaimSetsPath()
+    private static string GetClaimSetsPath(HttpRequest request)
+    {
+        const string ClaimSetsSegment = "/claimSets/";
+
+        if (!request.Path.HasValue)
         {
-            const string ClaimSetsSegment = "/claimSets/";
-
-            if (!request.Path.HasValue)
-            {
-                return null;
-            }
-
-            int claimSetsPos = request.Path.Value.IndexOf(
-                ClaimSetsSegment,
-                StringComparison.OrdinalIgnoreCase
-            );
-
-            if (claimSetsPos < 0)
-            {
-                return request.Path.Value.TrimEnd('/');
-            }
-
-            return request.Path.Value.Substring(0, claimSetsPos + ClaimSetsSegment.Length - 1);
+            return string.Empty;
         }
+
+        int claimSetsPos = request.Path.Value.IndexOf(ClaimSetsSegment, StringComparison.OrdinalIgnoreCase);
+
+        if (claimSetsPos < 0)
+        {
+            return request.Path.Value.TrimEnd('/');
+        }
+
+        return request.Path.Value.Substring(0, claimSetsPos + ClaimSetsSegment.Length - 1);
     }
 }

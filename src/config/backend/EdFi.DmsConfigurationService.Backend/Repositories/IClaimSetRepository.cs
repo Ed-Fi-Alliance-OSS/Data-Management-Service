@@ -126,6 +126,16 @@ public record ClaimSetDeleteResult
     public record FailureSystemReserved() : ClaimSetDeleteResult();
 
     /// <summary>
+    /// Multiple hierarchies were found in the configuration store (not currently supported).
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimSetDeleteResult();
+
+    /// <summary>
+    /// Persistent multi-user conflicts prevent delete attempts.
+    /// </summary>
+    public record FailureMultiUserConflict() : ClaimSetDeleteResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetDeleteResult();
@@ -162,6 +172,21 @@ public record ClaimSetCopyResult
     public record FailureNotFound() : ClaimSetCopyResult();
 
     /// <summary>
+    /// ClaimSetName must be unique
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ClaimSetCopyResult();
+
+    /// <summary>
+    /// Multiple hierarchies were found in the configuration store (not currently supported).
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimSetCopyResult();
+
+    /// <summary>
+    /// Persistent multi-user conflicts prevent copy attempts.
+    /// </summary>
+    public record FailureMultiUserConflict() : ClaimSetCopyResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetCopyResult();
@@ -173,7 +198,7 @@ public record ClaimSetImportResult
     /// Successful insert.
     /// </summary>
     /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : ClaimSetImportResult();
+    public record Success(long Id, IEnumerable<string>? Warnings = null) : ClaimSetImportResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -184,6 +209,11 @@ public record ClaimSetImportResult
     /// ClaimSetName must be unique
     /// </summary>
     public record FailureDuplicateClaimSetName() : ClaimSetImportResult();
+
+    /// <summary>
+    /// Attempt was made to modify a system reserved claim set.
+    /// </summary>
+    public record FailureSystemReserved() : ClaimSetImportResult();
 }
 
 public record AuthorizationStrategyGetResult

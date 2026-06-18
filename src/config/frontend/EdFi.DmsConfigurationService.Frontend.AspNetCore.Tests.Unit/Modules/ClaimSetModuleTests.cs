@@ -97,6 +97,16 @@ public class ClaimSetModuleTests
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
+                            ResourceClaims =
+                            [
+                                new ResourceClaim
+                                {
+                                    Name = "systemDescriptors",
+                                    ClaimName = "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                                    ParentClaimName = null,
+                                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                                },
+                            ],
                         }
                     )
                 );
@@ -118,14 +128,31 @@ public class ClaimSetModuleTests
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
+                            ResourceClaims =
+                            [
+                                new ResourceClaim
+                                {
+                                    Name = "systemDescriptors",
+                                    ClaimName = "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                                    ParentClaimName = null,
+                                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                                },
+                            ],
                         }
                     )
                 );
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
-                .Returns(new ClaimSetImportResult.Success(2));
+                .Returns(
+                    new ClaimSetImportResult.Success(
+                        2,
+                        new[] { "Skipped: http://example.org/nonexistent/Claim" }
+                    )
+                );
 
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetAuthorizationStrategies())
+                .Returns(["NoFurtherAuthorizationRequired"]);
 
             A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
@@ -150,7 +177,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing-POST-for-ClaimSet"
+                        "claimSetName":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -166,7 +193,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test-11"
+                        "claimSetName": "Test-11"
                     }
                     """,
                     Encoding.UTF8,
@@ -180,7 +207,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test-Copy"
+                        "claimSetName": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -193,7 +220,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name" : "Testing-Import-for-ClaimSet"
+                        "claimSetName" : "Testing-Import-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -209,8 +236,270 @@ public class ClaimSetModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             copyResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            copyResponse.Headers.Location!.ToString().Should().EndWith("/v3/claimSets/1");
             exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             importResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            // Verify import response body contains our combined warnings array (repository-provided plus any validator warnings)
+            var importJson = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
+            importJson!["id"]!.GetValue<int>().Should().Be(2);
+            importJson["warnings"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Contain("Skipped: http://example.org/nonexistent/Claim");
+
+            var getByIdJson = JsonNode.Parse(await getByIdResponse.Content.ReadAsStringAsync());
+            getByIdJson!["claimSetName"]!.GetValue<string>().Should().Be("ClaimSet with ResourceClaims");
+            getByIdJson["resourceClaims"]!.AsArray().Should().HaveCount(1);
+
+            var exportJson = JsonNode.Parse(await exportResponse.Content.ReadAsStringAsync());
+            exportJson!["claimSetName"]!.GetValue<string>().Should().Be("ClaimSet with ResourceClaims");
+            exportJson["resourceClaims"]!.AsArray().Should().HaveCount(1);
+        }
+
+        [Test]
+        public async Task GetById_should_emit_v3_authorization_strategy_field_names()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.GetClaimSet(1))
+                .Returns(
+                    new ClaimSetGetResult.Success(
+                        new ClaimSetResponse
+                        {
+                            Id = 1,
+                            Name = "ClaimSetV3",
+                            IsSystemReserved = false,
+                            ResourceClaims =
+                            [
+                                new ResourceClaim
+                                {
+                                    Name = "school",
+                                    ClaimName = "http://ed-fi.org/identity/claims/ed-fi/school",
+                                    ParentClaimName =
+                                        "http://ed-fi.org/identity/claims/domains/educationOrganizations",
+                                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                                    DefaultAuthorizationStrategies =
+                                    [
+                                        new ClaimSetResourceClaimActionAuthStrategies
+                                        {
+                                            ActionName = "Read",
+                                            AuthorizationStrategies =
+                                            [
+                                                new AuthorizationStrategy
+                                                {
+                                                    AuthorizationStrategyName =
+                                                        "NoFurtherAuthorizationRequired",
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                    AuthorizationStrategyOverrides = [],
+                                },
+                            ],
+                        }
+                    )
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v3/claimSets/1");
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            var resourceClaim = json["resourceClaims"]!.AsArray()[0]!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            resourceClaim["_defaultAuthorizationStrategies"].Should().NotBeNull();
+            resourceClaim["authorizationStrategyOverrides"].Should().NotBeNull();
+            resourceClaim["_defaultAuthorizationStrategiesForCrud"].Should().BeNull();
+            resourceClaim["authorizationStrategyOverridesForCRUD"].Should().BeNull();
+            resourceClaim["_defaultAuthorizationStrategies"]![0]!["authorizationStrategies"]![0]![
+                "authStrategyName"
+            ]!
+                .GetValue<string>()
+                .Should()
+                .Be("NoFurtherAuthorizationRequired");
+            resourceClaim["_defaultAuthorizationStrategies"]![0]!["authorizationStrategies"]![0]!
+                ["name"]
+                .Should()
+                .BeNull();
+        }
+
+        [Test]
+        public async Task Import_should_bind_v3_auth_strategy_name_and_include_parent_mismatch_warning()
+        {
+            // Arrange
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success(
+                        [
+                            new()
+                            {
+                                Name = "http://ed-fi.org/identity/claims/domains/educationOrganizations",
+                                Claims = [new() { Name = "http://ed-fi.org/identity/claims/ed-fi/school" }],
+                            },
+                        ],
+                        DateTime.Now,
+                        1
+                    )
+                );
+
+            ClaimSetImportCommand? capturedCommand = null;
+
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Invokes(call => capturedCommand = call.GetArgument<ClaimSetImportCommand>(0))
+                .Returns(new ClaimSetImportResult.Success(9));
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.PostAsync(
+                "/v3/claimSets/import",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName": "Imported-ClaimSet",
+                        "resourceClaims": [
+                            {
+                                "name": "school",
+                                "claimName": "http://ed-fi.org/identity/claims/ed-fi/school",
+                                "parentClaimName": "http://ed-fi.org/identity/claims/domains/wrongParent",
+                                "actions": [
+                                    {
+                                        "name": "Read",
+                                        "enabled": true
+                                    }
+                                ],
+                                "authorizationStrategyOverrides": [
+                                    {
+                                        "actionName": "Read",
+                                        "authorizationStrategies": [
+                                            {
+                                                "authStrategyName": "NoFurtherAuthorizationRequired"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "_defaultAuthorizationStrategies": [
+                                    {
+                                        "actionName": "Read",
+                                        "authorizationStrategies": [
+                                            {
+                                                "authStrategyName": "UnknownDefaultShouldBeIgnored"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            capturedCommand.Should().NotBeNull();
+            capturedCommand!.ResourceClaims.Should().ContainSingle();
+            capturedCommand
+                .ResourceClaims![0]
+                .AuthorizationStrategyOverrides.Should()
+                .ContainSingle(o => o.ActionName == "Read");
+            capturedCommand
+                .ResourceClaims![0]
+                .AuthorizationStrategyOverrides[0]
+                .AuthorizationStrategies.Should()
+                .ContainSingle(s => s.AuthorizationStrategyName == "NoFurtherAuthorizationRequired");
+            json["warnings"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Contain(warning => warning.Contains("Correct parent resource is"));
+        }
+
+        [Test]
+        public async Task Import_should_deduplicate_repeated_warning_text()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.Success(9, ["http://example.org/nonexistent/Claim"]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.PostAsync(
+                "/v3/claimSets/import",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName": "Imported-ClaimSet",
+                        "resourceClaims": [
+                            {
+                                "claimName": "http://example.org/nonexistent/Claim",
+                                "actions": [
+                                    {
+                                        "name": "Read",
+                                        "enabled": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            json["warnings"]!.AsArray().Should().HaveCount(1);
+            json["warnings"]![0]!.GetValue<string>().Should().Be("http://example.org/nonexistent/Claim");
+        }
+
+        [Test]
+        public async Task Import_should_deduplicate_repeated_warning_text_ignoring_case()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.Success(9, ["HTTP://EXAMPLE.ORG/NONEXISTENT/CLAIM"]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.PostAsync(
+                "/v3/claimSets/import",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName": "Imported-ClaimSet",
+                        "resourceClaims": [
+                            {
+                                "claimName": "http://example.org/nonexistent/claim",
+                                "actions": [
+                                    {
+                                        "name": "Read",
+                                        "enabled": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            json["warnings"]!.AsArray().Should().HaveCount(1);
         }
     }
 
@@ -240,43 +529,32 @@ public class ClaimSetModuleTests
 
             string invalidInsertBody = """
                 {
-                   "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                   "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
             string claimSetNameWithWhiteSpace = """
                 {
-                   "name" : "ClaimSet name with white space"
+                   "claimSetName" : "ClaimSet name with white space"
                 }
                 """;
 
             string invalidPutBody = """
                 {
                     "id": 1,
-                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
 
             string invalidImportBody = """
                 {
-                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                    "resourceClaims" : [
-                    {
-                        "name": "Test ResourceClaim",
-                        "actions": [
-                          {
-                            "name": "Create",
-                            "enabled": true
-                          }
-                        ]
-                    }
-                ]
+                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
 
             string invalidCopyBody = """
                 {
                     "originalId" : 1,
-                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
 
@@ -311,7 +589,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "type": "urn:ed-fi:api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -332,7 +610,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "type": "urn:ed-fi:api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -354,7 +632,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "type": "urn:ed-fi:api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -373,7 +651,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "type": "urn:ed-fi:api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -392,7 +670,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "type": "urn:ed-fi:api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -440,7 +718,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 2,
-                        "name": "Test-11",
+                        "claimSetName": "Test-11",
                         "resourceClaims": [
                             {
                                 "name": "Test ResourceClaim",
@@ -504,7 +782,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test-11",
+                        "claimSetName": "Test-11",
                         "resourceClaims": [
                              {
                                 "name": "Test ResourceClaim",
@@ -529,7 +807,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test-Copy"
+                        "claimSetName": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -605,7 +883,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing-POST-for-ClaimSet"
+                        "claimSetName":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -621,7 +899,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test-11",
+                        "claimSetName": "Test-11",
                         "resourceClaims": [
                          {
                             "name": "Test ResourceClaim",
@@ -646,7 +924,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test-Copy"
+                        "claimSetName": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -659,7 +937,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name" : "Testing-Import-for-ClaimSet",
+                        "claimSetName" : "Testing-Import-for-ClaimSet",
                         "resourceClaims" : [
                             {
                                 "name": "Test ResourceClaim",
@@ -728,7 +1006,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing-POST-for-ClaimSet"
+                        "claimSetName":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -740,23 +1018,21 @@ public class ClaimSetModuleTests
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "Name": [
-                      "A claim set with this name already exists in the database. Please enter a unique name."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "A claim set with this name already exists."
+                  ]
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
 
             //Assert
-            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
 
@@ -774,7 +1050,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 333,
-                        "name":"Testing-PUT-for-ClaimSet"
+                        "claimSetName":"Testing-PUT-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -786,23 +1062,21 @@ public class ClaimSetModuleTests
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "Name": [
-                      "A claim set with this name already exists in the database. Please enter a unique name."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "A claim set with this name already exists."
+                  ]
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
 
             //Assert
-            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
 
@@ -815,7 +1089,7 @@ public class ClaimSetModuleTests
 
             string importBody = """
                 {
-                    "name" : "Test-Duplicate"
+                    "claimSetName" : "Test-Duplicate"
                 }
                 """;
 
@@ -829,23 +1103,63 @@ public class ClaimSetModuleTests
             var expectedImportResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "Name": [
-                      "A claim set with this name already exists in the database. Please enter a unique name."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "A claim set with this name already exists."
+                  ]
                 }
                 """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
             );
 
-            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            importResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_return_duplicate_claimSetName_error_message_on_copy()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureDuplicateClaimSetName());
+
+            string copyBody = """
+                {
+                    "originalId" : 1,
+                    "claimSetName" : "Test-Duplicate"
+                }
+                """;
+
+            // Act
+            var copyResponse = await _client.PostAsync(
+                "/v3/claimSets/copy",
+                new StringContent(copyBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualCopyResponse = JsonNode.Parse(await copyResponse.Content.ReadAsStringAsync());
+            var expectedCopyResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "A claim set with this name already exists."
+                  ]
+                }
+                """.Replace("{correlationId}", actualCopyResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            JsonNode.DeepEquals(actualCopyResponse, expectedCopyResponse).Should().BeTrue();
         }
     }
 
@@ -877,7 +1191,7 @@ public class ClaimSetModuleTests
             var updateBody = """
                 {
                     "id": 1,
-                    "name": "Updated-ClaimSet"
+                    "claimSetName": "Updated-ClaimSet"
                 }
                 """;
 
@@ -936,7 +1250,7 @@ public class ClaimSetModuleTests
             var updateBody = """
                 {
                     "id": 1,
-                    "name": "Updated-ClaimSet"
+                    "claimSetName": "Updated-ClaimSet"
                 }
                 """;
 
@@ -951,6 +1265,76 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to update claim set due to multi-user conflicts. Retry the request.",
+                    "type": "urn:ed-fi:api:conflict",
+                    "title": "Conflict",
+                    "status": 409,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_return_conflict_when_multi_user_conflict_occurs_on_claim_set_copy()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureMultiUserConflict());
+
+            var copyBody = """
+                {
+                    "originalId": 1,
+                    "claimSetName": "Copy-Target"
+                }
+                """;
+
+            // Act
+            var response = await _client.PostAsync(
+                "/v3/claimSets/copy",
+                new StringContent(copyBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "Unable to copy claim set due to multi-user conflicts. Retry the request.",
+                    "type": "urn:ed-fi:api:conflict",
+                    "title": "Conflict",
+                    "status": 409,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_return_conflict_when_multi_user_conflict_occurs_on_claim_set_delete()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureMultiUserConflict());
+
+            // Act
+            var response = await _client.DeleteAsync("/v3/claimSets/1");
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "Unable to delete claim set due to multi-user conflicts. Retry the request.",
                     "type": "urn:ed-fi:api:conflict",
                     "title": "Conflict",
                     "status": 409,
@@ -995,7 +1379,7 @@ public class ClaimSetModuleTests
             var updateBody = """
                 {
                     "id": 1,
-                    "name": "Updated-System-Reserved-ClaimSet"
+                    "claimSetName": "Updated-System-Reserved-ClaimSet"
                 }
                 """;
 
@@ -1010,6 +1394,50 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "The specified claim set is system-reserved and cannot be updated.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_attempt_made_to_import_a_system_reserved_claim_set()
+        {
+            // Arrange
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetAuthorizationStrategies())
+                .Returns(["NoFurtherAuthorizationRequired"]);
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
+                .Returns(new ClaimsHierarchyGetResult.Success([], DateTime.Now, 1));
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureSystemReserved());
+
+            var importBody = """
+                {
+                    "claimSetName": "System-Reserved"
+                }
+                """;
+
+            // Act
+            var response = await _client.PostAsync(
+                "/v3/claimSets/import",
+                new StringContent(importBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "The specified claim set is system-reserved and cannot be imported.",
                     "type": "urn:ed-fi:api:bad-request",
                     "title": "Bad Request",
                     "status": 400,

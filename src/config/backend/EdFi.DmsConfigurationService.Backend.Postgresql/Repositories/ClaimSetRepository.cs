@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -146,8 +148,7 @@ public class ClaimSetRepository(
             return new ClaimSetInsertResult.Success(id);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == PostgresErrorCodes.UniqueViolation && ex.Message.Contains("idx_claimsetname")
-            )
+            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -232,7 +233,7 @@ public class ClaimSetRepository(
                     Id = row.id,
                     Name = row.claimsetname,
                     IsSystemReserved = row.issystemreserved,
-                    Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
+                    Applications = ParseApplications(row.applications),
                 })
                 .ToList();
 
@@ -272,15 +273,16 @@ public class ClaimSetRepository(
                 return new ClaimSetGetResult.FailureNotFound();
             }
 
-            var returnClaimSet = (
-                claimSets.Select(result => new ClaimSetResponse
-                {
-                    Id = result.id,
-                    Name = result.claimsetname,
-                    IsSystemReserved = result.issystemreserved,
-                    Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-                })
-            ).Single();
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+            if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchy)
+            {
+                return new ClaimSetGetResult.FailureUnknown(
+                    GetClaimsHierarchyFailureMessage(hierarchyResult)
+                );
+            }
+
+            var row = claimSets.Single();
+            var returnClaimSet = CreateClaimSetResponse(row, hierarchy.Claims);
 
             return new ClaimSetGetResult.Success(returnClaimSet);
         }
@@ -509,6 +511,8 @@ public class ClaimSetRepository(
     public async Task<ClaimSetDeleteResult> DeleteClaimSet(long id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
         try
         {
             // Get the current claim set (including system-reserved for proper error messages)
@@ -521,31 +525,96 @@ public class ClaimSetRepository(
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
                 string claimSetName,
                 bool isSystemReserved
-            )>(getClaimSetSql, new { Id = id, TenantId });
+            )>(getClaimSetSql, new { Id = id, TenantId }, transaction);
 
             if (existingClaimSet == default)
             {
+                await transaction.RollbackAsync();
                 return new ClaimSetDeleteResult.FailureNotFound();
             }
 
             if (existingClaimSet.isSystemReserved)
             {
+                await transaction.RollbackAsync();
                 return new ClaimSetDeleteResult.FailureSystemReserved();
             }
 
             string sql = $"""
                 DELETE FROM dmscs.ClaimSet WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
                 """;
-            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId }, transaction);
 
-            return affectedRows > 0
-                ? new ClaimSetDeleteResult.Success()
-                : new ClaimSetDeleteResult.FailureNotFound();
+            if (affectedRows == 0)
+            {
+                await transaction.RollbackAsync();
+                return new ClaimSetDeleteResult.FailureNotFound();
+            }
+
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy(transaction);
+            var deleteResult = hierarchyResult switch
+            {
+                ClaimsHierarchyGetResult.Success success => await RemoveFromHierarchyAndSave(
+                    existingClaimSet.claimSetName,
+                    success.Claims,
+                    success.LastModifiedDate,
+                    transaction
+                ),
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound => new ClaimSetDeleteResult.Success(),
+                ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetDeleteResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchyGetResult.FailureUnknown failureUnknown =>
+                    new ClaimSetDeleteResult.FailureUnknown(failureUnknown.FailureMessage),
+                _ => new ClaimSetDeleteResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchyGetResult of type '{hierarchyResult.GetType().Name}'"
+                ),
+            };
+
+            if (deleteResult is ClaimSetDeleteResult.Success)
+            {
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await transaction.RollbackAsync();
+            }
+
+            return deleteResult;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Delete claim set failure");
+            await transaction.RollbackAsync();
             return new ClaimSetDeleteResult.FailureUnknown(ex.Message);
+        }
+
+        async Task<ClaimSetDeleteResult> RemoveFromHierarchyAndSave(
+            string claimSetName,
+            List<Claim> claims,
+            DateTime lastModifiedDate,
+            DbTransaction deleteTransaction
+        )
+        {
+            claimsHierarchyManager.RemoveClaimSetFromHierarchy(claimSetName, claims);
+            var saveResult = await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claims,
+                lastModifiedDate,
+                deleteTransaction
+            );
+
+            return saveResult switch
+            {
+                ClaimsHierarchySaveResult.Success => new ClaimSetDeleteResult.Success(),
+                ClaimsHierarchySaveResult.FailureHierarchyNotFound => new ClaimSetDeleteResult.Success(),
+                ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetDeleteResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchySaveResult.FailureMultiUserConflict =>
+                    new ClaimSetDeleteResult.FailureMultiUserConflict(),
+                ClaimsHierarchySaveResult.FailureUnknown failureUnknown =>
+                    new ClaimSetDeleteResult.FailureUnknown(failureUnknown.FailureMessage),
+                _ => new ClaimSetDeleteResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchySaveResult of type '{saveResult.GetType().Name}'"
+                ),
+            };
         }
     }
 
@@ -572,21 +641,45 @@ public class ClaimSetRepository(
                 return new ClaimSetExportResult.FailureNotFound();
             }
 
-            var returnClaimSet = claimSets.Select(result => new ClaimSetExportResponse
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+            if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchy)
             {
-                Id = result.id,
-                Name = result.claimsetname,
-                IsSystemReserved = result.issystemreserved,
-                Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-            });
+                return new ClaimSetExportResult.FailureUnknown(
+                    GetClaimsHierarchyFailureMessage(hierarchyResult)
+                );
+            }
 
-            return new ClaimSetExportResult.Success(returnClaimSet.Single());
+            var row = claimSets.Single();
+            var returnClaimSet = CreateClaimSetResponse(row, hierarchy.Claims);
+
+            return new ClaimSetExportResult.Success(
+                new ClaimSetExportResponse
+                {
+                    Id = returnClaimSet.Id,
+                    Name = returnClaimSet.Name,
+                    IsSystemReserved = returnClaimSet.IsSystemReserved,
+                    Applications = returnClaimSet.Applications,
+                    ResourceClaims = returnClaimSet.ResourceClaims,
+                }
+            );
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Get claim set failure");
             return new ClaimSetExportResult.FailureUnknown(ex.Message);
         }
+    }
+
+    private static string GetClaimsHierarchyFailureMessage(ClaimsHierarchyGetResult hierarchyResult)
+    {
+        return hierarchyResult switch
+        {
+            ClaimsHierarchyGetResult.FailureHierarchyNotFound => "Claims hierarchy not found.",
+            ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                "Multiple claims hierarchies found when exactly one was expected.",
+            ClaimsHierarchyGetResult.FailureUnknown failureUnknown => failureUnknown.FailureMessage,
+            _ => $"Unhandled ClaimsHierarchyGetResult of type '{hierarchyResult.GetType().Name}'",
+        };
     }
 
     public async Task<ClaimSetImportResult> Import(ClaimSetImportCommand command)
@@ -602,28 +695,14 @@ public class ClaimSetRepository(
 
         try
         {
-            // Check if the claim set already exists (including system-reserved to prevent naming conflicts)
-            string checkSql = $"""
-                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName AND {ClaimSetWhereClause()};
-                """;
-            var existingClaimSetId = await connection.QuerySingleOrDefaultAsync<long?>(
-                checkSql,
-                new { ClaimSetName = command.Name, TenantId },
-                transaction
-            );
-
-            if (existingClaimSetId != null)
-            {
-                return new ClaimSetImportResult.FailureDuplicateClaimSetName();
-            }
-
-            // Insert new claim set
             string insertSql = """
-                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
-                    VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
-                    RETURNING Id;
+                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
+                ON CONFLICT (ClaimSetName) DO NOTHING
+                RETURNING Id, IsSystemReserved, TenantId;
                 """;
-            existingClaimSetId = await connection.ExecuteScalarAsync<long>(
+
+            var claimSet = await connection.QuerySingleOrDefaultAsync<ClaimSetImportLookupResult>(
                 insertSql,
                 new
                 {
@@ -634,6 +713,40 @@ public class ClaimSetRepository(
                 },
                 transaction
             );
+
+            if (claimSet is null)
+            {
+                string existingSql = """
+                    SELECT Id, IsSystemReserved, TenantId
+                    FROM dmscs.ClaimSet
+                    WHERE ClaimSetName = @ClaimSetName;
+                    """;
+
+                claimSet = await connection.QuerySingleOrDefaultAsync<ClaimSetImportLookupResult>(
+                    existingSql,
+                    new { ClaimSetName = command.Name },
+                    transaction
+                );
+            }
+
+            if (claimSet is null)
+            {
+                throw new InvalidOperationException("Claim set upsert did not return a record.");
+            }
+
+            if (claimSet.IsSystemReserved)
+            {
+                await transaction.RollbackAsync();
+                return new ClaimSetImportResult.FailureSystemReserved();
+            }
+
+            if (claimSet.TenantId != TenantId)
+            {
+                await transaction.RollbackAsync();
+                return new ClaimSetImportResult.FailureDuplicateClaimSetName();
+            }
+
+            long claimSetId = claimSet.Id;
 
             var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy(transaction);
 
@@ -667,7 +780,26 @@ public class ClaimSetRepository(
             claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy);
 
             // Apply imported claim set metadata
-            claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claimsHierarchy);
+            var skippedClaims = claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
+                command,
+                claimsHierarchy
+            );
+
+            if (skippedClaims.Count > 0)
+            {
+                string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
+                string sanitizedSkippedClaims = string.Join(
+                    ", ",
+                    skippedClaims.Select(LoggingUtility.SanitizeForLog)
+                );
+
+                logger.LogWarning(
+                    "Skipped {SkippedCount} claims while importing claim set {ClaimSetName}: {SkippedClaims}",
+                    skippedClaims.Count,
+                    sanitizedClaimSetName,
+                    sanitizedSkippedClaims
+                );
+            }
 
             // Save the JSON hierarchy with optimistic locking
             var retryPolicy = Policy
@@ -697,7 +829,28 @@ public class ClaimSetRepository(
 
                         // Apply the changes to the refreshed claims hierarchy
                         claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy!);
-                        claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claimsHierarchy!);
+                        var retriedSkippedClaims = claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
+                            command,
+                            claimsHierarchy!
+                        );
+
+                        if (retriedSkippedClaims.Count > 0)
+                        {
+                            string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
+                            string sanitizedRetriedSkippedClaims = string.Join(
+                                ", ",
+                                retriedSkippedClaims.Select(LoggingUtility.SanitizeForLog)
+                            );
+
+                            logger.LogWarning(
+                                "Skipped {SkippedCount} claims while reapplying claim set {ClaimSetName}: {SkippedClaims}",
+                                retriedSkippedClaims.Count,
+                                sanitizedClaimSetName,
+                                sanitizedRetriedSkippedClaims
+                            );
+                        }
+
+                        skippedClaims = retriedSkippedClaims;
                     }
                 );
 
@@ -723,9 +876,10 @@ public class ClaimSetRepository(
             });
 
             await transaction.CommitAsync();
-            return new ClaimSetImportResult.Success(existingClaimSetId.Value);
+            return new ClaimSetImportResult.Success(claimSetId, skippedClaims);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
+        catch (PostgresException ex)
+            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -738,6 +892,8 @@ public class ClaimSetRepository(
             return new ClaimSetImportResult.FailureUnknown(ex.Message);
         }
     }
+
+    private sealed record ClaimSetImportLookupResult(long Id, bool IsSystemReserved, long? TenantId);
 
     public async Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command)
     {
@@ -761,6 +917,7 @@ public class ClaimSetRepository(
 
             if (originalClaimSet == null)
             {
+                await transaction.RollbackAsync();
                 return new ClaimSetCopyResult.FailureNotFound();
             }
 
@@ -775,16 +932,51 @@ public class ClaimSetRepository(
                 new
                 {
                     ClaimSetName = command.Name,
-                    IsSystemReserved = (bool)originalClaimSet.issystemreserved,
+                    IsSystemReserved = false,
                     CreatedBy = auditContext.GetCurrentUser(),
                     TenantId,
                 },
                 transaction
             );
 
-            await transaction.CommitAsync();
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy(transaction);
+            var copyResult = hierarchyResult switch
+            {
+                ClaimsHierarchyGetResult.Success success => await CloneAndSaveHierarchy(
+                    (string)originalClaimSet.claimsetname,
+                    command.Name,
+                    success.Claims,
+                    success.LastModifiedDate,
+                    transaction,
+                    newId
+                ),
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound => new ClaimSetCopyResult.Success(newId),
+                ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetCopyResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchyGetResult.FailureUnknown failureUnknown =>
+                    new ClaimSetCopyResult.FailureUnknown(failureUnknown.FailureMessage),
+                _ => new ClaimSetCopyResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchyGetResult of type '{hierarchyResult.GetType().Name}'"
+                ),
+            };
 
-            return new ClaimSetCopyResult.Success(newId);
+            if (copyResult is ClaimSetCopyResult.Success)
+            {
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await transaction.RollbackAsync();
+            }
+
+            return copyResult;
+        }
+        catch (PostgresException ex)
+            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ClaimSetCopyResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {
@@ -792,5 +984,143 @@ public class ClaimSetRepository(
             await transaction.RollbackAsync();
             return new ClaimSetCopyResult.FailureUnknown(ex.Message);
         }
+
+        async Task<ClaimSetCopyResult> CloneAndSaveHierarchy(
+            string sourceClaimSetName,
+            string targetClaimSetName,
+            List<Claim> claims,
+            DateTime lastModifiedDate,
+            DbTransaction copyTransaction,
+            long copiedId
+        )
+        {
+            claimsHierarchyManager.CloneClaimSetInHierarchy(sourceClaimSetName, targetClaimSetName, claims);
+            var saveResult = await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claims,
+                lastModifiedDate,
+                copyTransaction
+            );
+
+            return saveResult switch
+            {
+                ClaimsHierarchySaveResult.Success => new ClaimSetCopyResult.Success(copiedId),
+                ClaimsHierarchySaveResult.FailureHierarchyNotFound => new ClaimSetCopyResult.Success(
+                    copiedId
+                ),
+                ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetCopyResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchySaveResult.FailureMultiUserConflict =>
+                    new ClaimSetCopyResult.FailureMultiUserConflict(),
+                ClaimsHierarchySaveResult.FailureUnknown failureUnknown =>
+                    new ClaimSetCopyResult.FailureUnknown(failureUnknown.FailureMessage),
+                _ => new ClaimSetCopyResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchySaveResult of type '{saveResult.GetType().Name}'"
+                ),
+            };
+        }
+    }
+
+    private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
+    {
+        var claimSetName = (string)row.claimsetname;
+        return new ClaimSetResponse
+        {
+            Id = row.id,
+            Name = claimSetName,
+            IsSystemReserved = row.issystemreserved,
+            Applications = ParseApplications(row.applications),
+            ResourceClaims = BuildResourceClaims(claimSetName, hierarchy),
+        };
+    }
+
+    private static JsonElement ParseApplications(object? applications)
+    {
+        using var document = JsonDocument.Parse(applications?.ToString() ?? "[]");
+        return document.RootElement.Clone();
+    }
+
+    private static List<ResourceClaim> BuildResourceClaims(string claimSetName, IEnumerable<Claim> claims)
+    {
+        var resourceClaims = new List<ResourceClaim>();
+
+        foreach (var claim in claims)
+        {
+            AddResourceClaims(claim, null);
+        }
+
+        return resourceClaims;
+
+        void AddResourceClaims(Claim claim, string? parentClaimName)
+        {
+            var matchingClaimSet = claim.ClaimSets.Find(cs =>
+                cs.Name.Equals(claimSetName, StringComparison.OrdinalIgnoreCase)
+            );
+
+            if (matchingClaimSet is not null)
+            {
+                resourceClaims.Add(
+                    new ResourceClaim
+                    {
+                        Name = GetLeafName(claim.Name),
+                        ClaimName = claim.Name,
+                        ParentClaimName = parentClaimName,
+                        Actions = matchingClaimSet
+                            .Actions.Select(action => new ResourceClaimAction
+                            {
+                                Name = action.Name,
+                                Enabled = true,
+                            })
+                            .ToList(),
+                        DefaultAuthorizationStrategies =
+                            claim
+                                .DefaultAuthorization?.Actions.Select(
+                                    defaultAction => new ClaimSetResourceClaimActionAuthStrategies
+                                    {
+                                        ActionName = defaultAction.Name,
+                                        AuthorizationStrategies = defaultAction
+                                            .AuthorizationStrategies.Select(
+                                                strategy => new AuthorizationStrategy
+                                                {
+                                                    AuthorizationStrategyName = strategy.Name,
+                                                }
+                                            )
+                                            .ToList(),
+                                    }
+                                )
+                                .ToList()
+                            ?? [],
+                        AuthorizationStrategyOverrides = matchingClaimSet
+                            .Actions.Where(action =>
+                                action.AuthorizationStrategyOverrides != null
+                                && action.AuthorizationStrategyOverrides.Any()
+                            )
+                            .Select(action => new ClaimSetResourceClaimActionAuthStrategies
+                            {
+                                ActionName = action.Name,
+                                AuthorizationStrategies = action
+                                    .AuthorizationStrategyOverrides.Select(
+                                        strategy => new AuthorizationStrategy
+                                        {
+                                            AuthorizationStrategyName = strategy.Name,
+                                        }
+                                    )
+                                    .ToList(),
+                            })
+                            .ToList(),
+                    }
+                );
+            }
+
+            foreach (var childClaim in claim.Claims)
+            {
+                AddResourceClaims(childClaim, claim.Name);
+            }
+        }
+    }
+
+    private static string GetLeafName(string claimName)
+    {
+        int lastSlashIndex = claimName.LastIndexOf('/');
+        return lastSlashIndex >= 0 ? claimName[(lastSlashIndex + 1)..] : claimName;
     }
 }
