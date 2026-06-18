@@ -202,7 +202,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
     {
         return resourceClaim
             .AuthorizationStrategyOverrides.Where(overrideAction =>
-                overrideAction.ActionName != null
+                overrideAction.ActionName is not null
                 && overrideAction.ActionName.Equals(actionName, StringComparison.OrdinalIgnoreCase)
             )
             .ToList();

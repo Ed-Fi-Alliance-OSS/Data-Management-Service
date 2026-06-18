@@ -916,7 +916,7 @@ public class ClaimSetRepository(
                 transaction
             );
 
-            if (originalClaimSet == null)
+            if (originalClaimSet is null)
             {
                 await transaction.RollbackAsync();
                 return new ClaimSetCopyResult.FailureNotFound();
@@ -1092,7 +1092,7 @@ public class ClaimSetRepository(
                             ?? [],
                         AuthorizationStrategyOverrides = matchingClaimSet
                             .Actions.Where(action =>
-                                action.AuthorizationStrategyOverrides != null
+                                action.AuthorizationStrategyOverrides is not null
                                 && action.AuthorizationStrategyOverrides.Any()
                             )
                             .Select(action => new ClaimSetResourceClaimActionAuthStrategies

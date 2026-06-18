@@ -191,7 +191,7 @@ public class ResourceClaimValidator
                 {
                     context.MessageFormatter.AppendArgument("ChildResource", childResourceClaim.Name);
 
-                    if (expectedParentResourceName == null)
+                    if (expectedParentResourceName is null)
                     {
                         // Record a warning for a child that cannot be added as a child resource
                         if (
