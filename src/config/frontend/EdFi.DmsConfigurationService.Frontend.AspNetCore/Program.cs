@@ -62,6 +62,8 @@ if (useReverseProxyHeaders)
     app.UseForwardedHeaders();
 }
 
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<TenantResolutionMiddleware>();
 
