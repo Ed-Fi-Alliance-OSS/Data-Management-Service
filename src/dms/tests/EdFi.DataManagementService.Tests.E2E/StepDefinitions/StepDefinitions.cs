@@ -1456,10 +1456,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
                     );
 
-                    if (key != null)
-                    {
-                        _apiResponse.Headers[key].Should().Contain(expectedValue);
-                    }
+                    key.Should().NotBeNull($"response should include header '{header.Key}'");
+                    _apiResponse.Headers[key!].Should().Contain(expectedValue);
                 }
             }
         }

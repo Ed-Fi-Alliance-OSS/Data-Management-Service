@@ -192,10 +192,8 @@ Feature: OWASP critical attack path protections
               And the response body should not contain "System.Exception"
               And the response body should not contain " at EdFi."
 
-        # Known gap — these headers are not set by the DMS application itself.
-        # They must be added by a reverse proxy or application middleware.
-        # Tracked for remediation: add response-header middleware to Program.cs.
-        @KnownSecurityGap @ignore
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 11 API responses include basic security headers
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
