@@ -141,6 +141,8 @@ if (useReverseProxyHeaders)
     app.UseForwardedHeaders();
 }
 
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 app.UseMiddleware<LoggingMiddleware>();
 
 var invalidConfigurationException = ReportInvalidConfiguration(app);
