@@ -23,6 +23,20 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static readonly string[] _identityFieldSuffixes = ["Reference", "UniqueId"];
 
+    private static readonly string[] _changeQueryPathSuffixes = ["/deletes", "/keyChanges"];
+
+    private static readonly string[] _httpMethodNames =
+    [
+        "delete",
+        "get",
+        "head",
+        "options",
+        "patch",
+        "post",
+        "put",
+        "trace",
+    ];
+
     /// <summary>
     /// Creates a profile-filtered OpenAPI specification from a base specification.
     /// </summary>
@@ -43,6 +57,8 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Step 1: Filter paths to only include resources covered by the profile and remove disallowed operations
         FilterPaths(specification, profileDefinition);
 
+        HashSet<string> retainedChangeQueryPathKeys = GetRetainedChangeQueryPathKeys(specification, logger);
+
         // Step 2: Remove unused component parameters now that paths are filtered
         RemoveUnusedParameters(specification);
 
@@ -52,8 +68,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Step 4: Create _readable/_writable schemas and rewrite operations (avoids double suffixes)
         CreateProfileSchemasAndRewriteOperations(specification, profileDefinition);
 
-        // Step 5: Remove base schemas that now have suffixed versions
-        RemoveBaseSchemasWithSuffixedVersions(specification);
+        // Step 5: Remove base schemas that now have suffixed versions, unless Change Query
+        // responses still reference the unprofiled schema graph.
+        HashSet<string> schemasReferencedByChangeQueries =
+            GetSchemaNamesReachableFromRetainedChangeQueryPaths(specification, retainedChangeQueryPathKeys);
+        RemoveBaseSchemasWithSuffixedVersions(specification, schemasReferencedByChangeQueries);
 
         // Step 6: Final cleanup - remove any schemas orphaned after profile schema creation
         RemoveUnusedSchemas(specification);
@@ -111,6 +130,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             r => r.ResourceName.ToLowerInvariant(),
             r => r
         );
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
 
         // Process each path and its operations
         foreach ((string pathKey, JsonNode? pathValue) in paths)
@@ -120,7 +140,15 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            if (
+                IsStandaloneChangeQueriesPath(pathKey)
+                || TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _)
+            )
+            {
+                continue;
+            }
+
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
             if (resourceName is null)
             {
                 continue;
@@ -409,7 +437,10 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// <summary>
     /// Removes base schemas that have suffixed versions (cleanup after profile schema creation).
     /// </summary>
-    private static void RemoveBaseSchemasWithSuffixedVersions(JsonNode specification)
+    private static void RemoveBaseSchemasWithSuffixedVersions(
+        JsonNode specification,
+        HashSet<string> schemaNamesToPreserve
+    )
     {
         if (
             specification["components"] is not JsonObject components
@@ -434,6 +465,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
+            if (schemaNamesToPreserve.Contains(schemaName))
+            {
+                continue;
+            }
+
             // Check if suffixed version exists
             string readableName = $"{schemaName}_readable";
             string writableName = $"{schemaName}_writable";
@@ -448,6 +484,58 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         {
             schemas.Remove(schemaName);
         }
+    }
+
+    private static HashSet<string> GetRetainedChangeQueryPathKeys(JsonNode specification, ILogger logger)
+    {
+        var changeQueryPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (specification["paths"] is not JsonObject paths)
+        {
+            return changeQueryPathKeys;
+        }
+
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (
+                pathValue is not null
+                && TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _)
+            )
+            {
+                changeQueryPathKeys.Add(pathKey);
+            }
+        }
+
+        return changeQueryPathKeys;
+    }
+
+    private static HashSet<string> GetSchemaNamesReachableFromRetainedChangeQueryPaths(
+        JsonNode specification,
+        HashSet<string> retainedChangeQueryPathKeys
+    )
+    {
+        var schemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (
+            specification["components"] is not JsonObject components
+            || components["schemas"] is not JsonObject schemas
+            || specification["paths"] is not JsonObject paths
+        )
+        {
+            return schemaNames;
+        }
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (pathValue is not null && retainedChangeQueryPathKeys.Contains(pathKey))
+            {
+                CollectReachableSchemaNames(pathValue, components, schemas, schemaNames);
+            }
+        }
+
+        return schemaNames;
     }
 
     /// <summary>
@@ -467,6 +555,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             r => r
         );
 
+        Dictionary<string, string> resourceNamesByBasePath = BuildResourceNamesByBasePath(paths, logger);
         var pathsToRemove = new List<string>();
 
         foreach ((string pathKey, JsonNode? pathValue) in paths)
@@ -476,8 +565,31 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
+            if (IsStandaloneChangeQueriesPath(pathKey))
+            {
+                pathsToRemove.Add(pathKey);
+                continue;
+            }
+
+            if (TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string basePath))
+            {
+                if (
+                    !resourceNamesByBasePath.TryGetValue(basePath, out string? changeQueryResourceName)
+                    || !resourceProfilesByName.TryGetValue(
+                        changeQueryResourceName.ToLowerInvariant(),
+                        out ResourceProfile? changeQueryResourceProfile
+                    )
+                    || changeQueryResourceProfile.ReadContentType is null
+                )
+                {
+                    pathsToRemove.Add(pathKey);
+                }
+
+                continue;
+            }
+
             // Extract resource name from path (e.g., "/ed-fi/students" -> "student")
-            string? resourceName = ExtractResourceNameFromPath(pathObject);
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
             if (resourceName is null)
             {
                 continue;
@@ -497,6 +609,10 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
             // Remove disallowed operations based on profile content types without rewriting schemas yet
             RemoveDisallowedOperations(pathObject, resourceProfile, resourceName);
+            if (!HasHttpOperation(pathObject))
+            {
+                pathsToRemove.Add(pathKey);
+            }
         }
 
         // Remove paths for resources not in the profile
@@ -509,6 +625,75 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             );
         }
     }
+
+    private static Dictionary<string, string> BuildResourceNamesByBasePath(JsonObject paths, ILogger logger)
+    {
+        var resourceNamesByBasePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (pathValue is not JsonObject pathObject || IsStandaloneChangeQueriesPath(pathKey))
+            {
+                continue;
+            }
+
+            string? resourceName = ExtractResourceNameFromPath(pathObject, logger);
+            if (resourceName is not null)
+            {
+                resourceNamesByBasePath[pathKey] = resourceName;
+            }
+        }
+
+        var nonChangeQueryResourceNamesByBasePath = new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach ((string pathKey, string resourceName) in resourceNamesByBasePath)
+        {
+            if (!TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _))
+            {
+                nonChangeQueryResourceNamesByBasePath[pathKey] = resourceName;
+            }
+        }
+
+        return nonChangeQueryResourceNamesByBasePath;
+    }
+
+    private static bool TryGetChangeQueryBasePath(
+        string pathKey,
+        IReadOnlyDictionary<string, string> resourceNamesByBasePath,
+        out string basePath
+    )
+    {
+        string? suffix = Array.Find(
+            _changeQueryPathSuffixes,
+            suffix => pathKey.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (suffix is not null)
+        {
+            string candidateBasePath = pathKey[..^suffix.Length];
+            if (resourceNamesByBasePath.ContainsKey(candidateBasePath))
+            {
+                basePath = candidateBasePath;
+                return true;
+            }
+        }
+
+        basePath = string.Empty;
+        return false;
+    }
+
+    private static bool IsStandaloneChangeQueriesPath(string pathKey) =>
+        pathKey.Equals("/availableChangeVersions", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasHttpOperation(JsonObject pathObject) =>
+        pathObject.Any(pathProperty =>
+            Array.Exists(
+                _httpMethodNames,
+                methodName => pathProperty.Key.Equals(methodName, StringComparison.OrdinalIgnoreCase)
+            )
+        );
 
     /// <summary>
     /// Removes operations that are not allowed by the profile (read/write) without rewriting content types.
@@ -559,7 +744,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// <summary>
     /// Extracts the singular resource name from an OpenAPI path object by inspecting the GET operation's response schema.
     /// </summary>
-    private string? ExtractResourceNameFromPath(JsonObject pathObject)
+    private static string? ExtractResourceNameFromPath(JsonObject pathObject, ILogger logger)
     {
         const string SchemaJsonPath = "$.get.responses['200'].content[\"application/json\"].schema";
         const string SchemaPrefix = "#/components/schemas/";
@@ -772,10 +957,34 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Seed references from paths
+        if (specification["paths"] is JsonObject paths)
+        {
+            CollectReachableSchemaNames(paths, components, schemas, keep);
+        }
+
+        // Traverse schema graph to include transitive dependencies (handled during enqueue)
+
+        // Remove unreferenced schemas
+        var schemasToRemove = schemas.Where(kvp => !keep.Contains(kvp.Key)).Select(kvp => kvp.Key).ToList();
+
+        foreach (string schemaName in schemasToRemove)
+        {
+            schemas.Remove(schemaName);
+        }
+    }
+
+    private static void CollectReachableSchemaNames(
+        JsonNode node,
+        JsonObject components,
+        JsonObject schemas,
+        HashSet<string> schemaNames
+    )
+    {
         void EnqueueSchema(string name)
         {
             if (
-                keep.Add(name)
+                schemaNames.Add(name)
                 && schemas.TryGetPropertyValue(name, out JsonNode? schemaNode)
                 && schemaNode is not null
             )
@@ -784,9 +993,9 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        void ExploreNode(JsonNode node)
+        void ExploreNode(JsonNode currentNode)
         {
-            switch (node)
+            switch (currentNode)
             {
                 case JsonObject obj:
                     foreach ((string propertyName, JsonNode? child) in obj)
@@ -872,21 +1081,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        // Seed references from paths
-        if (specification["paths"] is JsonObject paths)
-        {
-            ExploreNode(paths);
-        }
-
-        // Traverse schema graph to include transitive dependencies (handled during enqueue)
-
-        // Remove unreferenced schemas
-        var schemasToRemove = schemas.Where(kvp => !keep.Contains(kvp.Key)).Select(kvp => kvp.Key).ToList();
-
-        foreach (string schemaName in schemasToRemove)
-        {
-            schemas.Remove(schemaName);
-        }
+        ExploreNode(node);
     }
 
     /// <summary>

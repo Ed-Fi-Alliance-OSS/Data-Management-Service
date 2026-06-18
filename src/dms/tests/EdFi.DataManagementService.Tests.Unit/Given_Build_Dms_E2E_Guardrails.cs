@@ -131,29 +131,17 @@ public class Given_Build_Dms_E2E_Guardrails
     [Test]
     public void It_restarts_dms_after_relational_database_reprovisioning()
     {
-        var initializeFunctionIndex = _buildScriptContents.IndexOf(
-            "function Initialize-RelationalE2EDatabase",
-            StringComparison.Ordinal
-        );
-        var e2eTestsFunctionIndex = _buildScriptContents.IndexOf(
-            "function E2ETests",
-            StringComparison.Ordinal
-        );
+        var provisioningFunctionContents = ExtractFunctionBody("Invoke-RelationalE2EDatabaseProvisioning");
+        var initializeFunctionContents = ExtractFunctionBody("Initialize-RelationalE2EDatabase");
 
-        initializeFunctionIndex.Should().BeGreaterThan(-1);
-        e2eTestsFunctionIndex.Should().BeGreaterThan(initializeFunctionIndex);
-
-        var initializeFunctionContents = _buildScriptContents.Substring(
-            initializeFunctionIndex,
-            e2eTestsFunctionIndex - initializeFunctionIndex
-        );
-
-        initializeFunctionContents.Should().Contain("./provision-relational-e2e-database.ps1");
+        provisioningFunctionContents.Should().Contain("./provision-relational-e2e-database.ps1");
         initializeFunctionContents
             .Should()
-            .Contain(
-                "Restart-DmsContainer -Reason \"discard cached PostgreSQL pools after relational reprovisioning\""
-            );
+            .Contain("Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+        initializeFunctionContents
+            .Should()
+            .Contain("Restart-DmsContainer")
+            .And.Contain("-Reason \"discard cached PostgreSQL pools after relational reprovisioning\"");
     }
 
     [Test]

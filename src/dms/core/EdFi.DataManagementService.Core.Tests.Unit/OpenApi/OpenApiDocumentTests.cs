@@ -9,12 +9,219 @@ using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
 using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.OpenApiDocumentTestBase;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 public class OpenApiDocumentTests
 {
+    private static readonly string[] _changeQueryPathSuffixes = ["/deletes", "/keyChanges"];
+
+    private static JsonObject BaseOpenApiDocument(
+        string title,
+        JsonObject paths,
+        JsonObject schemas,
+        JsonArray tags
+    )
+    {
+        return new JsonObject
+        {
+            ["openapi"] = "3.0.1",
+            ["info"] = new JsonObject { ["title"] = title, ["version"] = "5.0.0" },
+            ["paths"] = paths,
+            ["components"] = new JsonObject { ["schemas"] = schemas },
+            ["tags"] = tags,
+        };
+    }
+
+    private static JsonObject ComponentSchemas(params string[] schemaNames)
+    {
+        JsonObject schemas = [];
+
+        foreach (string schemaName in schemaNames)
+        {
+            schemas[schemaName] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() };
+        }
+
+        return schemas;
+    }
+
+    private static JsonArray Tags(params string[] tagNames)
+    {
+        return new JsonArray(
+            tagNames
+                .Select(tagName => new JsonObject { ["name"] = tagName, ["description"] = $"{tagName} tag" })
+                .ToArray()
+        );
+    }
+
+    private static JsonObject GetPath(
+        string tagName,
+        string responseSchemaName,
+        string[] parameterNames,
+        string[]? domains = null
+    )
+    {
+        JsonObject path = new()
+        {
+            ["get"] = new JsonObject
+            {
+                ["tags"] = new JsonArray(tagName),
+                ["parameters"] = new JsonArray(parameterNames.Select(Parameter).ToArray()),
+                ["responses"] = new JsonObject
+                {
+                    ["200"] = new JsonObject
+                    {
+                        ["description"] = "OK",
+                        ["content"] = new JsonObject
+                        {
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = new JsonObject
+                                {
+                                    ["type"] = "array",
+                                    ["items"] = new JsonObject
+                                    {
+                                        ["$ref"] = $"#/components/schemas/{responseSchemaName}",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        if (domains is not null)
+        {
+            path["x-Ed-Fi-domains"] = new JsonArray(
+                domains.Select(domain => JsonValue.Create(domain)).ToArray()
+            );
+        }
+
+        return path;
+    }
+
+    private static JsonObject Parameter(string parameterName)
+    {
+        return new JsonObject
+        {
+            ["name"] = parameterName,
+            ["in"] = "query",
+            ["schema"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+        };
+    }
+
+    private static string[] ParameterNames(JsonNode openApiSpecification, string path)
+    {
+        return openApiSpecification["paths"]![path]!["get"]!["parameters"]!
+            .AsArray()
+            .Select(parameter => parameter!["name"]!.GetValue<string>())
+            .ToArray();
+    }
+
+    private static string ResponseSchemaRef(JsonNode openApiSpecification, string path)
+    {
+        return openApiSpecification["paths"]![path]!["get"]!["responses"]!["200"]!["content"]![
+            "application/json"
+        ]!["schema"]!["items"]!["$ref"]!.GetValue<string>();
+    }
+
+    private static string[] TagNames(JsonNode openApiSpecification)
+    {
+        return openApiSpecification["tags"]!
+            .AsArray()
+            .Select(tag => tag!["name"]!.GetValue<string>())
+            .ToArray();
+    }
+
+    private static void ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+        JsonNode openApiSpecification,
+        ApiSchemaDocumentNodes apiSchemaDocumentNodes,
+        bool expectedDescriptor
+    )
+    {
+        JsonObject paths = openApiSpecification["paths"]!.AsObject();
+        string[] changeQueryPaths = paths.Select(path => path.Key).Where(IsChangeQueryPath).ToArray();
+
+        changeQueryPaths.Should().NotBeEmpty();
+
+        foreach (string changeQueryPath in changeQueryPaths)
+        {
+            string basePath = GetChangeQueryBasePath(changeQueryPath);
+            string[] pathSegments = basePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            pathSegments
+                .Should()
+                .HaveCount(
+                    2,
+                    $"Change Query path '{changeQueryPath}' should be based on a data endpoint path"
+                );
+
+            string projectEndpointName = pathSegments[0];
+            string endpointName = pathSegments[1];
+            JsonNode? projectSchema = ProjectSchemas(apiSchemaDocumentNodes)
+                .FirstOrDefault(project =>
+                    project["projectEndpointName"]!
+                        .GetValue<string>()
+                        .Equals(projectEndpointName, StringComparison.OrdinalIgnoreCase)
+                );
+
+            projectSchema
+                .Should()
+                .NotBeNull($"Change Query path '{changeQueryPath}' should map to a project endpoint");
+
+            JsonObject endpointNameMapping = projectSchema!["caseInsensitiveEndpointNameMapping"]!.AsObject();
+            string endpointLookupKey = endpointName.ToLowerInvariant();
+            endpointNameMapping
+                .Should()
+                .ContainKey(
+                    endpointLookupKey,
+                    $"Change Query path '{changeQueryPath}' should map to an ApiSchema endpoint"
+                );
+
+            string mappedEndpointName = endpointNameMapping[endpointLookupKey]!.GetValue<string>();
+            mappedEndpointName.Should().Be(endpointName);
+
+            JsonObject resourceSchemas = projectSchema["resourceSchemas"]!.AsObject();
+            resourceSchemas
+                .Should()
+                .ContainKey(
+                    mappedEndpointName,
+                    $"Change Query path '{changeQueryPath}' should have a resource schema"
+                );
+            resourceSchemas[mappedEndpointName]!["isDescriptor"]!
+                .GetValue<bool>()
+                .Should()
+                .Be(expectedDescriptor);
+        }
+    }
+
+    private static IEnumerable<JsonNode> ProjectSchemas(ApiSchemaDocumentNodes apiSchemaDocumentNodes)
+    {
+        yield return apiSchemaDocumentNodes.CoreApiSchemaRootNode["projectSchema"]!;
+
+        foreach (JsonNode extensionApiSchemaRootNode in apiSchemaDocumentNodes.ExtensionApiSchemaRootNodes)
+        {
+            yield return extensionApiSchemaRootNode["projectSchema"]!;
+        }
+    }
+
+    private static bool IsChangeQueryPath(string path) =>
+        Array.Exists(
+            _changeQueryPathSuffixes,
+            suffix => path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static string GetChangeQueryBasePath(string path)
+    {
+        string suffix = _changeQueryPathSuffixes.Single(suffix =>
+            path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+
+        return path[..^suffix.Length];
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Simple_Core_Schema_Document : OpenApiDocumentTests
@@ -197,6 +404,604 @@ public class OpenApiDocumentTests
             result = result.Replace("\r\n", "\n");
 
             result.Should().Be(expectedResult);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_With_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
+
+        [SetUp]
+        public void Setup()
+        {
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Ed-Fi Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_the_core_change_queries_document()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
+            changeQueriesResult["paths"]!.AsObject().Should().ContainKey("/availableChangeVersions");
+        }
+
+        [Test]
+        public void It_should_return_a_deep_clone()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"] = "Mutated Change Queries API";
+
+            JsonNode rawChangeQueriesDocument = apiSchemaDocumentNodes.CoreApiSchemaRootNode[
+                "projectSchema"
+            ]!["openApiBaseDocuments"]!["changeQueries"]!;
+
+            rawChangeQueriesDocument["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            JsonNode? secondResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+
+            secondResult.Should().NotBeNull();
+            secondResult!["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_With_A_Pathless_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument(
+                        "Ed-Fi Pathless Change Queries API",
+                        includeAvailableChangeVersionsPath: false
+                    )
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_treat_the_document_as_present()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["paths"]!.AsObject().Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Schema_Without_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            changeQueriesResult.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_Schema_With_A_Change_Queries_Base_Document : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments()
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Sample Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_ignore_the_extension_document()
+        {
+            changeQueriesResult.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Core_And_Extension_Change_Queries_Base_Documents : OpenApiDocumentTests
+    {
+        private JsonNode? changeQueriesResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Ed-Fi Change Queries API")
+                )
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithOpenApiBaseDocuments(
+                    changeQueriesDoc: ChangeQueriesOpenApiDocument("Sample Change Queries API")
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            changeQueriesResult = openApiDocument.CreateChangeQueriesDocument(apiSchemaDocumentNodes);
+        }
+
+        [Test]
+        public void It_should_return_only_the_core_document()
+        {
+            changeQueriesResult.Should().NotBeNull();
+            changeQueriesResult!["info"]!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Ed-Fi Change Queries API");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Core_Resource_And_Descriptor_OpenApi_With_Change_Query_Paths : OpenApiDocumentTests
+    {
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
+        private JsonNode openApiResourcesResult = new JsonObject();
+        private JsonNode openApiDescriptorsResult = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonObject resourcePaths = new()
+            {
+                ["/ed-fi/students"] = GetPath(
+                    "students",
+                    "EdFi_Student",
+                    ["minChangeVersion", "maxChangeVersion"]
+                ),
+                ["/ed-fi/students/deletes"] = GetPath(
+                    "students",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/ed-fi/students/keyChanges"] = GetPath(
+                    "students",
+                    "EdFi_StudentKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/ed-fi/schoolYearTypes/deletes"] = GetPath(
+                    "schoolYearTypes",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/ed-fi/schoolYearTypes/keyChanges"] = GetPath(
+                    "schoolYearTypes",
+                    "EdFi_SchoolYearTypeKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+            };
+
+            JsonObject descriptorPaths = new()
+            {
+                ["/ed-fi/accommodationDescriptors"] = GetPath(
+                    "accommodationDescriptors",
+                    "EdFi_AccommodationDescriptor",
+                    ["minChangeVersion", "maxChangeVersion"]
+                ),
+                ["/ed-fi/accommodationDescriptors/deletes"] = GetPath(
+                    "accommodationDescriptors",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/ed-fi/accommodationDescriptors/keyChanges"] = GetPath(
+                    "accommodationDescriptors",
+                    "EdFi_DescriptorKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+            };
+
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithStartResource("Student")
+                .WithEndResource()
+                .WithStartResource("SchoolYearType", isSchoolYearEnumeration: true)
+                .WithEndResource()
+                .WithStartResource("AccommodationDescriptor", isDescriptor: true)
+                .WithEndResource()
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: BaseOpenApiDocument(
+                        "Ed-Fi Resources API",
+                        resourcePaths,
+                        ComponentSchemas(
+                            "EdFi_Student",
+                            "EdFi_DeletedResource",
+                            "EdFi_StudentKeyChange",
+                            "EdFi_SchoolYearTypeKeyChange"
+                        ),
+                        Tags("students", "schoolYearTypes")
+                    ),
+                    descriptorsDoc: BaseOpenApiDocument(
+                        "Ed-Fi Descriptors API",
+                        descriptorPaths,
+                        ComponentSchemas(
+                            "EdFi_AccommodationDescriptor",
+                            "EdFi_DeletedResource",
+                            "EdFi_DescriptorKeyChange"
+                        ),
+                        Tags("accommodationDescriptors")
+                    )
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            openApiDescriptorsResult = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Descriptor
+            );
+        }
+
+        [Test]
+        public void It_should_preserve_live_change_version_filters()
+        {
+            ParameterNames(openApiResourcesResult, "/ed-fi/students")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion"]);
+
+            ParameterNames(openApiDescriptorsResult, "/ed-fi/accommodationDescriptors")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion"]);
+        }
+
+        [Test]
+        public void It_should_preserve_resource_and_school_year_type_change_query_paths()
+        {
+            JsonObject resourcePaths = openApiResourcesResult["paths"]!.AsObject();
+            resourcePaths.Should().ContainKey("/ed-fi/students/deletes");
+            resourcePaths.Should().ContainKey("/ed-fi/students/keyChanges");
+            resourcePaths.Should().ContainKey("/ed-fi/schoolYearTypes/deletes");
+            resourcePaths.Should().ContainKey("/ed-fi/schoolYearTypes/keyChanges");
+            resourcePaths.Should().NotContainKey("/availableChangeVersions");
+
+            ParameterNames(openApiResourcesResult, "/ed-fi/students/deletes")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]);
+
+            ResponseSchemaRef(openApiResourcesResult, "/ed-fi/students/keyChanges")
+                .Should()
+                .Be("#/components/schemas/EdFi_StudentKeyChange");
+
+            openApiResourcesResult["components"]!["schemas"]!
+                .AsObject()
+                .Should()
+                .ContainKeys("EdFi_StudentKeyChange", "EdFi_SchoolYearTypeKeyChange");
+
+            TagNames(openApiResourcesResult).Should().Contain(["students", "schoolYearTypes"]);
+        }
+
+        [Test]
+        public void It_should_preserve_descriptor_change_query_paths()
+        {
+            JsonObject descriptorPaths = openApiDescriptorsResult["paths"]!.AsObject();
+            descriptorPaths.Should().ContainKey("/ed-fi/accommodationDescriptors/deletes");
+            descriptorPaths.Should().ContainKey("/ed-fi/accommodationDescriptors/keyChanges");
+
+            ParameterNames(openApiDescriptorsResult, "/ed-fi/accommodationDescriptors/keyChanges")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]);
+
+            ResponseSchemaRef(openApiDescriptorsResult, "/ed-fi/accommodationDescriptors/keyChanges")
+                .Should()
+                .Be("#/components/schemas/EdFi_DescriptorKeyChange");
+        }
+
+        [Test]
+        public void It_should_advertise_only_change_query_paths_with_model_backed_base_endpoints()
+        {
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiResourcesResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: false
+            );
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiDescriptorsResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: true
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extension_Resource_And_Descriptor_OpenApi_With_Change_Query_Paths
+        : OpenApiDocumentTests
+    {
+        private ApiSchemaDocumentNodes apiSchemaDocumentNodes = new(new JsonObject(), []);
+        private JsonNode openApiResourcesResult = new JsonObject();
+        private JsonNode openApiDescriptorsResult = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonObject extensionResourcePaths = new()
+            {
+                ["/sample/staffAbsenceEvents"] = GetPath(
+                    "staffAbsenceEvents",
+                    "Sample_StaffAbsenceEvent",
+                    ["minChangeVersion", "maxChangeVersion"]
+                ),
+                ["/sample/staffAbsenceEvents/deletes"] = GetPath(
+                    "staffAbsenceEvents",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/sample/staffAbsenceEvents/keyChanges"] = GetPath(
+                    "staffAbsenceEvents",
+                    "Sample_StaffAbsenceEventKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+            };
+
+            JsonObject extensionDescriptorPaths = new()
+            {
+                ["/sample/absenceReasonDescriptors"] = GetPath(
+                    "absenceReasonDescriptors",
+                    "Sample_AbsenceReasonDescriptor",
+                    ["minChangeVersion", "maxChangeVersion"]
+                ),
+                ["/sample/absenceReasonDescriptors/deletes"] = GetPath(
+                    "absenceReasonDescriptors",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+                ["/sample/absenceReasonDescriptors/keyChanges"] = GetPath(
+                    "absenceReasonDescriptors",
+                    "Sample_AbsenceReasonDescriptorKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]
+                ),
+            };
+
+            apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: BaseOpenApiDocument(
+                        "Ed-Fi Resources API",
+                        [],
+                        ComponentSchemas("EdFi_DeletedResource"),
+                        []
+                    ),
+                    descriptorsDoc: BaseOpenApiDocument(
+                        "Ed-Fi Descriptors API",
+                        [],
+                        ComponentSchemas("EdFi_DeletedResource"),
+                        []
+                    )
+                )
+                .WithEndProject()
+                .WithStartProject("Sample", "1.0.0")
+                .WithStartResource("StaffAbsenceEvent")
+                .WithNewExtensionResourceFragments(
+                    "resources",
+                    ComponentSchemas("Sample_StaffAbsenceEvent", "Sample_StaffAbsenceEventKeyChange"),
+                    extensionResourcePaths,
+                    Tags("staffAbsenceEvents")
+                )
+                .WithEndResource()
+                .WithStartResource("AbsenceReasonDescriptor", isDescriptor: true)
+                .WithNewExtensionResourceFragments(
+                    "descriptors",
+                    ComponentSchemas(
+                        "Sample_AbsenceReasonDescriptor",
+                        "Sample_AbsenceReasonDescriptorKeyChange"
+                    ),
+                    extensionDescriptorPaths,
+                    Tags("absenceReasonDescriptors")
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            openApiDescriptorsResult = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Descriptor
+            );
+        }
+
+        [Test]
+        public void It_should_preserve_extension_resource_change_query_paths()
+        {
+            JsonObject resourcePaths = openApiResourcesResult["paths"]!.AsObject();
+            resourcePaths.Should().ContainKey("/sample/staffAbsenceEvents");
+            resourcePaths.Should().ContainKey("/sample/staffAbsenceEvents/deletes");
+            resourcePaths.Should().ContainKey("/sample/staffAbsenceEvents/keyChanges");
+
+            ParameterNames(openApiResourcesResult, "/sample/staffAbsenceEvents/deletes")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]);
+
+            ResponseSchemaRef(openApiResourcesResult, "/sample/staffAbsenceEvents/keyChanges")
+                .Should()
+                .Be("#/components/schemas/Sample_StaffAbsenceEventKeyChange");
+        }
+
+        [Test]
+        public void It_should_preserve_extension_descriptor_change_query_paths()
+        {
+            JsonObject descriptorPaths = openApiDescriptorsResult["paths"]!.AsObject();
+            descriptorPaths.Should().ContainKey("/sample/absenceReasonDescriptors");
+            descriptorPaths.Should().ContainKey("/sample/absenceReasonDescriptors/deletes");
+            descriptorPaths.Should().ContainKey("/sample/absenceReasonDescriptors/keyChanges");
+
+            ParameterNames(openApiDescriptorsResult, "/sample/absenceReasonDescriptors/keyChanges")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"]);
+
+            ResponseSchemaRef(openApiDescriptorsResult, "/sample/absenceReasonDescriptors/keyChanges")
+                .Should()
+                .Be("#/components/schemas/Sample_AbsenceReasonDescriptorKeyChange");
+        }
+
+        [Test]
+        public void It_should_advertise_only_change_query_paths_with_model_backed_base_endpoints()
+        {
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiResourcesResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: false
+            );
+            ChangeQueryPathsShouldResolveToApiSchemaEndpoints(
+                openApiDescriptorsResult,
+                apiSchemaDocumentNodes,
+                expectedDescriptor: true
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Change_Query_Paths_With_Domain_Filtering : OpenApiDocumentTests
+    {
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonObject resourcePaths = new()
+            {
+                ["/ed-fi/academicWeeks/deletes"] = GetPath(
+                    "academicWeeks",
+                    "EdFi_DeletedResource",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"],
+                    ["SchoolCalendar"]
+                ),
+                ["/ed-fi/calendars/keyChanges"] = GetPath(
+                    "calendars",
+                    "EdFi_CalendarKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"],
+                    ["SchoolCalendar"]
+                ),
+                ["/ed-fi/students/keyChanges"] = GetPath(
+                    "students",
+                    "EdFi_StudentKeyChange",
+                    ["minChangeVersion", "maxChangeVersion", "offset", "limit", "totalCount"],
+                    ["SchoolCalendar", "Enrollment"]
+                ),
+            };
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: BaseOpenApiDocument(
+                        "Ed-Fi Resources API",
+                        resourcePaths,
+                        ComponentSchemas(
+                            "EdFi_DeletedResource",
+                            "EdFi_CalendarKeyChange",
+                            "EdFi_StudentKeyChange"
+                        ),
+                        Tags("academicWeeks", "calendars", "students")
+                    )
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, ["SchoolCalendar"]);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
+
+        [Test]
+        public void It_should_apply_path_domain_filtering_to_deletes_and_key_changes()
+        {
+            JsonObject resourcePaths = openApiResourcesResult["paths"]!.AsObject();
+            resourcePaths.Should().NotContainKey("/ed-fi/academicWeeks/deletes");
+            resourcePaths.Should().NotContainKey("/ed-fi/calendars/keyChanges");
+            resourcePaths.Should().ContainKey("/ed-fi/students/keyChanges");
+        }
+
+        [Test]
+        public void It_should_keep_multi_domain_change_query_paths_until_all_valid_domains_are_excluded()
+        {
+            JsonObject resourcePaths = openApiResourcesResult["paths"]!.AsObject();
+            resourcePaths.Should().ContainKey("/ed-fi/students/keyChanges");
+
+            ResponseSchemaRef(openApiResourcesResult, "/ed-fi/students/keyChanges")
+                .Should()
+                .Be("#/components/schemas/EdFi_StudentKeyChange");
+
+            openApiResourcesResult["components"]!["schemas"]!
+                .AsObject()
+                .Should()
+                .ContainKey("EdFi_StudentKeyChange");
+        }
+
+        [Test]
+        public void It_should_remove_only_tags_unused_after_change_query_path_filtering()
+        {
+            string[] resultTags = TagNames(openApiResourcesResult);
+
+            resultTags.Should().NotContain("academicWeeks");
+            resultTags.Should().NotContain("calendars");
+            resultTags.Should().Contain("students");
         }
     }
 

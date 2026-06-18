@@ -1781,6 +1781,19 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     }
 
     /// <summary>
+    /// Creates the standalone Change-Queries OpenAPI specification from the core ApiSchema, if present.
+    /// </summary>
+    public JsonNode? CreateChangeQueriesDocument(ApiSchemaDocumentNodes apiSchemas)
+    {
+        return apiSchemas
+            .CoreApiSchemaRootNode.SelectNodeFromPath(
+                "$.projectSchema.openApiBaseDocuments.changeQueries",
+                _logger
+            )
+            ?.DeepClone();
+    }
+
+    /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
     public JsonNode CreateDocument(ApiSchemaDocumentNodes apiSchemas, OpenApiDocumentType openApiDocumentType)

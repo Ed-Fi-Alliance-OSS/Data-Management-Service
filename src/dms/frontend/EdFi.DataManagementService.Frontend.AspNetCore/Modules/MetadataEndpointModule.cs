@@ -21,18 +21,20 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule : IEndpointModule
 {
+    private const string DataOpenApiRouteBase = "data";
+    private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
+
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
     /// </summary>
     private static JsonArray GetServers(
         HttpContext httpContext,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<Configuration.AppSettings> appSettings,
+        string openApiRouteBase
     )
     {
-        string scheme = httpContext.Request.Scheme;
-        string host = httpContext.Request.Host.ToString();
-        string baseUrl = $"{scheme}://{host}";
+        string baseUrl = httpContext.Request.RootUrl();
 
         bool multiTenancyEnabled = appSettings.Value.MultiTenancy;
         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
@@ -72,7 +74,10 @@ public partial class MetadataEndpointModule : IEndpointModule
             }
         }
 
-        urlSegments.Add("data");
+        foreach (string segment in openApiRouteBase.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            urlSegments.Add(segment);
+        }
 
         var serverObject = new JsonObject { ["url"] = string.Join("/", urlSegments) };
 
@@ -258,6 +263,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
+        endpoints.MapGet("/metadata/changequeries/v1/swagger.json", GetChangeQueriesOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
 
         endpoints.MapGet(
@@ -331,7 +337,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -343,8 +349,32 @@ public partial class MetadataEndpointModule : IEndpointModule
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    internal static async Task GetChangeQueriesOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDataStoreProvider dataStoreProvider,
+        IOptions<Configuration.AppSettings> appSettings
+    )
+    {
+        JsonArray servers = GetServers(
+            httpContext,
+            dataStoreProvider,
+            appSettings,
+            ChangeQueriesOpenApiRouteBase
+        );
+        JsonNode? content = apiService.GetChangeQueriesOpenApiSpecification(servers);
+
+        if (content is null)
+        {
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return;
+        }
+
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
@@ -360,7 +390,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
-        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
 
         JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
             profileName,
@@ -388,6 +418,17 @@ public partial class MetadataEndpointModule : IEndpointModule
                     section.name,
                     $"{baseUrl}/{section.name.ToLower()}-spec.json",
                     section.prefix
+                )
+            );
+        }
+
+        if (apiService.HasChangeQueriesOpenApiSpecification())
+        {
+            sections.Add(
+                new RouteInformation(
+                    "Change-Queries",
+                    $"{httpContext.Request.RootUrl()}/metadata/changequeries/v1/swagger.json",
+                    "Other"
                 )
             );
         }
@@ -435,7 +476,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = GetServers(httpContext, dataStoreProvider, options);
+            content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

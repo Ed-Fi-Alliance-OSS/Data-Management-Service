@@ -41,6 +41,17 @@ public class ApiSchemaInputNormalizerTests
             projectSchema["openApiBaseDocuments"] = new JsonObject
             {
                 ["resources"] = new JsonObject { ["info"] = "test" },
+                ["descriptors"] = new JsonObject { ["info"] = "descriptor test" },
+                ["changeQueries"] = new JsonObject
+                {
+                    ["paths"] = new JsonObject
+                    {
+                        ["/availableChangeVersions"] = new JsonObject
+                        {
+                            ["get"] = new JsonObject { ["operationId"] = "getAvailableChangeVersions" },
+                        },
+                    },
+                },
             };
             projectSchema["resourceSchemas"] = new JsonObject
             {
@@ -89,6 +100,16 @@ public class ApiSchemaInputNormalizerTests
             projectSchema["openApiBaseDocuments"] = new JsonObject
             {
                 ["resources"] = new JsonObject { ["info"] = "extension test" },
+                ["changeQueries"] = new JsonObject
+                {
+                    ["paths"] = new JsonObject
+                    {
+                        ["/extensionAvailableChangeVersions"] = new JsonObject
+                        {
+                            ["get"] = new JsonObject { ["operationId"] = "extensionOnly" },
+                        },
+                    },
+                },
             };
             projectSchema["resourceSchemas"] = new JsonObject
             {
@@ -578,6 +599,7 @@ public class ApiSchemaInputNormalizerTests
         private ApiSchemaInputNormalizer _normalizer = null!;
         private ApiSchemaDocumentNodes _inputNodes = null!;
         private JsonNode _originalCoreSchema = null!;
+        private JsonNode _originalExtensionSchema = null!;
         private ApiSchemaNormalizationResult _result = null!;
 
         [SetUp]
@@ -586,9 +608,9 @@ public class ApiSchemaInputNormalizerTests
             _normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
 
             _originalCoreSchema = CreateValidCoreSchema(includeOpenApi: true);
-            var extensionWithOpenApi = CreateValidExtensionSchema("tpdm", includeOpenApi: true);
+            _originalExtensionSchema = CreateValidExtensionSchema("tpdm", includeOpenApi: true);
 
-            _inputNodes = new ApiSchemaDocumentNodes(_originalCoreSchema, [extensionWithOpenApi]);
+            _inputNodes = new ApiSchemaDocumentNodes(_originalCoreSchema, [_originalExtensionSchema]);
             _result = _normalizer.Normalize(_inputNodes);
         }
 
@@ -647,15 +669,22 @@ public class ApiSchemaInputNormalizerTests
         }
 
         [Test]
-        public void It_does_not_mutate_original_core_schema()
+        public void It_does_not_mutate_original_schemas()
         {
             // Original should still have the OpenAPI payloads
             _originalCoreSchema["projectSchema"]?["openApiBaseDocuments"].Should().NotBeNull();
+            _originalCoreSchema["projectSchema"]
+                ?["openApiBaseDocuments"]?["changeQueries"].Should()
+                .NotBeNull();
             _originalCoreSchema["projectSchema"]
                 ?["resourceSchemas"]?["students"]?["openApiFragments"].Should()
                 .NotBeNull();
             _originalCoreSchema["projectSchema"]
                 ?["abstractResources"]?["educationOrganization"]?["openApiFragment"].Should()
+                .NotBeNull();
+            _originalExtensionSchema["projectSchema"]?["openApiBaseDocuments"].Should().NotBeNull();
+            _originalExtensionSchema["projectSchema"]
+                ?["openApiBaseDocuments"]?["changeQueries"].Should()
                 .NotBeNull();
         }
 

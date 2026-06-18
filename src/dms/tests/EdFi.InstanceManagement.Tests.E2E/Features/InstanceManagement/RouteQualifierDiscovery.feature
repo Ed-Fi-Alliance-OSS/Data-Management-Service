@@ -27,6 +27,7 @@ Feature: Route Qualifier Discovery API
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/255901/2024",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/data",
+                    "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/xsd"
                 }
               """
@@ -42,6 +43,7 @@ Feature: Route Qualifier Discovery API
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/255901/{schoolYear}",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/data",
+                    "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/xsd"
                 }
               """
@@ -57,6 +59,7 @@ Feature: Route Qualifier Discovery API
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/{districtId}/{schoolYear}",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/data",
+                    "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/xsd"
                 }
               """
@@ -72,6 +75,7 @@ Feature: Route Qualifier Discovery API
                     "oauth": "http://dms-config-service:8081/connect/token/{tenant}/{districtId}/{schoolYear}",
                     "tokenInfo": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/data",
+                    "changeQueries": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/xsd"
                 }
               """

@@ -3,104 +3,126 @@ jira: DMS-1183
 jira_url: https://edfi.atlassian.net/browse/DMS-1183
 ---
 
-# Story: Extend MetaEd and DMS OpenAPI for Change Queries
+# Story: Consume Change Queries OpenAPI Metadata in DMS
 
 ## Description
 
-Extend the OpenAPI surface so Change Query routes and query parameters are advertised consistently.
+The MetaEd side of the Change Queries OpenAPI contract has been implemented. This story tracks the DMS continuation: accepting the updated ApiSchema OpenAPI payloads and serving them through DMS metadata and discovery surfaces.
 
-MetaEd owns emission of the OpenAPI definitions. DMS owns consuming the updated OpenAPI metadata for discovery and documentation, while runtime resource Change Query routing is resolved from DMS's effective resource model rather than from OpenAPI paths.
+DMS must accept and preserve `projectSchema.openApiBaseDocuments.changeQueries` in the raw loaded ApiSchema used for metadata serving. The normalized effective schema must continue stripping OpenAPI payloads before hash/model derivation, so this OpenAPI-only contract remains hash-neutral and does not require an `apiSchemaVersion` bump.
 
-`/changeQueries/v1/availableChangeVersions` is a fixed DMS runtime route. It is advertised in OpenAPI, but it is not generated from `ApiSchema.json` resource metadata.
+Runtime Change Query route resolution is not driven by OpenAPI:
 
-This ticket is intentionally cross-project because the API contract is split across MetaEd generation and DMS runtime consumption.
+- `/changeQueries/v1/availableChangeVersions` is a fixed DMS runtime route owned by `21-available-change-versions-endpoint.md`.
+- Resource and descriptor `/deletes` and `/keyChanges` route resolution is model-driven from the effective `ApiSchema.json` endpoint mappings and RelationalBackend model inventory, as owned by `23-deletes-endpoint.md` and `24-keychanges-endpoint.md`.
+
+OpenAPI metadata serving must not become the runtime route source of truth.
 
 ## Acceptance Criteria
 
-- MetaEd emits `/deletes` endpoint definitions for each resource and descriptor that supports `ReadChanges`.
-- MetaEd emits `/keyChanges` endpoint definitions for each resource and descriptor that supports `ReadChanges`.
-- MetaEd emits `/changeQueries/v1/availableChangeVersions`.
-- MetaEd adds `minChangeVersion` and `maxChangeVersion` query parameters to live resource and descriptor GET-many endpoint definitions.
-- MetaEd adds `minChangeVersion`, `maxChangeVersion`, `limit`, `offset`, and `totalCount` query parameters to `/deletes` and `/keyChanges` definitions.
-- Response schemas for `/deletes`, `/keyChanges`, and `/availableChangeVersions` match the ODS-compatible Change Queries contract.
-- DMS effective-schema loading accepts and preserves the new OpenAPI paths and query parameters.
-- DMS metadata endpoints can serve the updated OpenAPI definitions for discovery and documentation.
-- DMS runtime route resolution for resource and descriptor `/deletes` and `/keyChanges` remains model-driven from the effective `ApiSchema.json` endpoint mappings and RelationalBackend `MappingSet.Model` / `ConcreteResourceModel` inventory.
-- DMS runtime route resolution for `/changeQueries/v1/availableChangeVersions` is hardcoded and does not depend on `ApiSchema.json` or OpenAPI path presence.
-- DMS does not require a separate hard-coded route list for resource and descriptor `/deletes` or `/keyChanges` endpoints.
-- The real DMS runtime implementation removes the temporary frontend stub that returns empty JSON arrays for
-  advertised resource and descriptor `/deletes` and `/keyChanges` paths.
-- Tests cover OpenAPI generation for core resources, including `SchoolYearType` as a regular Change Query resource, extension-defined resources, and descriptors.
-- DMS tests cover startup/loading of the updated OpenAPI and verify that advertised Change Query resource and descriptor paths align with model-driven route classification.
+### MetaEd Contract Already Delivered
 
-## MetaEd Implementation Notes
+The following items are the input contract DMS consumes; they are not new DMS implementation work in this story.
 
-MetaEd emits `projectSchema.openApiBaseDocuments.changeQueries` only from the core/data-standard ApiSchema package. This standalone Change Queries base document contains only the ODS-style `/availableChangeVersions` path. DMS serves that document with the route-qualified `/changeQueries/v1` server base, producing the runtime route `/changeQueries/v1/availableChangeVersions`.
+- MetaEd emits resource, descriptor, and profile `/deletes` endpoint definitions for every non-composite generated resource and descriptor in the OpenAPI documents.
+- MetaEd emits resource, descriptor, and profile `/keyChanges` endpoint definitions for every non-composite generated resource and descriptor in the OpenAPI documents.
+- MetaEd emits `minChangeVersion` and `maxChangeVersion` query parameters on live resource and descriptor GET-many endpoint definitions.
+- MetaEd emits `minChangeVersion`, `maxChangeVersion`, `limit`, `offset`, and `totalCount` query parameters on `/deletes` and `/keyChanges` definitions.
+- MetaEd emits a core-only `projectSchema.openApiBaseDocuments.changeQueries` document containing the standalone ODS-style `/availableChangeVersions` OpenAPI path.
+- MetaEd emits ODS-compatible response body shapes for `/deletes`, `/keyChanges`, and `/availableChangeVersions`.
+- MetaEd does not advertise unsupported snapshot behavior in the DMS v1.0 OpenAPI surface.
+- MetaEd includes core resources, descriptors, extension-defined resources/descriptors, profiles, and `SchoolYearType` where applicable.
 
-Resource-scoped Change Query paths stay with the resource, descriptor, and profile OpenAPI fragments. That means `/deletes`, `/keyChanges`, and live GET-many `minChangeVersion` / `maxChangeVersion` parameters are emitted in the same documents as their owning resources or descriptors. MetaEd should not create `openApiFragments.changeQueries` or compose all resource-level tracked-change endpoints into the standalone `changeQueries` document unless a future product decision explicitly changes this contract.
+### DMS ApiSchema Loading
 
-Because OpenAPI `$ref` targets are document-local, the tracked-change response schemas for resource-scoped `/deletes` and `/keyChanges` must also stay in the owning resource, descriptor, or profile fragment `components.schemas`; the standalone `changeQueries` base document should not receive resource-scoped paths or tracked-change schemas.
+- DMS schema validation accepts optional `projectSchema.openApiBaseDocuments.changeQueries` alongside the existing `resources` and `descriptors` base documents.
+- DMS preserves `projectSchema.openApiBaseDocuments.changeQueries` in the raw loaded ApiSchema document used for metadata serving.
+- DMS continues stripping `projectSchema.openApiBaseDocuments`, including `changeQueries`, from the normalized/effective schema before effective-schema hashing, model derivation, DDL generation, and mapping-pack selection.
+- Adding or removing OpenAPI payloads, including `changeQueries`, does not change the effective-schema hash.
+- This story does not require an `apiSchemaVersion` bump.
 
-Snapshot OpenAPI cleanup is intentionally included in this story's MetaEd implementation even though snapshot support is out of scope for DMS v1.0 and is not listed as a separate acceptance criterion. The DMS OpenAPI output should omit the legacy ODS `Use-Snapshot` header parameter and `NotFoundUseSnapshot` response from affected resources, descriptors, profiles, and Change-Queries documents so the advertised contract does not include unsupported snapshot behavior. Snapshot OpenAPI support should be revisited by the deferred snapshot story.
+### DMS Standalone Change-Queries OpenAPI
+
+- DMS serves the standalone Change-Queries OpenAPI document only from the selected core schema's `projectSchema.openApiBaseDocuments.changeQueries`.
+- DMS ignores extension-side `projectSchema.openApiBaseDocuments.changeQueries` if present.
+- DMS does not synthesize the standalone Change-Queries OpenAPI document.
+- If the selected core ApiSchema does not contain `projectSchema.openApiBaseDocuments.changeQueries`, DMS startup and schema validation still succeed.
+- If the selected core document is absent, `/metadata/specifications` omits `Change-Queries`, `/metadata/changequeries/v1/swagger.json` returns `404`, and any DMS-convention alias such as `/metadata/specifications/changequeries-spec.json` returns `404`.
+- DMS exposes the canonical Change-Queries metadata URL at `/metadata/changequeries/v1/swagger.json`.
+- DMS may also expose the DMS-convention alias `/metadata/specifications/changequeries-spec.json`; if present, it serves the same document as the canonical URL.
+- `/metadata/specifications` conditionally lists a `Change-Queries` entry with prefix `Other` and `endpointUri` pointing to `/metadata/changequeries/v1/swagger.json`.
+- DMS replaces the served Change-Queries document's `servers` array with the actual route-qualified runtime base ending in `/changeQueries/v1`, not `/data`.
+- Change-Queries server URL generation preserves the same tenant and route-qualifier variable behavior used by resources/descriptors.
+- DMS injects the same OpenAPI 3 OAuth2 `components.securitySchemes.oauth2_client_credentials` and root `security` requirement into the served Change-Queries document that it injects into resources and descriptors documents.
+
+### DMS Resource, Descriptor, and Profile OpenAPI
+
+- DMS metadata endpoints serve the MetaEd-emitted live GET-many `minChangeVersion` and `maxChangeVersion` parameters in resource and descriptor OpenAPI documents.
+- DMS metadata endpoints serve the MetaEd-emitted `/deletes` and `/keyChanges` paths in resource and descriptor OpenAPI documents for core and extension-defined resources/descriptors.
+- DMS profile OpenAPI documents preserve live GET-many `minChangeVersion` and `maxChangeVersion` for readable profiled resources.
+- DMS profile OpenAPI documents preserve `/deletes` and `/keyChanges` paths for readable profiled resources.
+- The standalone `Change-Queries` document for `/availableChangeVersions` remains unprofiled and is not duplicated under profile metadata.
+- Profile-specific `/deletes` and `/keyChanges` responses remain normal `application/json` Change Query responses using identity-key schemas.
+- DMS profile OpenAPI filtering does not apply normal readable-resource property filtering to tracked-change key schemas.
+
+### DMS Discovery
+
+- Root Discovery API responses include `urls.changeQueries`.
+- `urls.changeQueries` ends in `/changeQueries/v1/`.
+- `urls.changeQueries` uses the same tenant and route-qualifier prefix behavior as `urls.dataManagementApi`.
+- The Discovery API URL is emitted independently of the standalone OpenAPI document's presence because runtime Change Queries are not sourced from OpenAPI.
+
+### Tests
+
+- Tests cover ApiSchema validation and loading with optional `projectSchema.openApiBaseDocuments.changeQueries`.
+- Tests cover preserving the raw Change-Queries OpenAPI document while stripping it from normalized/effective schema inputs.
+- Tests prove OpenAPI payload changes, including adding/removing `changeQueries`, do not affect the effective-schema hash.
+- Tests cover serving the canonical Change-Queries metadata URL and any DMS-convention alias.
+- Tests cover missing core Change-Queries document behavior: successful startup, omitted catalog entry, and `404` metadata URLs.
+- Tests cover ignoring extension-side standalone `openApiBaseDocuments.changeQueries`.
+- Tests cover Change-Queries server URL rewriting, including multi-tenancy and route-qualifier variables.
+- Tests cover OAuth2 security injection for the standalone Change-Queries document.
+- Tests cover `/metadata/specifications` listing `Change-Queries` under prefix `Other` when the core document is present.
+- Tests cover root Discovery API `urls.changeQueries`.
+- Tests cover profile OpenAPI preservation of readable-resource `/deletes` and `/keyChanges` without profile-filtering tracked-change key schemas.
+
+## DMS Implementation Notes
+
+- `src/dms/core/EdFi.DataManagementService.Core/ApiSchema/JsonSchemaForApiSchema.json` already appears to accept optional `openApiBaseDocuments.changeQueries`.
+- `src/dms/core/EdFi.DataManagementService.Core/Startup/ApiSchemaInputNormalizer.cs` already strips `projectSchema.openApiBaseDocuments`; keep that behavior so `changeQueries` remains hash-neutral.
+- `src/dms/core/EdFi.DataManagementService.Core/OpenApi/OpenApiDocument.cs` and the API service layer currently handle resources/descriptors only; add a Change-Queries OpenAPI path sourced only from the selected core `projectSchema.openApiBaseDocuments.changeQueries`.
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs` currently lists `Resources`, `Descriptors`, and `Discovery`; add conditional `Change-Queries` metadata exposure under prefix `Other`.
+- The shared server builder in `MetadataEndpointModule` currently appends `/data`; Change-Queries needs a route-base option ending in `/changeQueries/v1`.
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/DiscoveryEndpointModule.cs` currently omits `urls.changeQueries`; add it with the route-qualified `/changeQueries/v1/` base.
+
+## Boundary Notes
+
+- Keep runtime route-resolution points as context, not implementation acceptance criteria for this story.
+- Runtime `GET /changeQueries/v1/availableChangeVersions` behavior belongs to `21-available-change-versions-endpoint.md`.
+- Runtime resource and descriptor `/deletes` behavior belongs to `23-deletes-endpoint.md`.
+- Runtime resource and descriptor `/keyChanges` behavior belongs to `24-keychanges-endpoint.md`.
+- Removing any temporary frontend stub for runtime `/deletes` and `/keyChanges` responses has moved to a separate runtime cleanup ticket.
 
 ## Out of Scope
 
-- Implementing the endpoint runtime behavior.
-- Snapshot OpenAPI support.
+- Implementing Change Query runtime endpoint behavior.
+- Using OpenAPI as the runtime route source of truth.
+- Snapshot runtime support or advertising snapshot behavior.
 - Runtime feature-flagging for Change Queries.
+- Synthesizing Change-Queries OpenAPI in DMS when the core ApiSchema document is absent.
 
 ## Clarifying Questions and Answers
 
 ### Questions 1
 
-1. Should `availableChangeVersions` be emitted as a new Change-Queries OpenAPI document served as an `Other` metadata section, or inserted into an existing resources/descriptors OpenAPI document; and should its path be ODS-style `/availableChangeVersions` within that document or the full runtime path `/changeQueries/v1/availableChangeVersions`?
-2. What is MetaEd's source of truth for deciding that a resource or descriptor supports `ReadChanges`, given current ApiSchema/OpenAPI generation does not appear to carry claim/action metadata?
-3. Should Story 20 include `SchoolYearType` in generated `/deletes` and `/keyChanges` OpenAPI paths, matching the current DMS design that treats it as a regular Change Query resource?
-4. Since Snapshot OpenAPI support is out of scope, should new Change Query OpenAPI definitions omit the ODS `Use-Snapshot` header and snapshot-specific response entries even though the legacy ODS metadata includes them?
-5. For `/deletes` and `/keyChanges` response schemas, should MetaEd match legacy ODS component names and schema details exactly, or is compatibility limited to the JSON response body shape under DMS's existing OpenAPI component naming conventions?
-6. What DMS metadata catalog entry and URL should expose the Change-Queries OpenAPI document: an ODS-compatible `Change-Queries` entry at `/metadata/changequeries/v1/swagger.json`, the existing DMS `/metadata/specifications/{section}-spec.json` convention, or both?
+1. Should the DMS-convention alias `/metadata/specifications/changequeries-spec.json` be required in this story, or should implementation and tests target only the canonical `/metadata/changequeries/v1/swagger.json` route?
+2. If a core ApiSchema contains `projectSchema.openApiBaseDocuments.changeQueries` but that document is structurally incomplete or lacks the `/availableChangeVersions` path, should DMS serve it with only `servers`/security injection, reject the ApiSchema at validation/startup, or treat it as absent for catalog/404 behavior?
+3. For profile OpenAPI filtering, should Change Query `/deletes` and `/keyChanges` paths be associated to a profile by the base resource/descriptor endpoint path rather than by the tracked-change response schema name, with tracked-change response schemas and `application/json` content left unchanged?
+4. Should `DomainsExcludedFromOpenApi` filtering apply to MetaEd-emitted `/deletes` and `/keyChanges` paths, including profile OpenAPI copies, the same way it applies to live resource and descriptor paths?
 
 ### Answers 1
 
-1. Emit `availableChangeVersions` as its own Change Queries OpenAPI document, listed under the `Other` metadata prefix. Inside that document, keep the ODS-style path key `/availableChangeVersions`; the document server/base URL should resolve to the DMS runtime route base `/changeQueries/v1`, producing the effective route `/changeQueries/v1/availableChangeVersions`. Do not insert this endpoint into the resources or descriptors documents.
-2. For OpenAPI emission, treat Change Query support as a generated-resource capability, not as claim/action metadata. MetaEd should advertise `/deletes` and `/keyChanges` for every non-composite generated resource and descriptor in the resources/descriptors OpenAPI documents. DMS runtime authorization remains responsible for enforcing whether the caller has the `ReadChanges` action and strategies for the resolved resource.
-3. Yes. Include `SchoolYearType` with the rest of the non-composite generated resources. Do not add `SchoolYearType`-specific OpenAPI or runtime exclusions; if its `/keyChanges` result is empty because its identity is immutable, that follows normal key-change semantics.
-4. Omit the ODS `Use-Snapshot` header and snapshot-specific response entries from new DMS Change Query OpenAPI definitions, including live GET-many, `/deletes`, `/keyChanges`, and `/availableChangeVersions`. Snapshot support is deferred for DMS v1.0, and the OpenAPI should not advertise snapshot behavior that DMS only ignores at runtime. This requires cleaning up or suppressing existing MetaEd snapshot artifacts in DMS OpenAPI output as part of this story, not only avoiding them on newly added paths: remove or avoid the shared `NotFoundUseSnapshot` response, `Use-Snapshot` header parameter, and snapshot-specific write response descriptions from the affected resources, descriptors, and Change-Queries documents. Snapshot OpenAPI behavior should be revisited by the deferred snapshot story.
-5. Match the ODS-compatible JSON response body contract, not the exact legacy ODS component names. `/deletes` responses should expose `id`, `changeVersion`, and `keyValues`; `/keyChanges` responses should expose `id`, `changeVersion`, `oldKeyValues`, and `newKeyValues`; key fields should use the public query-field names from `queryFieldMapping`. Component names may follow DMS's existing OpenAPI naming conventions.
-6. Use both discovery surfaces with one canonical catalog target: add a DMS `/metadata/specifications` entry named `Change-Queries` with prefix `Other`, and set its `endpointUri` to the ODS-compatible URL `/metadata/changequeries/v1/swagger.json`. Also serve a DMS-convention alias at `/metadata/specifications/changequeries-spec.json` if needed by the existing section loader, but the catalog entry should point to the ODS-compatible URL.
-
-### Questions 2
-
-1. What exact `ApiSchema.json` contract should carry the standalone Change Queries OpenAPI document: add a new `projectSchema.openApiBaseDocuments` key accepted by DMS schema validation, emit a schema-adjacent static OpenAPI asset outside `ApiSchema.json`, or have DMS synthesize the document; and if it is in `ApiSchema.json`, what key spelling and `apiSchemaVersion` behavior are required?
-2. Should the standalone Change Queries OpenAPI document be emitted only by the core/data-standard ApiSchema package, or also by extension ApiSchema packages; and if extension packages should not carry it, should DMS ignore extension-side Change Queries documents if present?
-3. For `/deletes` and `/keyChanges` response components, should MetaEd generate strongly typed per-resource key schemas containing only identity fields derived from `identityJsonPaths` and `queryFieldMapping`, or is a generic key-values object schema acceptable when the runtime response body still returns the correct keys?
-4. For `/deletes` and `/keyChanges` OpenAPI response schemas, should `id`, `changeVersion`, and the key object properties be marked `required`, and should `changeVersion` use the ODS legacy `type: number` shape or DMS-consistent `type: integer`, `format: int64`?
-5. When DMS serves the standalone Change Queries OpenAPI document, should the `servers` URL be rewritten to the route-qualified runtime base ending in `/changeQueries/v1` rather than `/data`, including multi-tenancy and route-qualifier server variables?
-
-### Answers 2
-
-1. Carry the standalone document in the core ApiSchema under `projectSchema.openApiBaseDocuments.changeQueries`. MetaEd should emit that document as the base OpenAPI document for the `Change-Queries` metadata section, and DMS schema validation should accept the optional `changeQueries` key alongside the existing `resources` and `descriptors` keys. Do not synthesize the document in DMS and do not make it a schema-adjacent static asset outside `ApiSchema.json`. Because this is OpenAPI-only metadata and `openApiBaseDocuments` is stripped before effective-schema hash/model derivation, keep `apiSchemaVersion` unchanged for this story and update the DMS normalizer to strip `changeQueries` with the rest of `openApiBaseDocuments`.
-2. Emit `projectSchema.openApiBaseDocuments.changeQueries` only from the core/data-standard ApiSchema package. This core-only rule applies only to the standalone `Change-Queries` document that advertises `/availableChangeVersions`; it does not exclude extension-defined top-level resources or descriptors from Change Query OpenAPI. Extension packages should continue to carry only their resource/descriptor OpenAPI fragments, and those fragments should include `/deletes`, `/keyChanges`, and live GET-many `minChangeVersion` / `maxChangeVersion` metadata for extension-defined resources and descriptors under their project endpoint. Resource extensions under `_ext` do not get separate Change Query endpoints; their changes are surfaced through the owning resource. DMS should source the Change Queries document only from the selected core ApiSchema and ignore any extension-side `openApiBaseDocuments.changeQueries` if present.
-3. Generate strongly typed per-resource key schemas for `/deletes` and `/keyChanges`. For regular resources, the key schemas should contain only public identity fields derived from `identityJsonPaths` and `queryFieldMapping`, including descriptor-reference fields composed as public descriptor URI strings. Descriptor key schemas need an explicit descriptor identity rule because MetaEd currently sets descriptor `identityJsonPaths` to empty in `packages/metaed-plugin-edfi-api-schema/src/enhancer/IdentityJsonPathsEnhancer.ts`. For descriptor `/deletes` and `/keyChanges`, generate the key schema from the public descriptor identity fields `namespace` and `codeValue`, matching the DMS design and legacy ODS metadata shape. Do not expose internal descriptor IDs in descriptor key schemas. A generic `keyValues` object schema is not sufficient for the advertised discovery contract.
-4. Mark `id`, `changeVersion`, and the containing key object properties (`keyValues`, `oldKeyValues`, `newKeyValues`) as required on the response item schemas, and mark each generated key schema identity property as required. Use DMS-consistent `type: integer`, `format: int64` for `changeVersion`, matching the `ChangeVersion` bigint design and the existing `minChangeVersion`, `maxChangeVersion`, and `availableChangeVersions` shapes rather than the legacy ODS `type: number` response-schema quirk.
-5. Yes. When serving the standalone Change Queries document, DMS should replace the document's `servers` array with the actual route-qualified runtime base ending in `/changeQueries/v1`, not `/data`. The server builder should preserve the same multi-tenancy and route-qualifier variable behavior used by resources/descriptors, then append `changeQueries/v1` as the terminal route base.
-
-### Questions 3
-
-1. Should profile-specific OpenAPI documents include the new Change Query surface for profiled resources, including live GET-many `minChangeVersion` / `maxChangeVersion` and `/deletes` / `/keyChanges` paths; and if so, should `/deletes` and `/keyChanges` response schemas remain unprofiled identity-key schemas with `application/json`, or follow legacy ODS profile-suffixed tracked-change schema names?
-
-### Answers 3
-
-1. Yes. Profile-specific resource OpenAPI documents should include the Change Query surface for resources covered by the profile's readable content type: live GET-many operations should retain `minChangeVersion` and `maxChangeVersion`, and `/deletes` and `/keyChanges` GET paths should be present for those profiled resources. The standalone `Change-Queries` document for `/availableChangeVersions` remains unprofiled and should not be duplicated under profile metadata. For `/deletes` and `/keyChanges`, keep the response body contract as the same strongly typed identity-key Change Query JSON shape from Answers 2, but in profile-specific documents follow legacy ODS by using profile-suffixed tracked-change component schema names. These tracked-change responses should remain normal `application/json` Change Query responses, not profile-filtered resource representations. DMS profile OpenAPI filtering should therefore classify `/deletes` and `/keyChanges` by their owning resource path, preserve them for readable profile resources, create/reference the profile-suffixed tracked-change schemas, and avoid applying normal readable resource property filtering to the tracked-change key schemas.
-
-### Questions 4
-
-1. Should Story 20 also update the root Discovery API `urls` object to include an ODS-compatible `changeQueries` URL ending in `/changeQueries/v1/`, or is root discovery URL exposure owned by the runtime `availableChangeVersions` story or out of scope?
-2. If the selected core ApiSchema does not contain `projectSchema.openApiBaseDocuments.changeQueries` after this story lands, should DMS omit the `Change-Queries` metadata catalog entry and return 404 for its metadata URLs, or should startup/schema validation fail?
-3. Should DMS inject the same OAuth2 `components.securitySchemes` and root `security` metadata into the standalone `Change-Queries` OpenAPI document that it injects into resources/descriptors documents, or should MetaEd emit those security sections directly in `openApiBaseDocuments.changeQueries`?
-
-### Answers 4
-
-1. Yes. Story 20 should update the root Discovery API `urls` object to include `changeQueries` with the route-qualified base URL ending in `/changeQueries/v1/`, using the same tenant and route-qualifier prefix behavior as `dataManagementApi`. This is discovery/catalog exposure, so it belongs with the OpenAPI metadata story; the runtime `GET /changeQueries/v1/availableChangeVersions` handler remains owned by `21-available-change-versions-endpoint.md`. Because Change Queries are always on for DMS v1.0, the root discovery URL should be emitted unconditionally once this story lands.
-2. Do not fail startup or schema validation when `projectSchema.openApiBaseDocuments.changeQueries` is absent. The key is optional OpenAPI-only metadata and remains hash-neutral. If the selected core ApiSchema lacks the standalone document, DMS should omit the `Change-Queries` entry from `/metadata/specifications` and return 404 for `/metadata/changequeries/v1/swagger.json` and any DMS-convention alias such as `/metadata/specifications/changequeries-spec.json`. Runtime Change Query routes remain governed by their own stories and do not depend on the OpenAPI document's presence.
-3. DMS should inject the same OpenAPI 3 OAuth2 `components.securitySchemes.oauth2_client_credentials` and root `security` requirement into the served standalone `Change-Queries` document that it injects into resources and descriptors documents. MetaEd should not emit deployment-specific security metadata or token URLs in `openApiBaseDocuments.changeQueries`; it should emit the schema/path contract, and DMS should add or overwrite the security block at serve time from the configured authentication service so all OpenAPI documents advertise the same security scheme.
+1. Target only the canonical `/metadata/changequeries/v1/swagger.json` route in this story. Do not require or test `/metadata/specifications/changequeries-spec.json`; if that alias is added later, it should be a separate compatibility task and serve the same document as the canonical route.
+2. If `projectSchema.openApiBaseDocuments.changeQueries` is present and passes the existing ApiSchema JSON schema validation, DMS should treat it as present and serve it with only the standard `servers` and security injection. Do not add DMS validation for the `/availableChangeVersions` path, do not reject startup for a pathless-but-schema-valid document, and do not treat it as absent. A missing or malformed path is a MetaEd contract defect, not a DMS runtime route decision.
+3. Yes. Profile OpenAPI filtering should associate `/deletes` and `/keyChanges` with the profiled base resource or descriptor path, not with the tracked-change response schema name. Include those GET paths when the base resource/descriptor is readable in the profile, and leave the tracked-change response schemas and `application/json` content unchanged rather than creating profile-specific readable schemas for them.
+4. Yes. Apply `DomainsExcludedFromOpenApi` to MetaEd-emitted `/deletes` and `/keyChanges` paths using the same path-level `x-Ed-Fi-domains` rule as live resource and descriptor paths, including the existing behavior for paths with multiple domains. Profile OpenAPI documents should inherit that filtered path set so excluded-domain change-query paths are not reintroduced under profiles.

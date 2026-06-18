@@ -51,6 +51,7 @@
         .\build-dms.ps1 push -NuGetApiKey $env:nuget_key
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Build entry script intentionally writes operator progress and status output to the console.')]
 param(
     # Command to execute, defaults to "Build".
     [string]
@@ -500,6 +501,50 @@ function Invoke-WithE2ETestProcessContext {
     }
 }
 
+function Invoke-WithEnvironmentFileSchemaSettings {
+    param(
+        [switch]
+        $Enabled,
+
+        [scriptblock]
+        $Action
+    )
+
+    if (-not $Enabled) {
+        & $Action
+        return
+    }
+
+    $schemaEnvironmentVariableNames = @(
+        "USE_API_SCHEMA_PATH",
+        "API_SCHEMA_PATH",
+        "SCHEMA_PACKAGES"
+    )
+    $previousValues = @{}
+
+    foreach ($name in $schemaEnvironmentVariableNames) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+    }
+
+    try {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        & $Action
+    }
+    finally {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            if ($null -eq $previousValues[$name]) {
+                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
+            }
+        }
+    }
+}
+
 function RunTests {
     param (
         # File search filter
@@ -643,6 +688,167 @@ function RunE2E {
     }
 }
 
+function Get-EffectiveSchemaHashFromOutput {
+    param(
+        [object[]]
+        $Output
+    )
+
+    $effectiveSchemaHash = $null
+
+    foreach ($line in $Output) {
+        $lineText = [string]$line
+
+        if ($lineText -match '(?i)Effective schema hash:\s*([a-f0-9]{64})') {
+            $effectiveSchemaHash = $Matches[1].ToLowerInvariant()
+        }
+    }
+
+    return $effectiveSchemaHash
+}
+
+function Invoke-RelationalE2EDatabaseProvisioning {
+    param(
+        [pscustomobject]
+        $E2ETestSettings
+    )
+
+    try {
+        Push-Location "$PSScriptRoot/eng/docker-compose"
+        $provisionOutput = @()
+        ./provision-relational-e2e-database.ps1 `
+            -EnvironmentFile $E2ETestSettings.EnvironmentFile `
+            -Configuration $Configuration 6>&1 |
+            Tee-Object -Variable provisionOutput |
+            ForEach-Object { Write-Host ([string]$_) }
+
+        $provisionedEffectiveSchemaHash = Get-EffectiveSchemaHashFromOutput -Output $provisionOutput
+
+        if ([string]::IsNullOrWhiteSpace($provisionedEffectiveSchemaHash)) {
+            throw "Relational E2E provisioning completed without reporting an effective schema hash."
+        }
+
+        return $provisionedEffectiveSchemaHash
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Get-DockerContainerEnvironmentMap {
+    param(
+        [string]
+        $ContainerName
+    )
+
+    $environmentJson = docker inspect $ContainerName --format '{{json .Config.Env}}'
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect Docker container '$ContainerName'."
+    }
+
+    $environmentEntries = @($environmentJson | ConvertFrom-Json)
+    $environmentValues = @{}
+
+    foreach ($entry in $environmentEntries) {
+        $entryText = [string]$entry
+        $separatorIndex = $entryText.IndexOf("=")
+
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+
+        $key = $entryText.Substring(0, $separatorIndex)
+        $value = $entryText.Substring($separatorIndex + 1)
+        $environmentValues[$key] = $value
+    }
+
+    return $environmentValues
+}
+
+function Write-DmsSchemaContainerEnvironment {
+    param(
+        [hashtable]
+        $EnvironmentValues
+    )
+
+    Write-Output "DMS container schema environment:"
+    foreach ($key in @(
+            "AppSettings__UseRelationalBackend",
+            "AppSettings__Datastore",
+            "AppSettings__UseApiSchemaPath",
+            "AppSettings__ApiSchemaPath",
+            "SCHEMA_PACKAGES"
+        )) {
+        if ($EnvironmentValues.ContainsKey($key)) {
+            Write-Output "  $key = $($EnvironmentValues[$key])"
+        }
+        else {
+            Write-Output "  $key = <not set>"
+        }
+    }
+}
+
+function Get-DmsRuntimeEffectiveSchemaHash {
+    param(
+        [string]
+        $ContainerName,
+
+        [datetime]
+        $LogsSinceUtc = [datetime]::MinValue
+    )
+
+    $dockerLogArguments = @("logs")
+
+    if ($LogsSinceUtc -ne [datetime]::MinValue) {
+        $dockerLogArguments += @("--since", $LogsSinceUtc.ToUniversalTime().ToString("o"))
+    }
+
+    $dockerLogArguments += $ContainerName
+    $dmsLogs = @(& docker @dockerLogArguments 2>&1)
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to read Docker logs for container '$ContainerName'."
+    }
+
+    return Get-EffectiveSchemaHashFromOutput -Output $dmsLogs
+}
+
+function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
+    param(
+        [string]
+        $ProvisionedEffectiveSchemaHash,
+
+        [string]
+        $ContainerName,
+
+        [datetime]
+        $LogsSinceUtc = [datetime]::MinValue
+    )
+
+    Write-Output "Validating DMS runtime effective schema before relational E2E tests..."
+
+    $environmentValues = Get-DockerContainerEnvironmentMap -ContainerName $ContainerName
+    Write-DmsSchemaContainerEnvironment -EnvironmentValues $environmentValues
+
+    $dmsRuntimeEffectiveSchemaHash = Get-DmsRuntimeEffectiveSchemaHash `
+        -ContainerName $ContainerName `
+        -LogsSinceUtc $LogsSinceUtc
+
+    Write-Output "Provisioned relational effective schema hash: $ProvisionedEffectiveSchemaHash"
+    Write-Output "DMS runtime effective schema hash: $dmsRuntimeEffectiveSchemaHash"
+
+    if ([string]::IsNullOrWhiteSpace($dmsRuntimeEffectiveSchemaHash)) {
+        docker logs --tail 120 $ContainerName 2>&1
+        throw "DMS container '$ContainerName' did not report an effective schema hash before relational E2E tests."
+    }
+
+    if ($dmsRuntimeEffectiveSchemaHash -ne $ProvisionedEffectiveSchemaHash) {
+        docker logs --tail 120 $ContainerName 2>&1
+        throw "Relational E2E setup mismatch: database was provisioned with effective schema hash '$ProvisionedEffectiveSchemaHash' but DMS runtime expects '$dmsRuntimeEffectiveSchemaHash'."
+    }
+}
+
 function Start-DockerEnvironment {
     param (
         [switch]
@@ -658,7 +864,10 @@ function Start-DockerEnvironment {
         $IdentityProvider="self-contained",
 
         [string]
-        $ResolvedEnvironmentFile
+        $ResolvedEnvironmentFile,
+
+        [switch]
+        $UseEnvironmentFileSchemaSettings
     )
 
     $environmentFilePath =
@@ -677,8 +886,12 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            }
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
+            }
         }
         finally {
             Pop-Location
@@ -690,10 +903,14 @@ function Start-DockerEnvironment {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             if ($UsePublishedImage) {
                 if ($LoadSeedData) {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
                 else {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
             }
             else {
@@ -724,7 +941,9 @@ function Start-DockerEnvironment {
                         $env:NEED_DATABASE_SETUP = "false"
                         $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
                         $env:AppSettings__DeployDatabaseOnStartup = "false"
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        }
                     }
                     finally {
                         [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
@@ -747,7 +966,9 @@ function Start-DockerEnvironment {
                     }
                 }
                 else {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
@@ -764,26 +985,33 @@ function Start-DockerEnvironment {
 function Initialize-RelationalE2EDatabase {
     param(
         [pscustomobject]
-        $E2ETestSettings
+        $E2ETestSettings,
+
+        [switch]
+        $UsePublishedImage
     )
 
     if (-not $E2ETestSettings.UseRelationalBackend) {
         return
     }
 
-    Invoke-Execute {
-        try {
-            Push-Location "$PSScriptRoot/eng/docker-compose"
-            ./provision-relational-e2e-database.ps1 `
-                -EnvironmentFile $E2ETestSettings.EnvironmentFile `
-                -Configuration $Configuration
+    $dmsContainerName =
+        if ($UsePublishedImage) {
+            "dms-published-dms-1"
         }
-        finally {
-            Pop-Location
+        else {
+            "dms-local-dms-1"
         }
-    }
 
-    Restart-DmsContainer -Reason "discard cached PostgreSQL pools after relational reprovisioning"
+    $provisionedEffectiveSchemaHash = Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
+    $dmsRestartStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
+    Restart-DmsContainer `
+        -ContainerName $dmsContainerName `
+        -Reason "discard cached PostgreSQL pools after relational reprovisioning"
+    Assert-DmsRuntimeSchemaMatchesProvisionedDatabase `
+        -ProvisionedEffectiveSchemaHash $provisionedEffectiveSchemaHash `
+        -ContainerName $dmsContainerName `
+        -LogsSinceUtc $dmsRestartStartedAtUtc
 }
 
 function E2ETests {
@@ -812,11 +1040,12 @@ function E2ETests {
             -SkipDockerBuild:$SkipDockerBuild `
             -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
-            -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile
+            -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
+            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.UseRelationalBackend
     }
 
     if ($e2eTestSettings.UseRelationalBackend) {
-        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings }
+        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
     }
 
     Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
@@ -866,15 +1095,15 @@ function Wait-ForConfigServiceAndClientRegistration {
 function Restart-DmsContainer {
     param(
         [string]
+        $ContainerName = "dms-local-dms-1",
+
+        [string]
         $Reason = "refresh runtime state"
     )
 
     Write-Host "Restarting DMS container to $Reason..." -ForegroundColor Cyan
 
-    # Determine the container name based on docker compose project
-    $containerName = "dms-local-dms-1"
-
-    docker restart $containerName
+    docker restart $ContainerName
 
     Write-Host "Waiting for DMS to be ready..." -ForegroundColor Yellow
     Start-Sleep -Seconds 10

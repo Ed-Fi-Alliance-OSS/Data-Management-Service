@@ -79,6 +79,17 @@ public interface IApiService
     JsonNode GetDescriptorOpenApiSpecification(JsonArray servers);
 
     /// <summary>
+    /// DMS entry point to get the standalone Change-Queries OpenAPI specification from the core ApiSchema.
+    /// Servers array should be provided by the front end.
+    /// </summary>
+    JsonNode? GetChangeQueriesOpenApiSpecification(JsonArray servers);
+
+    /// <summary>
+    /// Returns whether the selected core ApiSchema provides a standalone Change-Queries OpenAPI specification.
+    /// </summary>
+    bool HasChangeQueriesOpenApiSpecification();
+
+    /// <summary>
     /// DMS entry point to reload the claimsets cache
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>

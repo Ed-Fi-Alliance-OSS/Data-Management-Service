@@ -162,6 +162,135 @@ public class ProfileOpenApiSpecificationFilterTests
         return JsonNode.Parse(_baseOpenApiSpec)!;
     }
 
+    private static JsonNode GetBaseSpecWithChangeQueryPaths()
+    {
+        JsonNode specification = GetBaseSpec();
+        JsonObject paths = specification["paths"]!.AsObject();
+        JsonObject schemas = specification["components"]!["schemas"]!.AsObject();
+
+        paths["/ed-fi/students"]!["get"]!.AsObject()["parameters"] = new JsonArray(
+            QueryParameter("minChangeVersion"),
+            QueryParameter("maxChangeVersion")
+        );
+        paths["/ed-fi/students/deletes"] = ChangeQueryPath("students", "EdFi_DeletedResource");
+        paths["/ed-fi/students/keyChanges"] = ChangeQueryPath("students", "EdFi_StudentKeyChange");
+        paths["/ed-fi/schools/keyChanges"] = ChangeQueryPath("schools", "EdFi_StudentKeyChange");
+        paths["/availableChangeVersions"] = StandaloneChangeQueriesPath();
+
+        schemas["EdFi_DeletedResource"] = SchemaWithProperties("id", "changeVersion", "notInProfile");
+        schemas["EdFi_StudentKeyChange"] = StudentKeyChangeSchema();
+        schemas["EdFi_AvailableChangeVersions"] = SchemaWithProperties("newestChangeVersion");
+
+        return specification;
+    }
+
+    private static JsonObject QueryParameter(string parameterName)
+    {
+        return new JsonObject
+        {
+            ["name"] = parameterName,
+            ["in"] = "query",
+            ["schema"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+        };
+    }
+
+    private static JsonObject ChangeQueryPath(string tagName, string responseSchemaName)
+    {
+        return new JsonObject
+        {
+            ["get"] = new JsonObject
+            {
+                ["tags"] = new JsonArray(tagName),
+                ["parameters"] = new JsonArray(
+                    QueryParameter("minChangeVersion"),
+                    QueryParameter("maxChangeVersion"),
+                    QueryParameter("offset"),
+                    QueryParameter("limit"),
+                    QueryParameter("totalCount")
+                ),
+                ["responses"] = new JsonObject
+                {
+                    ["200"] = new JsonObject
+                    {
+                        ["content"] = new JsonObject
+                        {
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = new JsonObject
+                                {
+                                    ["type"] = "array",
+                                    ["items"] = new JsonObject
+                                    {
+                                        ["$ref"] = $"#/components/schemas/{responseSchemaName}",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    private static JsonObject StandaloneChangeQueriesPath()
+    {
+        return new JsonObject
+        {
+            ["get"] = new JsonObject
+            {
+                ["tags"] = new JsonArray("changeQueries"),
+                ["responses"] = new JsonObject
+                {
+                    ["200"] = new JsonObject
+                    {
+                        ["content"] = new JsonObject
+                        {
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = new JsonObject
+                                {
+                                    ["$ref"] = "#/components/schemas/EdFi_AvailableChangeVersions",
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    private static JsonObject SchemaWithProperties(params string[] propertyNames)
+    {
+        JsonObject properties = [];
+        foreach (string propertyName in propertyNames)
+        {
+            properties[propertyName] = new JsonObject { ["type"] = "string" };
+        }
+
+        return new JsonObject { ["type"] = "object", ["properties"] = properties };
+    }
+
+    private static JsonObject StudentKeyChangeSchema()
+    {
+        JsonObject schema = SchemaWithProperties(
+            "oldStudentUniqueId",
+            "newStudentUniqueId",
+            "changeVersion",
+            "notInProfile"
+        );
+        schema["properties"]!.AsObject()["student"] = new JsonObject
+        {
+            ["$ref"] = "#/components/schemas/EdFi_Student",
+        };
+
+        return schema;
+    }
+
+    private static JsonObject Paths(JsonNode specification)
+    {
+        return specification["paths"]!.AsObject();
+    }
+
     [TestFixture]
     public class Given_Profile_Covers_Single_Resource : ProfileOpenApiSpecificationFilterTests
     {
@@ -396,6 +525,284 @@ public class ProfileOpenApiSpecificationFilterTests
             studentsPath.Should().NotBeNull();
             studentsPath!.ContainsKey("get").Should().BeFalse();
             studentsPath.ContainsKey("post").Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_With_Change_Query_Paths : ProfileOpenApiSpecificationFilterTests
+    {
+        private JsonNode result = null!;
+
+        public static ProfileDefinition CreateReadableStudentProfile()
+        {
+            return new ProfileDefinition(
+                "StudentChangeQueriesProfile",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        new ContentTypeDefinition(
+                            MemberSelection.IncludeOnly,
+                            [new PropertyRule("firstName"), new PropertyRule("lastName")],
+                            [],
+                            [],
+                            []
+                        ),
+                        null
+                    ),
+                ]
+            );
+        }
+
+        private static JsonObject Schemas(JsonNode specification)
+        {
+            return specification["components"]!["schemas"]!.AsObject();
+        }
+
+        private static string[] ParameterNames(JsonNode specification, string path)
+        {
+            return specification["paths"]![path]!["get"]!["parameters"]!
+                .AsArray()
+                .Select(parameter => parameter!["name"]!.GetValue<string>())
+                .ToArray();
+        }
+
+        private static JsonObject ResponseContent(JsonNode specification, string path)
+        {
+            return specification["paths"]![path]!["get"]!["responses"]!["200"]!["content"]!.AsObject();
+        }
+
+        private static string ResponseSchemaRef(JsonNode specification, string path)
+        {
+            return specification["paths"]![path]!["get"]!["responses"]!["200"]!["content"]![
+                "application/json"
+            ]!["schema"]!["items"]!["$ref"]!.GetValue<string>();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            var filter = CreateFilter();
+            result = filter.CreateProfileSpecification(
+                GetBaseSpecWithChangeQueryPaths(),
+                CreateReadableStudentProfile()
+            );
+        }
+
+        [Test]
+        public void It_preserves_live_change_version_filters_for_readable_resources()
+        {
+            ParameterNames(result, "/ed-fi/students")
+                .Should()
+                .Contain(["minChangeVersion", "maxChangeVersion"]);
+        }
+
+        [Test]
+        public void It_preserves_deletes_and_key_changes_for_readable_resources()
+        {
+            JsonObject paths = Paths(result);
+
+            paths.Should().ContainKey("/ed-fi/students/deletes");
+            paths.Should().ContainKey("/ed-fi/students/keyChanges");
+        }
+
+        [Test]
+        public void It_keeps_change_query_responses_as_application_json()
+        {
+            JsonObject keyChangesContent = ResponseContent(result, "/ed-fi/students/keyChanges");
+
+            keyChangesContent.Should().ContainKey("application/json");
+            keyChangesContent
+                .Should()
+                .NotContainKey("application/vnd.ed-fi.student.studentchangequeriesprofile.readable+json");
+            ResponseSchemaRef(result, "/ed-fi/students/keyChanges")
+                .Should()
+                .Be("#/components/schemas/EdFi_StudentKeyChange");
+        }
+
+        [Test]
+        public void It_keeps_tracked_change_schemas_unprofiled()
+        {
+            JsonObject schemas = Schemas(result);
+
+            schemas.Should().ContainKey("EdFi_StudentKeyChange");
+            schemas.Should().NotContainKey("EdFi_StudentKeyChange_readable");
+            schemas["EdFi_StudentKeyChange"]!["properties"]!.AsObject().Should().ContainKey("notInProfile");
+        }
+
+        [Test]
+        public void It_preserves_component_schemas_reachable_from_tracked_change_responses()
+        {
+            JsonObject schemas = Schemas(result);
+
+            schemas.Should().ContainKey("EdFi_Student");
+            schemas["EdFi_StudentKeyChange"]!["properties"]!["student"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Student");
+        }
+
+        [Test]
+        public void It_associates_change_query_paths_by_base_resource_path_not_response_schema()
+        {
+            JsonObject paths = Paths(result);
+
+            paths.Should().ContainKey("/ed-fi/students/keyChanges");
+            paths.Should().NotContainKey("/ed-fi/schools/keyChanges");
+        }
+
+        [Test]
+        public void It_does_not_include_the_standalone_available_change_versions_path()
+        {
+            Paths(result).Should().NotContainKey("/availableChangeVersions");
+        }
+    }
+
+    [TestFixture]
+    public class Given_WriteOnly_Profile_With_Change_Query_Paths : ProfileOpenApiSpecificationFilterTests
+    {
+        private static ProfileDefinition CreateWriteOnlyStudentProfile()
+        {
+            return new ProfileDefinition(
+                "WriteOnlyStudentProfile",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        null,
+                        new ContentTypeDefinition(MemberSelection.IncludeAll, [], [], [], [])
+                    ),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_removes_change_query_paths_for_unreadable_resources()
+        {
+            var filter = CreateFilter();
+
+            JsonNode result = filter.CreateProfileSpecification(
+                GetBaseSpecWithChangeQueryPaths(),
+                CreateWriteOnlyStudentProfile()
+            );
+
+            JsonObject paths = Paths(result);
+            paths.Should().NotContainKey("/ed-fi/students/deletes");
+            paths.Should().NotContainKey("/ed-fi/students/keyChanges");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Change_Query_Path_Without_Base_Resource_Path : ProfileOpenApiSpecificationFilterTests
+    {
+        [Test]
+        public void It_does_not_reintroduce_paths_removed_from_the_base_specification()
+        {
+            JsonNode baseSpec = GetBaseSpecWithChangeQueryPaths();
+            baseSpec["paths"]!.AsObject().Remove("/ed-fi/students");
+            var filter = CreateFilter();
+
+            JsonNode result = filter.CreateProfileSpecification(
+                baseSpec,
+                Given_Profile_With_Change_Query_Paths.CreateReadableStudentProfile()
+            );
+
+            JsonObject paths = Paths(result);
+            paths.Should().NotContainKey("/ed-fi/students/deletes");
+            paths.Should().NotContainKey("/ed-fi/students/keyChanges");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_With_Resource_Path_Ending_In_Change_Query_Suffix
+        : ProfileOpenApiSpecificationFilterTests
+    {
+        private const string DeleteReadableContentType =
+            "application/vnd.ed-fi.delete.deleteprofile.readable+json";
+
+        private static JsonNode GetBaseSpecWithDeleteResource()
+        {
+            JsonNode specification = GetBaseSpec();
+            JsonObject paths = Paths(specification);
+            JsonObject schemas = specification["components"]!["schemas"]!.AsObject();
+
+            paths["/ed-fi/deletes"] = new JsonObject
+            {
+                ["get"] = new JsonObject
+                {
+                    ["tags"] = new JsonArray("deletes"),
+                    ["responses"] = new JsonObject
+                    {
+                        ["200"] = new JsonObject
+                        {
+                            ["content"] = new JsonObject
+                            {
+                                ["application/json"] = new JsonObject
+                                {
+                                    ["schema"] = new JsonObject
+                                    {
+                                        ["$ref"] = "#/components/schemas/EdFi_Delete",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            schemas["EdFi_Delete"] = SchemaWithProperties(
+                "id",
+                "deleteName",
+                "notInProfile",
+                "_etag",
+                "_lastModifiedDate"
+            );
+
+            return specification;
+        }
+
+        private static ProfileDefinition CreateReadableDeleteProfile()
+        {
+            return new ProfileDefinition(
+                "DeleteProfile",
+                [
+                    new ResourceProfile(
+                        "Delete",
+                        null,
+                        new ContentTypeDefinition(
+                            MemberSelection.IncludeOnly,
+                            [new PropertyRule("deleteName")],
+                            [],
+                            [],
+                            []
+                        ),
+                        null
+                    ),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_treats_the_suffix_path_as_a_normal_resource_when_no_base_resource_path_exists()
+        {
+            var filter = CreateFilter();
+
+            JsonNode result = filter.CreateProfileSpecification(
+                GetBaseSpecWithDeleteResource(),
+                CreateReadableDeleteProfile()
+            );
+
+            JsonObject paths = Paths(result);
+            paths.Should().ContainKey("/ed-fi/deletes");
+
+            JsonObject responseContent = paths["/ed-fi/deletes"]!["get"]!["responses"]!["200"]![
+                "content"
+            ]!.AsObject();
+            responseContent.Should().ContainKey(DeleteReadableContentType);
+            responseContent.Should().NotContainKey("application/json");
+            responseContent[DeleteReadableContentType]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Delete_readable");
         }
     }
 

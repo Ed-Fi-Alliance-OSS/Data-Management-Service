@@ -107,7 +107,7 @@ internal interface IProfileService
     /// </summary>
     /// <param name="profileName">The name of the profile</param>
     /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
-    /// <param name="baseSpecificationProvider">A function that returns the base OpenAPI specification with servers already injected</param>
+    /// <param name="baseSpecificationProvider">A function that returns the base OpenAPI specification before request-specific endpoint metadata is applied</param>
     /// <param name="apiSchemaLoadId">The API schema version/load ID for cache invalidation</param>
     /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
     Task<JsonNode?> GetProfileOpenApiSpecAsync(
