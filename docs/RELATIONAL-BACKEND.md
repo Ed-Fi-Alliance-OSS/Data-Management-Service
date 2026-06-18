@@ -199,19 +199,40 @@ are in the design docs:
 
 ### Stored stamps and tracked-change tables
 
-Each document carries a `ContentVersion` stamp. **Stamping triggers** on the document tables
-populate per-resource **tracked-change tables** that live under a per-project schema named
+Each document carries two stamps set together by the same **stamping triggers** on the document
+tables: a `ContentVersion` (the change-version number, from the shared change-version sequence) and
+a `ContentLastModifiedAt` timestamp (the current UTC time, refreshed on every write). Those triggers
+also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
 old/new identity and securable values plus a `ChangeVersion`. (Descriptors share a single
 tracked-change table within that schema rather than one table per resource.) When debugging a stamp or a
 tracked-change row, these are the sources of truth:
 
-- [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write tracked-change rows
+- [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write the stamps and tracked-change rows
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
 Inspect the relevant per-resource table under that schema (for example
 `tracked_changes_edfi.<resourceTable>`) directly to see the `Old_*`/`New_*` columns, the document
 `Id`, and the `ChangeVersion` for a given write.
+
+#### Read metadata (`_etag`, `_lastModifiedDate`)
+
+On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is derived
+as a hash over the materialized content. When a served `_etag` or `_lastModifiedDate` looks wrong,
+start here:
+
+- [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — derives `_etag` and serves `_lastModifiedDate` for resources
+- [`DescriptorDocumentMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs) — the same for descriptors
+
+#### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
+
+Root and descriptor tables carry **mirrored** `ContentVersion` / `ContentLastModifiedAt` columns
+(`ColumnKind.MirroredContentVersion`) that the query change-version filter ranges over. This
+query-time filter **is wired up and works** — unlike the `/deletes` and `/keyChanges` change-query
+endpoints, which are still a placeholder shim (see the note below).
+
+- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root and descriptor tables
+- [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 
 > [!NOTE]
 > **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers

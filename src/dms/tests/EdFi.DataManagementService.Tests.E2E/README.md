@@ -12,7 +12,7 @@ the codebase.
 > ./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter 'Category=@relational-backend'
 > ```
 >
-> The file physically lives at `eng/docker-compose/.env.e2e.relational`; you pass it as
+> The file physically lives at [`eng/docker-compose/.env.e2e.relational`](../../../../eng/docker-compose/.env.e2e.relational); you pass it as
 > `./.env.e2e.relational` from the repo root and `build-dms.ps1`'s resolver locates it under
 > `eng/docker-compose`. It sets `USE_RELATIONAL_BACKEND=true`. The full relational run is
 > documented in [`eng/docker-compose/README.md`](../../../../eng/docker-compose/README.md).
