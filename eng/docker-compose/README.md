@@ -165,41 +165,20 @@ image from source code.
 ./start-local-dms.ps1 -r
 ```
 
-By default, Data Standard 5.2 core model and TPDM model are included. You can
-include custom extensions in your deployment by configuring the SCHEMA_PACKAGES,
-USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
+## Schema Selection
 
-> [!NOTE]
-> To add custom extensions: In your `.env` file, set
-> `USE_API_SCHEMA_PATH` to `true` and specify `API_SCHEMA_PATH` as the path where
-> schema files will be downloaded. Then, add or update the `SCHEMA_PACKAGES`
-> variable to include the core package and any required extension packages.
+DMS supports two modes for staging the ApiSchema bootstrap workspace. Both modes produce the
+same normalized `.bootstrap/ApiSchema/` workspace that downstream phases consume.
 
-```env
- USE_API_SCHEMA_PATH=true
- API_SCHEMA_PATH=/app/ApiSchema
- SCHEMA_PACKAGES='[
-  {
-    "version": "1.0.332",
-    "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.DataStandard52.ApiSchema"
-  },
-  {
-    "version": "1.0.332",
-    "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.DataStandard52.Sample.ApiSchema",
-    "extensionName": "Sample"
-  }
-]'
-```
+### Standard mode (package-backed)
 
-For bootstrap-managed schema and extension security metadata, stage the inputs
-before starting Docker:
+Standard mode resolves the DS-qualified asset-only core ApiSchema NuGet package from the Ed-Fi
+package feed and stages it into the bootstrap workspace. This is the recommended path for most
+developers. It is package-backed core-only; extension or custom schema sets use Expert mode below.
 
-> **Requirement — `dms-schema` tool:** `prepare-dms-schema.ps1` needs the
-> in-repo `dms-schema` CLI published as a native executable. Build it once
-> before running the prepare command (the publish step is safe to re-run after
-> branch switches).
+> **Requirement — `dms-schema` tool:** `prepare-dms-schema.ps1` needs the in-repo `dms-schema`
+> CLI published as a native executable. Build it once before running the prepare command (the
+> publish step is safe to re-run after branch switches).
 
 ```pwsh
 # 1. Publish the dms-schema tool (required on a clean checkout)
@@ -209,9 +188,51 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 
 # 2. Point to the platform-appropriate executable
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
+```
 
-# 3. Stage schema and claims, then run the bootstrap wrapper
-#    (sequences infrastructure -> configure -> provision -> DMS over the staged workspace)
+Standard mode (omit `-ApiSchemaPath`) resolves and stages the core Data Standard ApiSchema package
+only. There is no `-Extensions` parameter.
+
+```pwsh
+./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+./prepare-dms-claims.ps1
+./bootstrap-local-dms.ps1
+```
+
+After staging, run the `bootstrap-local-dms.ps1` wrapper (which sequences
+infrastructure → configure → provision → DMS over the staged workspace), not bare
+`start-local-dms.ps1` — see the note under Expert mode below for why a bare start leaves
+the stack unconfigured.
+
+To bootstrap an **extension-containing** schema set, use Expert mode (`-ApiSchemaPath`) below; it
+stages core plus any extensions present in the supplied directory. `prepare-dms-claims.ps1`
+auto-stages bootstrap-managed claim fragments (Sample, Homograph) for extensions present in that
+schema set; extensions that require caller-supplied claim fragments (e.g. TPDM) need an additional
+`-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
+
+**Wrapper shorthand:** `bootstrap-local-dms.ps1` stages core-only standard mode in-line (when no
+workspace is staged) and then starts the stack. It auto-discovers the `dms-schema` executable
+published to `.bootstrap/tools/dms-schema` in step 1 (or set `DMS_SCHEMA_TOOL_PATH` to point
+elsewhere).
+
+```pwsh
+./bootstrap-local-dms.ps1
+```
+
+> [!NOTE]
+> Legacy `SCHEMA_PACKAGES` entries (unqualified IDs such as `EdFi.Sample.ApiSchema` at
+> `1.0.328`) may still appear in `.env*` files during the migration. Those entries are NOT the
+> standard-mode selector. Standard mode resolves the DS-qualified asset-only core package
+> (`EdFi.DataStandard52.ApiSchema` at `1.0.329`) and DMS consumes the staged `.bootstrap/ApiSchema`
+> workspace — `SCHEMA_PACKAGES` is ignored by standard mode.
+
+### Expert mode (filesystem)
+
+Expert mode stages ApiSchema files directly from a local directory. Use this path for custom
+or in-repo schema directories that are not published as NuGet packages.
+
+```pwsh
+# Stage schema and claims, then start DMS
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
 ./prepare-dms-claims.ps1 -ClaimsDirectoryPath <directory-with-tpdm-claimset-fragment>
 ./bootstrap-local-dms.ps1
@@ -230,6 +251,9 @@ manually:
 ./provision-dms-schema.ps1
 ./start-local-dms.ps1 -DmsOnly
 ```
+
+Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
+paths; there is no `-Extensions` parameter.
 
 `prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
 `.bootstrap/claims`. When a bootstrap manifest is present, startup activates

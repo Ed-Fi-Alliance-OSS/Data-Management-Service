@@ -82,15 +82,16 @@ to verify the design without re-reading every section.
    retry, or continuation policy.
 3. `ApiSchema.json` selection is the source of truth for API surface, security, and the exact DDL target
    for the run in every schema-selection mode.
-4. Standard mode means `-Extensions`, including the omitted-`-Extensions` core-only case. Expert mode
-   means `-ApiSchemaPath`; expert mode narrows bootstrap-managed seed selection and requires
-   `-ClaimsDirectoryPath` when direct filesystem inputs do not include matching claims fragments.
-5. Implementation is split: Story 00 delivers the direct filesystem `-ApiSchemaPath` path first; Story 06
-   delivers standard `-Extensions` mode after Story 05.
+4. Standard mode means package-backed **core-only** staging (omit `-ApiSchemaPath`). Expert mode means
+   `-ApiSchemaPath`; expert mode is the path for extension-containing or custom schema sets, narrows
+   bootstrap-managed seed selection, and requires `-ClaimsDirectoryPath` when direct filesystem inputs do
+   not include matching claims fragments. There is no `-Extensions` parameter.
+5. Implementation is split: Story 00 delivers the direct filesystem `-ApiSchemaPath` path; Story 06 delivers
+   package-backed core-only standard mode after Story 05.
 6. DDL provisioning and seed loading are separate phases. DMS startup is never the authoritative schema
    deployment path.
-7. Omitting `-Extensions` means core only once standard mode is implemented. DMS-916 does not preserve the
-   legacy default that included extensions.
+7. Standard mode stages core only. DMS-916 does not preserve the legacy default that included extensions;
+   extension schema sets are supplied through expert `-ApiSchemaPath`.
 8. "Skip/resume" in this story means safe per-phase invocation plus optional same-invocation continuation
    through `-InfraOnly -DmsBaseUrl` after the pre-DMS phases have completed; it does not mean a persisted
    cross-invocation resume model.
@@ -98,9 +99,10 @@ to verify the design without re-reading every section.
 
 **Terminology**:
 
-- **Standard mode**: schema selection through `-Extensions`, including the omitted-`-Extensions`
-  core-only case; implemented after the Story 05 package-backed prerequisite.
-- **Expert mode**: schema selection through `-ApiSchemaPath`.
+- **Standard mode**: package-backed core-only staging (omit `-ApiSchemaPath`); implemented after the
+  Story 05 package-backed prerequisite. There is no `-Extensions` parameter.
+- **Expert mode**: schema selection through `-ApiSchemaPath`; the path for extension-containing or custom
+  schema sets.
 - **Thin wrapper**: `bootstrap-local-dms.ps1` as optional sequencing convenience only.
 - **Same-invocation continuation**: `-InfraOnly -DmsBaseUrl` carrying the current wrapper run through
   instance configuration and schema provisioning, then continuing against an IDE-hosted DMS process.
@@ -115,10 +117,10 @@ to verify the design without re-reading every section.
 
 **Recommended developer paths**:
 
-- **Core only**: omit `-Extensions`; stage only the core schema, embedded claims, and core seed sources.
-- **Core plus extension**: use `-Extensions <name>`; bootstrap stages the selected schema and
-  claims automatically and loads built-in seed data only when the seed catalog defines it.
-- **Custom schema**: use `-ApiSchemaPath`; bootstrap derives the base security set from the staged schema
+- **Core only**: omit `-ApiSchemaPath` (standard mode); stage only the core schema, embedded claims, and
+  core seed sources.
+- **Extension or custom schema**: use `-ApiSchemaPath` pointing at a directory containing the core plus any
+  extension `ApiSchema*.json` files; bootstrap derives the base security set from the staged schema
   and the claim fragments available for that run. Pair direct filesystem schemas that need additional
   security metadata with `-ClaimsDirectoryPath`, and pair custom seed loading with `-SeedDataPath`.
 - **IDE workflow**: use `-InfraOnly` for pre-DMS preparation, or `-InfraOnly -DmsBaseUrl` when the wrapper
@@ -192,9 +194,9 @@ The ODS initdev pipeline (`Initialize-DevelopmentEnvironment`) defines 17 steps,
 |---|----------|-------------|---------------|------------|------------------------|
 | 1 | Clear errors | `Clear-Error` | always | **Obsolete** | PowerShell error state management is not replicated; Docker exit-code checks (`$LASTEXITCODE -ne 0`) with `throw` serve the same purpose inline |
 | 2 | Assemble deployment settings | `Set-DeploymentSettings` | always | **Covered** | `env-utility.psm1` → `ReadValuesFromEnvFile` reads `.env`; script parameters override individual values; result flows as `$envValues` through the script |
-| 3 | Merge plugin settings | `Merge plugin settings` | `-UsePlugins` | **Gap** | No extension/plugin selection mechanism exists. See [Extension Selection and Loading](#8-extension-selection-and-loading) for proposed `-Extensions` parameter design |
+| 3 | Merge plugin settings | `Merge plugin settings` | `-UsePlugins` | **Obsolete** | No plugin-selection mechanism. Extension schema sets are supplied through expert `-ApiSchemaPath`; see [Extension Selection and Loading](#8-extension-selection-and-loading) |
 | 4 | Generate app settings | `Invoke-NewDevelopmentAppSettings` | always | **Covered** | `appsettings.json` per project is version-controlled; Docker env vars override at runtime via `local-dms.yml` / `local-config.yml`; `setup-openiddict.ps1 -InitDb` generates and stores RSA key pairs in PostgreSQL |
-| 5 | Install plugins | `Install-Plugins` | `-UsePlugins` | **Gap** | No plugin/extension install step. Volume mounts in Docker Compose currently load extension ApiSchema files. Parameterized selection design is in [Extension Selection and Loading](#8-extension-selection-and-loading) |
+| 5 | Install plugins | `Install-Plugins` | `-UsePlugins` | **Obsolete** | No plugin/extension install step. Extension ApiSchema files are supplied through expert `-ApiSchemaPath`; see [Extension Selection and Loading](#8-extension-selection-and-loading) |
 | 6 | Code generation | `Invoke-CodeGen` | `!ExcludeCodeGen` | **Obsolete** | DMS has no code generation step. The ApiSchema JSON drives the runtime API surface without NHibernate mapping generation or similar compile-time artifacts |
 | 7 | Build solution | `Invoke-RebuildSolution` | `!NoRebuild` | **Covered (Docker path)** | `docker compose build --no-cache` via `-r` flag rebuilds Docker images. For IDE workflow, `dotnet build` is run manually |
 | 8 | Install DbDeploy tool | `Install-DbDeploy` | always | **Covered (implicitly)** | DMS-916 does not introduce a host-side database deployment tool install step. The authoritative provisioning path is the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation phase that runs before DMS serves requests; it is not owned by DMS startup. |
@@ -298,15 +300,19 @@ database's stored `EffectiveSchemaHash` (see
 > [Section 11.5](#115-selected-apischemajson-drives-exact-physical-ddl-shape) for the authoritative treatment
 > of the DDL/schema relationship.
 
-### 3.3 Proposed Selection Mechanism
+### 3.3 Selection Mechanism
 
-The target standard developer flow uses `-Extensions`, owned by `prepare-dms-schema.ps1` (see
-[`command-boundaries.md` Section 3.1](command-boundaries.md#31-prepare-dms-schemaps1--schema-selection-and-staging)).
-It is typed as `String[]` and accepts one or more extension names using normal PowerShell array binding.
-The phase command does not rely on comma-splitting a single string; multi-extension examples therefore use
-PowerShell array syntax such as `-Extensions "sample","extension2"`. Implementation is intentionally split:
-Story 00 delivers the direct filesystem `-ApiSchemaPath` path first, while package-backed no-argument
-core-only mode and named `-Extensions` modes are delivered by
+Schema selection, owned by `prepare-dms-schema.ps1` (see
+[`command-boundaries.md` Section 3.1](command-boundaries.md#31-prepare-dms-schemaps1--schema-selection-and-staging)),
+has two modes and no `-Extensions` parameter:
+
+- **Standard mode** (omit `-ApiSchemaPath`): package-backed core-only — resolve and stage the core Data
+  Standard ApiSchema package.
+- **Expert mode** (`-ApiSchemaPath <path>`): stage core plus any extension `ApiSchema*.json` files present
+  in a local directory; the path for extension-containing or custom schema sets.
+
+Implementation is split: Story 00 delivers the direct filesystem `-ApiSchemaPath` path; package-backed
+core-only standard mode is delivered by
 [`Story 06`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) after asset-only ApiSchema packages
 exist.
 
@@ -383,16 +389,16 @@ normative source for every internal provisioning safety rule implemented behind 
 > against the actual SchemaTools README before Story 01 implementation begins; any discrepancy takes
 > precedence over this design document.
 
-Three usage modes are supported in the target design. Story 00 implements Mode 3 first; Story 06 implements
-Modes 1 and 2 after Story 05 publishes asset-only packages.
+Two usage modes are supported in the target design. Story 00 implements the expert `-ApiSchemaPath` mode
+first; Story 06 implements package-backed standard mode after Story 05 publishes asset-only packages.
 
 #### Standard Development Flows
 
-Modes 1 and 2 cover the vast majority of development workflows. Use these for day-to-day environment setup.
+Standard mode covers the vast majority of development workflows. Use it for day-to-day environment setup.
 
-**Mode 1 - Default (core Ed-Fi only)**
+**Standard mode - Default (core Ed-Fi only)**
 
-Omit `-Extensions` entirely. In the target package-backed flow, bootstrap resolves only the standard core
+Omit `-ApiSchemaPath` (standard mode). In the package-backed flow, bootstrap resolves only the standard core
 Data Standard ApiSchema asset package (`EdFi.DataStandard52.ApiSchema`) host-side, extracts it into an
 isolated package-specific temporary directory, normalizes its asset payload into
 `eng/docker-compose/.bootstrap/ApiSchema/`, and computes the expected `EffectiveSchemaHash` from the
@@ -406,28 +412,12 @@ directory through `-ApiSchemaPath`.
 
 This is an intentional migration from the current `SCHEMA_PACKAGES`-driven local default documented under
 `eng/docker-compose`, which stages Data Standard 5.2 plus extensions today. DMS-916 defines the normative
-developer bootstrap profile as core only when `-Extensions` is omitted. Any extension needed for a run must be
-selected explicitly through `-Extensions` or supplied through `-ApiSchemaPath`.
+developer bootstrap profile as core only in standard mode. Any extension needed for a run is supplied through
+the expert `-ApiSchemaPath` filesystem path.
 
 ```powershell
 pwsh eng/docker-compose/prepare-dms-schema.ps1
 ```
-
-**Mode 2 - Core + named extensions**
-
-Pass one or more extension names. In the target package-backed flow, the bootstrap script resolves
-the core asset package plus the corresponding extension asset packages host-side, extracts each package in
-isolation, then normalizes the resulting schema JSON and optional schema-adjacent content into the same
-ApiSchema asset workspace before computing the expected `EffectiveSchemaHash`.
-
-```powershell
-pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample"
-pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample","extension2"
-```
-
-Extension artifact availability is determined by whether the requested extension's package and companion
-artifacts can be resolved from the configured package and artifact sources. A resolution failure produces a
-clear pre-Docker error for the requested extension name.
 
 #### Direct Filesystem ApiSchema Usage
 
@@ -436,18 +426,18 @@ after package-backed standard mode moves to asset-only packages. It is still an 
 extension ergonomics because built-in seed selection is disabled and direct filesystem inputs may need
 explicit security input.
 
-**Mode 3 - Custom local path (Direct Filesystem / Expert Workflow)**
+**Expert mode - Custom local path (Direct Filesystem)**
 
 > **WARNING:** `-ApiSchemaPath` is the stable direct filesystem input, but it remains an expert workflow for
 > custom schema ergonomics. Bootstrap still stages the base claimset set available for the run, but built-in
 > seed selection is disabled in this mode.
 > If the staged schema requires claim fragments that are not supplied by the direct filesystem input,
-> `-ClaimsDirectoryPath` is required. Use `-SeedDataPath` for custom seed input. Prefer Modes 1 and 2 for
+> `-ClaimsDirectoryPath` is required. Use `-SeedDataPath` for custom seed input. Prefer standard mode for
 > standard development workflows.
 
 Pass a local filesystem path to a directory containing one or more pre-built `ApiSchema.json` files.
 Bootstrap stages every `ApiSchema*.json` file from that directory into the same repo-local workspace used by
-Modes 1 and 2, validates that exactly one staged file is a non-extension project, and computes the
+standard mode, validates that exactly one staged file is a non-extension project, and computes the
 expected `EffectiveSchemaHash` from the staged copies. The staged schema set and available claim fragments
 drive base claimset selection for the run. Direct filesystem schemas that require additional claims metadata
 are paired with explicit `-ClaimsDirectoryPath` input. Built-in seed selection remains disabled in this mode.
@@ -456,10 +446,10 @@ are paired with explicit `-ClaimsDirectoryPath` input. Built-in seed selection r
 pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath "C:\dev\my-custom-schema"
 ```
 
-`-Extensions` and `-ApiSchemaPath` are mutually exclusive. If both are specified, the bootstrap script exits
-with a clear error. When `-ApiSchemaPath` is used, bootstrap still derives the automatic base claimset set
-from the staged schema and available claims inputs, while custom claims and custom seed inputs continue to use
-`-ClaimsDirectoryPath` and/or `-SeedDataPath`.
+Standard mode (no `-ApiSchemaPath`) and expert `-ApiSchemaPath` mode are the two schema-selection paths; there
+is no `-Extensions` parameter. When `-ApiSchemaPath` is used, bootstrap still derives the automatic base
+claimset set from the staged schema and available claims inputs, while custom claims and custom seed inputs
+continue to use `-ClaimsDirectoryPath` and/or `-SeedDataPath`.
 
 **Fail-fast expert-mode contract:** `-ApiSchemaPath` is intentionally not a full alias for standard-mode
 ergonomics.
@@ -481,7 +471,7 @@ and any required `-ClaimsDirectoryPath` input explicitly. The exact warning text
 and is not prescribed here.
 
 **Expert companion parameters for a complete custom bootstrap:** To avoid editing environment variables or
-Docker mounts by hand, Mode 3 introduces two expert-only companion parameters alongside `-ApiSchemaPath`:
+Docker mounts by hand, expert mode introduces two expert-only companion parameters alongside `-ApiSchemaPath`:
 
 - `-ApiSchemaPath` - supplies the custom schema directory (normalized into the staged schema workspace)
 - `-ClaimsDirectoryPath` - supplies a directory of `*-claimset.json` files used for additive CMS
@@ -494,11 +484,11 @@ The following sequence describes the canonical schema flow for all bootstrap mod
 
 ```text
 prepare-dms-schema.ps1
-  -> Resolve schema inputs from -Extensions or -ApiSchemaPath
-     -> Mode 1/2 target flow after Story 05: package-backed materialization resolves asset-only ApiSchema packages on the host,
-        extracts each package in isolation, and normalizes schema JSON plus optional static content into
+  -> Resolve schema inputs from standard mode (omit -ApiSchemaPath) or -ApiSchemaPath
+     -> Standard mode target flow after Story 05: package-backed materialization resolves the asset-only core ApiSchema package on the host,
+        extracts it in isolation, and normalizes schema JSON plus optional static content into
         eng/docker-compose/.bootstrap/ApiSchema/
-     -> Mode 3 Story 00 flow: direct filesystem materialization copies/normalizes developer-supplied ApiSchema*.json files
+     -> Expert `-ApiSchemaPath` (Story 00) flow: direct filesystem materialization copies/normalizes developer-supplied ApiSchema*.json files
         and optional static content into the same workspace
   -> Stage one normalized core schema file plus 0..N normalized extension schema files
   -> Write bootstrap-api-schema-manifest.json with manifest-relative schema/content paths
@@ -522,7 +512,7 @@ prepare-dms-schema.ps1
 > Runtime loading of schema-adjacent static content is delivered by Story 04 (DMS-1154); package production
 > for the asset-only shape is implemented by Story 05. Both target the same filesystem workspace contract, so
 > direct `-ApiSchemaPath` loading can be implemented and retained independently of package publication. Story 00
-> implements that direct filesystem path only; package-backed Modes 1 and 2 belong to Story 06.
+> implements that direct filesystem path only; package-backed core-only standard mode belongs to Story 06.
 
 > **Activation boundary (Story 04 delivered):** The "Docker-hosted DMS" branch of the diagram above —
 > `bind-mount .bootstrap/ApiSchema/ → /app/ApiSchema`, `set USE_API_SCHEMA_PATH=true`,
@@ -547,7 +537,7 @@ than re-resolving packages or inferring schema shape from container-only environ
 **NuGet feed failure handling:** If the configured NuGet feed is unreachable during host-side schema package
 resolution or catalog-advertised built-in extension seed package download, the owning phase command fails fast with a clear error message
 including the feed URL and HTTP status. No partial downloads are attempted. For offline or air-gapped
-environments, use `-ApiSchemaPath` (Mode 3) and, if loading data, `-SeedDataPath` to bypass NuGet entirely
+environments, use `-ApiSchemaPath` (expert mode) and, if loading data, `-SeedDataPath` to bypass NuGet entirely
 and supply pre-downloaded artifacts from a local directory. That staged custom schema set still drives
 automatic base security selection from the claims inputs available for the run. If additional non-core
 security fragments are needed, `-ClaimsDirectoryPath` is required for caller-supplied fragments; bootstrap
@@ -555,9 +545,10 @@ does not infer security rules for arbitrary custom resources.
 
 ### 3.5 Compatibility Validation
 
-For each extension in `-Extensions`, bootstrap resolves the schema package and any companion security
-fragment metadata from the configured artifact sources. The seed phase owns a separate seed catalog that may
-define an optional built-in seed data package for the same extension name:
+For each project in the staged schema set (the core package in standard mode, or core plus any extensions in
+an expert `-ApiSchemaPath` directory), bootstrap resolves the companion security fragment metadata from the
+configured artifact sources. The seed phase owns a separate seed catalog that may define an optional built-in
+seed data package for an extension name:
 
 1. **Schema package** (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) - determines API surface
 2. **Security fragment** (e.g., `004-sample-extension-claimset.json`) - determines authorization rules
@@ -573,20 +564,19 @@ only the metadata it owns: schema package fields in `prepare-dms-schema.ps1`, se
 
 **Validation rules**:
 
-- When `-Extensions` is used (Mode 1/2): Schema and claims phase commands resolve their owned artifact types
-  for each selected extension. The seed phase resolves seed artifacts from its seed catalog. If the
-  schema package for a requested extension cannot be resolved, schema staging fails before starting
-  containers. If the security fragment for a requested extension cannot be resolved, claims staging fails
-  before starting containers. Seed package requirements when seed delivery runs are governed by the
-  seed-specific rule below.
-- When `-ApiSchemaPath` is used (Mode 3): Schema hashing and DDL validation still work because bootstrap
+- Standard mode (core-only): the schema and claims phase commands resolve their owned artifact types for the
+  core package. The seed phase resolves seed artifacts from its seed catalog. If the core package cannot be
+  resolved, schema staging fails before starting containers.
+- When `-ApiSchemaPath` is used (expert mode), including extension-containing schema sets: each project in
+  the staged set has its security fragment resolved by the claims phase (auto-staged when a bootstrap-managed
+  fragment exists, e.g. Sample/Homograph; otherwise `-ClaimsDirectoryPath` is required). Schema hashing and DDL validation still work because bootstrap
   stages and hashes the exact files. What is disabled is bootstrap-managed seed-package selection, not
   automatic base security selection from the claims inputs available for the run. If the staged set needs
   additional non-core claims metadata, `-ClaimsDirectoryPath` is required and bootstrap validates those
   fragments only structurally. Bootstrap emits a warning indicating that compatibility with custom claimset
   fragments and custom seed data is validated against the explicit companion inputs for this run. The exact
   warning text is an implementation detail.
-- When `-ApiSchemaPath` is used (Mode 3): The staged directory must normalize to exactly one
+- When `-ApiSchemaPath` is used (expert mode): The staged directory must normalize to exactly one
   `projectSchema.isExtensionProject=false` file and zero or more `true` files. Any other shape is a
   bootstrap-time error.
 - When seed delivery runs: For each selected extension in the root bootstrap manifest, check the seed
@@ -662,8 +652,8 @@ claims handoff artifact.
 
 **Gap**: The current mechanism is all-or-nothing. When `-AddExtensionSecurityMetadata` is set, every
 claimset fragment in the directory is loaded regardless of which extensions the developer has actually
-selected. There is no filtering by extension. A developer bootstrapping with `-Extensions sample` still
-loads other extension claimsets, and vice versa.
+selected. There is no filtering by extension. A developer who staged only the Sample extension (via
+`-ApiSchemaPath`) still loads other extension claimsets, and vice versa.
 
 ### 4.2 Why ApiSchema.json Drives Security Configuration
 
@@ -684,8 +674,8 @@ configuration must be consistent with those resources:
 
 > **Scope of automatic derivation (precise).** "Automatic" here means core security plus the matching
 > security fragments available for the selected schema set. `prepare-dms-claims.ps1` pairs staged schema
-> inputs with those base claims inputs whether the schema came from omitted `-Extensions`, named
-> `-Extensions`, or `-ApiSchemaPath`. If `-ApiSchemaPath` stages schemas whose security fragments are not
+> inputs with those base claims inputs whether the schema came from package-backed core (standard mode) or
+> `-ApiSchemaPath`. If `-ApiSchemaPath` stages schemas whose security fragments are not
 > supplied by the run, bootstrap cannot infer security rules for those arbitrary resources;
 > `-ClaimsDirectoryPath` is required and remains an additive, caller-supplied input.
 
@@ -707,7 +697,7 @@ for caller-supplied fragments and does not silently substitute `sample`, `homogr
 The bootstrap logic is:
 
 1. **Core security metadata is always loaded.** The embedded `Claims.json` (Embedded mode) covers all
-   core Ed-Fi Data Standard resources. No extra configuration is needed for Mode 1 (core only).
+   core Ed-Fi Data Standard resources. No extra configuration is needed for standard mode (core only).
 
 2. **Extension security metadata is loaded based on the effective staged schema set.** If the staged
    schema set includes extension resources with matching security fragments, the bootstrap script switches CMS
@@ -737,8 +727,8 @@ The bootstrap logic is:
     claimset fragments,
     `-ClaimsDirectoryPath` points to a local directory containing one or more `*-claimset.json` files.
     Bootstrap validates that the path exists, then stages those files into the same claims workspace used for
-    extension-derived fragments. This makes `-ClaimsDirectoryPath` additive rather than mutually exclusive
-    with `-Extensions`.
+    extension-derived fragments. `-ClaimsDirectoryPath` is additive to any bootstrap-managed extension-derived
+    fragments.
 
    **Contract:** If `-ClaimsDirectoryPath` is supplied and the directory does not exist or contains no
    `*-claimset.json` files, bootstrap fails before container startup with a clear error. Bootstrap also
@@ -817,15 +807,16 @@ schema workspace as one boundary. This is the intended path for every schema-sel
 For expert `-ApiSchemaPath` flows that need additional non-core security metadata, that additive input is
 required because bootstrap does not infer security fragments for arbitrary resources.
 
-**`DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`** is a separate, legacy flag used for dynamic management endpoints (where the Config Service API is called post-boot to push arbitrary claimset data) and for legacy dev-only workflows. It is **not** required by the proposed `-Extensions` bootstrap path and is **not** part of the standard bootstrap flow described in this design.
+**`DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`** is a separate, legacy flag used for dynamic management endpoints (where the Config Service API is called post-boot to push arbitrary claimset data) and for legacy dev-only workflows. It is **not** required by the bootstrap path and is **not** part of the standard bootstrap flow described in this design.
 
-All three schema-selection modes are explicitly designed to operate without this flag:
+Both schema-selection modes are explicitly designed to operate without this flag:
 
-- **Mode 1 (core only)**: the bootstrap manifest claims section resolves to Embedded mode - no extra flag needed.
-- **Mode 2 (named extensions)**: the bootstrap manifest claims section resolves to Hybrid mode and points
-  at the staged claims workspace containing only the selected claimset files — activated at startup by
-  Story 04 (DMS-1154, delivered) — no extra flag needed.
-- **Mode 3 (expert `-ApiSchemaPath`)**: claims staging is automatic from the staged schema and available
+- **Standard mode (core only)**: the bootstrap manifest claims section resolves to Embedded mode - no extra flag needed.
+- **Expert mode (`-ApiSchemaPath`) with extensions**: when the staged schema set contains extension resources
+  with matching bootstrap-managed fragments, the bootstrap manifest claims section resolves to Hybrid mode and
+  points at the staged claims workspace containing those fragment files — activated at startup by Story 04
+  (DMS-1154, delivered) — no extra flag needed.
+- **Expert `-ApiSchemaPath` (general)**: claims staging is automatic from the staged schema and available
   claims inputs. When the staged schema set contains extension resources with matching fragments, the same
   bootstrap manifest mechanism stages the matching base fragments and selects Hybrid mode automatically for
   the staged runtime startup path (activated by Story 04, delivered).
@@ -1016,8 +1007,8 @@ the SeedLoader vendor application. The full seed-parameter contract is defined n
 
 | Mode | Parameter | Behavior |
 |------|-----------|----------|
-| Ed-Fi Minimal (default in standard modes only) | `load-dms-seed-data.ps1` with no seed-source flag, or wrapper `-LoadSeedData` with no seed-source flag | In Modes 1 and 2 only, resolves the repo-managed `Minimal` seed source and loads all core descriptor resources plus `schoolYearTypes`. Fast bootstrap for CI and automated testing. This default does not apply when `-ApiSchemaPath` is used. |
-| Ed-Fi Populated | `-SeedTemplate Populated` | In Modes 1 and 2 only, resolves the repo-managed `Populated` seed source and loads `Minimal` plus `localEducationAgencies`, `schools`, `courses`, `students`, and `studentSchoolAssociations`. For manual testing and demos. Not valid with `-ApiSchemaPath`. |
+| Ed-Fi Minimal (default in standard mode only) | `load-dms-seed-data.ps1` with no seed-source flag, or wrapper `-LoadSeedData` with no seed-source flag | In standard mode only, resolves the repo-managed `Minimal` seed source and loads all core descriptor resources plus `schoolYearTypes`. Fast bootstrap for CI and automated testing. This default does not apply when `-ApiSchemaPath` is used (expert mode). |
+| Ed-Fi Populated | `-SeedTemplate Populated` | In standard mode only, resolves the repo-managed `Populated` seed source and loads `Minimal` plus `localEducationAgencies`, `schools`, `courses`, `students`, and `studentSchoolAssociations`. For manual testing and demos. Not valid with `-ApiSchemaPath` (expert mode). |
 | Custom seed data | `-SeedDataPath <directory>` | Uses XML interchange files in Phase 1, and JSONL files in Phase 2, from the specified directory as the source input and copies them into the seed workspace before invocation. Bypasses bootstrap-managed artifact resolution entirely. Compatibility comes from the run's root bootstrap manifest and staged schema/security inputs: embedded claims, selected extension fragments, any additive `-ClaimsDirectoryPath` fragments, and any explicitly supplied `-AdditionalNamespacePrefix` values needed by SeedLoader vendor authorization. Bootstrap does not inspect arbitrary custom seed files to certify that every record is authorized or schema-valid ahead of time. In expert `-ApiSchemaPath` mode, this is the only supported seed-source input when seed delivery is requested. |
 
 **Parameter interaction:**
@@ -1028,23 +1019,22 @@ the SeedLoader vendor application. The full seed-parameter contract is defined n
 - `-SeedDataPath` skips bootstrap-managed artifact resolution, but bootstrap still copies the supplied seed
   files into the seed workspace so every seed flow invokes the pinned BulkLoadClient against materialized
   input directories.
-- The `-Extensions` parameter applies alongside `-SeedTemplate`. When a selected extension defines a
-  built-in seed source, that source is merged into the same bootstrap workspace. When `-SeedDataPath` is specified,
-  `-Extensions` seed-source resolution is skipped - the developer manages the contents of their own
-  directory. Schema package selection and staged security configuration from `-Extensions` still apply
-  regardless of `-SeedDataPath`, and additive `-ClaimsDirectoryPath` fragments still apply too. Custom seed
-  compatibility is therefore evaluated against the same root bootstrap manifest and staged schema/security
-  inputs as the rest of the run, even though bootstrap-managed seed-package resolution is
-  bypassed.
+- Built-in extension seed sources apply alongside `-SeedTemplate`. When an extension recorded in the staged
+  manifest defines a built-in seed source, that source is merged into the same bootstrap workspace. When
+  `-SeedDataPath` is specified, built-in seed-source resolution is skipped - the developer manages the
+  contents of their own directory. The staged schema and security configuration still apply regardless of
+  `-SeedDataPath`, and additive `-ClaimsDirectoryPath` fragments still apply too. Custom seed compatibility is
+  therefore evaluated against the same root bootstrap manifest and staged schema/security inputs as the rest
+  of the run, even though bootstrap-managed seed-package resolution is bypassed.
 - Bootstrap does not inspect arbitrary custom seed files to infer missing extensions, namespace prefixes, or
   claimsets. `-SeedDataPath` is a data-source selection mechanism, not a second schema-discovery path, not a
   dynamic claim-derivation mechanism, and not a payload-certification pass.
 - `-AdditionalNamespacePrefix` is additive only. The seed phase always includes the baseline Ed-Fi seed
-  prefixes and any selected extension prefixes, then appends de-duplicated additional values for
-  `SeedLoader` vendor creation. It does not replace baseline prefixes, infer extensions, or grant claims.
+  prefixes and any staged extension prefixes recorded in the manifest, then appends de-duplicated additional
+  values for `SeedLoader` vendor creation. It does not replace baseline prefixes, infer extensions, or grant claims.
 - `load-dms-seed-data.ps1` reads `eng/docker-compose/.bootstrap/bootstrap-manifest.json` by default. That
   root manifest is the explicit handoff from schema and claims staging to seed delivery; the seed phase does
-  not accept `-Extensions`, `-ApiSchemaPath`, or `-ClaimsDirectoryPath`.
+  not accept schema-selection or claims parameters such as `-ApiSchemaPath` or `-ClaimsDirectoryPath`.
 
 **Example commands:**
 
@@ -1113,7 +1103,7 @@ Example shape:
   "version": 1,
   "schema": {
     "selectionMode": "Standard",
-    "selectedExtensions": ["sample"],
+    "selectedExtensions": [],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -1349,11 +1339,11 @@ dependency boundary explicit:
   instance creation, broad target-selection policy, or non-selector-driven discovery.
 - **Namespace prefixes**: must cover the namespaces present in the selected seed source. For Ed-Fi-provided
   seed packages, the baseline set is `uri://ed-fi.org` and `uri://gbisd.edu`, plus the namespace prefix for
-  each loaded extension (for example, `uri://sample.ed-fi.org`). When `-Extensions` is used (see
-  [Extension Selection and Loading](#8-extension-selection-and-loading)), the extension portion of the
-  prefix list is computed dynamically from the selected extension set. Custom `-SeedDataPath` inputs may
+  each loaded extension (for example, `uri://sample.ed-fi.org`). The extension portion of the prefix list is
+  taken from the extension namespace prefixes recorded in the staged bootstrap manifest (see
+  [Extension Selection and Loading](#8-extension-selection-and-loading)). Custom `-SeedDataPath` inputs may
   add agency or custom values explicitly with `-AdditionalNamespacePrefix`; bootstrap de-duplicates those
-  values with the baseline and selected-extension prefixes before `Add-Vendor`. This is not a namespace
+  values with the baseline and staged-extension prefixes before `Add-Vendor`. This is not a namespace
   discovery mechanism, and the files must stay compatible with the schema, namespace, and security inputs
   already staged for the run.
 - **Education organization IDs**: at minimum the top-level LEA/SEA IDs already used by the standard bootstrap path. DMS-916 does not add a second parameter surface for arbitrary seed-specific education organization scoping; custom `-SeedDataPath` scenarios are supported as alternate payload sources, not as a full custom authorization-model designer.
@@ -1461,7 +1451,7 @@ already present there and must not invent a synthetic
 | `SeedLoader` claim set | Add the top-level `SeedLoader` definition and the required core permissions to the embedded claims resource at `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`. **This is a bootstrap blocker** for API-based seeding: if `SeedLoader` metadata is not present in CMS claims data, seed delivery must fail fast before invoking BulkLoadClient. See required permissions table below. |
 | Extension `SeedLoader` coverage | Each bootstrap-managed extension fragment must attach `SeedLoader` permissions for every resource emitted by that extension's built-in seed package, alongside the extension's normal developer-access permissions. |
 | `Add-SeedLoaderCredentials` helper | Wraps the same `Add-CmsClient` -> `Get-CmsToken` -> `Add-Vendor` -> `Add-Application` flow with Seed Loader-specific defaults; alternatively, parameterize `Get-SmokeTestCredentials` to accept a claim set name. |
-| Dynamic namespace prefix list | Computed from the standard seed baseline (`uri://ed-fi.org`, `uri://gbisd.edu`) plus the `-Extensions` parameter ([Extension Selection and Loading](#8-extension-selection-and-loading)) plus any explicit `-AdditionalNamespacePrefix` values; passed to `Add-Vendor` as a comma-separated string. |
+| Dynamic namespace prefix list | Computed from the standard seed baseline (`uri://ed-fi.org`, `uri://gbisd.edu`) plus the staged extension namespace prefixes recorded in the bootstrap manifest ([Extension Selection and Loading](#8-extension-selection-and-loading)) plus any explicit `-AdditionalNamespacePrefix` values; passed to `Add-Vendor` as a comma-separated string. |
 
 **`SeedLoader` claimset - required resource claim permissions:**
 
@@ -1543,80 +1533,53 @@ Key characteristics of the current model:
 
 ---
 
-### 8.2 Proposed `-Extensions` Parameter
+### 8.2 How Extensions Are Selected
 
-`-Extensions` is the standard developer-facing selector for adding extension artifacts to a bootstrap run.
-Extension artifacts are handled uniformly: when their schema package and companion artifacts can be resolved,
-bootstrap stages them; when an artifact cannot be resolved, the owning phase fails before Docker starts with a
-message naming the missing artifact.
-
-Omitting `-Extensions` means the default profile is the standard core Data Standard schema with no extension
-schemas, no extension claimsets, and no extension seed packages. It does not fall back to the legacy
-`eng/docker-compose` `SCHEMA_PACKAGES` baseline that included extensions by default. Any extension needed for
-the run must be selected explicitly through `-Extensions` or supplied through `-ApiSchemaPath`.
-
-Built-in seed package availability is seed-catalog-driven, not automatic per extension name. Custom seed
-payloads still flow through `-SeedDataPath`.
-
-`-Extensions` belongs to `prepare-dms-schema.ps1` (see `command-boundaries.md` §3.1). It accepts one or
-more extension identifiers typed as `String[]` through normal PowerShell array binding. The phase command
-runs before any Docker services start:
+There is **no `-Extensions` parameter**. Standard mode (omit `-ApiSchemaPath`) is package-backed
+**core-only**: it resolves and stages the core Data Standard ApiSchema package and nothing else. Extension
+schema sets are supplied through the expert `-ApiSchemaPath` filesystem path, which stages the core plus any
+extension `ApiSchema*.json` files present in the supplied directory.
 
 ```powershell
-# Examples
-pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample"
-pwsh eng/docker-compose/prepare-dms-schema.ps1 -Extensions "sample","extension2"
-pwsh eng/docker-compose/prepare-dms-schema.ps1   # no -Extensions: core only
+pwsh eng/docker-compose/prepare-dms-schema.ps1                                    # core-only standard mode
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath "C:\dev\my-schema"  # expert: core + any extensions in the directory
 ```
 
-**Default behavior**: omitting `-Extensions` loads core Ed-Fi resources only - no staged extension security
-fragments, no extension ApiSchema overlays, and no extension seed data. This is an intentional change from
-today's `eng/docker-compose` baseline, which included extensions in `SCHEMA_PACKAGES`; DMS-916 does not carry
-that default forward into the normative bootstrap contract. Select the needed extensions explicitly through
-`-Extensions` when those schemas are needed. The core-only default keeps the environment minimal and fast to
-start.
+Standard mode does not fall back to the legacy `eng/docker-compose` `SCHEMA_PACKAGES` baseline that included
+extensions by default; it loads core Ed-Fi resources only — no extension schemas, claimsets, or seed data —
+which keeps the environment minimal and fast to start. Built-in seed package availability is
+seed-catalog-driven (Story 02), and custom seed payloads flow through `-SeedDataPath`.
 
-**How it works at runtime:**
+**How it works at runtime (for extensions present in an expert `-ApiSchemaPath` schema set):**
 
-1. Bootstrap resolves extension artifacts by extension short name from the configured package and metadata
-   sources. The schema phase owns schema package resolution, the claims phase owns security fragment
-   resolution, and the seed phase owns optional built-in seed package lookup. The lookup mechanism may start
-   as script-local metadata or move to shared files as it grows, but that does not change phase ownership.
-2. `prepare-dms-schema.ps1` consumes only the schema-owned metadata. It stages the selected
-   `ApiSchema*.json` files, computes the expected `EffectiveSchemaHash`, and writes minimal schema metadata
-   for downstream phases.
-3. `prepare-dms-claims.ps1` consumes the bootstrap manifest schema section, the staged schema files, and the
-   security-owned metadata. For each selected extension with matching security fragments, it stages the
-   corresponding JSON file(s) into `eng/docker-compose/.bootstrap/claims/`; when additional fragments are
-   needed, it requires `-ClaimsDirectoryPath`. Config Service startup consumes that staged host claims
-   workspace through the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json`. The
-   compatible startup wiring continues to mount the staged workspace `eng/docker-compose/.bootstrap/claims`
-   into the Config Service container for the run. Remove the redundant `/app/additional-claims` mounts from
-   `local-dms.yml` and `published-dms.yml`; DMS gets claimsets from CMS authorization metadata, not from local
-   fragment files.
-4. `load-dms-seed-data.ps1` consumes the seed catalog when seed delivery runs and built-in seed packages
-   exist for the selected extension set.
-5. If `-Extensions` is non-empty, the bootstrap manifest claims section resolves to Hybrid mode
-   automatically and the developer does not need any separate legacy claims-selection flag. Historical
-   repo behavior may still mention `-AddExtensionSecurityMetadata`, but that flag is outside the DMS-916
-   normative contract.
-6. If any specified extension artifact cannot be resolved, the owning phase exits with a clear error before
-   starting any containers.
+1. `prepare-dms-schema.ps1` stages the supplied `ApiSchema*.json` files, computes the expected
+   `EffectiveSchemaHash`, and writes the schema section of the bootstrap manifest for downstream phases.
+2. `prepare-dms-claims.ps1` consumes the bootstrap manifest schema section and the staged schema files. For
+   each project in the staged set with a matching bootstrap-managed security fragment (Sample, Homograph),
+   it stages the corresponding JSON file(s) into `eng/docker-compose/.bootstrap/claims/` and resolves the
+   claims section to Hybrid mode; for a project without a bootstrap-managed fragment (e.g. TPDM), it requires
+   caller-supplied `-ClaimsDirectoryPath` fragments. Config Service startup consumes that staged host claims
+   workspace through the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json`. DMS gets
+   claimsets from CMS authorization metadata, not from local fragment files, so DMS compose files do not
+   mount the claims directory.
+3. `load-dms-seed-data.ps1` (Story 02) consumes the seed catalog when seed delivery runs and a built-in seed
+   package exists for an extension recorded in the manifest.
+4. If a required artifact cannot be resolved, the owning phase exits with a clear error before starting any
+   containers.
 
 The staged claims directory must remain in place while Docker containers are running because it is
-bind-mounted into the container at `/app/additional-claims` (activated as part of staged startup by
-Story 04, delivered). For v1,
-bootstrap uses a stable repo-local workspace under `eng/docker-compose/.bootstrap/claims` rather than per-run
+bind-mounted into the Config Service at startup (activated as part of staged startup by Story 04, delivered).
+Bootstrap uses a stable repo-local workspace under `eng/docker-compose/.bootstrap/claims` rather than per-run
 temp directories plus a state file. On same-checkout reruns, bootstrap compares the intended claims set to
-the existing workspace.
-Identical contents are reused as-is; a different intended set requires teardown because the current CMS
-startup path only initial-loads claims into empty tables and does not replace a populated claims document in
-place. Teardown removes the entire `eng/docker-compose/.bootstrap/` workspace.
+the existing workspace. Identical contents are reused as-is; a different intended set requires teardown
+because the current CMS startup path only initial-loads claims into empty tables and does not replace a
+populated claims document in place. Teardown removes the entire `eng/docker-compose/.bootstrap/` workspace.
 
-**Extension selection changes the physical schema footprint:** The database DDL is derived from the selected
-staged schema set. `-Extensions` therefore controls both which API resources are authorized and which
-extension tables are provisioned. A developer cannot safely switch between extension combinations on an
-already-provisioned database unless the live fingerprint still matches the exact selected schema set.
+**The staged schema set changes the physical schema footprint:** the database DDL is derived from the staged
+schema set, so adding or removing an extension (by changing the `-ApiSchemaPath` directory contents) changes
+both which API resources are authorized and which extension tables are provisioned. A developer cannot safely
+switch between schema sets on an already-provisioned database unless the live fingerprint still matches the
+exact staged schema set.
 
 ---
 
@@ -1659,45 +1622,45 @@ seed-catalog concern rather than a schema-selection concern.
 
 ### 8.4 Integration with ApiSchema.json Selection (Section 3)
 
-The `-Extensions` parameter is the single developer-facing control for enabling extensions. Passing it triggers three coordinated actions automatically - the developer does not need to configure each concern separately:
+The staged schema set is the single source of truth for enabling extensions. For an extension present in an
+expert `-ApiSchemaPath` schema set, three concerns are handled automatically from that staged set — the
+developer does not configure each separately:
 
-1. **ApiSchema files staged host-side (Section 3)** - The script resolves the extension's NuGet schema
-   package (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) on the host, stages the resulting file in
-   `eng/docker-compose/.bootstrap/ApiSchema/`, and includes that staged file in the exact set later hashed
-   and mounted/read by DMS.
+1. **ApiSchema files staged host-side (Section 3)** - The extension's `ApiSchema*.json` file in the supplied
+   directory is normalized into `eng/docker-compose/.bootstrap/ApiSchema/` and included in the exact set
+   later hashed and mounted/read by DMS.
 
-2. **Security fragments loaded (Section 4)** - The corresponding security fragment JSON file(s) are staged
-   and bind-mounted to `/app/additional-claims`. The bootstrap manifest claims section resolves to Hybrid
-   mode automatically and points at the relative staged workspace. No separate legacy claims-selection flag is
-   part of this DMS-916 flow. For built-in extension seed packages, those fragments must attach both
-   `EdFiSandbox` and `SeedLoader` permissions to the extension resources they cover.
+2. **Security fragments loaded (Section 4)** - When the extension has a bootstrap-managed security fragment
+   (Sample, Homograph), the corresponding JSON file(s) are staged and the bootstrap manifest claims section
+   resolves to Hybrid mode automatically. An extension without a bootstrap-managed fragment (e.g. TPDM)
+   requires caller-supplied `-ClaimsDirectoryPath`. For built-in extension seed packages, those fragments
+   must attach both `EdFiSandbox` and `SeedLoader` permissions to the extension resources they cover.
 
-3. **Extension seed data handling (Section 8.3)** - When seed delivery runs, bootstrap checks
-   whether any selected extension has a built-in seed package in the seed catalog. If no selected extension
-   has one, the seed workspace remains core-only unless the developer supplies `-SeedDataPath`. If an
-   extension has a built-in seed package, its seed files are merged
-   into the same bootstrap workspace only when that package participates in the same external BulkLoadClient
-   contract used for core artifacts in the active phase.
+3. **Extension seed data handling (Section 8.3)** - When seed delivery runs, bootstrap checks whether an
+   extension recorded in the manifest has a built-in seed package in the seed catalog. If none does, the seed
+   workspace remains core-only unless the developer supplies `-SeedDataPath`. If an extension has a built-in
+   seed package, its seed files merge into the same bootstrap workspace only when that package participates in
+   the same external BulkLoadClient contract used for core artifacts in the active phase.
 
-**Example - sample-enabled bootstrap run:**
+**Example - sample-enabled bootstrap run (expert `-ApiSchemaPath`):**
 
-After schema and claims preparation have already selected the sample extension for the run, the seed-delivery
-phase behaves as follows:
+After schema and claims preparation have staged a schema set that includes the Sample extension (via
+`-ApiSchemaPath`), the seed-delivery phase behaves as follows:
 
 ```powershell
 pwsh eng/docker-compose/load-dms-seed-data.ps1
 # Result:
 #   eng/docker-compose/.bootstrap/ApiSchema/ includes the staged Sample ApiSchema.json  (Section 3)
-#   /app/additional-claims contains the sample security fragment with EdFiSandbox coverage  (Section 4)
-#   Seed workspace contains only the selected core seed source unless -SeedDataPath is supplied  (Section 8.3)
+#   the staged claims workspace contains the sample security fragment with EdFiSandbox coverage  (Section 4)
+#   Seed workspace contains only the core seed source unless -SeedDataPath is supplied  (Section 8.3)
 ```
 
-**Note - `-ApiSchemaPath` mutual exclusivity:** `-ApiSchemaPath` and `-Extensions` are mutually exclusive
-parameters. When `-ApiSchemaPath` is provided, the developer supplies a complete custom schema environment.
-Bootstrap still derives the base security set from the staged schema and available claims inputs, while any
-additional non-core security fragments come through `-ClaimsDirectoryPath`. Custom seed inputs continue to
-use `-SeedDataPath`. This preserves the schema/security single-source-of-truth principle while keeping
-arbitrary custom authorization rules explicit.
+**Note - the two modes:** standard mode (omit `-ApiSchemaPath`) stages core only; expert `-ApiSchemaPath`
+supplies a complete schema set (core plus any extensions). There is no `-Extensions` parameter. In expert
+mode, bootstrap still derives the base security set from the staged schema and available claims inputs, while
+any additional non-core security fragments come through `-ClaimsDirectoryPath` and custom seed inputs through
+`-SeedDataPath`. This preserves the schema/security single-source-of-truth principle while keeping arbitrary
+custom authorization rules explicit.
 
 ---
 
@@ -1801,7 +1764,7 @@ value to `start-local-dms.ps1`, `configure-local-data-store.ps1`, `provision-dms
 
 The Config Service is mandatory for the normative bootstrap contract. Every non-teardown
 DMS-916 bootstrap invocation starts the Config Service unconditionally, including
-the default no-argument core-only Mode 1 flow and keycloak-backed runs. `-EnableConfig` therefore remains
+the default no-argument core-only standard-mode flow and keycloak-backed runs. `-EnableConfig` therefore remains
 only as a backward-compatibility switch, not as a meaningful opt-out on the canonical bootstrap contract.
 
 **Breaking-change note:** The DMS-916 definition of `-NoDataStore` (owned by `configure-local-data-store.ps1`) deliberately narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation" switch must now either drop the flag or pre-create exactly one intended target instance before rerunning. See also [Section 15](#15-breaking-changes-and-migration-notes) for the consolidated migration reference.
@@ -1812,13 +1775,12 @@ Each validation rule below is owned by the phase command responsible for the aff
 
 | Rule | Outcome |
 |------|---------|
-| `-Extensions` and `-ApiSchemaPath` both specified | "Error: -Extensions and -ApiSchemaPath are mutually exclusive. Use -Extensions for package-backed extension selection or -ApiSchemaPath for a custom schema directory." |
 | `-ApiSchemaPath` staging does not normalize to exactly one core `ApiSchema*.json` file plus zero or more extension files | "Error: -ApiSchemaPath must resolve to exactly one core ApiSchema.json and zero or more extension ApiSchema.json files after staging." |
-| `-ApiSchemaPath` stages schemas that need additional claims metadata without `-ClaimsDirectoryPath` | "Error: -ApiSchemaPath requires additional claims metadata for one or more staged schemas. Provide -ClaimsDirectoryPath with claimset fragments, or use -Extensions when package-backed artifacts are available." |
+| `-ApiSchemaPath` stages schemas that need additional claims metadata without `-ClaimsDirectoryPath` | "Error: -ApiSchemaPath requires additional claims metadata for one or more staged schemas. Provide -ClaimsDirectoryPath with claimset fragments." |
 | `-SeedTemplate` and `-SeedDataPath` both specified | "Error: -SeedTemplate and -SeedDataPath are mutually exclusive. Use -SeedTemplate for bootstrap-managed Ed-Fi templates or -SeedDataPath for a custom seed directory." |
 | Bootstrap manifest schema section was produced from `-ApiSchemaPath`, and `-SeedTemplate` is specified | "Error: -SeedTemplate is not valid with -ApiSchemaPath. Expert custom-schema mode disables bootstrap-managed seed selection; use -SeedDataPath when seed delivery is required." |
 | `load-dms-seed-data.ps1` with a bootstrap manifest schema section from `-ApiSchemaPath`, but without `-SeedDataPath` | "Error: Seed delivery with -ApiSchemaPath requires -SeedDataPath. Expert custom-schema mode does not fall back to built-in Minimal or Populated seed templates." |
-| Seed delivery with `-SeedDataPath` and `-Extensions` | `-Extensions` seed package resolution is skipped. Schema packages and staged security configuration from `-Extensions` still apply. The script emits a warning indicating that extension seed package lookup is skipped when `-SeedDataPath` is provided. |
+| Seed delivery with `-SeedDataPath` | Built-in seed package resolution is skipped. The staged schema and security configuration still apply. The script emits a warning indicating that built-in seed package lookup is skipped when `-SeedDataPath` is provided. |
 | `-AdditionalNamespacePrefix` contains a blank or malformed value | "Error: -AdditionalNamespacePrefix values must be non-empty namespace URI prefixes, for example uri://state.example.org." |
 | `load-dms-seed-data.ps1` cannot read a valid bootstrap manifest with schema, claims, and seed sections | "Error: Seed delivery requires prepared schema/security inputs. Run prepare-dms-schema.ps1 and prepare-dms-claims.ps1 first, or pass -BootstrapManifestPath to the bootstrap manifest." |
 | `-InfraOnly` without `-DmsBaseUrl` | Permitted. `start-local-dms.ps1` performs infrastructure startup and readiness checks only, then stops. This is not a checkpoint for a later bootstrap resume; instance creation, schema provisioning, and seed work remain in later explicit phase commands or wrapper orchestration. |
@@ -1836,9 +1798,9 @@ Each validation rule below is owned by the phase command responsible for the aff
 | `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claimset fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
 | Seed delivery runs but the pinned BulkLoadClient package cannot be resolved or does not expose the CLI surface required by the active phase | "Error: BulkLoadClient package resolution failed or the CLI surface required by the active phase (XML in Phase 1, JSONL in Phase 2) is unavailable." |
 | Seed delivery runs but the embedded claims metadata does not define the top-level `SeedLoader` claim set | "Error: Seed delivery requires the embedded CMS claims metadata to define the top-level SeedLoader claim set. Bootstrap cannot continue to BulkLoadClient until that claim set exists." |
-| Extension artifact for `-Extensions` cannot be resolved | "Error: Extension artifact resolution failed for '<name>'. Check the extension name, configured feed, package metadata, or supply a direct schema directory with -ApiSchemaPath." |
-| Seed delivery with `-Extensions` where an extension is in the seed catalog but its NuGet seed package fails to resolve | "Error: Seed package for extension '<name>' could not be resolved. Check network/feed access or supply the package manually." |
-| Seed delivery with `-Extensions` where an extension has no seed package entry in the seed catalog | Permitted with warning. Bootstrap emits an informational warning indicating no built-in seed package is available; schema and security configuration from the extension still apply. |
+| Core package cannot be resolved in standard mode | "Error: Core ApiSchema package resolution failed. Check the configured feed and package metadata, or supply a direct schema directory with -ApiSchemaPath." |
+| Seed delivery where an extension recorded in the staged manifest is in the seed catalog but its NuGet seed package fails to resolve | "Error: Seed package for extension '<name>' could not be resolved. Check network/feed access or supply the package manually." |
+| Seed delivery where an extension recorded in the staged manifest has no seed package entry in the seed catalog | Permitted with warning. Bootstrap emits an informational warning indicating no built-in seed package is available; schema and security configuration from the extension still apply. |
 | Seed delivery with a built-in extension seed source whose staged security fragments do not attach required `SeedLoader` permissions for that extension's seed resources | "Error: Extension '<name>' seed package configuration is incomplete. The staged security fragments do not provide the required SeedLoader permissions for the extension seed resources." |
 
 ---
@@ -1852,8 +1814,12 @@ wrapper (`bootstrap-local-dms.ps1`) for the happy path. Common invocations:
 # Full bootstrap via thin wrapper — core only, no seed data
 pwsh eng/docker-compose/bootstrap-local-dms.ps1
 
-# Full bootstrap with sample extension and seed data
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -Extensions sample -LoadSeedData -SeedTemplate Minimal
+# Full bootstrap with seed data (core-only standard mode)
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedTemplate Minimal
+
+# Extension-containing schema set: stage via expert -ApiSchemaPath first, then run the wrapper
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seeds/
 
 # Keycloak-backed seed loading
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -IdentityProvider keycloak -LoadSeedData -SeedTemplate Minimal
@@ -1877,7 +1843,7 @@ pwsh eng/docker-compose/start-local-dms.ps1 -d -v
 No shell/session preparation is required before invoking the wrapper. Direct phase-command invocation is
 for targeted re-runs and manual flows, and each phase requires the upstream outputs documented in
 [`command-boundaries.md`](command-boundaries.md). The story-aligned behaviors documented elsewhere -
-`-Extensions`, authoritative schema provisioning, `-InfraOnly`, `-DmsBaseUrl`, `-IdentityProvider` - apply in both
+`-ApiSchemaPath`, authoritative schema provisioning, `-InfraOnly`, `-DmsBaseUrl`, `-IdentityProvider` - apply in both
 wrapper and manual flows, but manual callers must run the dependency chain explicitly.
 
 #### 9.4.2 Wrapper Direct-Flag Interface
@@ -1916,10 +1882,9 @@ A minimal acceptable console shape is:
 Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
-  Core:  EdFi.DataStandard52.ApiSchema        1.0.332
-  Ext:   EdFi.DataStandard52.Sample.ApiSchema 1.0.332
+  Core:  EdFi.DataStandard52.ApiSchema        1.0.329
 [prepare-dms-claims]                                       (0.2s)
-  Hybrid mode: 1 security fragment(s) staged
+  Embedded mode: core claims only
 [start-local-dms -InfraOnly]                              (13.7s)
   Infrastructure and Config Service are health-ready
 [configure-local-data-store]                             (1.4s)
@@ -1951,8 +1916,9 @@ Summary
   Total                                   216.0s
 ```
 
-> The core and extension ApiSchema packages are versioned independently and may not share a version (the
-> versions above are illustrative); bootstrap resolves each package to its own configured feed version.
+> ApiSchema package versions are illustrative; bootstrap resolves each staged package to its own configured
+> feed version. In standard mode only the core package is staged; an expert `-ApiSchemaPath` directory may
+> contain additional projects, each versioned independently.
 
 CI environments may suppress color output. The summary table is always emitted on both success and failure;
 on failure the failing phase name and error are printed before the summary.
@@ -2334,7 +2300,7 @@ table set, not just the expected hash or runtime API surface. The separation of 
 - **Schema selection also drives physical table creation** - only the tables required by the selected schema
   set are considered aligned for the run. Core-only selection yields only core tables. Core plus Sample
   yields the core tables plus the sample-extension tables required by that combined schema set.
-- **Schema selection still controls API surface and security** - the `-Extensions` value and the resulting
+- **Schema selection still controls API surface and security** - the staged schema set and the resulting
   `ApiSchema.json` determine which REST endpoints are exposed and which claimsets are loaded, and now those
   runtime inputs are expected to stay in sync with the exact physical schema provisioned for that run.
 - **`Invoke-DmsSchemaProvisioning` consumes schema context at the target level** - the bootstrap script does
@@ -2350,10 +2316,10 @@ table set, not just the expected hash or runtime API surface. The separation of 
       -TargetConnectionStrings $targetConnectionStrings
   ```
 
-- **Changing `-Extensions` is a schema-compatibility decision** - adding or removing an extension changes
-  the selected physical schema footprint for the run. The authoritative provisioning path validates or
-  provisions against the newly selected staged schema set rather than silently reusing an incompatible
-  existing database.
+- **Changing the staged schema set is a schema-compatibility decision** - adding or removing an extension
+  (by changing the `-ApiSchemaPath` directory contents) changes the physical schema footprint for the run.
+  The authoritative provisioning path validates or provisions against the newly staged schema set rather than
+  silently reusing an incompatible existing database.
 
 ### 11.6 Forward Compatibility
 
@@ -2687,7 +2653,7 @@ Companion implementation-ready story definitions live in
 | Entry point and IDE workflow | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md) | `start-local-dms.ps1` is the infrastructure-lifecycle phase command, while the normative bootstrap contract remains the composable phase-command set. `-InfraOnly` / `-DmsBaseUrl` define the two IDE-hosted workflow shapes: stop after schema provisioning, or carry the wrapper run through schema provisioning before automatically health-waiting against the external endpoint. |
 | Replace DMS ApiSchema DLL resource loading | [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) | DMS runtime reads metadata/specification JSON and XSD assets from the normalized ApiSchema workspace and ApiSchema asset manifest instead of requiring `*.ApiSchema.dll` assemblies for the bootstrap path. DMS runtime does not read NuGet packages directly. |
 | MetaEd ApiSchema asset packaging | [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md) | MetaEd publishes asset-only ApiSchema NuGet packages whose loose-file payload can be normalized by Story 06 without assembly-resource extraction. This is a cross-repo package-production story over the same filesystem contract, not a new DMS runtime responsibility. |
-| Package-backed standard schema selection | [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) | Story 06 delivers omitted `-Extensions` core-only mode and named `-Extensions` standard mode by resolving asset-only packages into the same normalized ApiSchema workspace, ApiSchema asset manifest, and root bootstrap manifest schema section used by Story 00. |
+| Package-backed standard schema selection | [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) | Story 06 (DMS-1156) delivers package-backed **core-only** standard mode (no `-Extensions` parameter): it resolves the asset-only core package into the same normalized ApiSchema workspace, ApiSchema asset manifest, and root bootstrap manifest schema section used by Story 00. Extension/custom schema sets use the expert `-ApiSchemaPath` path. |
 
 **Cross-story dependency notes**
 
@@ -2707,10 +2673,11 @@ Companion implementation-ready story definitions live in
   package-backed standard mode against published packages, but it is not a prerequisite for Story 00's
   direct filesystem ApiSchema loading contract. Story 00, Story 04 (delivered), and Story 05 all meet at the
   normalized filesystem workspace; Story 05 can proceed independently of Story 00 and Story 04.
-- Story 06 owns the standard developer schema-selection path: omitted `-Extensions` for core-only bootstrap
-  and named `-Extensions` for package-backed extension selection. It depends on Story 05 for asset-only package
-  inputs and on Story 00 for the shared workspace, ApiSchema asset manifest, claims-staging, and root
-  bootstrap manifest contracts. Story 02 remains the owner for seed delivery and built-in extension seed lookup.
+- Story 06 (DMS-1156) owns the standard developer schema-selection path: package-backed **core-only** standard
+  mode. There is no `-Extensions` parameter; extension/custom schema sets use the expert `-ApiSchemaPath` path
+  owned by Story 00. It depends on Story 05 for the asset-only core package input and on Story 00 for the
+  shared workspace, ApiSchema asset manifest, claims-staging, and root bootstrap manifest contracts. Story 02
+  remains the owner for seed delivery and built-in extension seed lookup.
 
 ### 13.1 Explicitly Out of Scope for DMS-916
 
@@ -2748,11 +2715,11 @@ these rows, it is outside the intended scope of this design spike.
 
 | Ticket acceptance criterion | Evidence in this document | Design completeness | Delivery readiness | Blocking dependency / gap |
 |-----------------------------|---------------------------|---------------------|--------------------|---------------------------|
-| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3; [`apischema-container.md`](apischema-container.md) | Designed. The selected schema set is staged as a normalized file-based ApiSchema asset container: schema JSON drives hash/DDL/API surface, while the ApiSchema asset manifest indexes optional static content for runtime metadata/XSD endpoints. Direct filesystem ApiSchema loading is the stable core contract; package-backed selection is the Story 06 input-materialization path. | Story 00 (filesystem staging) and Story 04 (DMS-1154, runtime file-based content loading) delivered. Story 05 (MetaEd asset-only packages) and Story 06 (package-backed no-argument core-only and named `-Extensions` delivery) remain pending. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
+| ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3; [`apischema-container.md`](apischema-container.md) | Designed. The selected schema set is staged as a normalized file-based ApiSchema asset container: schema JSON drives hash/DDL/API surface, while the ApiSchema asset manifest indexes optional static content for runtime metadata/XSD endpoints. Direct filesystem ApiSchema loading is the stable core contract; package-backed selection is the Story 06 input-materialization path. | Story 00 (filesystem staging), Story 04 (DMS-1154, runtime file-based content loading), and Story 06 (DMS-1156, package-backed core-only standard mode) delivered. Story 05 (MetaEd asset-only packages) remains an external publishing prerequisite. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed. DMS-916 derives base claims inputs from the staged schema and available claims artifacts in every schema-selection mode. Expert `-ApiSchemaPath` mode uses `-ClaimsDirectoryPath` for additional non-core security fragments, with structural validation only. | Designed, implementation pending. Story 00 owns claims staging and direct-filesystem inputs; Story 06 feeds the same root bootstrap manifest schema contract for package-backed standard mode. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 11.3-11.5; [`command-boundaries.md` Section 3.5](command-boundaries.md#35-provision-dms-schemaps1--authoritative-schema-provisioning) | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. DMS startup provisioning is explicitly disabled, including both `AppSettings__DeployDatabaseOnStartup` and the legacy `NEED_DATABASE_SETUP` / `Backend.Installer` pre-launch path. | Designed, implementation pending. Bootstrap delegates to the SchemaTools / runtime-owned provisioning path; readiness is gated on that surface remaining stable. | [`../../epics/16-bootstrap/01-schema-deployment-safety.md`](../../epics/16-bootstrap/01-schema-deployment-safety.md); SchemaTools dependency in Section 14.3 |
 | Sample data loading - API-based seed loading replacing direct SQL, with pinned Ed-Fi XML seed templates in Phase 1 and JSONL assets in Phase 2 paired with compatible schema/security inputs | Section 6 | Designed. All DMS-side design decisions are complete: BulkLoadClient consumption contract (Section 6.1), seed-source selection (`-SeedTemplate` / `-SeedDataPath`, Section 6.2), bootstrap manifest handoff (Section 6.2.5), seed workspace with collision detection (Section 6.3.1), per-year invocation for school-year paths (Section 10), and the bootstrap manifest compatibility boundary for `-SeedDataPath`, including explicit `-AdditionalNamespacePrefix` values for SeedLoader vendor authorization. DMS-1152 Phase 1 is API-based XML loading through the repo-pinned BulkLoadClient XML surface; Phase 2 remains the JSONL target. | Phase 1 implemented by Story 02 as XML interchange. Phase 2 migration remains blocked externally by BulkLoadClient JSONL support and DMS-owned JSONL asset work. | Story 02 XML implementation; ODS-6738 and future Phase 2 JSONL asset work |
-| Extension selection - parameterized `-Extensions` flag driving schema and security automatically, and driving built-in seed data automatically only where the seed catalog defines a built-in seed package | Sections 3.3, 8.2-8.4 | Designed | Designed, implementation pending. Direct filesystem schema input belongs to Story 00; package-backed `-Extensions` materialization belongs to Story 06 after Story 05. Story 02 owns built-in extension seed lookup and loading from the bootstrap manifest. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md); see Section 14.2 |
+| Extension selection - how a developer adds extension artifacts to a bootstrap run | Sections 3.3, 8.2-8.4 | Designed | Delivered via the expert `-ApiSchemaPath` filesystem path (Story 00), which stages core plus any extension `ApiSchema*.json` files. There is no named extension-selection parameter; standard mode (Story 06) is package-backed core-only. Story 02 owns built-in extension seed lookup and loading from the bootstrap manifest. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md); see Section 14.2 |
 | Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed. Both credential flows are fully specified: CMS-only `EdFiSandbox` smoke-test credentials (Section 7.2.1) and the separate DMS-dependent `SeedLoader` credential flow (Section 7.2.2), including the complete `SeedLoader` permission table (resource claim URI patterns, authorization strategies, operations). Adding the `SeedLoader` top-level claim set to the embedded CMS `Claims.json` is the very first implementation task in Story 02 Task 3 — the design specifies exactly what to add. | Designed, implementation pending. Story 02 Task 3 owns adding the `SeedLoader` claim set to `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`; this is the first deliverable from that story and unblocks all DMS-side seed delivery. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Task 3; see Section 14.2 |
 | Bootstrap entry point and safe skip behavior - composable phase commands with optional same-invocation continuation | Sections 1, 9, 9.2-9.5 | Designed. The normative contract is the composable phase commands in `command-boundaries.md`; any thin wrapper is convenience only, may expose happy-path flags, and only sequences phases and forwards values owned by those phases. "Skip/resume" means safe skip behavior across phase commands plus optional same-invocation continuation via `-InfraOnly -DmsBaseUrl` after instance configuration and schema provisioning, not a persisted resume model. | Designed, implementation pending across the phase commands and the optional thin wrapper. | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md) and the phase-command implementation tickets |
 | IDE debugging workflow - running DMS in IDE against Docker infrastructure | Section 12 | Designed | Designed, implementation pending. `-InfraOnly` and the post-provision `-DmsBaseUrl` continuation behavior are not yet implemented in `start-local-dms.ps1`. | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md); see Section 14.2 |
@@ -2842,7 +2809,7 @@ or contributors.
 
 | # | Area | Old behavior | New DMS-916 behavior | Migration action |
 |---|------|--------------|----------------------|------------------|
-| 1 | Default schema profile when `-Extensions` is omitted | `SCHEMA_PACKAGES` staged Data Standard 5.2 plus extensions by default in the existing `eng/docker-compose` flow | Bootstrap resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) when `-Extensions` is omitted | Omit `-Extensions` for core-only runs; pass the needed extension identifiers through `-Extensions` for scripts that rely on extension schemas |
+| 1 | Default standard-mode schema profile | `SCHEMA_PACKAGES` staged Data Standard 5.2 plus extensions by default in the existing `eng/docker-compose` flow | Standard mode (no `-ApiSchemaPath`) resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) | Use standard mode for core-only runs; stage extension schemas through the expert `-ApiSchemaPath` directory for scripts that rely on extension schemas |
 | 2 | `-NoDataStore` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDataStore` |
 | 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
 | 4 | Persisted data-store-ID hand-off via `.bootstrap/run-context.json` | `configure-local-data-store.ps1` wrote selected data store IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | data store IDs are emitted in a structured `configure-local-data-store.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-DataStoreId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |

@@ -230,8 +230,14 @@ entry-point and IDE workflow is complete in this document even where script chan
 # Wrapper — happy path (core schema, no seed)
 pwsh eng/docker-compose/bootstrap-local-dms.ps1
 
-# Wrapper - extension + seed
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -Extensions sample -LoadSeedData -SeedTemplate Minimal
+# Wrapper - extension + seed. The wrapper does not declare or forward -Extensions/-ApiSchemaPath/
+# -ClaimsDirectoryPath; extension and custom schema sets are staged by the expert prepare phase
+# BEFORE the wrapper. Run prepare-dms-claims.ps1 -ClaimsDirectoryPath only when the staged
+# extensions' claim fragments are not auto-staged. Expert -ApiSchemaPath mode requires -SeedDataPath
+# for seed delivery (-SeedTemplate is invalid in that mode).
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath "./my-extension-schemas/"
+pwsh eng/docker-compose/prepare-dms-claims.ps1 -ClaimsDirectoryPath "./my-extension-claims/"
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath "./my-seeds/"
 
 # Wrapper - keycloak-backed happy path
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -IdentityProvider keycloak

@@ -2532,10 +2532,11 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-local-dms.ps1 rejects missing bootstrap manifest before any phase invocation when -LoadSeedData is supplied" {
-            # Regression: an absent .bootstrap/bootstrap-manifest.json used to throw only inside
-            # load-dms-seed-data.ps1 after the wrapper had already invoked start-local-dms.ps1
-            # and spun up Docker + CMS. The wrapper must catch this BEFORE the start phase.
+        It "bootstrap-local-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+            # bootstrap-design.md Section 9.4.1: the thin wrapper requires no manual prepare
+            # step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json, the wrapper
+            # stages core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before the
+            # start phase, then reaches start (and the seed phase under -LoadSeedData) without throwing.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
             $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
@@ -2544,9 +2545,16 @@ EdFi.BulkLoadClient.Console fake
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
 
+            $prepareProbe = Join-Path $tmpRoot "prepare-invoked.txt"
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
 
+            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
+            # -Extensions were forwarded (core-only path).
+            "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
+            "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-claims.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
                 Set-Content -LiteralPath (Join-Path $tmpDockerCompose "start-local-dms.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$seedProbe' -Value 'invoked' -Encoding utf8" |
@@ -2554,16 +2562,20 @@ EdFi.BulkLoadClient.Console fake
 
             $wrapperCopy = Join-Path $tmpDockerCompose "bootstrap-local-dms.ps1"
 
-            # The sandbox tmpDockerCompose does NOT have .bootstrap/bootstrap-manifest.json,
-            # so -LoadSeedData must throw before invoking start-local-dms.ps1.
-            { & $wrapperCopy -LoadSeedData } | Should -Throw -ExpectedMessage "*bootstrap-manifest.json*"
+            # No .bootstrap/bootstrap-manifest.json exists; -LoadSeedData must NOT throw -- the core-only
+            # prepare phase stages the workspace first, then start and seed run.
+            { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
 
-            Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "start phase must not run when manifest is missing"
-            Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run when manifest is missing"
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
+            Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
 
-            # Without -LoadSeedData the preflight is skipped, start phase still runs
+            # The no-argument core-only happy path also stages and starts (no seed).
+            Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
             & $wrapperCopy
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
             Test-Path -LiteralPath $startProbe | Should -BeTrue
+            Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
@@ -2784,6 +2796,55 @@ EdFi.BulkLoadClient.Console fake
             & $wrapperCopy -LoadSeedData
             Test-Path -LiteralPath $startProbe | Should -BeTrue
             Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is present"
+
+            Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+        }
+
+        It "bootstrap-published-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+            # bootstrap-design.md Section 9.4.1: like the local wrapper, the published thin wrapper requires
+            # no manual prepare step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json,
+            # it must stage core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before
+            # the start phase, then reach start (and the seed phase under -LoadSeedData) without throwing.
+            # The other published-wrapper tests pre-stage a fake manifest, which bypasses this auto-stage path.
+            $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
+            $tmpRoot = New-TestDirectory
+            $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
+            New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+
+            Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
+            Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+
+            $prepareProbe = Join-Path $tmpRoot "prepare-invoked.txt"
+            $startProbe = Join-Path $tmpRoot "start-invoked.txt"
+            $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
+
+            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
+            # -Extensions were forwarded (core-only path).
+            "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
+            "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-claims.ps1") -Encoding utf8
+            "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "start-published-dms.ps1") -Encoding utf8
+            "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$seedProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+            $wrapperCopy = Join-Path $tmpDockerCompose "bootstrap-published-dms.ps1"
+
+            # No .bootstrap/bootstrap-manifest.json exists; -LoadSeedData must NOT throw -- the core-only
+            # prepare phase stages the workspace first, then start and seed run.
+            { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
+
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
+            Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
+
+            # The no-argument core-only happy path also stages and starts (no seed).
+            Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
+            & $wrapperCopy
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
+            Test-Path -LiteralPath $startProbe | Should -BeTrue
+            Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }

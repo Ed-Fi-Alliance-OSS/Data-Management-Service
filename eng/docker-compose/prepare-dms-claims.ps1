@@ -12,16 +12,7 @@ param(
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
-
-$knownExtensionClaims = @{
-    "Sample" = @{
-        FragmentFileName = "004-sample-extension-claimset.json"
-        NamespacePrefix = "uri://sample.ed-fi.org"
-    }
-    "Homograph" = @{
-        FragmentFileName = "005-homograph-extension-claimset.json"
-    }
-}
+Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-catalog.psm1") -Force
 
 $baselineFragmentFileNames = [System.Collections.Generic.HashSet[string]]::new(
     [string[]]@(
@@ -61,7 +52,7 @@ function Get-ValueOrNull {
 
     if ($Hashtable -is [System.Collections.IDictionary] -and $Hashtable.Contains($Key)) {
         # Wrap with the unary comma so PowerShell does not flatten single-element arrays into
-        # scalars on function return — callers rely on the original shape for IList checks.
+        # scalars on function return - callers rely on the original shape for IList checks.
         return ,$Hashtable[$Key]
     }
 
@@ -383,9 +374,24 @@ if ($null -eq $rootManifest -or -not $rootManifest.ContainsKey("schema")) {
     throw "Bootstrap manifest is missing the schema section. Run prepare-dms-schema.ps1 before prepare-dms-claims.ps1."
 }
 
-$apiSchemaManifestPath = Join-Path $bootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
-if (-not (Test-Path -LiteralPath $apiSchemaManifestPath)) {
-    throw "Staged ApiSchema manifest was not found: $(Format-LogSafeText $apiSchemaManifestPath)"
+# Resolve the ApiSchema manifest from the schema handoff's recorded schema.apiSchemaManifestPath
+# rather than hardcoding a path, so claims staging validates and stages against the exact ApiSchema
+# manifest the schema phase recorded. This matches the other consumers of the field
+# (Resolve-BootstrapSchemaWorkspace and Set-BootstrapStartupEnvironment); hardcoding could otherwise
+# let claims staging consume a different manifest than the one prepare-dms-schema.ps1 recorded.
+$schemaSection = $rootManifest["schema"]
+if ($schemaSection -isnot [System.Collections.IDictionary]) {
+    throw "Bootstrap manifest schema section must be a JSON object. Run prepare-dms-schema.ps1 before prepare-dms-claims.ps1."
+}
+if (-not $schemaSection.ContainsKey("apiSchemaManifestPath") -or [string]::IsNullOrWhiteSpace([string]$schemaSection["apiSchemaManifestPath"])) {
+    throw "Bootstrap manifest field 'schema.apiSchemaManifestPath' must not be empty. Run prepare-dms-schema.ps1 before prepare-dms-claims.ps1."
+}
+$apiSchemaManifestRelativePath = Resolve-BootstrapWorkspaceRelativePath `
+    -RelativePath ([string]$schemaSection["apiSchemaManifestPath"]) `
+    -ManifestField "schema.apiSchemaManifestPath"
+$apiSchemaManifestPath = Resolve-BootstrapPath -RelativePath $apiSchemaManifestRelativePath
+if (-not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
+    throw "Staged ApiSchema manifest was not found: $(Format-LogSafeText $apiSchemaManifestPath). Run prepare-dms-schema.ps1 before prepare-dms-claims.ps1."
 }
 
 $apiSchemaManifest = Read-JsonHashtable -Path $apiSchemaManifestPath -ArtifactName "ApiSchema manifest"
@@ -425,8 +431,8 @@ foreach ($extensionProject in $extensionProjects) {
         throw "Bootstrap ApiSchema manifest project entry is missing 'projectName'."
     }
 
-    if ($knownExtensionClaims.ContainsKey($projectName)) {
-        $knownExtension = $knownExtensionClaims[$projectName]
+    $knownExtension = Get-StandardKnownExtensionInfo -ProjectName $projectName
+    if ($null -ne $knownExtension) {
         if ($knownExtension.ContainsKey("FragmentFileName")) {
             $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
             if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {

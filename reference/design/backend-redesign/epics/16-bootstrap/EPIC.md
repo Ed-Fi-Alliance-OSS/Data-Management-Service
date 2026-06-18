@@ -31,9 +31,10 @@ packaging, and package-backed standard schema selection.
 - Story 00 owns direct filesystem schema selection through `-ApiSchemaPath`, normalized ApiSchema
   asset-container materialization, expected `EffectiveSchemaHash` computation, staged claims preparation,
   and the root bootstrap manifest sections for schema, claims, and seed handoff. Later slices consume that
-  staged input contract rather than rebuilding it independently. Package-backed no-argument core-only mode and
-  named `-Extensions` standard modes are not part of Story 00; they belong to Story 06 after Story 05 publishes
-  asset-only ApiSchema packages.
+  staged input contract rather than rebuilding it independently. Package-backed core-only standard mode is not
+  part of Story 00; it belongs to Story 06 after Story 05 publishes asset-only ApiSchema packages. (DMS-1156
+  scope decision: standard mode is package-backed **core-only** — there is no `-Extensions` parameter;
+  extension/custom schema sets use the expert `-ApiSchemaPath` path owned by Story 00.)
 - Story 01 depends on Story 00's staged schema workspace because schema provisioning and validation run over
   that already-selected staged file set. The expected hash from Story 00 is diagnostic metadata for logging
   or comparison, not a required SchemaTools provisioning input.
@@ -67,9 +68,10 @@ packaging, and package-backed standard schema selection.
   ApiSchema loading. Story 00, Story 04, and Story 05 can proceed in parallel because all three meet at the
   normalized filesystem workspace contract.
 - Story 06 depends on Story 05 for asset-only ApiSchema packages and on Story 00 for the shared staged
-  workspace, ApiSchema asset manifest, claims-staging, and root bootstrap manifest contracts. Story 06 owns omitted
-  `-Extensions` core-only mode and named `-Extensions` standard mode. Story 02 remains the owner for actual
-  seed delivery and built-in extension seed lookup from the bootstrap manifest.
+  workspace, ApiSchema asset manifest, claims-staging, and root bootstrap manifest contracts. Story 06 owns
+  package-backed **core-only** standard mode (omit `-ApiSchemaPath`); there is no `-Extensions` parameter
+  (DMS-1156 scope decision). Story 02 remains the owner for actual seed delivery and built-in extension seed
+  lookup from the bootstrap manifest.
 
 ## Scope Guardrails
 

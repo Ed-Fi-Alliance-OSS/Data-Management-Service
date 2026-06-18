@@ -81,7 +81,7 @@ direct-SQL path as an ongoing or permanent alternative.
   - repo-tag-backed Ed-Fi XML seed templates selected by `-SeedTemplate`,
   - developer-supplied XML interchange directories selected by `-SeedDataPath`.
 - When seed delivery runs without an explicit seed-source flag, bootstrap defaults to the built-in `Minimal`
-  seed template in standard Modes 1 and 2 only.
+  seed template in standard mode only.
 - In expert `-ApiSchemaPath` mode, seed delivery requires explicit `-SeedDataPath`; bootstrap must not fall
   back to built-in `Minimal` or `Populated` seed templates in that mode.
 - In expert `-ApiSchemaPath` mode, `-SeedTemplate` is invalid because bootstrap-managed seed selection is
@@ -249,7 +249,7 @@ direct-SQL path as an ongoing or permanent alternative.
 1. Implement repo-pinned BulkLoadClient resolution and pre-flight validation for the XML bootstrap path.
 2. Implement seed-source selection for `-SeedTemplate` and `-SeedDataPath` by reading the root bootstrap
    manifest first, including the default `Minimal` behavior when seed delivery runs without an explicit
-   seed-source flag in standard Modes 1 and 2, the expert-mode rule that manifest
+   seed-source flag in standard mode, the expert-mode rule that manifest
    `schema.selectionMode = ApiSchemaPath` requires explicit `-SeedDataPath` for seed delivery,
    validation that rejects `-SeedTemplate` when the bootstrap manifest came from `-ApiSchemaPath`,
    mutual-exclusion validation between `-SeedTemplate` and `-SeedDataPath`, extension-package resolution for
@@ -322,11 +322,17 @@ incomplete":
 | `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-EnvironmentFile`, `-IdentityProvider` | Delivered (forwarded to `start-(local\|published)-dms.ps1`) | — |
 | `-SchoolYearRange` | Delivered (forwarded; the year-loop iterates seed phase per year when seed loading is on) | — |
 | `-AddExtensionSecurityMetadata` | Delivered (forwarded to start phase) | — |
-| `-Extensions`, `-ApiSchemaPath` | **Not in wrapper.** Developers invoke `prepare-dms-schema.ps1` directly today. | Story 03 (schema phase consolidation into wrapper) |
+| `-ApiSchemaPath` | **Not in wrapper.** Expert filesystem schema staging; developers invoke `prepare-dms-schema.ps1` directly before the wrapper. | Schema phase consolidated into the wrapper by DMS-1156 (a clean workspace auto-stages package-backed core-only standard mode); `-ApiSchemaPath` is intentionally **not** a wrapper flag. |
 | `-ClaimsDirectoryPath` | **Not in wrapper.** Developers invoke `prepare-dms-claims.ps1` directly today. | Story 03 |
 | `-InfraOnly`, `-DmsBaseUrl` | **Not in wrapper.** | DMS-1153 (IDE-hosted workflow) |
 | `-Rebuild` / `-r` | **Not in wrapper.** Developers pass to `start-(local\|published)-dms.ps1` directly. | Future hygiene |
 | `-AddSmokeTestCredentials` | **Not in wrapper.** Owned by `configure-local-data-store.ps1` per `command-boundaries.md`. | Story 03 |
+
+> `-Extensions` previously appeared in this table as a deferred schema flag. Story 06 removed it entirely:
+> standard mode is package-backed **core-only** and the wrappers do not declare, document, or forward
+> `-Extensions`. Extension/custom schema sets use expert `-ApiSchemaPath`. See `command-boundaries.md` §3.7
+> ("there is no `-Extensions` parameter on any wrapper or phase command") and
+> `06-package-backed-standard-schema-selection.md`.
 
 ## Out of Scope
 

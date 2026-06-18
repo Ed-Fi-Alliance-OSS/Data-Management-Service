@@ -5,6 +5,14 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1150
 
 # Story: Bootstrap Schema and Security Selection
 
+> **Superseded note:** The `-Extensions` references below reflect this completed story's original
+> scoping, when a named / standard-mode `-Extensions` surface was still anticipated for Story 06. The story
+> instead **removed `-Extensions` entirely**: standard mode (omit `-ApiSchemaPath`) is package-backed
+> **core-only**, and extension/custom schema sets use the expert `-ApiSchemaPath` path this story owns. The
+> historical acceptance criteria and tasks below are left intact as the record of what Story 00 delivered; see
+> [`06-package-backed-standard-schema-selection.md`](06-package-backed-standard-schema-selection.md) for the
+> authoritative current contract.
+
 ## Description
 
 Implement the first schema and security input slice for developer bootstrap over the stable direct filesystem
@@ -215,7 +223,7 @@ schema contract and claims-staging contract rather than introducing a second pat
    stage/validate claim fragments in this phase.
 4. Define the bootstrap-dms compose surface and runtime env wiring (mount `.bootstrap/ApiSchema` →
    `/app/ApiSchema`, set `USE_API_SCHEMA_PATH=true`, set `API_SCHEMA_PATH=/app/ApiSchema`, clear
-   `SCHEMA_PACKAGES`) **in design only** — see the Mode 3 flow in
+   `SCHEMA_PACKAGES`) **in design only** — see the expert `-ApiSchemaPath` flow in
    [`bootstrap-design.md`](../../design-docs/bootstrap/bootstrap-design.md) for the end-state diagram
    Story 04 implements. Story 00 does not enable that runtime DMS bootstrap startup path because
    `ContentProvider` still expects `*.ApiSchema.dll` assemblies; enabling it now would cause

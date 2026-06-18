@@ -226,6 +226,53 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
+
+        function script:New-SchemaOnlyBootstrapManifestFile {
+            # A manifest written by prepare-dms-schema.ps1 alone: schema section present, no
+            # claims/seed. Models the incomplete state the wrapper must complete before infrastructure.
+            param(
+                [Parameter(Mandatory)]
+                [string]$DockerComposeRoot
+            )
+
+            $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
+            New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+
+            $manifest = [ordered]@{
+                version = 1
+                schema  = [ordered]@{
+                    selectionMode        = "Standard"
+                    effectiveSchemaHash  = "abc123"
+                    workspaceFingerprint = "0000000000000000000000000000000000000000000000000000000000000000"
+                    apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                }
+            }
+            $manifestPath = Join-Path $bootstrapRoot "bootstrap-manifest.json"
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+            return $manifestPath
+        }
+
+        function script:New-RecordingPrepareScripts {
+            # Call-recording stubs for the two staging phase scripts: each appends a single line so
+            # tests can assert which staging phases ran and in what order relative to the start phase.
+            param(
+                [Parameter(Mandatory)]
+                [string]$Directory,
+
+                [Parameter(Mandatory)]
+                [string]$CallLogPath
+            )
+
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$CallLogPath' -Value "prepare-schema"
+"@ | Set-Content -LiteralPath (Join-Path $Directory "prepare-dms-schema.ps1") -Encoding utf8
+
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
+"@ | Set-Content -LiteralPath (Join-Path $Directory "prepare-dms-claims.ps1") -Encoding utf8
+        }
     }
 
     BeforeEach {
@@ -402,6 +449,95 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             # start-infra invocation must NOT carry any DmsBaseUrl
             $startLine = $log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1
             $startLine | Should -Match "DmsBaseUrl=$"
+        }
+    }
+
+    # =========================================================================
+    # R4b - Wrapper schema/claims staging phase (claims-completion before infra)
+    #   A schema-only manifest (prepare-dms-schema.ps1 run without prepare-dms-claims.ps1)
+    #   is an incomplete bootstrap state: start-local-dms.ps1 activates staged claims and runs
+    #   the claims-ready gate, both of which require the claims/seed sections. The wrapper must
+    #   complete the claims staging BEFORE any infrastructure side effects rather than letting
+    #   the gate throw after Docker/CMS startup.
+    # =========================================================================
+    Context "wrapper schema/claims staging phase" {
+        It "stages schema then claims before infrastructure when no manifest exists" {
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-stage-fresh.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $schemaIndex = [array]::IndexOf($log, "prepare-schema")
+            $claimsIndex = [array]::IndexOf($log, "prepare-claims")
+            $startIndex  = [array]::IndexOf($log, ($log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1))
+
+            $schemaIndex | Should -BeGreaterOrEqual 0 -Because "a clean checkout must stage the core schema"
+            $claimsIndex | Should -BeGreaterThan $schemaIndex -Because "claims stage after schema"
+            $startIndex  | Should -BeGreaterThan $claimsIndex -Because "all staging must run before infrastructure starts"
+        }
+
+        It "completes a schema-only manifest by staging claims (not schema) before infrastructure starts" {
+            New-SchemaOnlyBootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-stage-claims.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            # Schema is already staged; only the claims completion runs.
+            $log | Should -Not -Contain "prepare-schema" -Because "an already-staged schema must not be re-staged"
+            $log | Should -Contain "prepare-claims" -Because "the missing claims/seed sections must be completed"
+
+            # The claims completion must run BEFORE any infrastructure side effect.
+            $claimsIndex = [array]::IndexOf($log, "prepare-claims")
+            $startIndex  = [array]::IndexOf($log, ($log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1))
+            $startIndex | Should -BeGreaterThan $claimsIndex -Because "claims completion must precede infrastructure startup"
+        }
+
+        It "does not false-fail claims staging when a stale nonzero \$LASTEXITCODE lingers from the session" {
+            # Regression: prepare-dms-claims.ps1 signals failure by throwing and runs no native command,
+            # so a nonzero $LASTEXITCODE left by an earlier command in the session must NOT be read as a
+            # staging failure. The wrapper resets the sentinel before each prepare invocation.
+            New-SchemaOnlyBootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-stale-exit.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            # Simulate a prior native-command failure lingering in the PowerShell session.
+            $global:LASTEXITCODE = 99
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly } |
+                Should -Not -Throw -Because "a stale exit code must not be mistaken for a prepare-dms-claims.ps1 failure"
+
+            @(Get-Content -LiteralPath $callLog) | Should -Contain "prepare-claims" -Because "claims completion must still run and succeed"
+        }
+
+        It "reuses a complete manifest as-is and does not re-stage schema or claims" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-stage-complete.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $log | Should -Not -Contain "prepare-schema" -Because "a complete manifest must be reused as-is"
+            $log | Should -Not -Contain "prepare-claims" -Because "a complete manifest must be reused as-is"
+            $log | Where-Object { $_ -like "start-infra*" } | Should -Not -BeNullOrEmpty -Because "the start phase still runs"
         }
     }
 

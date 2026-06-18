@@ -46,10 +46,11 @@
     The shared wrapper body lives in `bootstrap-wrapper.psm1`; this entry script only
     selects the target start script (`start-local-dms.ps1`).
 
-    Precondition: the wrapper requires staged bootstrap schema and claims workspaces. Run
-    `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1` for the current checkout first;
-    the wrapper fails fast when the staged workspace is absent rather than starting an
-    unprovisionable stack.
+    Staging: no manual prepare step is required for the standard happy path. When no workspace is
+    staged the wrapper stages core-only standard mode; an already-staged workspace (e.g. a manual
+    expert `-ApiSchemaPath` flow) is used as-is. There is no `-Extensions` parameter; extension or
+    custom schema sets are staged via expert `-ApiSchemaPath` before invoking the wrapper. All
+    staging is delegated to `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
 
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after DMS startup completes. When
@@ -107,20 +108,33 @@
     is also requested, forwarded to `load-dms-seed-data.ps1` so seeds hit the IDE-hosted DMS.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
-    pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
-    Common happy path: stage the schema and claims workspaces, then start the local stack and
-    provision schemas, no seed loading. The wrapper requires a staged bootstrap workspace and
-    fails fast if the prepare commands have not been run for the current checkout.
+    Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
+    workspace is staged), then starts the stack. No manual prepare step and no seed loading.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-claims.ps1
+    pwsh ./bootstrap-local-dms.ps1
+    Standard mode, core only - manual prepare flow. Stage the core schema and claims
+    workspaces first, then start the local stack. Use this flow when you want to inspect
+    or validate the staged workspace before starting infrastructure.
+
+.EXAMPLE
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-claims.ps1
+    pwsh ./bootstrap-local-dms.ps1
+    Expert mode (filesystem). Stage the in-repo ApiSchema directory (which includes TPDM
+    and other extensions) and claims workspaces manually, then start the local stack. The
+    in-repo directory requires -ClaimsDirectoryPath with a TPDM claim fragment unless
+    only core, Sample, and Homograph extensions are staged.
+
+.EXAMPLE
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
-    Prepare an ApiSchemaPath-mode bootstrap manifest, then start the stack and load
-    developer-supplied XML interchange files. Package-backed -SeedTemplate Minimal/Populated
-    requires Story 06 schema selection and is not yet runnable from a fresh workspace.
+    Expert mode with seed loading. Prepare the bootstrap manifest, then start the stack and
+    load developer-supplied XML interchange files.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
