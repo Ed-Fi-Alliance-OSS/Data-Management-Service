@@ -132,9 +132,11 @@ The fingerprint is a single row in the `dms.EffectiveSchema` singleton table
 | `AppliedAt` | when the row was written |
 
 The hash algorithm versions are pinned in
-[`SchemaHashConstants.cs`](../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs)
-(`HashVersion`, `RelationalMappingVersion`, `ResourceKeySeedHashVersion`) — bumping any of
-them deliberately forces a new hash even for identical schema content.
+[`SchemaHashConstants.cs`](../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs).
+Bumping `HashVersion` or `RelationalMappingVersion` deliberately forces a new
+`EffectiveSchemaHash` even for identical schema content; bumping `ResourceKeySeedHashVersion`
+forces a new `ResourceKeySeedHash` (the separate resource-key seed hash), not the
+`EffectiveSchemaHash`.
 
 ### Guards baked into the DDL (provision time)
 
@@ -223,10 +225,14 @@ Inspect the relevant per-resource table under that schema (for example
 A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load
 precompiled mapping sets instead of compiling them at runtime.
 
-**Current behavior:** mapping sets are always **compiled at runtime** from the effective schema.
-Mapping packs are **not available yet** — the pack store is a no-op and pack decoding is not
-implemented, so there is no `pack build` workflow to run today. The configuration surface,
-however, already exists and is bound and validated.
+**Current behavior:** with the default settings (`Enabled=false`), mapping sets are
+**compiled at runtime** from the effective schema. Mapping packs are **not available yet** —
+the pack store is a no-op and pack decoding is not implemented, so there is no `pack build`
+workflow to run today. The configuration surface, however, already exists and is bound and
+validated. Note that mapping-set resolution runs eagerly at startup: if you set `Enabled=true`
+with no pack present, the no-op pack store returns nothing and DMS **fails to start** when
+`Required=true` or `AllowRuntimeCompileFallback=false` (with the defaults — `Required=false`,
+`AllowRuntimeCompileFallback=true` — it falls back to runtime compilation).
 
 The `MappingPacks` configuration section
 ([`appsettings.json`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json),
@@ -260,9 +266,13 @@ tests). Run them with the standard `dotnet test` against the project.
 
 - **`dms-schema` CLI integration** —
   [`EdFi.DataManagementService.SchemaTools.Tests.Integration`](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#integration-tests).
-  PostgreSQL is **required** (tests fail if it is unreachable, by design). SQL Server is
-  **opt-in**: provide an `MssqlAdmin` connection string in a gitignored `appsettings.Test.json`,
-  otherwise those tests report as skipped.
+  PostgreSQL is **required** (tests fail if it is unreachable, by design). SQL Server tests
+  also **run by default**: the test project's committed `appsettings.json` supplies an
+  `MssqlAdmin` connection string pointing at `localhost`, and the skip guard only checks that
+  `MssqlAdmin` is set (no connectivity probe), so they fail on connection errors if no SQL
+  Server is reachable there. They report as skipped only if `MssqlAdmin` is removed from the
+  committed config; point them at a different server via `appsettings.Test.json` or the
+  `ConnectionStrings__MssqlAdmin` environment variable.
 - **Backend integration** — `EdFi.DataManagementService.Backend.Postgresql.Tests.Integration` and
   `EdFi.DataManagementService.Backend.Mssql.Tests.Integration` provision a fresh database from the
   generated DDL, run against it, and drop it on teardown.

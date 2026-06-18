@@ -161,8 +161,11 @@ fail — this is intentional so CI detects infrastructure problems.
 
 ### SQL Server
 
-SQL Server integration tests are **opt-in**. They are skipped unless a
-`MssqlAdmin` connection string is configured. To enable them locally:
+SQL Server integration tests **run by default** — the project's committed `appsettings.json`
+already supplies an `MssqlAdmin` connection string pointing at `localhost`. The skip guard
+only checks that `MssqlAdmin` is set (it does not probe connectivity), so the tests fail on
+connection errors if no SQL Server is reachable there. To point them at your own SQL Server
+locally:
 
 1. Create `appsettings.Test.json` in the `SchemaTools.Tests.Integration` project
    directory (this file is gitignored):
@@ -188,9 +191,9 @@ SQL Server integration tests are **opt-in**. They are skipped unless a
    dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration
    ```
 
-When `MssqlAdmin` is not configured, the SQL Server tests report as skipped
-(not failed). When it is configured, they run and fail on any server issue —
-same behavior as the PostgreSQL tests.
+Because the committed `appsettings.json` always sets `MssqlAdmin`, the SQL Server tests run
+and fail on any server issue — same behavior as the PostgreSQL tests. They report as skipped
+only if `MssqlAdmin` is removed from the committed config.
 
 ## Breaking changes
 
