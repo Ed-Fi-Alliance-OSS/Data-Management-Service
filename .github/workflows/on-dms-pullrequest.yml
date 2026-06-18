@@ -131,8 +131,10 @@ jobs:
           DMS_BOOTSTRAP_RUN_PACKAGE_TESTS: "true"
         run: |
           $paths = @(
+            "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
             "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
             "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",

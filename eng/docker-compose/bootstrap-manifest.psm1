@@ -445,9 +445,13 @@ function Set-BootstrapStartupEnvironment {
     if ($schemaSection -isnot [System.Collections.IDictionary]) {
         throw "Bootstrap manifest schema section must be a JSON object."
     }
+    # Both package-backed standard mode (prepare-dms-schema.ps1 default, selectionMode "Standard")
+    # and expert filesystem mode (-ApiSchemaPath, selectionMode "ApiSchemaPath") stage the same
+    # normalized .bootstrap/ApiSchema/ workspace, and startup validation below is identical for both.
+    # Rejecting "Standard" here broke the standard-mode/wrapper production path at startup.
     $schemaSelectionMode = $schemaSection["selectionMode"]
-    if ($schemaSelectionMode -ne "ApiSchemaPath") {
-        throw "Bootstrap schema selectionMode '$(Format-LogSafeText $schemaSelectionMode)' is not supported in Story 00; only 'ApiSchemaPath' is accepted."
+    if ($schemaSelectionMode -notin @("Standard", "ApiSchemaPath")) {
+        throw "Bootstrap manifest 'schema.selectionMode' must be Standard or ApiSchemaPath, got: $(Format-LogSafeText $schemaSelectionMode)"
     }
     if (-not $schemaSection.ContainsKey("apiSchemaManifestPath") -or [string]::IsNullOrWhiteSpace($schemaSection["apiSchemaManifestPath"])) {
         throw "Bootstrap manifest field 'schema.apiSchemaManifestPath' must not be empty."

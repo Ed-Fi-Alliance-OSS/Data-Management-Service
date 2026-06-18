@@ -206,18 +206,18 @@ contentFiles/any/any/ApiSchema/
     Interchange-Student.xsd
 ```
 
-Extension packages use the same shape. The schema file should be named `ApiSchema.json` in the package
-contract even if MetaEd originally emitted `ApiSchema-EXTENSION.json`; the package manifest and schema
-content identify whether the project is core or extension.
+The schema file should be named `ApiSchema.json` in the package contract even if MetaEd originally emitted
+`ApiSchema-EXTENSION.json`; the package manifest and schema content identify whether the project is core or
+extension via the `isExtensionProject` field.
 
-Published ApiSchema package IDs are Data-Standard-qualified. The core package is
-`EdFi.DataStandard52.ApiSchema`, and extension packages follow the `EdFi.DataStandard52.<Project>.ApiSchema`
-convention (for example `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`,
-and `EdFi.DataStandard52.TPDM.ApiSchema`), where `<Project>` is the MetaEd project name.
+The package ID for the standard core ApiSchema package is Data-Standard-qualified:
+`EdFi.DataStandard52.ApiSchema`. This is the canonical DMS-916 target package identity, verified against the
+published asset-only package at version `1.0.329` (see
+`reference/spikes/DMS-1156/asset-only-package-feed-findings.md`).
 
-This is the canonical DMS-916 target package identity convention. Legacy unqualified extension IDs such as
-`EdFi.Sample.ApiSchema`, `EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema` are superseded by the
-qualified package IDs.
+> **Scope note:** package-backed standard mode is **core-only** and resolves only the core package
+> by ID. There is no `-Extensions` parameter and bootstrap does not construct extension package IDs.
+> Extension-containing schema sets are staged through the expert `-ApiSchemaPath` filesystem path.
 
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 
@@ -232,12 +232,12 @@ Example package manifest:
 ```json
 {
   "version": 1,
-  "packageId": "EdFi.DataStandard52.Sample.ApiSchema",
-  "projectName": "Sample",
-  "projectEndpointName": "sample",
-  "isExtensionProject": true,
+  "packageId": "EdFi.DataStandard52.ApiSchema",
+  "projectName": "Ed-Fi",
+  "projectEndpointName": "ed-fi",
+  "isExtensionProject": false,
   "schemaPath": "ApiSchema.json",
-  "discoverySpecPath": null,
+  "discoverySpecPath": "discovery-spec.json",
   "xsdDirectory": "xsd"
 }
 ```

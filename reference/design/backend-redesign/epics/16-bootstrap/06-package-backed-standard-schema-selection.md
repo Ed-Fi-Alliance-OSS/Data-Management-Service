@@ -3,61 +3,69 @@ jira: DMS-1156
 jira_url: https://edfi.atlassian.net/browse/DMS-1156
 ---
 
-# Story: Package-Backed Standard Schema Selection
+# Story: Package-Backed Standard Schema Selection (core-only)
 
 ## Description
 
-Implement the package-backed standard schema-selection path for DMS developer bootstrap. This story turns
-the target day-to-day modes from the design into an owned implementation slice:
+Implement the package-backed standard schema-selection path for DMS developer bootstrap. As of the
+2026-06-16 scope decision (see Review Log), this story is **package-backed core-only standard mode**:
 
-- omitted `-Extensions` for the core-only developer default,
-- named `-Extensions` for package-backed extension selection,
+- running `prepare-dms-schema.ps1` without `-ApiSchemaPath` resolves and stages the core Data Standard
+  ApiSchema package only,
 - package-backed ApiSchema asset resolution after Story 05 publishes asset-only packages,
 - convergence on the same staged ApiSchema workspace, claims staging, and seed-input handoff contracts
   delivered by Story 00.
 
-This story exists to close the traceability gap between the DMS-916 acceptance criterion for
-parameterized extension selection and the earlier direct-filesystem-only Story 00 slice. Story 00 remains
-the expert `-ApiSchemaPath` story. Story 06 owns the standard `-Extensions` acquisition path and must feed
-the same normalized file-based ApiSchema asset container at
+Named extension package selection is **not** part of this story. There is no `-Extensions` parameter on any
+bootstrap script. Developers who need an extension-containing schema set use the expert
+`-ApiSchemaPath` filesystem path owned by Story 00, which already stages core plus any extensions present in
+the supplied directory (for example the in-repo `EdFi.DataStandard52.ApiSchema` directory, which includes
+TPDM).
+
+Story 00 remains the expert `-ApiSchemaPath` story. Story 06 owns the standard package-backed core-only
+acquisition path and must feed the same normalized file-based ApiSchema asset container at
 `eng/docker-compose/.bootstrap/ApiSchema/`.
 
 The package-backed path is only an input-materialization path. It must not introduce a second schema
 authority, claims path, seed catalog, wrapper contract, or lifecycle control plane. After this story resolves
-and stages package assets, downstream phases consume the same manifests and workspaces used for direct
-filesystem inputs.
+and stages the core package assets, downstream phases consume the same manifests and workspaces used for
+direct filesystem inputs.
 
 ## Acceptance Criteria
 
 - `prepare-dms-schema.ps1` supports standard mode without `-ApiSchemaPath` after the Story 05 package
-  prerequisite is available:
-  - omitting `-Extensions` resolves and stages the core Data Standard ApiSchema package only,
-  - supplying `-Extensions` resolves and stages the core package plus each named extension package.
-- `-Extensions` is a `String[]` parameter using normal PowerShell array binding. Multi-extension usage uses
-  syntax such as `-Extensions "sample","extension2"`; the implementation does not rely on comma-splitting a
-  single string.
-- Extension artifact availability is determined by package and companion artifact resolution; missing artifacts
-  fail fast before Docker operations start.
-- `-Extensions` and `-ApiSchemaPath` are mutually exclusive. Supplying both fails fast with guidance to use
-  standard mode for package-backed extensions or expert mode for a custom schema directory.
-- Package-backed resolution uses the configured NuGet feed and package/version defaults. Package IDs use the
+  prerequisite is available: it resolves and stages the core Data Standard ApiSchema package only.
+- `prepare-dms-schema.ps1` does not declare or accept an `-Extensions` parameter. Named extension package
+  selection through a standard-mode parameter is not supported. Invoking the script with `-Extensions` fails
+  with the native PowerShell "parameter cannot be found" error.
+- `prepare-dms-schema.ps1 -ApiSchemaPath <path>` preserves the existing expert direct-filesystem behavior
+  from Story 00, including schema sets that contain extensions. Expert mode is the supported path for
+  extension and custom schema scenarios.
+- Package-backed resolution uses the configured NuGet feed and the explicit core package/version default.
+  The default is pinned and documented in one implementation location; bootstrap must not resolve floating
+  `latest` versions or silently fall back to legacy DLL-backed packages. The core package ID uses the
   canonical Data-Standard-qualified convention defined in
   [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md):
-  the core package is `EdFi.DataStandard52.ApiSchema`, and extension packages follow
-  `EdFi.DataStandard52.<Project>.ApiSchema`. Version defaults are documented and validated against the feed
-  during implementation.
-- Current repository package references and `SCHEMA_PACKAGES` examples may still use legacy unqualified
-  extension IDs until the Story 04/06 migration updates those consumers.
-- Package materialization rejects invalid package payloads before finalizing the staged workspace:
+  `EdFi.DataStandard52.ApiSchema`. The version default is pinned at `1.0.329`, the published asset-only
+  version verified against the feed (see
+  [`../../../../spikes/DMS-1156/asset-only-package-feed-findings.md`](../../../../spikes/DMS-1156/asset-only-package-feed-findings.md)).
+- Package-backed standard mode does not use `SCHEMA_PACKAGES` as a selector, schema authority, or runtime
+  handoff. The core package comes from the Story 06 standard-mode default; DMS runtime reads the staged
+  workspace produced by bootstrap, not the `.nupkg`, NuGet cache, or `SCHEMA_PACKAGES`.
+- Package materialization rejects invalid core package payloads before finalizing the staged workspace:
   - missing asset-only ApiSchema payload,
   - missing or malformed package manifest,
   - zero or multiple schema JSON files at the package contract path,
   - forbidden DLL-only `lib/` or `ref/` ApiSchema package shape after the asset-only package switch-over,
+  - package ID, project identity, or `isExtensionProject` values that do not match the requested core
+    package,
+  - manifest-declared static assets (`discoverySpecPath`, `xsdDirectory`) that are present but missing on
+    disk or empty; optional static content may be absent only when the manifest omits the path or records it
+    as null,
   - duplicate normalized manifest-relative paths.
 - Package-backed standard mode writes the same `bootstrap-api-schema-manifest.json` runtime asset index as
-  Story 00. That ApiSchema manifest records selected project identity, normalized schema paths, and optional
-  static content paths only. The root bootstrap manifest records standard-mode schema selection, selected
-  extension names, expected `EffectiveSchemaHash`, the ApiSchema workspace fingerprint, and the
+  Story 00. The root bootstrap manifest records standard-mode schema selection (`selectionMode = "Standard"`),
+  `selectedExtensions = @()`, expected `EffectiveSchemaHash`, the ApiSchema workspace fingerprint, and the
   relative ApiSchema manifest path.
 - The staged schema files from package-backed standard mode are the only files used for
   `EffectiveSchemaHash` calculation, Docker-hosted DMS startup, and IDE-hosted DMS startup.
@@ -65,53 +73,66 @@ filesystem inputs.
   the same mode-to-security contract used for Story 00:
   - core-only standard mode stays Embedded mode unless additive claims are supplied by another supported
     path,
-  - selected extensions automatically stage their bootstrap-managed claimset fragments when available,
+  - in expert `-ApiSchemaPath` mode, extensions present in the staged schema set automatically stage their
+    bootstrap-managed claimset fragments when available (e.g. Sample, Homograph), and extensions without a
+    bootstrap-managed fragment require caller-supplied `-ClaimsDirectoryPath` fragments,
   - no later phase re-derives extension security from command-line parameters.
-- Standard-mode selected extensions recorded in the root bootstrap manifest are the source used by
-  Story 02 seed delivery for built-in extension seed lookup. Story 06 does not load seed data directly and
-  does not define a second seed catalog.
-- The optional wrapper (`bootstrap-local-dms.ps1`) may expose `-Extensions` for the happy path, but only
-  forwards it to `prepare-dms-schema.ps1`; the wrapper does not own package resolution or schema policy.
-- Examples in the main design that use omitted `-Extensions` or named `-Extensions` are delivered by this
-  story, not by Story 00.
+- The root bootstrap manifest `selectedExtensions` value is the source used by Story 02 seed delivery for
+  built-in extension seed lookup. For core-only standard mode this is empty. Story 06 does not load seed data
+  directly and does not define a second seed catalog.
+- The optional wrappers (`bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`) do not declare, document,
+  or forward `-Extensions`. When no bootstrap manifest exists they stage core-only standard mode before
+  continuing; when a workspace is already staged (a manual or expert prepare flow) they use it as-is.
+- Same-checkout reruns reuse an existing package-backed staged ApiSchema workspace only when the intended
+  package-backed selection produces the same `EffectiveSchemaHash` and workspace fingerprint. Different
+  package versions or staged package contents fail fast with teardown guidance rather than rewriting a
+  workspace that may still be bind-mounted into a running stack.
 
 ## Tasks
 
-1. Wire standard-mode package-backed schema resolution to the package identity convention defined above: core
-   package version defaults, namespace prefixes, and the security fragment lookup keys shared with claims
-   staging.
-2. Update `prepare-dms-schema.ps1` so standard mode is valid when `-ApiSchemaPath` is omitted:
-   core-only when `-Extensions` is omitted, and core plus selected extensions when it is supplied.
-3. Preserve `-ApiSchemaPath` as the expert direct-filesystem path from Story 00 and enforce mutual
-   exclusivity between `-ApiSchemaPath` and `-Extensions`.
-4. Implement NuGet package resolution and isolated extraction for the configured package feed, with clear
-   diagnostics for unreachable feeds, missing packages, and version-resolution failures.
-5. Validate each extracted package against the asset-only ApiSchema package contract from Story 05 before
-   copying any files into the final staged workspace.
-6. Reuse the Story 00 workspace-normalization path to stage one core schema plus zero or more extension
-   schemas, optional static content, deterministic manifest-relative paths, normalized-path collision
-   detection, and `EffectiveSchemaHash` calculation.
-7. Write package-backed standard-mode schema facts into the root bootstrap manifest schema section and ensure
-   `prepare-dms-claims.ps1` writes selected extension namespace prefixes into the root bootstrap
-   manifest seed section.
-8. Update wrapper parameter forwarding and validation so `bootstrap-local-dms.ps1 -Extensions ...` reaches
-   `prepare-dms-schema.ps1` without the wrapper owning schema resolution.
-9. Add tests for core-only standard mode, single and multiple extensions, artifact resolution failures,
-   mutual exclusivity with `-ApiSchemaPath`, invalid package payload rejection, and reuse of identical staged
-   package-backed workspaces.
-10. Update developer-facing examples and failure messages so Story 00 direct-filesystem examples and Story
-    06 package-backed standard-mode examples are clearly distinguished.
+1. Pin the standard-mode core package identity/version default in one implementation location
+   (`bootstrap-schema-catalog.psm1`): core package ID, project/endpoint tokens, feed URL, and version.
+2. Remove the `-Extensions` parameter from `prepare-dms-schema.ps1`. Standard mode (no `-ApiSchemaPath`)
+   resolves and stages the core package only.
+3. Preserve `-ApiSchemaPath` as the expert direct-filesystem path from Story 00, including extension-containing
+   filesystem schema sets.
+4. Remove the open extension-resolution behavior from the standard-mode path (`Resolve-StandardExtensionPackage`
+   and its short-name → package-ID construction). Named extension package selection is no longer supported in
+   standard mode.
+5. Implement/retain NuGet package resolution and isolated extraction for the configured feed, with clear
+   diagnostics for unreachable feeds, missing packages, missing exact default versions, and
+   version-resolution failures.
+6. Validate the extracted core package against the asset-only ApiSchema package contract from Story 05 before
+   copying any files into the final staged workspace, including package/project identity checks against the
+   requested core package.
+7. Reuse the Story 00 workspace-normalization path to stage the core schema, optional static content,
+   deterministic manifest-relative paths, normalized-path collision detection, and `EffectiveSchemaHash`
+   calculation, writing standard-mode schema facts (`selectedExtensions = @()`) into the root bootstrap
+   manifest schema section.
+8. Remove `-Extensions` from `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, and
+   `Invoke-BootstrapWrapper`. Preserve clean-workspace auto-staging of core-only standard mode and the
+   `-LoadSeedData` core-only path.
+9. Update tests: keep focused coverage for core-only package-backed standard mode and core package payload
+   validation; remove tests that prove `-Extensions` comma-splitting, duplicate handling, extension package
+   resolution, open/TPDM resolution, wrapper `-Extensions` forwarding, or standard-mode extension drift;
+   preserve expert `-ApiSchemaPath` tests for extension-containing filesystem schema sets; add tests proving
+   `prepare-dms-schema.ps1`, `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, and
+   `Invoke-BootstrapWrapper` no longer expose `-Extensions`.
+10. Update developer-facing examples and failure messages so Story 00 direct-filesystem examples and Story 06
+    package-backed core-only standard-mode examples are clearly distinguished, and so removed `-Extensions`
+    usage is no longer documented.
 
 ## Out of Scope
 
 - Direct filesystem `-ApiSchemaPath` staging; that belongs to Story 00.
+- Named/standard-mode extension package selection of any kind (no `-Extensions` parameter, no allowlist, no
+  open resolution). Extension and custom schema scenarios use expert `-ApiSchemaPath`.
 - DMS runtime `ContentProvider` changes; that belongs to Story 04.
 - Publishing asset-only ApiSchema packages from MetaEd; that belongs to Story 05.
 - API-based seed loading, BulkLoadClient invocation, and built-in seed package loading; those belong to
   Story 02.
 - Published agency/sysadmin seed distribution; that belongs to DMS-1119.
-- A generalized plugin system, arbitrary package IDs supplied by developers, or per-extension version
-  override features beyond the documented DMS-916 defaults.
+- Reading `SCHEMA_PACKAGES` as the Story 06 schema selector or accepting legacy unqualified package IDs.
 
 ## Design References
 
@@ -122,3 +143,61 @@ filesystem inputs.
 - [`02-api-seed-delivery.md`](02-api-seed-delivery.md)
 - [`04-apischema-runtime-content-loading.md`](04-apischema-runtime-content-loading.md)
 - [`05-metaed-apischema-asset-packaging.md`](05-metaed-apischema-asset-packaging.md)
+
+## Review Log
+
+### 2026-06-16 — scope decision: remove `-Extensions`, standard mode is core-only
+
+The team decided to refactor and simplify DMS-1156 by **removing the `-Extensions` parameter entirely**. The
+new scope is package-backed **core-only** standard schema selection. Named extension package selection is no
+longer part of this story; expert/custom extension scenarios use `-ApiSchemaPath`.
+
+This decision **supersedes the 2026-06-08 "open resolution" entry below**, which had resolved a Jira↔local
+conflict (closed mapped-extension catalog with TPDM rejection vs. open package-backed resolution) in favor of
+open resolution. Neither the closed-catalog model nor the open-resolution model applies any longer: there is
+no standard-mode extension-selection surface at all. The recurring review disagreement between the Jira
+ticket (closed catalog / TPDM rejection) and the local design (open resolution) is closed by removing the
+surface that the conflict was about.
+
+Consequences:
+
+- `prepare-dms-schema.ps1` drops `-Extensions`; standard mode stages the core package only.
+- `bootstrap-schema-catalog.psm1` drops `Resolve-StandardExtensionPackage` and the short-name project-token
+  map. The core package accessors and `Get-StandardKnownExtensionInfo` / `KnownExtensionClaimsMetadata`
+  remain: `prepare-dms-claims.ps1` still uses the latter to auto-stage Sample/Homograph claim fragments for
+  extensions present in an **expert** `-ApiSchemaPath` schema set (Story 00 behavior, unchanged).
+- The wrappers drop `-Extensions`; clean-workspace core-only auto-staging and the `-LoadSeedData` core-only
+  path are preserved.
+- The Jira DMS-1156 acceptance criteria must be updated to match this core-only scope (the closed-catalog /
+  named-`-Extensions` language is obsolete).
+
+### 2026-06-08 — package feed verification (core package pin)
+
+Verified the published core package directly on the feed
+(`reference/spikes/DMS-1156/asset-only-package-feed-findings.md`):
+
+- The core package `EdFi.DataStandard52.ApiSchema` is published as asset-only at `1.0.329` (the asset-only
+  switch-over version; `1.0.328` is still DLL-backed). It was extracted and confirmed asset-only
+  (`contentFiles/any/any/ApiSchema/…`, no `lib/`/`ref/`/`dll`).
+- Implementation consequence: `bootstrap-schema-catalog.psm1` is the single pinned location for the feed URL
+  and core version pin; the resolver can be exercised against the real `1.0.329` core package, with fixtures
+  reserved for offline failure-path tests.
+
+> Historical note: earlier revisions of this story and `apischema-container.md` documented an
+> `EdFi.DataStandard52.<Project>.ApiSchema` extension package-ID convention used by the now-removed
+> standard-mode `-Extensions` surface. Those extension package-ID references have been removed along with the
+> feature. Extension packages, where needed, are consumed through expert `-ApiSchemaPath` filesystem staging,
+> which does not construct package IDs.
+
+### 2026-06-09 — post-implementation review triage (cross-story scope)
+
+Reviewed the implemented changeset against the epic story scopes. Findings retained as in-scope for DMS-1156:
+
+- Stage-time identity lock — the project identity inside the staged core `ApiSchema.json` is asserted against
+  the validated package manifest, so a package that passes `packageId` validation cannot stage a different
+  project.
+- Optional `discoverySpecPath`/`xsdDirectory` fields may be omitted as well as null without a StrictMode
+  error; a present-but-empty/missing declared static asset fails fast.
+- `package-manifest.json` relative paths (`schemaPath`/`discoverySpecPath`/`xsdDirectory`) are rejected when
+  rooted or containing `..`, as part of validating the extracted asset-only contract before staging.
+- HTTP-feed service/version index parsing hardened against malformed/partial JSON.

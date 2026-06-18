@@ -24,6 +24,18 @@ function Get-DotNetFrameworkVersion {
 
 function Get-DmsSchemaToolCandidateDirectory {
     $repoRoot = Get-BootstrapRepoRoot
+    $candidateDirectories = [System.Collections.ArrayList]::new()
+
+    # Documented publish location (README "Standard mode" / prepare-dms-schema.ps1 help):
+    # `dotnet publish ... -o .bootstrap/tools/dms-schema` drops the apphost executable directly in this
+    # flat directory. Probing it lets the documented wrapper shorthand
+    # (`bootstrap-local-dms.ps1` core-only standard staging) resolve the tool after the documented one-time
+    # publish step, without requiring -SchemaToolPath (which the wrapper does not forward) or DMS_SCHEMA_TOOL_PATH.
+    $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/dms-schema"
+    if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {
+        $null = $candidateDirectories.Add($publishedToolDirectory)
+    }
+
     $toolBinRoot = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin"
     $frameworkDirectories = [System.Collections.ArrayList]::new()
 
@@ -48,13 +60,18 @@ function Get-DmsSchemaToolCandidateDirectory {
         }
     }
 
-    return @(
+    $sortedBinDirectories = @(
         $frameworkDirectories |
             Sort-Object `
                 -Property @{ Expression = { $_.FrameworkVersion }; Descending = $true },
                     @{ Expression = { $_.ConfigurationPriority }; Ascending = $true } |
             ForEach-Object { $_.Directory }
     )
+    foreach ($binDirectory in $sortedBinDirectories) {
+        $null = $candidateDirectories.Add($binDirectory)
+    }
+
+    return @($candidateDirectories)
 }
 
 function Resolve-DmsSchemaTool {

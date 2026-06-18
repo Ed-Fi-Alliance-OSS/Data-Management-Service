@@ -45,18 +45,18 @@ environment configuration.
 | Item | Detail |
 |---|---|
 | **Preconditions** | Story 00: filesystem ApiSchema source available directly through `-ApiSchemaPath`. Story 06: NuGet feed reachable for asset-only package materialization. No Docker services required. |
-| **Inputs** | Story 00: `-ApiSchemaPath <path>` (direct filesystem ApiSchema source). Story 06: `-Extensions <name>` (0..N, package-backed extension names), mutually exclusive with `-ApiSchemaPath`. |
+| **Inputs** | Story 00: `-ApiSchemaPath <path>` (direct filesystem ApiSchema source). Story 06: no additional input parameter; standard mode (omit `-ApiSchemaPath`) stages the package-backed core schema only. Extension/custom schema sets use Story 00 `-ApiSchemaPath`. |
 | **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing normalized schema JSON files, optional schema-adjacent static content, and `bootstrap-api-schema-manifest.json`; the staged workspace itself is the downstream schema and runtime-asset contract consumed by later phases and by DMS runtime (staged workspace loading delivered by Story 04, DMS-1154) |
 | **Side effects** | Writes staged workspace; computes expected `EffectiveSchemaHash` via `dms-schema hash`; records manifest-relative paths for schema and optional static content in `bootstrap-api-schema-manifest.json`; writes the schema section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` with schema-selection mode, selected extensions, the effective schema hash, an ApiSchema workspace fingerprint, and the relative ApiSchema manifest path |
-| **Failure conditions** | Story 00: missing `-ApiSchemaPath`; `-Extensions` supplied before Story 06 behavior is implemented; normalized-path collision; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging. Story 06 adds: extension package/artifact resolution failure; `-Extensions` and `-ApiSchemaPath` both supplied; NuGet feed unreachable for package-backed materialization; selected package is missing the required asset-only ApiSchema payload; selected package contains only DLL-backed ApiSchema resources after the asset-only package switch-over. |
+| **Failure conditions** | Story 00: missing `-ApiSchemaPath`; normalized-path collision; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging. Story 06 adds: NuGet feed unreachable for package-backed materialization; the core package is missing the required asset-only ApiSchema payload; the core package contains only DLL-backed ApiSchema resources after the asset-only package switch-over. |
 | **Must NOT do** | Start or depend on Docker services; modify `.env` or Docker Compose variables; perform DDL work; contact the Config Service; accept claims-related parameters |
 
 **Mode-to-security contract (precise):** In Story 00 direct filesystem mode (`-ApiSchemaPath`), automatic
 base security selection comes from the staged schema and available claims inputs. Any non-core schema that
 needs additional security metadata remains detectable from the staged schema files and requires
 developer-supplied claim fragments through `-ClaimsDirectoryPath`; this command does not reject that shape
-because it does not own claims inputs. Story 06 package-backed `-Extensions` mode must write the same root
-bootstrap manifest schema facts so `prepare-dms-claims.ps1` can use the same security-selection contract.
+because it does not own claims inputs. Story 06 package-backed core-only standard mode must write the same
+root bootstrap manifest schema facts so `prepare-dms-claims.ps1` can use the same security-selection contract.
 
 **Boundary note:** The stable contract is the staged filesystem ApiSchema workspace, not the package shape
 that produced it. Story 00 delivers only the direct `-ApiSchemaPath` acquisition path. Story 06
@@ -107,7 +107,7 @@ bootstrap manifest records stable prepared inputs and fingerprints only:
   "version": 1,
   "schema": {
     "selectionMode": "Standard",
-    "selectedExtensions": ["sample"],
+    "selectedExtensions": [],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -228,7 +228,7 @@ successor story.
 | **Inputs** | `-EnvironmentFile <path>` (select local settings for CMS URL, auth defaults, tenant scope, and Docker-local DMS URL); `-BootstrapManifestPath <path>` (optional override for the bootstrap manifest; defaults to `eng/docker-compose/.bootstrap/bootstrap-manifest.json`); `-DataStoreId <long[]>` (explicit numeric DMS data store ID selector; omit when exactly one instance exists); `-DmsBaseUrl <url>` (BulkLoadClient target endpoint; defaults to the Docker-local DMS URL resolved from the local settings and must be explicit for IDE-hosted seed loading); `-IdentityProvider` (auth provider used to resolve the BulkLoadClient OAuth endpoint; defaults to the provider resolved from the local settings when that parameter is omitted); `-SeedTemplate Minimal\|Populated` (mutually exclusive with `-SeedDataPath`); `-SeedDataPath <path>` (custom ODS XML interchange directory); `-AdditionalNamespacePrefix <string[]>` (optional additive namespace prefixes for custom seed authorization, especially `-SeedDataPath` payloads with agency or custom namespaces); `-SchoolYear <int[]>` (school-year filter; omit when exactly one instance exists) |
 | **Outputs** | Seeded DMS instance(s); seed workspace cleaned up on success |
 | **Side effects** | Creates `SeedLoader` application via `Add-CmsClient` / `Add-Application` using the de-duplicated baseline seed namespace prefixes, selected extension namespace prefixes, and any `-AdditionalNamespacePrefix` values; resolves BulkLoadClient package; resolves the OAuth URL from `-IdentityProvider`; materializes XML interchange files into ignored seed workspaces using BulkLoadClient-discoverable target paths such as `InterchangeName.xml`, `InterchangeName-*.xml`, and `InterchangeName/*.xml`; invokes BulkLoadClient once per selected target and seed tier with the route-qualified DMS base URL, `-d` data directory, `-w` working directory, `-k`/`-s` credentials, `-o` OAuth URL, and either `-x` staged XSD directory or `-z` XSD metadata URL; retains seed workspace on failure |
-| **Failure conditions** | Missing, malformed, unsupported-version, or incomplete bootstrap manifest; bootstrap manifest schema section says Mode 3 (`-ApiSchemaPath`) and `-SeedTemplate` is specified; zero matching instances found; multiple matching instances found without an explicit `-DataStoreId` or `-SchoolYear` selector; unsupported `-IdentityProvider`; `-SeedTemplate` and `-SeedDataPath` both supplied; blank or malformed `-AdditionalNamespacePrefix` value; BulkLoadClient exits non-zero; package-backed built-in seed source unavailable; catalog-advertised built-in seed package for an extension unavailable; DMS health endpoint unreachable; XML seed source cannot be materialized into a valid BulkLoadClient data directory; required XSD inputs are unavailable |
+| **Failure conditions** | Missing, malformed, unsupported-version, or incomplete bootstrap manifest; bootstrap manifest schema section says expert mode (`-ApiSchemaPath`) and `-SeedTemplate` is specified; zero matching instances found; multiple matching instances found without an explicit `-DataStoreId` or `-SchoolYear` selector; unsupported `-IdentityProvider`; `-SeedTemplate` and `-SeedDataPath` both supplied; blank or malformed `-AdditionalNamespacePrefix` value; BulkLoadClient exits non-zero; package-backed built-in seed source unavailable; catalog-advertised built-in seed package for an extension unavailable; DMS health endpoint unreachable; XML seed source cannot be materialized into a valid BulkLoadClient data directory; required XSD inputs are unavailable |
 | **Must NOT do** | Create `CMSReadOnlyAccess` (that belongs to `start-local-dms.ps1` through provider-specific local identity setup) or smoke-test credentials (those belong to `configure-local-data-store.ps1`); reuse `SeedLoader` credentials for smoke tests; perform DDL work; accept schema or claims parameters |
 
 **Boundary note:** This phase uses existing BulkLoadClient XML interchange loading as the API-based replacement for the deprecated direct-SQL seed path. Direct invocation of `load-dms-seed-data.ps1` always performs seed delivery; it does not accept a second `-LoadSeedData` switch. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is supplied, auto-select it; when multiple instances exist and no explicit `-DataStoreId` or `-SchoolYear` is provided, fail fast with guidance to supply an explicit selector. Endpoint resolution is phase-owned: `load-dms-seed-data.ps1` never infers the IDE URL from a prior `start-local-dms.ps1` invocation. Manual IDE-hosted seed loading passes `-DmsBaseUrl` explicitly; DMS-1152 wrappers do not expose the deferred IDE-hosted continuation flags. Identity-provider resolution is also phase-owned: direct seed invocation passes `-IdentityProvider` when the running environment uses a non-default provider; otherwise the seed phase uses the provider from the shared `-EnvironmentFile` resolver and does not rely on process environment variables left behind by an earlier `start-local-dms.ps1` call. `load-dms-seed-data.ps1` consumes schema mode, selected extensions, and extension namespace prefixes from the bootstrap manifest instead of accepting schema or claims parameters; it owns any seed-catalog lookup for built-in extension seed packages. `-AdditionalNamespacePrefix` is a declared authorization input for SeedLoader vendor creation only; it does not cause bootstrap to inspect XML files, infer missing extensions, or synthesize claim grants.
@@ -264,8 +264,15 @@ resolve the same CMS, tenant, DMS, and database defaults. It must not implement
 phase-specific behavior, retry or fallback logic, persisted resume state, schema provisioning, CMS
 configuration, or seed loading directly, and it never parses human-readable output to recover phase results.
 
-Broader wrapper consolidation flags such as `-Extensions`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`, and `-Rebuild`
-remain deferred to their owning bootstrap stories. DMS-1153 delivered the local wrapper IDE workflow
+Standard-mode schema staging is package-backed **core-only**; there is no `-Extensions` parameter
+on any wrapper or phase command. When no workspace is staged, `bootstrap-local-dms.ps1` and
+`bootstrap-published-dms.ps1` stage core-only standard mode through `prepare-dms-schema.ps1` so the
+no-argument happy path needs no manual prepare step; an already-staged workspace (including a manual expert
+`-ApiSchemaPath` flow) is reused (or fails fast on mismatch) per the prepare-dms-schema.ps1 rerun contract
+rather than being rewritten. Extension/custom schema sets use the expert `-ApiSchemaPath` path. Other broader
+wrapper consolidation flags
+such as `-ApiSchemaPath`, `-ClaimsDirectoryPath`, and `-Rebuild` remain deferred to their owning bootstrap
+stories. DMS-1153 delivered the local wrapper IDE workflow
 shapes: `-InfraOnly` (pre-DMS stop; distinct from the start-script split-startup switch of the same name
 that the wrapper drives internally) and `-DmsBaseUrl` (health-wait continuation, valid only with
 `-InfraOnly`, withheld from the initial start invocation) on `bootstrap-local-dms.ps1` only.
@@ -327,7 +334,7 @@ Each phase accepts only the parameters relevant to its concern.
 
 | Phase command | Owned parameters |
 |---|---|
-| `prepare-dms-schema.ps1` | Story 00: `-ApiSchemaPath`; Story 06: `-Extensions` |
+| `prepare-dms-schema.ps1` | `-ApiSchemaPath` (Story 00 expert mode); standard mode (Story 06) takes no additional parameter and stages the core package only |
 | `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath` |
 | `start-local-dms.ps1` | `-EnvironmentFile <path>`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-EnableKafkaUI`, `-EnableSwaggerUI`, `-d`/`-v`, `-AddExtensionSecurityMetadata` (no-manifest startup only; bootstrap mode activates staged claims from manifest), split-startup switches `-InfraOnly` and `-DmsOnly`, `-DmsBaseUrl <url>` (valid only with `-InfraOnly`) |
 | `configure-local-data-store.ps1` | `-EnvironmentFile <path>`, `-NoDataStore`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |

@@ -34,7 +34,7 @@ Describe "Story 00 bootstrap" {
         $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
         New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
 
-        foreach ($fileName in @("bootstrap-manifest.psm1", "bootstrap-schema-tool.psm1", "prepare-dms-schema.ps1", "prepare-dms-claims.ps1")) {
+        foreach ($fileName in @("bootstrap-manifest.psm1", "bootstrap-schema-catalog.psm1", "bootstrap-schema-tool.psm1", "bootstrap-package-resolver.psm1", "prepare-dms-schema.ps1", "prepare-dms-claims.ps1")) {
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $dockerComposeRoot
         }
 
@@ -213,6 +213,144 @@ exit $ExitCode
         New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
         $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
     }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+
+    function script:New-FixtureNupkgForSchema {
+        <#
+        .SYNOPSIS
+        Creates a minimal asset-only ApiSchema .nupkg fixture for standard-mode pipeline tests.
+        The .nupkg contains contentFiles/any/any/ApiSchema/package-manifest.json and
+        contentFiles/any/any/ApiSchema/ApiSchema.json with a valid projectSchema.
+        Returns the absolute path to the .nupkg file.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $FeedFolder,
+
+            [Parameter(Mandatory)]
+            [string]
+            $PackageId,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Version,
+
+            [Parameter(Mandatory)]
+            [string]
+            $ProjectName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $ProjectEndpointName,
+
+            [bool]
+            $IsExtensionProject = $false
+        )
+
+        $nupkgName = "$($PackageId.ToLowerInvariant()).$($Version.ToLowerInvariant()).nupkg"
+        $nupkgPath = Join-Path $FeedFolder $nupkgName
+
+        $stagingDir = Join-Path ([System.IO.Path]::GetTempPath()) "dms-s00-nupkg-$([Guid]::NewGuid().ToString('N'))"
+        $apiSchemaDir = Join-Path $stagingDir "contentFiles/any/any/ApiSchema"
+        New-Item -ItemType Directory -Path $apiSchemaDir -Force | Out-Null
+
+        # Full package-manifest.json with all required fields.
+        $manifest = [ordered]@{
+            version             = 1
+            packageId           = $PackageId
+            projectName         = $ProjectName
+            projectEndpointName = $ProjectEndpointName
+            isExtensionProject  = $IsExtensionProject
+            schemaPath          = "ApiSchema.json"
+            discoverySpecPath   = $null
+            xsdDirectory        = $null
+        }
+        $manifest | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $apiSchemaDir "package-manifest.json") -Encoding utf8
+
+        # Valid ApiSchema.json with a proper projectSchema so Read-ApiSchemaIdentity succeeds.
+        $apiSchema = [ordered]@{
+            apiSchemaVersion = "1.0.0"
+            projectSchema    = [ordered]@{
+                projectName         = $ProjectName
+                projectEndpointName = $ProjectEndpointName
+                isExtensionProject  = $IsExtensionProject
+                resourceSchemas     = [ordered]@{}
+                openApiBaseDocuments = [ordered]@{
+                    resources = [ordered]@{
+                        openapi = "3.0.1"
+                    }
+                }
+            }
+        }
+        $apiSchema | ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $apiSchemaDir "ApiSchema.json") -Encoding utf8
+
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($stagingDir, $nupkgPath)
+        Remove-Item -LiteralPath $stagingDir -Recurse -Force
+
+        return $nupkgPath
+    }
+
+    function script:New-StandardModeFeed {
+        <#
+        .SYNOPSIS
+        Creates a local fixture feed folder containing a core and optional extension .nupkg.
+        Returns the path to the feed folder.
+        #>
+        param(
+            [string[]]
+            $ExtensionNames = @()
+        )
+
+        $feedFolder = New-TestDirectory
+        New-Item -ItemType Directory -Path $feedFolder -Force | Out-Null
+
+        # Core package
+        New-FixtureNupkgForSchema `
+            -FeedFolder $feedFolder `
+            -PackageId "EdFi.DataStandard52.ApiSchema" `
+            -Version "1.0.329" `
+            -ProjectName "Ed-Fi" `
+            -ProjectEndpointName "ed-fi" `
+            -IsExtensionProject $false | Out-Null
+
+        foreach ($name in $ExtensionNames) {
+            $lower = $name.ToLowerInvariant()
+            $title = $lower.Substring(0, 1).ToUpperInvariant() + $lower.Substring(1)
+            New-FixtureNupkgForSchema `
+                -FeedFolder $feedFolder `
+                -PackageId "EdFi.DataStandard52.$title.ApiSchema" `
+                -Version "1.0.329" `
+                -ProjectName $title `
+                -ProjectEndpointName $lower `
+                -IsExtensionProject $true | Out-Null
+        }
+
+        return $feedFolder
+    }
+
+    function script:Invoke-PrepareSchemaStandard {
+        # Standard mode is package-backed core-only; there is no -Extensions parameter.
+        param(
+            [string]
+            $FeedFolder,
+
+            [string]
+            $Hash = $script:hashA,
+
+            [int]
+            $ToolExitCode = 0
+        )
+
+        $tool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $Hash -ExitCode $ToolExitCode
+        & $script:repo.PrepareSchemaScript `
+            -PackageFeedUrl $FeedFolder `
+            -SchemaToolPath $tool | Out-Null
+    }
     }
 
     BeforeEach {
@@ -235,12 +373,30 @@ exit $ExitCode
     }
 
     Context "schema staging" {
-        It "rejects missing ApiSchemaPath and Story 06 schema parameters" {
-            { & $script:repo.PrepareSchemaScript } |
-                Should -Throw -ExpectedMessage "*Story 06*"
+        It "stages core-only schema in standard mode against a local fixture feed" {
+            $feedFolder = New-StandardModeFeed
+            try {
+                Invoke-PrepareSchemaStandard -FeedFolder $feedFolder
+                $manifest = Get-RootManifest
 
-            { & $script:repo.PrepareSchemaScript -Extensions sample } |
-                Should -Throw -ExpectedMessage "*Story 06*"
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
+                    Should -BeTrue
+                $manifest.schema.selectionMode | Should -Be "Standard"
+                $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
+                $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
+                $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            } finally {
+                if (Test-Path -LiteralPath $feedFolder) {
+                    Remove-Item -LiteralPath $feedFolder -Recurse -Force
+                }
+            }
+        }
+
+        It "does not accept an -Extensions parameter in standard mode" {
+            # standard mode is core-only; -Extensions was removed and fails with the native
+            # PowerShell "parameter cannot be found" error.
+            { & $script:repo.PrepareSchemaScript -Extensions "sample" } |
+                Should -Throw -ExpectedMessage "*parameter cannot be found*Extensions*"
         }
 
         It "stages core plus extension schemas and records the Story 00 manifest contract" {
@@ -803,6 +959,64 @@ exit $ExitCode
 
             Test-Path -LiteralPath $stagedClaims | Should -BeFalse
         }
+
+        It "Standard-mode core-only schema writes Embedded claims mode with no namespace prefixes" {
+            # prepare-dms-claims.ps1 is mode-agnostic: it reads bootstrap-api-schema-manifest.json
+            # regardless of selectionMode. Standard mode with no extensions produces no extension
+            # projects in the manifest, so no fragments are staged and mode is Embedded.
+            $feedFolder = New-StandardModeFeed
+            try {
+                Invoke-PrepareSchemaStandard -FeedFolder $feedFolder
+                Invoke-PrepareClaim
+                $manifest = Get-RootManifest
+
+                $manifest.claims.mode | Should -Be "Embedded"
+                @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Count |
+                    Should -Be 0
+                $manifest.seed.extensionNamespacePrefixes | Should -BeNullOrEmpty
+            } finally {
+                if (Test-Path -LiteralPath $feedFolder) {
+                    Remove-Item -LiteralPath $feedFolder -Recurse -Force
+                }
+            }
+        }
+
+        It "reads the ApiSchema manifest from the recorded schema.apiSchemaManifestPath, not a hardcoded path" {
+            # claims staging must consume the ApiSchema manifest the schema handoff recorded
+            # (schema.apiSchemaManifestPath) - the same field Resolve-BootstrapSchemaWorkspace and
+            # Set-BootstrapStartupEnvironment use - rather than a hardcoded
+            # ApiSchema/bootstrap-api-schema-manifest.json.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet)
+
+            $apiSchemaDir = Join-Path $script:repo.BootstrapRoot "ApiSchema"
+            $defaultManifest = Join-Path $apiSchemaDir "bootstrap-api-schema-manifest.json"
+            $relocatedRelative = "ApiSchema/relocated-api-schema-manifest.json"
+            Move-Item -LiteralPath $defaultManifest -Destination (Join-Path $script:repo.BootstrapRoot $relocatedRelative)
+
+            # Point the recorded schema handoff at the relocated manifest.
+            $manifestPath = Join-Path $script:repo.BootstrapRoot "bootstrap-manifest.json"
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $manifest.schema.apiSchemaManifestPath = $relocatedRelative
+            $manifest | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+            # The hardcoded default manifest no longer exists; claims staging must follow the recorded
+            # path and succeed. With the old hardcoded path this threw "Staged ApiSchema manifest was not found".
+            { Invoke-PrepareClaim } | Should -Not -Throw -Because "claims staging must honor schema.apiSchemaManifestPath"
+            (Get-RootManifest).claims.mode | Should -Be "Embedded"
+        }
+
+        It "throws when the root manifest schema section lacks apiSchemaManifestPath" {
+            # A schema section without apiSchemaManifestPath is an incomplete/legacy handoff; claims staging
+            # must require the recorded field rather than silently falling back to a hardcoded manifest path.
+            New-Item -ItemType Directory -Path $script:repo.BootstrapRoot -Force | Out-Null
+            $manifestPath = Join-Path $script:repo.BootstrapRoot "bootstrap-manifest.json"
+            '{"version":1,"schema":{"selectionMode":"Standard"}}' |
+                Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*schema.apiSchemaManifestPath*"
+        }
+
     }
 
     Context "startup handoff" {
@@ -837,6 +1051,33 @@ exit $ExitCode
             $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
             $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+        }
+
+        It "validates a package-backed standard-mode bootstrap manifest at startup (DMS-1156 wrapper path)" {
+            # regression: prepare-dms-schema.ps1 standard mode (core-only, invoked directly or
+            # auto-staged by the wrapper) records selectionMode "Standard". Standard and ApiSchemaPath modes
+            # stage the same normalized .bootstrap/ApiSchema workspace, so startup validation must accept
+            # "Standard"; rejecting everything but "ApiSchemaPath" broke the standard-mode/wrapper production
+            # path before infrastructure could start.
+            $feedFolder = New-StandardModeFeed
+            try {
+                Invoke-PrepareSchemaStandard -FeedFolder $feedFolder
+                Invoke-PrepareClaim
+                (Get-RootManifest).schema.selectionMode | Should -Be "Standard"
+
+                Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
+                Import-Module $script:repo.ManifestModule -Force
+
+                # Story 04 (DMS-1154) activates staged-workspace runtime loading, so a valid
+                # standard-mode manifest must be accepted and the staged-schema env vars activated.
+                Set-BootstrapStartupEnvironment | Should -BeTrue
+                $env:USE_API_SCHEMA_PATH | Should -Be "true"
+                $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
+            } finally {
+                if (Test-Path -LiteralPath $feedFolder) {
+                    Remove-Item -LiteralPath $feedFolder -Recurse -Force
+                }
+            }
         }
 
         It "activates staged schema env vars in bootstrap mode and sets DMS_API_SCHEMA_MOUNT_SOURCE to the staged workspace" {

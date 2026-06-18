@@ -92,6 +92,55 @@ function Assert-WrapperStagedSchemaWorkspace {
     Resolve-BootstrapSchemaWorkspace | Out-Null
 }
 
+function Test-WrapperManifestClaimsStaged {
+    <#
+    .SYNOPSIS
+    Returns $true only when the on-disk bootstrap manifest already carries BOTH the claims and
+    seed sections, i.e. prepare-dms-claims.ps1 has completed for the staged workspace.
+
+    The wrapper uses this to detect a schema-only manifest — one written by prepare-dms-schema.ps1
+    without a following prepare-dms-claims.ps1 — so the staging phase can complete it before any
+    Docker/CMS side effects. Without this, the schema-only manifest passes Assert-WrapperStagedSchemaWorkspace
+    (which validates the schema workspace only) and infrastructure starts; start-local-dms.ps1 then
+    activates staged claims and runs the claims-ready gate, both of which require the claims/seed
+    sections and throw after the stack is already up.
+
+    Bare JSON parse keeps the wrapper independent of bootstrap-manifest.psm1 in sandboxed Pester
+    invocations (mirrors the ApiSchemaPath preflight in Invoke-BootstrapWrapper). Property presence
+    is tested via PSObject.Properties so the check is safe regardless of Set-StrictMode. A missing,
+    empty, malformed, or unreadable manifest is reported as "claims not staged" so the staging phase
+    runs prepare-dms-claims.ps1, which then surfaces the authoritative manifest error.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $rawManifestContent = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($rawManifestContent)) {
+            return $false
+        }
+
+        $parsedManifest = $rawManifestContent | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $parsedManifest) {
+            return $false
+        }
+
+        $claimsProperty = $parsedManifest.PSObject.Properties['claims']
+        $seedProperty = $parsedManifest.PSObject.Properties['seed']
+        return ($null -ne $claimsProperty -and $null -ne $claimsProperty.Value -and
+                $null -ne $seedProperty -and $null -ne $seedProperty.Value)
+    }
+    catch {
+        return $false
+    }
+}
+
 function Resolve-WrapperEnvironmentFilePath {
     <#
     .SYNOPSIS
@@ -291,43 +340,46 @@ function Invoke-BootstrapWrapper {
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
 
-    # Pre-start seed preflights: catch missing manifest, mutually-exclusive seed-source flags,
-    # and ApiSchemaPath combos here so a known-bad -LoadSeedData invocation doesn't first spin up
-    # Docker + CMS state. load-dms-seed-data.ps1's Read-SeedManifest / Assert-SeedSelectionInputs
-    # remain the authoritative validators; the checks below are a fail-fast convenience.
+    # Pre-start seed preflights: catch mutually-exclusive seed-source flags and ApiSchemaPath combos
+    # here so a known-bad -LoadSeedData invocation doesn't first spin up Docker + CMS state.
+    # load-dms-seed-data.ps1's Read-SeedManifest / Assert-SeedSelectionInputs remain the authoritative
+    # validators; the checks below are a fail-fast convenience.
     if ($LoadSeedData) {
-        $expectedManifest = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
-        if (-not (Test-Path -LiteralPath $expectedManifest -PathType Leaf)) {
-            throw "Bootstrap manifest not found at $expectedManifest. Run prepare-dms-schema.ps1 to stage the manifest before invoking the wrapper with -LoadSeedData."
-        }
-
         if ($seedTemplateSupplied -and $seedDataPathSupplied) {
             throw "-SeedTemplate and -SeedDataPath are mutually exclusive. Provide at most one."
         }
 
-        # Bare JSON parse keeps the wrapper independent of bootstrap-manifest.psm1 in sandboxed
-        # Pester invocations. Malformed/empty manifests defer to load-dms-seed-data.ps1's
-        # Read-SeedManifest for the authoritative error rather than throwing here.
-        $manifestSelectionMode = $null
-        try {
-            $rawManifestContent = Get-Content -LiteralPath $expectedManifest -Raw -ErrorAction Stop
-            if (-not [string]::IsNullOrWhiteSpace($rawManifestContent)) {
-                $parsedManifest = $rawManifestContent | ConvertFrom-Json -ErrorAction Stop
-                if ($null -ne $parsedManifest -and $null -ne $parsedManifest.schema -and -not [string]::IsNullOrWhiteSpace([string]$parsedManifest.schema.selectionMode)) {
-                    $manifestSelectionMode = [string]$parsedManifest.schema.selectionMode
+        # The schema/claims staging phase below guarantees a Standard-mode manifest exists before any
+        # Docker or CMS state is created: when no workspace is staged it stages core-only standard mode,
+        # for which -SeedTemplate is valid, so there is nothing to pre-validate. Only when a manifest
+        # ALREADY exists (a manual/expert pre-stage flow) do the ApiSchemaPath seed-source rules apply;
+        # they are checked here so a known-bad -LoadSeedData invocation fails fast before the start phase.
+        $expectedManifest = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
+        if (Test-Path -LiteralPath $expectedManifest -PathType Leaf) {
+            # Bare JSON parse keeps the wrapper independent of bootstrap-manifest.psm1 in sandboxed
+            # Pester invocations. Malformed/empty manifests defer to load-dms-seed-data.ps1's
+            # Read-SeedManifest for the authoritative error rather than throwing here.
+            $manifestSelectionMode = $null
+            try {
+                $rawManifestContent = Get-Content -LiteralPath $expectedManifest -Raw -ErrorAction Stop
+                if (-not [string]::IsNullOrWhiteSpace($rawManifestContent)) {
+                    $parsedManifest = $rawManifestContent | ConvertFrom-Json -ErrorAction Stop
+                    if ($null -ne $parsedManifest -and $null -ne $parsedManifest.schema -and -not [string]::IsNullOrWhiteSpace([string]$parsedManifest.schema.selectionMode)) {
+                        $manifestSelectionMode = [string]$parsedManifest.schema.selectionMode
+                    }
                 }
             }
-        }
-        catch {
-            $manifestSelectionMode = $null
-        }
-
-        if ($manifestSelectionMode -eq "ApiSchemaPath") {
-            if ($seedTemplateSupplied) {
-                throw "Expert mode (bootstrap-manifest.schema.selectionMode=ApiSchemaPath) does not support -SeedTemplate. Provide -SeedDataPath instead."
+            catch {
+                $manifestSelectionMode = $null
             }
-            if (-not $seedDataPathSupplied) {
-                throw "Expert mode (bootstrap-manifest.schema.selectionMode=ApiSchemaPath) requires -SeedDataPath. No built-in seed template is available in this mode."
+
+            if ($manifestSelectionMode -eq "ApiSchemaPath") {
+                if ($seedTemplateSupplied) {
+                    throw "Expert mode (bootstrap-manifest.schema.selectionMode=ApiSchemaPath) does not support -SeedTemplate. Provide -SeedDataPath instead."
+                }
+                if (-not $seedDataPathSupplied) {
+                    throw "Expert mode (bootstrap-manifest.schema.selectionMode=ApiSchemaPath) requires -SeedDataPath. No built-in seed template is available in this mode."
+                }
             }
         }
     }
@@ -370,6 +422,51 @@ function Invoke-BootstrapWrapper {
             -BaseEnvironmentFile $baseEnvFile `
             -LoadSeedDataRequested:$LoadSeedData
 
+        # Schema/claims staging phase. The standard happy path needs no manual pre-staging
+        # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage core-only standard
+        # mode so a clean checkout runs `bootstrap-local-dms.ps1` with no preceding prepare step. When a
+        # schema workspace is already staged (a manual/expert prepare flow, or a prior run), reuse it
+        # as-is rather than rewriting a workspace that may still be bind-mounted into a running stack.
+        # There is no -Extensions parameter; extension/custom schema sets are staged via expert
+        # -ApiSchemaPath before invoking the wrapper. prepare-dms-schema.ps1 owns all validation and the
+        # rerun contract.
+        #
+        # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
+        # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
+        # (prepare-dms-schema.ps1 was run without prepare-dms-claims.ps1). That schema-only state is
+        # incomplete: it passes Assert-WrapperStagedSchemaWorkspace (schema-only validation) but
+        # start-local-dms.ps1 then activates staged claims and runs the claims-ready gate, both of which
+        # require claims/seed and would throw only after Docker/CMS startup. Completing it here keeps the
+        # failure (if any) ahead of all infrastructure side effects. prepare-dms-claims.ps1 requires the
+        # schema section + staged ApiSchema manifest (guaranteed by the schema stage) and is a guarded
+        # rerun when the claims workspace already matches.
+        $prepareSchemaScript = "$PSScriptRoot/prepare-dms-schema.ps1"
+        $prepareClaimsScript = "$PSScriptRoot/prepare-dms-claims.ps1"
+        $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
+        $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
+
+        # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
+        # start/configure/provision phases below). prepare-dms-*.ps1 signal failure by throwing and may
+        # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
+        # session would otherwise make a successful staging step throw a false "failed with exit code"
+        # before infrastructure starts.
+        if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
+            $global:LASTEXITCODE = 0
+            & $prepareSchemaScript
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+            }
+        }
+
+        if ((Test-Path -LiteralPath $prepareClaimsScript) -and
+            (-not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
+            $global:LASTEXITCODE = 0
+            & $prepareClaimsScript
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
+            }
+        }
+
         Assert-WrapperStagedSchemaWorkspace
 
         # Infrastructure phase
@@ -383,6 +480,10 @@ function Invoke-BootstrapWrapper {
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
+        # Reset the native exit-code sentinel so the check below reflects only this start invocation and
+        # not a stale value left by an earlier command. The start scripts signal failure by throwing;
+        # docker-compose paths set a real exit code that overwrites this reset.
+        $global:LASTEXITCODE = 0
         & "$PSScriptRoot/$StartScriptName" @startArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "$StartScriptName failed with exit code $LASTEXITCODE."
