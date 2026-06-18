@@ -118,7 +118,7 @@ dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dia
 # Provision a PostgreSQL database
 dms-schema ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
 
-# Provision a SQL Server database (database must already exist)
+# Provision an existing SQL Server database (add --create-database to create it, as in the pgsql examples)
 dms-schema ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
 
 # Core + extension, PostgreSQL

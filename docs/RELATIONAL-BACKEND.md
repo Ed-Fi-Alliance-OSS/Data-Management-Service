@@ -103,7 +103,7 @@ dms-schema ddl provision \
 `--dialect` here is `pgsql` or `mssql` (not `both` — provision one database at a time).
 `--create-database` creates the target if missing; `--timeout` (default `300` seconds)
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
-Isolation on newly created databases.
+Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
 ### Scripted local provisioning
 
@@ -142,7 +142,7 @@ The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementS
 assembled by [`FullDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/FullDdlEmitter.cs))
 protects the database in two places:
 
-- **Preflight** (search the script for the `-- Phase 0: Preflight` header). Before any DDL runs,
+- **Preflight** (search the script for the full `-- Phase 0: Preflight (fail fast on schema hash mismatch)` header). Before any DDL runs,
   if `dms.EffectiveSchema` already exists with a *different* hash, the script raises an error and
   aborts. You cannot accidentally re-provision an existing database for a different effective schema.
 - **Seed insert-if-missing + validate** (search for the full `-- Phase 7: Seed Data (insert-if-missing
@@ -166,12 +166,13 @@ compares it to the effective schema it loaded. The check runs in
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
 
-Immediately after the fingerprint check, the routed pipeline runs a second first-use check,
+Immediately after the fingerprint check, each routed resource pipeline runs a second first-use check,
 [`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
 (pipeline order in [`ApiService.cs`](../src/dms/core/EdFi.DataManagementService.Core/ApiService.cs)), which
 compares the stored `ResourceKeyCount` and `ResourceKeySeedHash` against the loaded effective schema.
 A resource-key-seed mismatch also returns **HTTP 503** with the same remediation — reprovision against
-a fresh database and restart the service.
+a fresh database and restart the service. (The available-change-versions endpoint runs only the
+fingerprint check, not this seed check.)
 
 > [!IMPORTANT]
 > Both mismatch results are cached for the process lifetime. Reprovisioning alone does not clear
@@ -195,7 +196,8 @@ are in the design docs:
 Each document carries a `ContentVersion` stamp. **Stamping triggers** on the document tables
 populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
-old/new identity and securable values plus a `ChangeVersion`. When debugging a stamp or a
+old/new identity and securable values plus a `ChangeVersion`. (Descriptors share a single
+tracked-change table within that schema rather than one table per resource.) When debugging a stamp or a
 tracked-change row, these are the sources of truth:
 
 - [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write tracked-change rows
@@ -213,8 +215,8 @@ Inspect the relevant per-resource table under that schema (for example
 > only returns the newest change version via `SELECT dms.GetMaxChangeVersion()`, and the
 > `/deletes` and `/keyChanges` endpoints are a temporary empty-response shim
 > ([`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs))
-> that returns `[]` with `Total-Count: 0`. Do not expect `/deletes` or `/keyChanges` to read the
-> tracked-change tables yet.
+> that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
+> expect `/deletes` or `/keyChanges` to read the tracked-change tables yet.
 
 ## 5. Mapping packs (optional)
 
