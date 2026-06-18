@@ -162,7 +162,10 @@ with PostgreSQL/SQL Server reader implementations in the respective backend proj
 compares it to the effective schema it loaded. The check runs in
 [`ValidateDatabaseFingerprintMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateDatabaseFingerprintMiddleware.cs):
 
-- If `dms.EffectiveSchema` does not exist, the database is treated as not yet provisioned.
+- If `dms.EffectiveSchema` (or its singleton row) does not exist, the database is treated as not yet
+  provisioned and requests receive **HTTP 503** (`ForDatabaseNotProvisioned`); run `ddl provision` to
+  initialize the schema. Like the mismatch cases below, this result is cached for the process lifetime —
+  if you provision after the service has already tried to use the database, restart it.
 - If the stored hash does **not** match the loaded effective schema, requests receive **HTTP 503**
   with a detail explaining that the database was provisioned for a different effective schema and
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
@@ -177,7 +180,8 @@ a fresh database and restart the service. (The available-change-versions endpoin
 fingerprint check, not this seed check.)
 
 > [!IMPORTANT]
-> Both mismatch results are cached for the process lifetime. Reprovisioning alone does not clear
+> All first-use validation failures — not-provisioned, hash mismatch, and resource-key-seed
+> mismatch — are cached for the process lifetime. Reprovisioning alone does not clear
 > a 503 — you must also restart the DMS process. See
 > [§7, "no hot reload"](#7-e2e-setupteardown-and-the-no-hot-reload-rule).
 

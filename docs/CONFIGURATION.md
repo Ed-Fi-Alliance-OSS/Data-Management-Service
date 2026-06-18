@@ -33,8 +33,8 @@ file.
 DMS can load precompiled mapping packs (`.mpack`) instead of compiling mapping sets at
 runtime. **Mapping packs are not available yet** — with the default settings (`Enabled` is
 `false`) mapping sets are compiled at runtime today, but the configuration surface exists
-and is validated. These settings are active whenever `Datastore` is `postgresql` or the
-SQL Server relational backend is used; they are not gated on `UseRelationalBackend`.
+and is validated. These settings are bound whenever `Datastore` is `postgresql` (independent of
+`UseRelationalBackend`); for SQL Server they are bound only when `UseRelationalBackend` is `true`.
 Because mapping-set resolution runs at startup, setting `Enabled` to `true` with no pack
 present makes DMS fail to start when `Required` is `true` or `AllowRuntimeCompileFallback`
 is `false`. See the
