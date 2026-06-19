@@ -23,9 +23,8 @@ public class Given_ChangeQueryResponseFieldMapper
     public void It_maps_identity_scalar_columns_by_exact_query_field_mapping()
     {
         var schoolIdColumn = ScalarIdentityColumn("SchoolId", "$.schoolId");
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(),
             CreateResourceModel(CreateQueryFieldMappings(("schoolId", "$.schoolId", "integer"))),
             CreateTrackedChangeTable(schoolIdColumn)
@@ -53,9 +52,8 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.termDescriptor",
             TrackedChangeColumnRole.DescriptorCodeValue
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(),
             CreateResourceModel(CreateQueryFieldMappings(("termDescriptor", "$.termDescriptor", "string"))),
             CreateTrackedChangeTable(codeValueColumn, namespaceColumn)
@@ -88,9 +86,8 @@ public class Given_ChangeQueryResponseFieldMapper
             TrackedChangeColumnRole.DescriptorCodeValue
         );
         var schoolIdColumn = ScalarIdentityColumn("SchoolId", "$.schoolId");
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(),
             CreateResourceModel(
                 CreateQueryFieldMappings(
@@ -115,10 +112,9 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.termDescriptor",
             TrackedChangeColumnRole.DescriptorCodeValue
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
         Action act = () =>
-            sut.Map(
+            ChangeQueryResponseFieldMapper.Map(
                 CreateMappingSet(),
                 CreateResourceModel(
                     CreateQueryFieldMappings(("termDescriptor", "$.termDescriptor", "string"))
@@ -150,9 +146,8 @@ public class Given_ChangeQueryResponseFieldMapper
             PersonJoinName: "Student"
         );
         var schoolIdColumn = ScalarIdentityColumn("SchoolId", "$.schoolId");
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(),
             CreateResourceModel(CreateQueryFieldMappings(("schoolId", "$.schoolId", "integer"))),
             CreateTrackedChangeTable(personDocumentIdColumn, schoolIdColumn)
@@ -166,10 +161,9 @@ public class Given_ChangeQueryResponseFieldMapper
     public void It_throws_when_exact_query_field_mapping_is_ambiguous()
     {
         var schoolIdColumn = ScalarIdentityColumn("SchoolId", "$.schoolId");
-        var sut = new ChangeQueryResponseFieldMapper();
 
         Action act = () =>
-            sut.Map(
+            ChangeQueryResponseFieldMapper.Map(
                 CreateMappingSet(),
                 CreateResourceModel(
                     CreateQueryFieldMappings(
@@ -211,9 +205,8 @@ public class Given_ChangeQueryResponseFieldMapper
                     ),
                 ],
             };
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(),
             CreateResourceModel(
                 CreateQueryFieldMappings(("schoolId", "$.schoolReference.schoolId", "integer")),
@@ -239,10 +232,9 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.schoolReference.schoolId",
             new DbColumnName("EducationOrganizationId_Unified")
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
         Action act = () =>
-            sut.Map(
+            ChangeQueryResponseFieldMapper.Map(
                 CreateMappingSet(),
                 CreateResourceModel(
                     CreateQueryFieldMappings(
@@ -280,9 +272,8 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.schoolReference.schoolId",
             new DbColumnName("EducationOrganizationId_Unified")
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(
                 CreateQueryCapability(
                     SupportedField(
@@ -311,9 +302,8 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.educationOrganizationReference.educationOrganizationId",
             new DbColumnName("EducationOrganizationId_Unified")
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(
                 CreateQueryCapability(
                     SupportedField(
@@ -342,9 +332,8 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.educationOrganizationReference.educationOrganizationId",
             new DbColumnName("EducationOrganizationId_Unified")
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(
                 CreateOmittedQueryCapability(
                     SupportedField(
@@ -388,9 +377,8 @@ public class Given_ChangeQueryResponseFieldMapper
                     ),
                 ],
             };
-        var sut = new ChangeQueryResponseFieldMapper();
 
-        IReadOnlyList<ChangeQueryResponseField> fields = sut.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             CreateMappingSet(
                 CreateQueryCapability(
                     SupportedField(
@@ -417,10 +405,9 @@ public class Given_ChangeQueryResponseFieldMapper
             "$.educationOrganizationReference.educationOrganizationId",
             new DbColumnName("EducationOrganizationId_Unified")
         );
-        var sut = new ChangeQueryResponseFieldMapper();
 
         Action act = () =>
-            sut.Map(
+            ChangeQueryResponseFieldMapper.Map(
                 CreateMappingSet(
                     CreateQueryCapability(
                         SupportedField(
@@ -458,10 +445,9 @@ public class Given_ChangeQueryResponseFieldMapper
     public void It_throws_when_no_response_field_name_can_be_resolved()
     {
         var unmappedColumn = ScalarIdentityColumn("UnknownIdentity", "$.unknownIdentity");
-        var sut = new ChangeQueryResponseFieldMapper();
 
         Action act = () =>
-            sut.Map(
+            ChangeQueryResponseFieldMapper.Map(
                 CreateMappingSet(),
                 CreateResourceModel(CreateQueryFieldMappings()),
                 CreateTrackedChangeTable(unmappedColumn)

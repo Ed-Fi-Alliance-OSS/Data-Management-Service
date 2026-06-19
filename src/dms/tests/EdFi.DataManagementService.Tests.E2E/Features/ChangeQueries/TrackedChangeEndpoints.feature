@@ -452,3 +452,103 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And total of records should be 1
               And the response body path "0.id" should equal request variable "pagingSchoolBId"
               And the response body path "0.keyValues.schoolId" should have value "8118606"
+
+        Rule: StudentSchoolAssociation deletes carry the student natural key
+
+            Background:
+                Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
+                  And the system has these "schools"
+                      | schoolId   | nameOfInstitution  | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                      | 1255901001 | Tracked SSA School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  And the system has these "students"
+                      | studentUniqueId | firstName | lastSurname | birthDate  |
+                      | "11"            | Tracked   | Student     | 2008-01-01 |
+
+            @relational-backend
+            @relational-ci-shard-3
+            Scenario: 11 Deleted StudentSchoolAssociation appears in deletes response with student natural key
+                 When a POST request is made to "/ed-fi/studentSchoolAssociations" with
+                      """
+                      {
+                        "entryDate": "2023-08-01",
+                        "schoolReference": {
+                          "schoolId": 1255901001
+                        },
+                        "studentReference": {
+                          "studentUniqueId": "11"
+                        },
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                      """
+                 Then it should respond with 201
+                 When the resulting id is stored in the "deletedSsaId" variable
+                 When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{deletedSsaId}"
+                 Then it should respond with 204
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "ssaDeleteChangeVersion"
+                 When a GET request is made to "/ed-fi/studentSchoolAssociations/deletes?minChangeVersion={ssaDeleteChangeVersion}&maxChangeVersion={ssaDeleteChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 1
+                      }
+                      """
+                  And total of records should be 1
+                  And the response body path "0.id" should equal request variable "deletedSsaId"
+                  And the response body path "0.keyValues.studentUniqueId" should have value "11"
+                  And the response body path "0.keyValues.schoolId" should have value "1255901001"
+
+            @relational-backend
+            @relational-ci-shard-3
+            Scenario: 12 Recreated StudentSchoolAssociation is suppressed from deletes response
+                 When a POST request is made to "/ed-fi/studentSchoolAssociations" with
+                      """
+                      {
+                        "entryDate": "2023-08-01",
+                        "schoolReference": {
+                          "schoolId": 1255901001
+                        },
+                        "studentReference": {
+                          "studentUniqueId": "11"
+                        },
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                      """
+                 Then it should respond with 201
+                 When the resulting id is stored in the "recreatedSsaId" variable
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "ssaRecreateMinChangeVersion"
+                 When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{recreatedSsaId}"
+                 Then it should respond with 204
+                 When a POST request is made to "/ed-fi/studentSchoolAssociations" with
+                      """
+                      {
+                        "entryDate": "2023-08-01",
+                        "schoolReference": {
+                          "schoolId": 1255901001
+                        },
+                        "studentReference": {
+                          "studentUniqueId": "11"
+                        },
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                      """
+                 Then it should respond with 201
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "ssaRecreateMaxChangeVersion"
+                 When a GET request is made to "/ed-fi/studentSchoolAssociations/deletes?minChangeVersion={ssaRecreateMinChangeVersion}&maxChangeVersion={ssaRecreateMaxChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 0
+                      }
+                      """
+                  And the response body is
+                      """
+                      []
+                      """

@@ -9,14 +9,9 @@ using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.ChangeQueries;
 
-internal sealed class ChangeQueryResponseFieldMapper
+internal static class ChangeQueryResponseFieldMapper
 {
-    [SuppressMessage(
-        "Major Code Smell",
-        "S2325:Methods and properties that don't access instance data should be static",
-        Justification = "Preserves the instance mapper contract used by later Change Query planners."
-    )]
-    public IReadOnlyList<ChangeQueryResponseField> Map(
+    public static IReadOnlyList<ChangeQueryResponseField> Map(
         MappingSet mappingSet,
         ConcreteResourceModel resourceModel,
         TrackedChangeTableInfo trackedChangeTable

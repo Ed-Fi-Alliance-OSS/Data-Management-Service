@@ -101,11 +101,12 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         IReadOnlyList<ChangeQueryResponseField> fields
     )
     {
-        FilteredDeletesSql filteredDeletesSql = BuildFilteredDeletesSql(request, fields);
+        PlanColumns columns = ResolvePlanColumns(request.TrackedChangeTable);
+        FilteredDeletesSql filteredDeletesSql = BuildFilteredDeletesSql(request, fields, columns);
 
         string commandText = request.PaginationParameters.TotalCount
-            ? $"{BuildDeletesCountSql(filteredDeletesSql)};\n{BuildDeletesPageSql(request, fields, filteredDeletesSql)}"
-            : BuildDeletesPageSql(request, fields, filteredDeletesSql);
+            ? $"{BuildDeletesCountSql(filteredDeletesSql)};\n{BuildDeletesPageSql(fields, filteredDeletesSql, columns)}"
+            : BuildDeletesPageSql(fields, filteredDeletesSql, columns);
 
         return new TrackedChangeQueryPlan(
             new RelationalCommand(commandText, BuildDeletesParameters(request, filteredDeletesSql)),
@@ -121,10 +122,11 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         IReadOnlyList<ChangeQueryResponseField> fields
     )
     {
-        string commonCteSql = BuildKeyChangesCommonCteSql(request);
+        PlanColumns columns = ResolvePlanColumns(request.TrackedChangeTable);
+        string commonCteSql = BuildKeyChangesCommonCteSql(request, columns);
         string commandText = request.PaginationParameters.TotalCount
-            ? $"{BuildKeyChangesCountSql(commonCteSql)};\n{BuildKeyChangesPageSql(request, fields, commonCteSql)}"
-            : BuildKeyChangesPageSql(request, fields, commonCteSql);
+            ? $"{BuildKeyChangesCountSql(commonCteSql)};\n{BuildKeyChangesPageSql(fields, commonCteSql, columns)}"
+            : BuildKeyChangesPageSql(fields, commonCteSql, columns);
 
         return new TrackedChangeQueryPlan(
             new RelationalCommand(commandText, BuildPagingParameters(request)),
@@ -135,19 +137,14 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         );
     }
 
-    private string BuildKeyChangesCommonCteSql(IRelationalTrackedChangeQueryRequest request)
+    private string BuildKeyChangesCommonCteSql(
+        IRelationalTrackedChangeQueryRequest request,
+        PlanColumns columns
+    )
     {
-        TrackedChangeSystemColumnInfo idColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.Id
-        );
-        TrackedChangeSystemColumnInfo changeVersionColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.ChangeVersion
-        );
-        TrackedChangeColumnInfo representativeIdentityColumn = RequireRepresentativeIdentityColumn(
-            request.TrackedChangeTable
-        );
+        TrackedChangeSystemColumnInfo idColumn = columns.IdColumn;
+        TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
+        TrackedChangeColumnInfo representativeIdentityColumn = columns.RepresentativeIdentityColumn;
 
         return $"""
             WITH FilteredChanges AS (
@@ -185,19 +182,13 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     }
 
     private string BuildKeyChangesPageSql(
-        IRelationalTrackedChangeQueryRequest request,
         IReadOnlyList<ChangeQueryResponseField> fields,
-        string commonCteSql
+        string commonCteSql,
+        PlanColumns columns
     )
     {
-        TrackedChangeSystemColumnInfo idColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.Id
-        );
-        TrackedChangeSystemColumnInfo changeVersionColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.ChangeVersion
-        );
+        TrackedChangeSystemColumnInfo idColumn = columns.IdColumn;
+        TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
 
         List<string> selectExpressions =
         [
@@ -229,16 +220,12 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private FilteredDeletesSql BuildFilteredDeletesSql(
         IRelationalTrackedChangeQueryRequest request,
-        IReadOnlyList<ChangeQueryResponseField> fields
+        IReadOnlyList<ChangeQueryResponseField> fields,
+        PlanColumns columns
     )
     {
-        TrackedChangeSystemColumnInfo changeVersionColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.ChangeVersion
-        );
-        TrackedChangeColumnInfo representativeIdentityColumn = RequireRepresentativeIdentityColumn(
-            request.TrackedChangeTable
-        );
+        TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
+        TrackedChangeColumnInfo representativeIdentityColumn = columns.RepresentativeIdentityColumn;
 
         List<string> joins = [];
         List<string> predicates =
@@ -298,19 +285,13 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     }
 
     private string BuildDeletesPageSql(
-        IRelationalTrackedChangeQueryRequest request,
         IReadOnlyList<ChangeQueryResponseField> fields,
-        FilteredDeletesSql filteredDeletesSql
+        FilteredDeletesSql filteredDeletesSql,
+        PlanColumns columns
     )
     {
-        TrackedChangeSystemColumnInfo idColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.Id
-        );
-        TrackedChangeSystemColumnInfo changeVersionColumn = RequireSystemColumn(
-            request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.ChangeVersion
-        );
+        TrackedChangeSystemColumnInfo idColumn = columns.IdColumn;
+        TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
 
         List<string> selectExpressions =
         [
@@ -812,32 +793,28 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     private static string FormatResource(QualifiedResourceName resource) =>
         $"{resource.ProjectName}:{resource.ResourceName}";
 
-    private string Quote(DbTableName table) =>
-        $"{QuoteIdentifier(table.Schema.Value)}.{QuoteIdentifier(table.Name)}";
+    private string Quote(DbTableName table) => SqlIdentifierQuoter.QuoteTableName(_dialect, table);
 
-    private string Quote(DbColumnName column) => QuoteIdentifier(column.Value);
+    private string Quote(DbColumnName column) => SqlIdentifierQuoter.QuoteIdentifier(_dialect, column);
 
-    private string QuoteIdentifier(string identifier)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
-        if (identifier.Contains('\0', StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "SQL identifiers must not contain null characters.",
-                nameof(identifier)
-            );
-        }
-
-        return _dialect switch
-        {
-            SqlDialect.Pgsql => $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"",
-            SqlDialect.Mssql => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]",
-            _ => throw new InvalidOperationException($"Unsupported SQL dialect '{_dialect}'."),
-        };
-    }
+    private string QuoteIdentifier(string identifier) =>
+        SqlIdentifierQuoter.QuoteIdentifier(_dialect, identifier);
 
     private static string Indent(string sql) =>
         "    " + sql.Replace("\n", "\n    ", StringComparison.Ordinal);
+
+    private static PlanColumns ResolvePlanColumns(TrackedChangeTableInfo table) =>
+        new(
+            RequireSystemColumn(table, TrackedChangeSystemColumnRole.Id),
+            RequireSystemColumn(table, TrackedChangeSystemColumnRole.ChangeVersion),
+            RequireRepresentativeIdentityColumn(table)
+        );
+
+    private readonly record struct PlanColumns(
+        TrackedChangeSystemColumnInfo IdColumn,
+        TrackedChangeSystemColumnInfo ChangeVersionColumn,
+        TrackedChangeColumnInfo RepresentativeIdentityColumn
+    );
 
     private sealed record FilteredDeletesSql(
         string Sql,

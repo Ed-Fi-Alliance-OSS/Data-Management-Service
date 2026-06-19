@@ -21,7 +21,6 @@ public sealed class RelationalChangeQueryRepository(IRelationalCommandExecutor c
 {
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-    private readonly ChangeQueryResponseFieldMapper _fieldMapper = new();
 
     public Task<long> GetNewestChangeVersion(CancellationToken cancellationToken = default) =>
         _commandExecutor.ExecuteReaderAsync(
@@ -65,7 +64,7 @@ public sealed class RelationalChangeQueryRepository(IRelationalCommandExecutor c
             );
         }
 
-        IReadOnlyList<ChangeQueryResponseField> fields = _fieldMapper.Map(
+        IReadOnlyList<ChangeQueryResponseField> fields = ChangeQueryResponseFieldMapper.Map(
             relationalRequest.MappingSet,
             relationalRequest.ResourceModel,
             relationalRequest.TrackedChangeTable
