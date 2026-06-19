@@ -366,4 +366,29 @@ public static class AspNetCoreFrontend
             string.Empty
         );
     }
+
+    /// <summary>
+    /// ASP.NET Core entry point for resource-scoped Change Query tracked changes requests
+    /// </summary>
+    public static async Task<IResult> GetTrackedChanges(
+        HttpContext httpContext,
+        IApiService apiService,
+        string dmsPath,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        return ToResult(
+            await apiService.GetTrackedChanges(
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
+            ),
+            httpContext,
+            dmsPath
+        );
+    }
 }

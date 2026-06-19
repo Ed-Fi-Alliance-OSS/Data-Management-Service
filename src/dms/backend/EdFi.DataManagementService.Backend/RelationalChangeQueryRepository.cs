@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.ChangeQueries;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -17,6 +21,7 @@ public sealed class RelationalChangeQueryRepository(IRelationalCommandExecutor c
 {
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly ChangeQueryResponseFieldMapper _fieldMapper = new();
 
     public Task<long> GetNewestChangeVersion(CancellationToken cancellationToken = default) =>
         _commandExecutor.ExecuteReaderAsync(
@@ -32,4 +37,59 @@ public sealed class RelationalChangeQueryRepository(IRelationalCommandExecutor c
             },
             cancellationToken
         );
+
+    public Task<TrackedChangeQueryResult> QueryTrackedChanges(
+        ITrackedChangeQueryRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (request is not IRelationalTrackedChangeQueryRequest relationalRequest)
+        {
+            throw new NotSupportedException(
+                "Tracked Change Queries require an IRelationalTrackedChangeQueryRequest."
+            );
+        }
+
+        if (
+            relationalRequest.Operation is ChangeQueryEndpointOperation.KeyChanges
+            && relationalRequest.TrackedChangeTable.Kind
+                is TrackedChangeTableKind.SharedDescriptor
+                    or TrackedChangeTableKind.ConcreteAbstract
+        )
+        {
+            return Task.FromResult(
+                new TrackedChangeQueryResult(
+                    [],
+                    relationalRequest.PaginationParameters.TotalCount ? 0L : null
+                )
+            );
+        }
+
+        IReadOnlyList<ChangeQueryResponseField> fields = _fieldMapper.Map(
+            relationalRequest.MappingSet,
+            relationalRequest.ResourceModel,
+            relationalRequest.TrackedChangeTable
+        );
+
+        var planner = new TrackedChangeQueryPlanner(_commandExecutor.Dialect);
+        TrackedChangeQueryPlan plan = planner.Plan(relationalRequest, fields);
+
+        if (plan.IsEmpty)
+        {
+            return Task.FromResult(new TrackedChangeQueryResult([], plan.TotalCount));
+        }
+
+        return _commandExecutor.ExecuteReaderAsync(
+            plan.Command!,
+            (reader, ct) =>
+                TrackedChangeQueryRowReader.ReadAsync(
+                    reader,
+                    relationalRequest.Operation,
+                    fields,
+                    plan.IncludesTotalCount,
+                    ct
+                ),
+            cancellationToken
+        );
+    }
 }

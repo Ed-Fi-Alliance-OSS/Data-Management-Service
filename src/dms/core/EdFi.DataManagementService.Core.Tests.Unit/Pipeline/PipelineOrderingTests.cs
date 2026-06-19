@@ -255,6 +255,146 @@ public class PipelineOrderingTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_The_Tracked_Changes_Pipeline : PipelineOrderingTests
+    {
+        private List<Type> _stepTypes = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            var services = new ServiceCollection();
+
+            services.Configure<JwtAuthenticationOptions>(options => { });
+            services.AddTransient<JwtAuthenticationMiddleware>();
+            services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
+            services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+                NullLogger<JwtAuthenticationMiddleware>.Instance
+            );
+
+            services.AddTransient<ResolveDataStoreMiddleware>();
+            services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
+            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+            services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
+            );
+
+            var appSettingsOptions = Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+            );
+            services.AddSingleton(appSettingsOptions);
+            services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+            services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+                NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+            );
+
+            TestHelper.AddResourceKeyValidationServices(services);
+
+            TestHelper.AddMappingSetResolutionServices(services);
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            var apiService = new ApiService(
+                A.Fake<IApiSchemaProvider>(),
+                A.Fake<IEffectiveApiSchemaProvider>(),
+                A.Fake<IClaimSetProvider>(),
+                A.Fake<IDocumentValidator>(),
+                A.Fake<IMatchingDocumentUuidsValidator>(),
+                A.Fake<IEqualityConstraintValidator>(),
+                A.Fake<IDecimalValidator>(),
+                NullLogger<ApiService>.Instance,
+                appSettingsOptions,
+                A.Fake<IAuthorizationServiceFactory>(),
+                ResiliencePipeline.Empty,
+                A.Fake<ResourceLoadOrderCalculator>(),
+                serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
+                A.Fake<CachedClaimSetProvider>(),
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                A.Fake<IProfileService>()
+            );
+
+            _stepTypes = GetStepTypes(apiService, "CreateGetTrackedChangesPipeline");
+        }
+
+        [Test]
+        public void It_places_tracked_change_query_validation_after_query_validation()
+        {
+            var queryValidationIndex = _stepTypes.IndexOf(typeof(ValidateQueryMiddleware));
+            var trackedQueryValidationIndex = _stepTypes.IndexOf(
+                typeof(ValidateTrackedChangeQueryMiddleware)
+            );
+
+            queryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            trackedQueryValidationIndex
+                .Should()
+                .BeGreaterThan(
+                    queryValidationIndex,
+                    "ValidateTrackedChangeQueryMiddleware must reject parsed resource query filters"
+                );
+        }
+
+        [Test]
+        public void It_contains_ValidateResourceKeySeedMiddleware()
+        {
+            _stepTypes.Should().Contain(typeof(ValidateResourceKeySeedMiddleware));
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_after_fingerprint_validation()
+        {
+            var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+
+            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeGreaterThan(
+                    fingerprintIndex,
+                    "ValidateResourceKeySeedMiddleware must come after ValidateDatabaseFingerprintMiddleware"
+                );
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_before_mapping_set_resolution()
+        {
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+            var mappingSetIndex = _stepTypes.IndexOf(typeof(ResolveMappingSetMiddleware));
+
+            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
+            mappingSetIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeLessThan(
+                    mappingSetIndex,
+                    "ValidateResourceKeySeedMiddleware must validate the database seed before mapping-set resolution"
+                );
+        }
+
+        [Test]
+        public void It_places_tracked_change_query_validation_before_the_handler()
+        {
+            var trackedQueryValidationIndex = _stepTypes.IndexOf(
+                typeof(ValidateTrackedChangeQueryMiddleware)
+            );
+            var handlerIndex = _stepTypes.IndexOf(typeof(TrackedChangeQueryRequestHandler));
+
+            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            handlerIndex.Should().BeGreaterThanOrEqualTo(0);
+            trackedQueryValidationIndex
+                .Should()
+                .BeLessThan(
+                    handlerIndex,
+                    "resource query filters must be rejected before repository request construction"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_The_Write_Pipelines : PipelineOrderingTests
     {
         private static List<Type> GetWritePipelineStepTypes(string factoryMethodName)

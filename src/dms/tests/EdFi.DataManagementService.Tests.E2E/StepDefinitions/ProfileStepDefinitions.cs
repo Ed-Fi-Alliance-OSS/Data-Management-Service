@@ -1098,13 +1098,34 @@ public class ProfileStepDefinitions(
     {
         string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
+        string[] pathParts = jsonPath.Split('.');
+
+        if (
+            responseJson is JsonArray
+            && pathParts is [string firstPathPart, ..]
+            && int.TryParse(firstPathPart, out _)
+        )
+        {
+            bool pathExists = TryResolvePath(
+                responseJson,
+                pathParts,
+                out JsonNode? current,
+                out string failedAtPart
+            );
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+                );
+
+            AssertJsonPathValue(jsonPath, expectedValue, current);
+            return;
+        }
 
         // Handle both single object and array responses
         JsonObject[] objects = responseJson is JsonArray jsonArray
             ? jsonArray.Select(item => item!.AsObject()).ToArray()
             : [responseJson.AsObject()];
-
-        string[] pathParts = jsonPath.Split('.');
 
         foreach (JsonObject obj in objects)
         {
@@ -1115,14 +1136,19 @@ public class ProfileStepDefinitions(
                     $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {obj}"
                 );
 
-            string? actualValue = current?.ToString();
-            actualValue
-                .Should()
-                .Be(
-                    expectedValue,
-                    $"Path '{jsonPath}' should have value '{expectedValue}' but was '{actualValue}'"
-                );
+            AssertJsonPathValue(jsonPath, expectedValue, current);
         }
+    }
+
+    private static void AssertJsonPathValue(string jsonPath, string expectedValue, JsonNode? current)
+    {
+        string? actualValue = current?.ToString();
+        actualValue
+            .Should()
+            .Be(
+                expectedValue,
+                $"Path '{jsonPath}' should have value '{expectedValue}' but was '{actualValue}'"
+            );
     }
 
     [When(@"the response body path ""([^""]*)"" is stored as variable ""([^""]*)""")]
