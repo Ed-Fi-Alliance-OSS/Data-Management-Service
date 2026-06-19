@@ -36,6 +36,12 @@ for detailed information on how to contribute source code.
 - [Security](./SECURITY.md)
 - [License](./LICENSE)
 
+## API Behavior
+
+- [Data Strictness](./docs/DATA-STRICTNESS.md) — case-sensitive request-body
+  property names (a breaking change from the ODS/API) and related request-body
+  validation rules
+
 ## Developer Documents
 
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
