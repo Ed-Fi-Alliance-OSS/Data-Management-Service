@@ -40,10 +40,11 @@ different sink must either recompile DMS or build a custom Docker image.
 
 ### 3.1 Plugin Directory
 
-A well-known directory, defaulting to `./serilog-plugins` relative to
-`AppContext.BaseDirectory`, is scanned at startup. All `.dll` files found are
-loaded into the default `AssemblyLoadContext` before `ReadFrom.Configuration()`
-runs. Once loaded, Serilog can resolve any assembly named in the `Using` array.
+A well-known directory, defaulting to `serilog-plugins` under
+`AppContext.BaseDirectory`, is scanned at startup. If `PluginsPath` is set to a
+relative path, it is resolved against `AppContext.BaseDirectory`. All `.dll`
+files found are loaded into the default `AssemblyLoadContext` before
+`ReadFrom.Configuration()` runs.
 
 The directory path is configurable:
 
@@ -72,7 +73,7 @@ not on the list are logged as skipped warnings and never loaded.
       "Serilog.Sinks.Seq"
     ],
     "PluginHashes": {
-      "Elastic.Serilog.Sinks": "A3F1C8...",
+      "Elastic.Serilog.Sinks": "8478c5...",
       "Serilog.Sinks.Seq":     "D72B04..."
     }
   }
@@ -82,14 +83,14 @@ not on the list are logged as skipped warnings and never loaded.
 `PluginHashes` is optional. When an entry is present for an assembly, its
 SHA-256 hash is verified before loading; a mismatch causes the DLL to be
 skipped with a logged error. Assemblies with no hash entry are loaded on
-allowlist membership alone. The hash values are lowercase hex SHA-256 digests
-of the DLL file:
+allowlist membership alone. The hash values are hex-encoded (case-insensitive)
+ SHA-256 digests of the DLL file:
 
 ```shell
-# Linux / macOS
+# Linux / macOS - returns upper case
 sha256sum Elastic.Serilog.Sinks.dll
 
-# Windows PowerShell
+# Windows PowerShell - returns lower case
 Get-FileHash Elastic.Serilog.Sinks.dll -Algorithm SHA256
 ```
 
@@ -150,9 +151,10 @@ static void LoadSerilogPlugins(IConfiguration configuration)
         return;
     }
 
-    var pluginHashes = configuration
-        .GetSection("DMS:Logging:PluginHashes")
-        .Get<Dictionary<string, string>>() ?? [];
+    var pluginHashes = new Dictionary<string, string>(
+        configuration.GetSection("DMS:Logging:PluginHashes").Get<Dictionary<string, string>>() ?? [],
+        StringComparer.OrdinalIgnoreCase
+    );
 
     foreach (var dll in Directory.GetFiles(pluginsPath, "*.dll"))
     {
@@ -194,7 +196,10 @@ static void LoadSerilogPlugins(IConfiguration configuration)
 Serilog's static logger — before `ReadFrom.Configuration()` runs. To uphold the
 "no silent failures" guarantee in §3.3, **the host must configure a bootstrap
 logger before calling `ConfigureLogging`**. Without one, plugin-load diagnostics
-are silently swallowed.
+are silently swallowed. Note: DMS currently configures Serilog via
+`webAppBuilder.Logging.AddSerilog(logger)` without setting `Log.Logger`, so the
+implementation must either set `Log.Logger` (bootstrap + final) or avoid
+`Log.*` calls in `LoadSerilogPlugins`.
 
 The standard Serilog-in-ASP.NET-Core pattern satisfies this requirement:
 
