@@ -31,7 +31,10 @@ public class ClaimsHierarchyRepository(
             string sql = "SELECT Id, Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
 
             var hierarchyTuples = (
-                await connection.QueryAsync<(long id, string hierarchyJson, DateTime lastModifiedDate)>(sql)
+                await connection.QueryAsync<(long id, string hierarchyJson, DateTime lastModifiedDate)>(
+                    sql,
+                    transaction: transaction
+                )
             ).ToList();
 
             if (hierarchyTuples.Count == 0)
@@ -100,7 +103,10 @@ public class ClaimsHierarchyRepository(
             const string SelectSql = "SELECT id, lastmodifieddate FROM dmscs.ClaimsHierarchy";
 
             var existingRecords = (
-                await connection.QueryAsync<(long Id, DateTime LastModifiedDate)>(SelectSql)
+                await connection.QueryAsync<(long Id, DateTime LastModifiedDate)>(
+                    SelectSql,
+                    transaction: transaction
+                )
             ).ToList();
 
             if (existingRecords.Count > 1)
@@ -118,7 +124,8 @@ public class ClaimsHierarchyRepository(
 
                 await connection.ExecuteAsync(
                     InsertSql,
-                    new { Hierarchy = hierarchyJson, CreatedBy = auditContext.GetCurrentUser() }
+                    new { Hierarchy = hierarchyJson, CreatedBy = auditContext.GetCurrentUser() },
+                    transaction
                 );
             }
             else
@@ -149,7 +156,8 @@ public class ClaimsHierarchyRepository(
                         LastModifiedDate = existingLastModifiedDate,
                         LastModifiedAt = auditContext.GetCurrentTimestamp(),
                         ModifiedBy = auditContext.GetCurrentUser(),
-                    }
+                    },
+                    transaction
                 );
 
                 // In the remote chance a multi-user conflict happened since the last check, we need to respond with a failure.

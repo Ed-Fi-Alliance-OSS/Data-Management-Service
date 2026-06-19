@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -19,16 +20,17 @@ public class ResourceClaimValidator
     )
     {
         const string PropertyName = "ResourceClaims";
+        string? resourceClaimName = resourceClaim.ClaimName ?? resourceClaim.Name;
 
         context.MessageFormatter.AppendArgument("Name", claimSetName);
-        context.MessageFormatter.AppendArgument("ResourceClaimName", resourceClaim.Name);
+        context.MessageFormatter.AppendArgument("ResourceClaimName", resourceClaimName);
 
-        ValidateResourceClaimExists(context, resourceClaim, parentClaimByResourceClaim, PropertyName);
+        ValidateResourceClaimExists(context, resourceClaimName, parentClaimByResourceClaim, PropertyName);
 
-        ValidateNoDuplicateResourceClaims(resourceClaim, context, PropertyName);
+        ValidateNoDuplicateResourceClaims(resourceClaimName, context, PropertyName);
         ValidateActions(resourceClaim.Actions, actionNames, context, PropertyName);
-        ValidateAuthStrategies(authorizationStrategyNames, resourceClaim, context, PropertyName);
         ValidateAuthStrategiesOverride(authorizationStrategyNames, resourceClaim, context, PropertyName);
+        ValidateParentClaimName(resourceClaim, parentClaimByResourceClaim, context);
 
         ValidateChildren(
             actionNames,
@@ -43,22 +45,85 @@ public class ResourceClaimValidator
 
     private static void ValidateResourceClaimExists<T>(
         ValidationContext<T> context,
-        ResourceClaim resourceClaim,
+        string? resourceClaimName,
         IDictionary<string, string?> parentClaimByResourceClaim,
         string propertyName
     )
     {
-        if (!parentClaimByResourceClaim.ContainsKey(resourceClaim.Name!))
+        // Use propertyName to satisfy analyzer when the method intentionally records warnings instead of failures
+        _ = propertyName;
+
+        if (
+            string.IsNullOrWhiteSpace(resourceClaimName)
+            || !parentClaimByResourceClaim.ContainsKey(resourceClaimName)
+        )
         {
-            context.AddFailure(
-                propertyName,
-                "This Claim Set contains a resource which is not in the system. ClaimSet Name: '{Name}' Resource name: '{ResourceClaimName}'"
-            );
+            // Record skipped resource claim as a warning for later processing (do not fail validation)
+            if (
+                !context.RootContextData.TryGetValue("SkippedResourceClaims", out var skippedObj)
+                || skippedObj is not List<string> skippedList
+            )
+            {
+                skippedList = new List<string>();
+                context.RootContextData["SkippedResourceClaims"] = skippedList;
+            }
+
+            skippedList.Add(resourceClaimName ?? string.Empty);
+            return;
         }
     }
 
-    private static void ValidateNoDuplicateResourceClaims<T>(
+    private static void ValidateParentClaimName<T>(
         ResourceClaim resourceClaim,
+        IReadOnlyDictionary<string, string?> parentClaimByResourceClaim,
+        ValidationContext<T> context
+    )
+    {
+        string? resourceClaimName = resourceClaim.ClaimName ?? resourceClaim.Name;
+
+        if (
+            string.IsNullOrWhiteSpace(resourceClaimName)
+            || !parentClaimByResourceClaim.TryGetValue(resourceClaimName, out var expectedParentClaimName)
+        )
+        {
+            return;
+        }
+
+        if (
+            string.Equals(
+                resourceClaim.ParentClaimName,
+                expectedParentClaimName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return;
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(resourceClaim.ParentClaimName)
+            && string.IsNullOrWhiteSpace(expectedParentClaimName)
+        )
+        {
+            return;
+        }
+
+        if (
+            !context.RootContextData.TryGetValue("ParentWarnings", out var parentWarningsObject)
+            || parentWarningsObject is not List<string> parentWarnings
+        )
+        {
+            parentWarnings = [];
+            context.RootContextData["ParentWarnings"] = parentWarnings;
+        }
+
+        parentWarnings.Add(
+            $"Child resource '{resourceClaimName}' added to the wrong parent resource. Correct parent resource is: '{expectedParentClaimName}'."
+        );
+    }
+
+    private static void ValidateNoDuplicateResourceClaims<T>(
+        string? resourceClaimName,
         ValidationContext<T> context,
         string propertyName
     )
@@ -71,7 +136,7 @@ public class ResourceClaimValidator
             || seenObject is not HashSet<string> seenResources
         )
         {
-            seenResources = [];
+            seenResources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             rootData["SeenResourceClaims"] = seenResources;
         }
 
@@ -80,11 +145,11 @@ public class ResourceClaimValidator
             || duplicatesObject is not HashSet<string> duplicateResources
         )
         {
-            duplicateResources = [];
+            duplicateResources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             rootData["DuplicateResources"] = duplicateResources;
         }
 
-        string? resourceKey = resourceClaim.Name;
+        string? resourceKey = resourceClaimName;
 
         if (
             !string.IsNullOrWhiteSpace(resourceKey)
@@ -109,6 +174,9 @@ public class ResourceClaimValidator
         string propertyName
     )
     {
+        // Use propertyName to satisfy analyzer when warnings are recorded instead of validation failures
+        _ = propertyName;
+
         if (resourceClaim.Children.Count != 0)
         {
             foreach (var childResourceClaim in resourceClaim.Children)
@@ -123,11 +191,20 @@ public class ResourceClaimValidator
                 {
                     context.MessageFormatter.AppendArgument("ChildResource", childResourceClaim.Name);
 
-                    if (expectedParentResourceName == null)
+                    if (expectedParentResourceName is null)
                     {
-                        context.AddFailure(
-                            propertyName,
-                            "'{ChildResource}' can not be added as a child resource."
+                        // Record a warning for a child that cannot be added as a child resource
+                        if (
+                            !context.RootContextData.TryGetValue("ParentWarnings", out var pwObj)
+                            || pwObj is not List<string> parentWarnings
+                        )
+                        {
+                            parentWarnings = new List<string>();
+                            context.RootContextData["ParentWarnings"] = parentWarnings;
+                        }
+
+                        parentWarnings.Add(
+                            $"Child resource '{childResourceClaim.Name}' cannot be added as a child resource to '{resourceClaim.Name}'."
                         );
                     }
                     else if (
@@ -138,13 +215,18 @@ public class ResourceClaimValidator
                         )
                     )
                     {
-                        context.MessageFormatter.AppendArgument(
-                            "CorrectParentResource",
-                            expectedParentResourceName
-                        );
-                        context.AddFailure(
-                            propertyName,
-                            "Child resource: '{ChildResource}' added to the wrong parent resource. Correct parent resource is: '{CorrectParentResource}'."
+                        // Record a warning for parent mismatch instead of failing validation
+                        if (
+                            !context.RootContextData.TryGetValue("ParentWarnings", out var pmObj)
+                            || pmObj is not List<string> parentWarnings
+                        )
+                        {
+                            parentWarnings = new List<string>();
+                            context.RootContextData["ParentWarnings"] = parentWarnings;
+                        }
+
+                        parentWarnings.Add(
+                            $"Child resource '{childResourceClaim.Name}' added to the wrong parent resource. Correct parent resource is: '{expectedParentResourceName}'."
                         );
                     }
                 }
@@ -168,11 +250,9 @@ public class ResourceClaimValidator
         string propertyName
     )
     {
-        if (resourceClaim.AuthorizationStrategyOverridesForCRUD.Count != 0)
+        if (resourceClaim.AuthorizationStrategyOverrides.Count != 0)
         {
-            foreach (
-                var authStrategyOverrideWithAction in resourceClaim.AuthorizationStrategyOverridesForCRUD
-            )
+            foreach (var authStrategyOverrideWithAction in resourceClaim.AuthorizationStrategyOverrides)
             {
                 if (authStrategyOverrideWithAction?.AuthorizationStrategies != null)
                 {
@@ -194,44 +274,6 @@ public class ResourceClaimValidator
                                 "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: '{Name}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthorizationStrategyName}'."
                             );
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    private static void ValidateAuthStrategies<T>(
-        List<string> dbAuthStrategies,
-        ResourceClaim resourceClaim,
-        ValidationContext<T> context,
-        string propertyName
-    )
-    {
-        if (resourceClaim.DefaultAuthorizationStrategiesForCRUD.Count != 0)
-        {
-            foreach (var defaultASWithAction in resourceClaim.DefaultAuthorizationStrategiesForCRUD)
-            {
-                if (defaultASWithAction?.AuthorizationStrategies == null)
-                {
-                    continue;
-                }
-
-                foreach (
-                    var authStrategyName in defaultASWithAction.AuthorizationStrategies.Select(defaultAs =>
-                        defaultAs.AuthorizationStrategyName
-                    )
-                )
-                {
-                    if (authStrategyName != null && !dbAuthStrategies.Contains(authStrategyName))
-                    {
-                        context.MessageFormatter.AppendArgument(
-                            "AuthorizationStrategyName",
-                            authStrategyName
-                        );
-                        context.AddFailure(
-                            propertyName,
-                            "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: '{Name}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthorizationStrategyName}'."
-                        );
                     }
                 }
             }

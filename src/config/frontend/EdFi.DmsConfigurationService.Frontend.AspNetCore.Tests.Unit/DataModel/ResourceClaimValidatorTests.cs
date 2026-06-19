@@ -74,7 +74,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -94,7 +94,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim2",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -150,7 +150,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -170,7 +170,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "NonExistingClaim",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -196,22 +196,24 @@ public class ResourceClaimValidatorTests
                 CreateResourceClaimsMap(("resourceClaim1", null))
             );
 
-            // Act
-            var validationResult = await validator.ValidateAsync(request);
+            // Act - run validation with an explicit ValidationContext so the validator's RootContextData is accessible
+            var validationContext = new ValidationContext<FakeRequest>(request);
+            var validationResult = await validator.ValidateAsync(validationContext);
 
-            // Assert
-            validationResult.IsValid.Should().BeFalse();
-            validationResult.Errors.Count.Should().Be(1);
-            validationResult
-                .Errors[0]
-                .ErrorMessage.Should()
-                .Contain(
-                    "This Claim Set contains a resource which is not in the system. ClaimSet Name: 'TestClaimset' Resource name: 'NonExistingClaim'"
-                );
+            // Assert - validator now records missing resources as warnings (not failures)
+            validationResult.IsValid.Should().BeTrue();
+
+            validationContext
+                .RootContextData.TryGetValue("SkippedResourceClaims", out var skippedObj)
+                .Should()
+                .BeTrue();
+            skippedObj.Should().BeOfType<List<string>>();
+            var skipped = (List<string>)skippedObj!;
+            skipped.Should().Contain("NonExistingClaim");
         }
 
         [Test]
-        public async Task Given_a_root_resource_claim_added_as_a_child_should_return_validation_error()
+        public async Task Given_a_root_resource_claim_added_as_a_child_should_not_fail_validation()
         {
             // Arrange
             var resourceClaims = new List<ResourceClaim>
@@ -220,7 +222,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -241,7 +243,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "resourceClaim2",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -273,12 +275,8 @@ public class ResourceClaimValidatorTests
             var validationResult = await validator.ValidateAsync(request);
 
             // Assert
-            validationResult.IsValid.Should().BeFalse();
-            validationResult.Errors.Count.Should().Be(1);
-            validationResult
-                .Errors[0]
-                .ErrorMessage.Should()
-                .Contain("'resourceClaim2' can not be added as a child resource.");
+            validationResult.IsValid.Should().BeTrue();
+            validationResult.Errors.Should().BeEmpty();
         }
 
         [Test]
@@ -291,7 +289,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "ActionNotExists" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -344,7 +342,7 @@ public class ResourceClaimValidatorTests
                         new ResourceClaimAction { Enabled = true, Name = "Read" },
                         new ResourceClaimAction { Enabled = true, Name = "Create" },
                     ],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -396,7 +394,7 @@ public class ResourceClaimValidatorTests
                         new ResourceClaimAction { Enabled = false, Name = "Create" },
                         new ResourceClaimAction { Enabled = false, Name = "Read" },
                     ],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -446,7 +444,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -485,7 +483,7 @@ public class ResourceClaimValidatorTests
         }
 
         [Test]
-        public async Task Given_a_non_existing_authorization_strategy_should_return_validation_error()
+        public async Task Given_a_non_existing_default_authorization_strategy_should_not_fail_validation()
         {
             // Arrange
             var resourceClaims = new List<ResourceClaim>
@@ -494,7 +492,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -515,7 +513,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1a",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -547,14 +545,8 @@ public class ResourceClaimValidatorTests
             var validationResult = await validator.ValidateAsync(request);
 
             // Assert
-            validationResult.IsValid.Should().BeFalse();
-            validationResult.Errors.Count.Should().Be(1);
-            validationResult
-                .Errors[0]
-                .ErrorMessage.Should()
-                .Contain(
-                    "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: 'TestClaimset' Resource name: 'childResourceClaim1a' Authorization strategy: 'InvalidAuthStrategy'."
-                );
+            validationResult.IsValid.Should().BeTrue();
+            validationResult.Errors.Should().BeEmpty();
         }
 
         [Test]
@@ -567,7 +559,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -588,7 +580,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1a",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            AuthorizationStrategyOverridesForCRUD =
+                            AuthorizationStrategyOverrides =
                             [
                                 new()
                                 {
@@ -603,7 +595,7 @@ public class ResourceClaimValidatorTests
                                     ],
                                 },
                             ],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -655,7 +647,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -675,7 +667,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -724,7 +716,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -745,7 +737,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1a",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -765,7 +757,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1b",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -787,7 +779,7 @@ public class ResourceClaimValidatorTests
                                     // This is a duplicate resource claim
                                     Name = "childResourceClaim1a",
                                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                                    DefaultAuthorizationStrategiesForCRUD =
+                                    DefaultAuthorizationStrategies =
                                     [
                                         new()
                                         {
@@ -847,7 +839,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -868,7 +860,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1a",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -888,7 +880,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1a",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -932,7 +924,7 @@ public class ResourceClaimValidatorTests
         }
 
         [Test]
-        public async Task Given_an_invalid_auth_strategy_on_child_resource_claim()
+        public async Task Given_an_invalid_default_auth_strategy_on_child_resource_claim_should_not_fail_validation()
         {
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
@@ -941,7 +933,7 @@ public class ResourceClaimValidatorTests
                 {
                     Name = "resourceClaim1",
                     Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
+                    DefaultAuthorizationStrategies =
                     [
                         new()
                         {
@@ -962,7 +954,7 @@ public class ResourceClaimValidatorTests
                         {
                             Name = "childResourceClaim1",
                             Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                            DefaultAuthorizationStrategiesForCRUD =
+                            DefaultAuthorizationStrategies =
                             [
                                 new()
                                 {
@@ -993,14 +985,8 @@ public class ResourceClaimValidatorTests
             var validationResult = await validator.ValidateAsync(request);
 
             // Assert
-            validationResult.IsValid.Should().BeFalse();
-            validationResult.Errors.Count.Should().Be(1);
-            validationResult
-                .Errors[0]
-                .ErrorMessage.Should()
-                .Contain(
-                    "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: 'TestClaimset' Resource name: 'childResourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
-                );
+            validationResult.IsValid.Should().BeTrue();
+            validationResult.Errors.Should().BeEmpty();
         }
     }
 };

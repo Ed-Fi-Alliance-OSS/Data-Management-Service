@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
@@ -98,6 +99,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            await EnsureClaimsDataLoaded();
+
             ClaimSetInsertCommand claimSet = new() { Name = "Test-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
@@ -109,15 +112,24 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryClaimSet(
+                new ClaimSetQuery
+                {
+                    Limit = 25,
+                    Offset = 0,
+                    Name = "Test-ClaimSet",
+                }
+            );
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
+            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.Single();
             claimSetFromDb.Should().NotBeNull();
             claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
             var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-ClaimSet");
+            reducedResponse.Applications.HasValue.Should().BeTrue();
+            reducedResponse.Applications!.Value.ValueKind.Should().Be(JsonValueKind.Array);
         }
 
         [Test]
@@ -131,6 +143,21 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-ClaimSet");
+            reducedResponse.Applications.HasValue.Should().BeTrue();
+            reducedResponse.Applications!.Value.ValueKind.Should().Be(JsonValueKind.Array);
+        }
+
+        [Test]
+        public async Task Should_return_unknown_failure_when_get_by_id_has_no_claims_hierarchy()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+
+            var getByIdResult = await _repository.GetClaimSet(_id);
+
+            getByIdResult.Should().BeOfType<ClaimSetGetResult.FailureUnknown>();
+            ((ClaimSetGetResult.FailureUnknown)getByIdResult)
+                .FailureMessage.Should()
+                .Be("Claims hierarchy not found.");
         }
 
         [Test]
@@ -550,6 +577,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            await EnsureClaimsDataLoaded();
+
             var insertResult1 = await _repository.InsertClaimSet(
                 new ClaimSetInsertCommand() { Name = "Test-One" }
             );
@@ -571,7 +600,9 @@ public class ClaimSetTests : DatabaseTest
             var result = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(1);
+            ((ClaimSetQueryResult.Success)result)
+                .ClaimSetResponses.Should()
+                .ContainSingle(claimSet => claimSet.Name == "Test-Two");
         }
 
         [Test]
@@ -601,6 +632,52 @@ public class ClaimSetTests : DatabaseTest
             var deleteResult = await _repository.DeleteClaimSet(_id2);
             deleteResult.Should().BeOfType<ClaimSetDeleteResult.FailureSystemReserved>();
         }
+
+        [Test]
+        public async Task Should_remove_claim_set_from_hierarchy_when_deleted()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy();
+
+            var importResult = await _repository.Import(
+                new ClaimSetImportCommand
+                {
+                    Name = "Delete-With-Permissions",
+                    ResourceClaims =
+                    [
+                        new ResourceClaim
+                        {
+                            ClaimName = "http://ed-fi.org/identity/claims/ed-fi/school",
+                            Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                        },
+                    ],
+                }
+            );
+            if (importResult is ClaimSetImportResult.FailureUnknown failureUnknown)
+            {
+                Assert.Fail(failureUnknown.FailureMessage);
+            }
+            importResult.Should().BeOfType<ClaimSetImportResult.Success>();
+            var id = ((ClaimSetImportResult.Success)importResult).Id;
+
+            var deleteResult = await _repository.DeleteClaimSet(id);
+            deleteResult.Should().BeOfType<ClaimSetDeleteResult.Success>();
+
+            var claimsHierarchyRepository = new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            );
+            var hierarchy = (ClaimsHierarchyGetResult.Success)
+                await claimsHierarchyRepository.GetClaimsHierarchy();
+
+            hierarchy.Claims.Exists(c => ContainsClaimSet(c, "Delete-With-Permissions")).Should().BeFalse();
+        }
+
+        private static bool ContainsClaimSet(Claim claim, string claimSetName)
+        {
+            return claim.ClaimSets.Exists(cs => cs.Name == claimSetName)
+                || claim.Claims.Exists(c => ContainsClaimSet(c, claimSetName));
+        }
     }
 
     [TestFixture]
@@ -611,6 +688,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            await EnsureClaimsDataLoaded();
+
             ClaimSetInsertCommand claimSet = new() { Name = "Test-Export-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
@@ -627,6 +706,199 @@ public class ClaimSetTests : DatabaseTest
 
             var valueFromDb = ((ClaimSetExportResult.Success)result).ClaimSetExportResponse;
             valueFromDb.Name.Should().Be("Test-Export-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_return_unknown_failure_when_export_has_no_claims_hierarchy()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+
+            var result = await _repository.Export(_id);
+
+            result.Should().BeOfType<ClaimSetExportResult.FailureUnknown>();
+            ((ClaimSetExportResult.FailureUnknown)result)
+                .FailureMessage.Should()
+                .Be("Claims hierarchy not found.");
+        }
+
+        [Test]
+        public async Task Should_return_configured_claims_only_with_default_and_override_strategies()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+
+            var claimsHierarchyRepository = new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            var claimsHierarchy = BuildHierarchy();
+            var saveResult = await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claimsHierarchy,
+                DateTime.UtcNow
+            );
+            saveResult.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
+
+            var insertResult = await _repository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = "Test-Export-Configured-ClaimSet" }
+            );
+            insertResult.Should().BeOfType<ClaimSetInsertResult.Success>();
+            var claimSetId = ((ClaimSetInsertResult.Success)insertResult).Id;
+
+            var getResult = await _repository.GetClaimSet(claimSetId);
+            getResult.Should().BeOfType<ClaimSetGetResult.Success>();
+
+            var exportResult = await _repository.Export(claimSetId);
+            exportResult.Should().BeOfType<ClaimSetExportResult.Success>();
+
+            var getResponse = ((ClaimSetGetResult.Success)getResult).ClaimSetResponse;
+            var exportResponse = ((ClaimSetExportResult.Success)exportResult).ClaimSetExportResponse;
+
+            AssertExportShape(getResponse);
+            AssertExportShape(exportResponse);
+        }
+
+        private static List<Claim> BuildHierarchy()
+        {
+            const string ClaimSetName = "Test-Export-Configured-ClaimSet";
+            const string RootClaimName = "http://ed-fi.org/identity/claims/domains/exportRoot";
+            const string ChildClaimName = "http://ed-fi.org/identity/claims/ed-fi/exportChild";
+            const string GrandchildClaimName = "http://ed-fi.org/identity/claims/ed-fi/exportGrandchild";
+
+            return
+            [
+                new Claim
+                {
+                    Name = RootClaimName,
+                    DefaultAuthorization = new DefaultAuthorization
+                    {
+                        Actions =
+                        [
+                            new DefaultAction
+                            {
+                                Name = "Read",
+                                AuthorizationStrategies =
+                                [
+                                    new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.AuthorizationStrategy
+                                    {
+                                        Name = "DefaultRootStrategy",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    ClaimSets =
+                    [
+                        new ClaimSet
+                        {
+                            Name = ClaimSetName,
+                            Actions = [new ClaimSetAction { Name = "Read" }],
+                        },
+                    ],
+                    Claims =
+                    [
+                        new Claim
+                        {
+                            Name = ChildClaimName,
+                            DefaultAuthorization = new DefaultAuthorization
+                            {
+                                Actions =
+                                [
+                                    new DefaultAction
+                                    {
+                                        Name = "Read",
+                                        AuthorizationStrategies =
+                                        [
+                                            new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.AuthorizationStrategy
+                                            {
+                                                Name = "DefaultChildStrategy",
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                            ClaimSets =
+                            [
+                                new ClaimSet
+                                {
+                                    Name = ClaimSetName,
+                                    Actions =
+                                    [
+                                        new ClaimSetAction
+                                        {
+                                            Name = "Read",
+                                            AuthorizationStrategyOverrides =
+                                            [
+                                                new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.AuthorizationStrategy
+                                                {
+                                                    Name = "OverrideChildStrategy",
+                                                },
+                                            ],
+                                        },
+                                        new ClaimSetAction { Name = "Update" },
+                                    ],
+                                },
+                            ],
+                            Claims =
+                            [
+                                new Claim
+                                {
+                                    Name = GrandchildClaimName,
+                                    ClaimSets = [],
+                                    Claims = [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ];
+        }
+
+        private static void AssertExportShape(ClaimSetResponse response)
+        {
+            const string ClaimSetName = "Test-Export-Configured-ClaimSet";
+            const string RootClaimName = "http://ed-fi.org/identity/claims/domains/exportRoot";
+            const string ChildClaimName = "http://ed-fi.org/identity/claims/ed-fi/exportChild";
+            const string GrandchildClaimName = "http://ed-fi.org/identity/claims/ed-fi/exportGrandchild";
+
+            response.Name.Should().Be(ClaimSetName);
+            response.IsSystemReserved.Should().BeFalse();
+            response.ResourceClaims.Should().HaveCount(2);
+            response.ResourceClaims.Should().NotContain(rc => rc.ClaimName == GrandchildClaimName);
+
+            var rootClaim = response.ResourceClaims!.Single(rc => rc.ClaimName == RootClaimName);
+            rootClaim.Name.Should().Be("exportRoot");
+            rootClaim.ParentClaimName.Should().BeNull();
+            rootClaim.Actions.Should().ContainSingle(action => action.Name == "Read");
+            rootClaim.Actions.Should().NotContain(action => action.Name == "Update");
+            rootClaim
+                .DefaultAuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.ActionName == "Read");
+            rootClaim
+                .DefaultAuthorizationStrategies[0]
+                .AuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.AuthorizationStrategyName == "DefaultRootStrategy");
+            rootClaim.AuthorizationStrategyOverrides.Should().BeEmpty();
+
+            var childClaim = response.ResourceClaims!.Single(rc => rc.ClaimName == ChildClaimName);
+            childClaim.Name.Should().Be("exportChild");
+            childClaim.ParentClaimName.Should().Be(RootClaimName);
+            childClaim.Actions.Should().ContainSingle(action => action.Name == "Read");
+            childClaim.Actions.Should().ContainSingle(action => action.Name == "Update");
+            childClaim
+                .DefaultAuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.ActionName == "Read");
+            childClaim
+                .DefaultAuthorizationStrategies[0]
+                .AuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.AuthorizationStrategyName == "DefaultChildStrategy");
+            childClaim
+                .AuthorizationStrategyOverrides.Should()
+                .ContainSingle(strategy => strategy.ActionName == "Read");
+            childClaim
+                .AuthorizationStrategyOverrides[0]
+                .AuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.AuthorizationStrategyName == "OverrideChildStrategy");
         }
     }
 
@@ -677,12 +949,13 @@ public class ClaimSetTests : DatabaseTest
         }
 
         [Test]
-        public async Task Should_get_duplicate_failure()
+        public async Task Should_upsert_existing_claim_set_on_import()
         {
             ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var resultDup = await _repository.Import(claimSetDup);
-            resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
+            resultDup.Should().BeOfType<ClaimSetImportResult.Success>();
+            ((ClaimSetImportResult.Success)resultDup).Id.Should().Be(_id);
         }
 
         [Test]
@@ -700,6 +973,160 @@ public class ClaimSetTests : DatabaseTest
                 .FailureMessage.Should()
                 .Be("Claims hierarchy not found.");
         }
+
+        [Test]
+        public async Task Should_return_system_reserved_failure_when_import_targets_existing_system_reserved_claim_set()
+        {
+            var systemReservedInsert = await _repository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = "Test-Import-System-Reserved", IsSystemReserved = true }
+            );
+            var systemReservedId = ((ClaimSetInsertResult.Success)systemReservedInsert).Id;
+
+            var result = await _repository.Import(
+                new ClaimSetImportCommand { Name = "Test-Import-System-Reserved", ResourceClaims = [] }
+            );
+
+            result.Should().BeOfType<ClaimSetImportResult.FailureSystemReserved>();
+
+            var getByIdResult = await _repository.GetClaimSet(systemReservedId);
+            getByIdResult.Should().BeOfType<ClaimSetGetResult.Success>();
+            ((ClaimSetGetResult.Success)getByIdResult).ClaimSetResponse.IsSystemReserved.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_round_trip_export_payload_back_into_import()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+
+            var claimsHierarchyRepository = new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            var claimsHierarchy = BuildRoundTripHierarchy();
+            var saveResult = await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claimsHierarchy,
+                DateTime.UtcNow
+            );
+            saveResult.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
+
+            var command = new ClaimSetImportCommand
+            {
+                Name = "Test-Import-RoundTrip",
+                ResourceClaims =
+                [
+                    new ResourceClaim
+                    {
+                        ClaimName = "http://ed-fi.org/identity/claims/domains/roundTripRoot",
+                        Actions =
+                        [
+                            new ResourceClaimAction { Name = "Read", Enabled = true },
+                            new ResourceClaimAction { Name = "Update", Enabled = false },
+                        ],
+                    },
+                    new ResourceClaim
+                    {
+                        ClaimName = "http://ed-fi.org/identity/claims/ed-fi/roundTripChild",
+                        ParentClaimName = "http://ed-fi.org/identity/claims/domains/roundTripRoot",
+                        Actions =
+                        [
+                            new ResourceClaimAction { Name = "Read", Enabled = true },
+                            new ResourceClaimAction { Name = "Delete", Enabled = true },
+                        ],
+                        AuthorizationStrategyOverrides =
+                        [
+                            new ClaimSetResourceClaimActionAuthStrategies
+                            {
+                                ActionName = "Read",
+                                AuthorizationStrategies =
+                                [
+                                    new EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy
+                                    {
+                                        AuthorizationStrategyName = "OverrideRoundTripStrategy",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            };
+
+            var firstImport = await _repository.Import(command);
+            firstImport.Should().BeOfType<ClaimSetImportResult.Success>();
+            var claimSetId = ((ClaimSetImportResult.Success)firstImport).Id;
+
+            var exportResult = await _repository.Export(claimSetId);
+            exportResult.Should().BeOfType<ClaimSetExportResult.Success>();
+
+            var exportResponse = ((ClaimSetExportResult.Success)exportResult).ClaimSetExportResponse;
+            exportResponse.ResourceClaims.Should().HaveCount(2);
+            exportResponse
+                .ResourceClaims.Should()
+                .NotContain(rc => rc.Actions!.Any(action => action.Name == "Update"));
+
+            var roundTripJson = JsonSerializer.Serialize(
+                exportResponse,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            );
+            var roundTripCommand = JsonSerializer.Deserialize<ClaimSetImportCommand>(
+                roundTripJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            );
+
+            roundTripCommand.Should().NotBeNull();
+            roundTripCommand!.Name.Should().Be(command.Name);
+            roundTripCommand.ResourceClaims.Should().HaveCount(2);
+
+            var roundTripRoot = roundTripCommand.ResourceClaims!.Single(rc =>
+                rc.ClaimName == "http://ed-fi.org/identity/claims/domains/roundTripRoot"
+            );
+            roundTripRoot.Actions.Should().ContainSingle(action => action.Name == "Read");
+            roundTripRoot.Actions.Should().NotContain(action => action.Name == "Update");
+
+            var roundTripChild = roundTripCommand.ResourceClaims!.Single(rc =>
+                rc.ClaimName == "http://ed-fi.org/identity/claims/ed-fi/roundTripChild"
+            );
+            roundTripChild
+                .ParentClaimName.Should()
+                .Be("http://ed-fi.org/identity/claims/domains/roundTripRoot");
+            roundTripChild
+                .AuthorizationStrategyOverrides.Should()
+                .ContainSingle(overrideStrategy => overrideStrategy.ActionName == "Read");
+            roundTripChild
+                .AuthorizationStrategyOverrides[0]
+                .AuthorizationStrategies.Should()
+                .ContainSingle(strategy => strategy.AuthorizationStrategyName == "OverrideRoundTripStrategy");
+
+            var secondImport = await _repository.Import(roundTripCommand);
+            secondImport.Should().BeOfType<ClaimSetImportResult.Success>();
+            ((ClaimSetImportResult.Success)secondImport).Id.Should().Be(claimSetId);
+
+            var finalGet = await _repository.GetClaimSet(claimSetId);
+            finalGet.Should().BeOfType<ClaimSetGetResult.Success>();
+            ((ClaimSetGetResult.Success)finalGet).ClaimSetResponse.ResourceClaims.Should().HaveCount(2);
+        }
+
+        private static List<Claim> BuildRoundTripHierarchy()
+        {
+            return
+            [
+                new Claim
+                {
+                    Name = "http://ed-fi.org/identity/claims/domains/roundTripRoot",
+                    ClaimSets = [new ClaimSet { Name = "Test-Import-RoundTrip" }],
+                    Claims =
+                    [
+                        new Claim
+                        {
+                            Name = "http://ed-fi.org/identity/claims/ed-fi/roundTripChild",
+                            ClaimSets = [new ClaimSet { Name = "Test-Import-RoundTrip" }],
+                            Claims = [],
+                        },
+                    ],
+                },
+            ];
+        }
     }
 
     [TestFixture]
@@ -711,6 +1138,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            await EnsureClaimsDataLoaded();
+
             ClaimSetInsertCommand claimSet = new() { Name = "Original-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
@@ -732,7 +1161,11 @@ public class ClaimSetTests : DatabaseTest
             var result = await _repository.QueryClaimSet(new ClaimSetQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(2);
+            var claimSetNames = ((ClaimSetQueryResult.Success)result)
+                .ClaimSetResponses.Select(cs => cs.Name)
+                .ToList();
+            claimSetNames.Should().Contain("Original-ClaimSet");
+            claimSetNames.Should().Contain("Copy-Test-ClaimSet");
         }
 
         [Test]
@@ -755,6 +1188,88 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse2 = (ClaimSetResponse)claimSetFromDb2;
             reducedResponse2.Name.Should().Be("Copy-Test-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_clone_configured_hierarchy_assignments_when_copying_claim_set()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy();
+
+            var importResult = await _repository.Import(
+                new ClaimSetImportCommand
+                {
+                    Name = "Original-With-Permissions",
+                    ResourceClaims =
+                    [
+                        new ResourceClaim
+                        {
+                            ClaimName = "http://ed-fi.org/identity/claims/ed-fi/school",
+                            Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                            AuthorizationStrategyOverrides =
+                            [
+                                new ClaimSetResourceClaimActionAuthStrategies
+                                {
+                                    ActionName = "Read",
+                                    AuthorizationStrategies =
+                                    [
+                                        new EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy
+                                        {
+                                            AuthorizationStrategyName = "NoFurtherAuthorizationRequired",
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                }
+            );
+            if (importResult is ClaimSetImportResult.FailureUnknown failureUnknown)
+            {
+                Assert.Fail(failureUnknown.FailureMessage);
+            }
+            importResult.Should().BeOfType<ClaimSetImportResult.Success>();
+            var originalId = ((ClaimSetImportResult.Success)importResult).Id;
+
+            var copyResult = await _repository.Copy(
+                new ClaimSetCopyCommand { OriginalId = originalId, Name = "Copied-With-Permissions" }
+            );
+            var copiedId = ((ClaimSetCopyResult.Success)copyResult).Id;
+
+            var copied = (ClaimSetGetResult.Success)await _repository.GetClaimSet(copiedId);
+            var resourceClaim = copied
+                .ClaimSetResponse.ResourceClaims.Should()
+                .ContainSingle(rc => rc.ClaimName == "http://ed-fi.org/identity/claims/ed-fi/school")
+                .Which;
+            resourceClaim.Actions.Should().ContainSingle(a => a.Name == "Read");
+            resourceClaim.AuthorizationStrategyOverrides.Should().ContainSingle(o => o.ActionName == "Read");
+        }
+
+        [Test]
+        public async Task Should_copy_system_reserved_claim_set_as_non_system_reserved()
+        {
+            var insertReservedResult = await _repository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = "Original-System-Reserved", IsSystemReserved = true }
+            );
+            var originalReservedId = ((ClaimSetInsertResult.Success)insertReservedResult).Id;
+
+            var copyResult = await _repository.Copy(
+                new ClaimSetCopyCommand
+                {
+                    OriginalId = originalReservedId,
+                    Name = "Copied-From-System-Reserved",
+                }
+            );
+            copyResult.Should().BeOfType<ClaimSetCopyResult.Success>();
+            var copiedId = ((ClaimSetCopyResult.Success)copyResult).Id;
+
+            var copied = await _repository.GetClaimSet(copiedId);
+            copied.Should().BeOfType<ClaimSetGetResult.Success>();
+            ((ClaimSetGetResult.Success)copied).ClaimSetResponse.IsSystemReserved.Should().BeFalse();
+
+            var updateResult = await _repository.UpdateClaimSet(
+                new ClaimSetUpdateCommand { Id = copiedId, Name = "Copied-System-Reserved-Updated" }
+            );
+            updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
         }
     }
 

@@ -9,16 +9,23 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ResourceClaim
 {
-    public int Id { get; set; }
     public string? Name { get; set; }
+
+    [JsonPropertyName("claimName")]
+    public string? ClaimName { get; set; }
+
+    [JsonPropertyName("parentClaimName")]
+    public string? ParentClaimName { get; set; }
+
     public List<ResourceClaimAction>? Actions { get; set; }
 
-    [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
-    public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; set; } =
-    [];
-    public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
-    [];
+    [JsonPropertyName("_defaultAuthorizationStrategies")]
+    public List<ClaimSetResourceClaimActionAuthStrategies> DefaultAuthorizationStrategies { get; set; } = [];
 
+    [JsonPropertyName("authorizationStrategyOverrides")]
+    public List<ClaimSetResourceClaimActionAuthStrategies> AuthorizationStrategyOverrides { get; set; } = [];
+
+    [JsonIgnore]
     public List<ResourceClaim> Children { get; set; } = [];
 }
 
@@ -31,6 +38,9 @@ public class ResourceClaimAction
 public class ClaimSetResourceClaimActionAuthStrategies
 {
     public int? ActionId { get; set; }
+
     public string? ActionName { get; set; }
-    public IEnumerable<AuthorizationStrategy>? AuthorizationStrategies { get; set; }
+
+    [JsonConverter(typeof(AuthorizationStrategyListJsonConverter))]
+    public List<AuthorizationStrategy>? AuthorizationStrategies { get; set; }
 }

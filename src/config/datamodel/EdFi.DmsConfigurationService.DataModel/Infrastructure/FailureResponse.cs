@@ -118,13 +118,27 @@ public static class FailureResponse
     ) =>
         CreateBaseJsonObject(
             detail: "Data validation failed. See 'validationErrors' for details.",
-            type: $"{_badRequestTypePrefix}:data-validation-failed",
+            type: $"{_badRequestTypePrefix}:data",
             title: "Data Validation Failed",
             status: 400,
             correlationId: correlationId,
             validationFailures
                 .GroupBy(x => x.PropertyName)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
+        );
+
+    public static JsonNode ForNonUniqueIdentity(
+        string detail,
+        string correlationId,
+        string[]? errors = null
+    ) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:non-unique-identity",
+            title: "Identifying Values Are Not Unique",
+            status: 409,
+            correlationId: correlationId,
+            errors: errors
         );
 
     public static JsonNode ForBadGateway(string detail, string correlationId, string[]? errors = null) =>

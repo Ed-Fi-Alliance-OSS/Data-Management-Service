@@ -42,7 +42,7 @@ public class ResourceClaimValidatorTests
         {
             Name = "Resource1",
             Actions = [new() { Name = "Create", Enabled = true }],
-            DefaultAuthorizationStrategiesForCRUD =
+            DefaultAuthorizationStrategies =
             [
                 new()
                 {
@@ -78,7 +78,7 @@ public class ResourceClaimValidatorTests
     }
 
     [Test]
-    public void Validate_WithResourceClaimNotInSystem_ShouldFailValidation()
+    public void Validate_WithResourceClaimNotInSystem_ShouldRecordSkippedResourceWarning()
     {
         // Arrange
         var resourceClaim = new ResourceClaim
@@ -100,7 +100,13 @@ public class ResourceClaimValidatorTests
         );
 
         // Assert
-        Failures(context).Should().Contain(e => e.ErrorMessage.Contains("not in the system"));
+        Failures(context).Should().BeEmpty();
+        context
+            .RootContextData["SkippedResourceClaims"]
+            .Should()
+            .BeOfType<List<string>>()
+            .Which.Should()
+            .ContainSingle("NonExistentResource");
     }
 
     [Test]
@@ -138,6 +144,51 @@ public class ResourceClaimValidatorTests
     }
 
     [Test]
+    public void Validate_WithCaseOnlyDuplicateResourceClaims_ShouldFailValidation()
+    {
+        // Arrange
+        var firstResourceClaim = new ResourceClaim
+        {
+            Name = "Resource1",
+            Actions = [new() { Name = "Create", Enabled = true }],
+        };
+
+        var secondResourceClaim = new ResourceClaim
+        {
+            Name = "resource1",
+            Actions = [new() { Name = "Create", Enabled = true }],
+        };
+
+        var parentClaimByResourceClaim = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Resource1", null },
+        };
+
+        var context = new ValidationContext<object>(new object());
+
+        // Act
+        _validator.Validate(
+            _actionNames,
+            _authorizationStrategyNames,
+            firstResourceClaim,
+            parentClaimByResourceClaim,
+            context,
+            "ClaimSet1"
+        );
+        _validator.Validate(
+            _actionNames,
+            _authorizationStrategyNames,
+            secondResourceClaim,
+            parentClaimByResourceClaim,
+            context,
+            "ClaimSet1"
+        );
+
+        // Assert
+        Failures(context).Should().Contain(e => e.ErrorMessage.Contains("duplicate resource"));
+    }
+
+    [Test]
     public void Validate_WithInvalidActions_ShouldFailValidation()
     {
         // Arrange
@@ -164,14 +215,14 @@ public class ResourceClaimValidatorTests
     }
 
     [Test]
-    public void Validate_WithInvalidAuthorizationStrategies_ShouldFailValidation()
+    public void Validate_WithInvalidAuthorizationStrategies_ShouldNotFailValidation()
     {
         // Arrange
         var resourceClaim = new ResourceClaim
         {
             Name = "Resource1",
             Actions = [new() { Name = "Create", Enabled = true }],
-            DefaultAuthorizationStrategiesForCRUD =
+            DefaultAuthorizationStrategies =
             [
                 new()
                 {
@@ -194,7 +245,42 @@ public class ResourceClaimValidatorTests
         );
 
         // Assert
-        Failures(context).Should().Contain(e => e.ErrorMessage.Contains("not in the system"));
+        Failures(context).Should().BeEmpty();
+    }
+
+    [Test]
+    public void Validate_ShouldIgnoreInvalidDefaultAuthorizationStrategiesDuringImport()
+    {
+        // Arrange
+        var resourceClaim = new ResourceClaim
+        {
+            Name = "Resource1",
+            ClaimName = "Resource1",
+            Actions = [new() { Name = "Create", Enabled = true }],
+            DefaultAuthorizationStrategies =
+            [
+                new()
+                {
+                    ActionName = "Create",
+                    AuthorizationStrategies = [new() { AuthorizationStrategyName = "InvalidStrategy" }],
+                },
+            ],
+        };
+
+        var context = new ValidationContext<object>(new object());
+
+        // Act
+        _validator.Validate(
+            _actionNames,
+            _authorizationStrategyNames,
+            resourceClaim,
+            _parentClaimByResourceClaim,
+            context,
+            "ClaimSet1"
+        );
+
+        // Assert
+        Failures(context).Should().BeEmpty();
     }
 
     [Test]
@@ -205,7 +291,7 @@ public class ResourceClaimValidatorTests
         {
             Name = "Resource1",
             Actions = [new() { Name = "Create", Enabled = true }],
-            AuthorizationStrategyOverridesForCRUD =
+            AuthorizationStrategyOverrides =
             [
                 new()
                 {
@@ -256,5 +342,42 @@ public class ResourceClaimValidatorTests
 
         // Assert
         Failures(context).Should().BeEmpty();
+    }
+
+    [Test]
+    public void Validate_WithMismatchedFlatParentClaimName_ShouldRecordParentWarning()
+    {
+        // Arrange
+        var resourceClaim = new ResourceClaim
+        {
+            Name = "Resource2",
+            ClaimName = "Resource2",
+            ParentClaimName = "WrongParent",
+            Actions = [new() { Name = "Create", Enabled = true }],
+        };
+
+        var context = new ValidationContext<object>(new object());
+
+        // Act
+        _validator.Validate(
+            _actionNames,
+            _authorizationStrategyNames,
+            resourceClaim,
+            _parentClaimByResourceClaim,
+            context,
+            "ClaimSet1"
+        );
+
+        // Assert
+        Failures(context).Should().BeEmpty();
+        context.RootContextData.Should().ContainKey("ParentWarnings");
+        context
+            .RootContextData["ParentWarnings"]
+            .Should()
+            .BeOfType<List<string>>()
+            .Which.Should()
+            .ContainSingle(warning =>
+                warning.Contains("Resource2") && warning.Contains("Correct parent resource is: 'Resource1'")
+            );
     }
 }

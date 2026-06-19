@@ -131,11 +131,32 @@ public class FailureResponseTests
             ?.GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
         result["validationErrors"]?.AsObject().Count.Should().Be(2);
+    }
+
+    [Test]
+    public void ForNonUniqueIdentity_ShouldReturnCorrectJsonNode()
+    {
+        // Arrange
+        string detail =
+            "The identifying value(s) of the item are the same as another item that already exists.";
+        string[] errors = ["A claim set with this name already exists."];
+
+        // Act
+        var result = FailureResponse.ForNonUniqueIdentity(detail, CorrelationId, errors);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        result["title"]?.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+        result["status"]?.GetValue<int>().Should().Be(409);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
     }
 
     [Test]

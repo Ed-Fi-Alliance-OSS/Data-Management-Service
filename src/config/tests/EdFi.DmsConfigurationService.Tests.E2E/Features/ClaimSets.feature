@@ -12,21 +12,21 @@ Feature: ClaimSets endpoints
                   [
                       {
                           "id": {claimSetId:E2E-NameSpaceBasedClaimSet},
-                          "name": "E2E-NameSpaceBasedClaimSet",
+                          "claimSetName": "E2E-NameSpaceBasedClaimSet",
                           "_isSystemReserved": true,
-                          "_applications": {}
+                          "_applications": []
                       },
                       {
                           "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "name": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
                           "_isSystemReserved": true,
-                          "_applications": {}
+                          "_applications": []
                       },
                       {
                           "id": {claimSetId:E2E-RelationshipsWithEdOrgsOnlyClaimSet},
-                          "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                          "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
                           "_isSystemReserved": true,
-                          "_applications": {}
+                          "_applications": []
                       }
                   ]
                   """
@@ -39,9 +39,9 @@ Feature: ClaimSets endpoints
                   [
                       {
                           "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "name": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
                           "_isSystemReserved": true,
-                          "_applications": {}
+                          "_applications": []
                       }
                   ]
                   """
@@ -53,9 +53,10 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                      "name": "E2E-NoFurtherAuthRequiredClaimSet",
+                      "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
                       "_isSystemReserved": true,
-                      "_applications": {}
+                      "_applications": [],
+                      "resourceClaims": "{*}"
                   }
                   """
 
@@ -63,7 +64,7 @@ Feature: ClaimSets endpoints
              When a POST request is made to "/v3/claimSets" with
                   """
                   {
-                      "name": "NewClaimSet"
+                      "claimSetName": "NewClaimSet"
                   }
                   """
              Then it should respond with 201
@@ -77,7 +78,7 @@ Feature: ClaimSets endpoints
                   """
                     {
                         "id": {claimSetId},
-                        "name": "UpdatedClaimSet"
+                        "claimSetName": "UpdatedClaimSet"
                     }
                   """
              Then it should respond with 204
@@ -87,9 +88,10 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "id": {claimSetId},
-                      "name": "UpdatedClaimSet",
+                      "claimSetName": "UpdatedClaimSet",
                       "_isSystemReserved": false,
-                      "_applications": {}
+                      "_applications": [],
+                      "resourceClaims": "{*}"
                   }
                   """
              When a DELETE request is made to "/v3/claimSets/{claimSetId}"
@@ -112,28 +114,26 @@ Feature: ClaimSets endpoints
 
         Scenario: 06 Verify error handling when trying to POST a duplicate claim set name
             Given the system has these "claimSets"
-                  | name                  | isSystemReserved |
+                  | claimSetName          | isSystemReserved |
                   | DuplicateTestClaimSet | false            |
              When a POST request is made to "/v3/claimSets" with
                   """
                   {
-                      "name": "DuplicateTestClaimSet"
+                      "claimSetName": "DuplicateTestClaimSet"
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "validationErrors": {
-                          "Name": [
-                              "A claim set with this name already exists in the database. Please enter a unique name."
-                          ]
-                      },
-                      "errors": []
+                      "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                      "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                      "title": "Identifying Values Are Not Unique",
+                      "status": 409,
+                      "validationErrors": {},
+                      "errors": [
+                          "A claim set with this name already exists."
+                      ]
                   }
                   """
 
@@ -142,7 +142,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "id": 8,
-                      "name": "UpdatedSystemReservedClaimSet"
+                      "claimSetName": "UpdatedSystemReservedClaimSet"
                   }
                   """
              Then it should respond with 400
@@ -177,7 +177,7 @@ Feature: ClaimSets endpoints
              When a POST request is made to "/v3/claimSets" with
                   """
                   {
-                      "name": "TestClaimSetMismatchedIds"
+                      "claimSetName": "TestClaimSetMismatchedIds"
                   }
                   """
              Then it should respond with 201
@@ -191,7 +191,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "id": 999,
-                      "name": "TestClaimSetMismatchedIdsUpdated"
+                      "claimSetName": "TestClaimSetMismatchedIdsUpdated"
                   }
                   """
              Then it should respond with 400
@@ -199,7 +199,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "type": "urn:ed-fi:api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -214,24 +214,24 @@ Feature: ClaimSets endpoints
              When a POST request is made to "/v3/claimSets/import" with
                   """
                   {
-                      "name": "AcademicHonorClaimSet",
+                      "claimSetName": "AcademicHonorClaimSet",
                       "resourceClaims": [
                           {
-                              "name": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "name": "systemDescriptors",
+                              "claimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
                               "actions": [
                                  { "name": "Create", "enabled": true }
-                              ],
-                              "children": [
-                                  {
-                                      "name": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
-                                      "actions": [
-                                          { "name": "Create", "enabled": true },
-                                          { "name": "Read", "enabled": true },
-                                          { "name": "Update", "enabled": true },
-                                          { "name": "Delete", "enabled": true }
-                                      ],
-                                      "children": []
-                                  }
+                              ]
+                          },
+                          {
+                              "name": "academicHonorCategoryDescriptor",
+                              "claimName": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                              "parentClaimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                  { "name": "Create", "enabled": true },
+                                  { "name": "Read", "enabled": true },
+                                  { "name": "Update", "enabled": true },
+                                  { "name": "Delete", "enabled": true }
                               ]
                           }
                       ]
@@ -249,20 +249,20 @@ Feature: ClaimSets endpoints
              When a POST request is made to "/v3/claimSets/import" with
                   """
                   {
-                      "name": "InvalidClaimSet",
+                      "claimSetName": "InvalidClaimSet",
                       "resourceClaims": [
                           {
-                              "name": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "name": "systemDescriptors",
+                              "claimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
                               "actions": [
                                  { "name": "Create", "enabled": true}
-                              ],
-                              "children": [
-                                  {
-                                      "name": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
-                                      "actions": [],
-                                      "children": []
-                                  }
                               ]
+                          },
+                          {
+                              "name": "academicHonorCategoryDescriptor",
+                              "claimName": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                              "parentClaimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": []
                           }
                       ]
                   }
@@ -272,7 +272,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "type": "urn:ed-fi:api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
