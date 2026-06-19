@@ -453,6 +453,66 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And the response body path "0.id" should equal request variable "pagingSchoolBId"
               And the response body path "0.keyValues.schoolId" should have value "8118606"
 
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: 13 Deletes response is served when no query parameters are supplied
+             When a POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                    "schoolId": 8118607,
+                    "nameOfInstitution": "Tracked Optional Params School",
+                    "gradeLevels": [
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                    ],
+                    "educationOrganizationCategories": [
+                      {
+                        "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                      }
+                    ]
+                  }
+                  """
+             Then it should respond with 201
+             When the resulting id is stored in the "optionalParamsSchoolId" variable
+             When a DELETE request is made to "/ed-fi/schools/{optionalParamsSchoolId}"
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/schools/deletes"
+             Then it should respond with 200
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: 14 Deletes response is served when only minChangeVersion is supplied
+             When a POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                    "schoolId": 8118608,
+                    "nameOfInstitution": "Tracked Min Only School",
+                    "gradeLevels": [
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                    ],
+                    "educationOrganizationCategories": [
+                      {
+                        "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                      }
+                    ]
+                  }
+                  """
+             Then it should respond with 201
+             When the resulting id is stored in the "minOnlySchoolId" variable
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "minOnlyChangeVersion"
+             When a DELETE request is made to "/ed-fi/schools/{minOnlySchoolId}"
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/schools/deletes?minChangeVersion={minOnlyChangeVersion}&limit=1&offset=0&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 1
+              And the response body path "0.id" should equal request variable "minOnlySchoolId"
+              And the response body path "0.keyValues.schoolId" should have value "8118608"
+
         Rule: StudentSchoolAssociation deletes carry the student natural key
 
             Background:

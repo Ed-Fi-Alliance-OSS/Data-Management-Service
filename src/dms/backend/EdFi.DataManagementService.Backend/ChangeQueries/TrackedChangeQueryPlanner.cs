@@ -146,17 +146,18 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
         TrackedChangeColumnInfo representativeIdentityColumn = columns.RepresentativeIdentityColumn;
 
+        List<string> whereConditions =
+        [
+            $"c.{Quote(representativeIdentityColumn.NewColumnName)} IS NOT NULL",
+            .. BuildChangeVersionConditions(request, changeVersionColumn),
+        ];
+        string whereClause = string.Join("\n  AND ", whereConditions);
+
         return $"""
             WITH FilteredChanges AS (
                 SELECT c.*
                 FROM {Quote(request.TrackedChangeTable.Table)} c
-                WHERE c.{Quote(representativeIdentityColumn.NewColumnName)} IS NOT NULL
-                  AND ({MinChangeVersionParameterName} IS NULL OR c.{Quote(
-                changeVersionColumn.ColumnName
-            )} >= {MinChangeVersionParameterName})
-                  AND ({MaxChangeVersionParameterName} IS NULL OR c.{Quote(
-                changeVersionColumn.ColumnName
-            )} <= {MaxChangeVersionParameterName})
+                WHERE {whereClause}
             ),
             ChangeWindow AS (
                 SELECT c.{Quote(idColumn.ColumnName)},
@@ -231,8 +232,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         List<string> predicates =
         [
             $"c.{Quote(representativeIdentityColumn.NewColumnName)} IS NULL",
-            $"({MinChangeVersionParameterName} IS NULL OR c.{Quote(changeVersionColumn.ColumnName)} >= {MinChangeVersionParameterName})",
-            $"({MaxChangeVersionParameterName} IS NULL OR c.{Quote(changeVersionColumn.ColumnName)} <= {MaxChangeVersionParameterName})",
+            .. BuildChangeVersionConditions(request, changeVersionColumn),
         ];
         List<DescriptorDiscriminatorParameter> descriptorDiscriminatorParameters = [];
 
@@ -343,13 +343,41 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     {
         PaginationParameters pagination = request.PaginationParameters;
         ChangeVersionRange changeVersionRange = request.ChangeVersionRange;
-        return
-        [
-            new(MinChangeVersionParameterName, changeVersionRange.MinChangeVersion),
-            new(MaxChangeVersionParameterName, changeVersionRange.MaxChangeVersion),
-            new(LimitParameterName, (long)(pagination.Limit ?? pagination.MaximumPageSize)),
-            new(OffsetParameterName, (long)(pagination.Offset ?? 0)),
-        ];
+
+        // Only bind a change-version parameter when its bound is supplied. Binding an absent bound
+        // as a null parameter produced an untyped NULL that PostgreSQL could not assign a data type
+        // to (42P08), so the predicate is emitted conditionally instead of guarded with IS NULL.
+        List<RelationalParameter> parameters = [];
+        if (changeVersionRange.MinChangeVersion is { } minChangeVersion)
+        {
+            parameters.Add(new(MinChangeVersionParameterName, minChangeVersion));
+        }
+        if (changeVersionRange.MaxChangeVersion is { } maxChangeVersion)
+        {
+            parameters.Add(new(MaxChangeVersionParameterName, maxChangeVersion));
+        }
+        parameters.Add(new(LimitParameterName, (long)(pagination.Limit ?? pagination.MaximumPageSize)));
+        parameters.Add(new(OffsetParameterName, (long)(pagination.Offset ?? 0)));
+        return parameters;
+    }
+
+    /// <summary>
+    /// Builds the change-version window predicates, emitting only the bounds that were supplied.
+    /// Each emitted predicate has a matching parameter bound by <see cref="BuildPagingParameters"/>.
+    /// </summary>
+    private IEnumerable<string> BuildChangeVersionConditions(
+        IRelationalTrackedChangeQueryRequest request,
+        TrackedChangeSystemColumnInfo changeVersionColumn
+    )
+    {
+        if (request.ChangeVersionRange.MinChangeVersion is not null)
+        {
+            yield return $"c.{Quote(changeVersionColumn.ColumnName)} >= {MinChangeVersionParameterName}";
+        }
+        if (request.ChangeVersionRange.MaxChangeVersion is not null)
+        {
+            yield return $"c.{Quote(changeVersionColumn.ColumnName)} <= {MaxChangeVersionParameterName}";
+        }
     }
 
     private void AppendRegularResourceRecreatedSuppression(

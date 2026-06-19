@@ -158,8 +158,10 @@ public class Given_TrackedChangeQueryPlanner
         sql.Should().StartWith("WITH FilteredChanges AS");
         sql.Should().Contain("FROM \"tracked_changes_edfi\".\"School\" c");
         sql.Should().Contain("c.\"New_SchoolId\" IS NOT NULL");
-        sql.Should().Contain("(@MinChangeVersion IS NULL OR c.\"ChangeVersion\" >= @MinChangeVersion)");
-        sql.Should().Contain("(@MaxChangeVersion IS NULL OR c.\"ChangeVersion\" <= @MaxChangeVersion)");
+        sql.Should().Contain("c.\"ChangeVersion\" >= @MinChangeVersion");
+        sql.Should().Contain("c.\"ChangeVersion\" <= @MaxChangeVersion");
+        sql.Should().NotContain("@MinChangeVersion IS NULL");
+        sql.Should().NotContain("@MaxChangeVersion IS NULL");
         sql.Should().Contain("MIN(c.\"ChangeVersion\") AS \"__FirstChangeVersion\"");
         sql.Should().Contain("MAX(c.\"ChangeVersion\") AS \"__LastChangeVersion\"");
         sql.Should().Contain("GROUP BY c.\"Id\"");
@@ -269,8 +271,10 @@ public class Given_TrackedChangeQueryPlanner
             .Should()
             .BeLessThan(sql.IndexOf("firstChange.\"Id\" AS \"__Id\"", StringComparison.Ordinal));
         sql.Should().Contain("GROUP BY c.\"Id\"");
-        AssertParameter(command, "@MinChangeVersion", null);
-        AssertParameter(command, "@MaxChangeVersion", null);
+        sql.Should().NotContain("@MinChangeVersion");
+        sql.Should().NotContain("@MaxChangeVersion");
+        AssertNoParameter(command, "@MinChangeVersion");
+        AssertNoParameter(command, "@MaxChangeVersion");
         AssertParameter(command, "@Limit", 25L);
         AssertParameter(command, "@Offset", 0L);
     }
@@ -423,8 +427,10 @@ public class Given_TrackedChangeQueryPlanner
         sql.Should().StartWith("SELECT COUNT(1) AS \"__TotalCount\"");
         sql.Should().Contain("FROM \"tracked_changes_edfi\".\"School\" c");
         sql.Should().Contain("c.\"New_SchoolId\" IS NULL");
-        sql.Should().Contain("(@MinChangeVersion IS NULL OR c.\"ChangeVersion\" >= @MinChangeVersion)");
-        sql.Should().Contain("(@MaxChangeVersion IS NULL OR c.\"ChangeVersion\" <= @MaxChangeVersion)");
+        sql.Should().Contain("c.\"ChangeVersion\" >= @MinChangeVersion");
+        sql.Should().Contain("c.\"ChangeVersion\" <= @MaxChangeVersion");
+        sql.Should().NotContain("@MinChangeVersion IS NULL");
+        sql.Should().NotContain("@MaxChangeVersion IS NULL");
         sql.Should().Contain("c.\"Id\" AS \"__Id\"");
         sql.Should().Contain("c.\"ChangeVersion\" AS \"__ChangeVersion\"");
         sql.Should().Contain("c.\"Old_SchoolId\" AS \"schoolId__old\"");
@@ -470,12 +476,82 @@ public class Given_TrackedChangeQueryPlanner
         plan.IncludesTotalCount.Should().BeFalse();
         sql.Should().StartWith("SELECT c.\"Id\" AS \"__Id\"");
         sql.Should().NotContain("__TotalCount");
-        sql.Should().Contain("(@MinChangeVersion IS NULL OR c.\"ChangeVersion\" >= @MinChangeVersion)");
-        sql.Should().Contain("(@MaxChangeVersion IS NULL OR c.\"ChangeVersion\" <= @MaxChangeVersion)");
-        AssertParameter(command, "@MinChangeVersion", null);
-        AssertParameter(command, "@MaxChangeVersion", null);
+        sql.Should().NotContain("@MinChangeVersion");
+        sql.Should().NotContain("@MaxChangeVersion");
+        AssertNoParameter(command, "@MinChangeVersion");
+        AssertNoParameter(command, "@MaxChangeVersion");
         AssertParameter(command, "@Limit", 25L);
         AssertParameter(command, "@Offset", 0L);
+    }
+
+    [Test]
+    public void It_omits_max_change_version_from_deletes_when_only_min_is_supplied()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: table,
+            changeVersionRange: new ChangeVersionRange(10L, null),
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+
+        plan.Command.Should().NotBeNull();
+        RelationalCommand command = plan.Command!;
+        string sql = NormalizeSql(command.CommandText);
+        sql.Should().Contain("c.\"ChangeVersion\" >= @MinChangeVersion");
+        sql.Should().NotContain("@MaxChangeVersion");
+        AssertParameter(command, "@MinChangeVersion", 10L);
+        AssertNoParameter(command, "@MaxChangeVersion");
+    }
+
+    [Test]
+    public void It_omits_min_change_version_from_keychanges_when_only_max_is_supplied()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.KeyChanges,
+            totalCount: false,
+            trackedChangeTable: table,
+            changeVersionRange: new ChangeVersionRange(null, 20L),
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+
+        plan.Command.Should().NotBeNull();
+        RelationalCommand command = plan.Command!;
+        string sql = NormalizeSql(command.CommandText);
+        sql.Should().Contain("c.\"ChangeVersion\" <= @MaxChangeVersion");
+        sql.Should().NotContain("@MinChangeVersion");
+        AssertParameter(command, "@MaxChangeVersion", 20L);
+        AssertNoParameter(command, "@MinChangeVersion");
     }
 
     [Test]
@@ -1140,5 +1216,10 @@ public class Given_TrackedChangeQueryPlanner
     {
         RelationalParameter parameter = command.Parameters.Single(parameter => parameter.Name == name);
         parameter.Value.Should().Be(expectedValue);
+    }
+
+    private static void AssertNoParameter(RelationalCommand command, string name)
+    {
+        command.Parameters.Should().NotContain(parameter => parameter.Name == name);
     }
 }
