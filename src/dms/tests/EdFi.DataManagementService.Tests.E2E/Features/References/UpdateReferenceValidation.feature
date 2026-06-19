@@ -17,6 +17,8 @@ Feature: Update Reference Validation
                   | 2022       | true              | 2021-2022             |
 
         @API-110
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                             |
@@ -39,12 +41,16 @@ Feature: Update Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "Identifying values for the LocalEducationAgency resource cannot be changed. Delete and recreate the resource item instead.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-                      "title": "Key Change Not Supported",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.categories[0].educationOrganizationCategoryDescriptor": [
+                              "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/educationorganizationcategorydescriptor#fake' does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """

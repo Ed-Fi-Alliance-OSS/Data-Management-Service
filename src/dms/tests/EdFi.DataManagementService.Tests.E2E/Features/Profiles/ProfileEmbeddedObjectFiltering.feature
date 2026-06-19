@@ -94,6 +94,8 @@ Feature: Profile Embedded Object Filtering
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Write profile excluding nested member does not persist excluded nested update
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-AddressExcludeNameOfCounty" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-AddressExcludeNameOfCounty" for resource "School" with body

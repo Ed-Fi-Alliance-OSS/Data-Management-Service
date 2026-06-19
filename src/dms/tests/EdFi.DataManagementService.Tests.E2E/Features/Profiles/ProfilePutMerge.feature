@@ -17,6 +17,8 @@ Feature: Profile PUT Merge Functionality
                   | uri://ed-fi.org/AddressTypeDescriptor#Physical                        |
                   | uri://ed-fi.org/StateAbbreviationDescriptor#TX                        |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 PUT with collection non-key property exclusion preserves excluded property from existing document
             # First create the school with full address data using IncludeAll profile (nameOfCounty IS saved)
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body

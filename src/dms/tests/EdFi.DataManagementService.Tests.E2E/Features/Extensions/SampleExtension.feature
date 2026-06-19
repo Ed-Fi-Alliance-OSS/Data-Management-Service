@@ -98,6 +98,8 @@ Feature: Sample extension resources
                   """
              Then it should respond with 201
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 03 Get by ID for busRoutes Resource
             Given a POST request is made to "/sample/busRoutes" with
                   """
@@ -149,8 +151,8 @@ Feature: Sample extension resources
                             "busReference": {
                                 "busId": "111"
                             },
-                            "hoursPerWeek": 60,
-                            "operatingCost": 5,
+                            "hoursPerWeek": 60.00,
+                            "operatingCost": 5.0000,
                             "busRouteNumber": 102,
                             "busRouteDirection": "Southbound",
                             "expectedTransitTime": "60",
@@ -369,6 +371,8 @@ Feature: Sample extension resources
              When a DELETE request is made to "/ed-fi/schools/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 09 Extension Values Should Become Null if the Sample Extension is Not Specified
             Given a POST request is made to "/sample/buses" with
                   """
@@ -460,7 +464,6 @@ Feature: Sample extension resources
                   """
                   {
                     "id": "{id}",
-                    "_ext": {},
                     "schoolId": 5,
                     "gradeLevels": [
                       {
@@ -653,4 +656,3 @@ Feature: Sample extension resources
                       "errors": []
                     }
                   """
-

@@ -112,6 +112,8 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 04 PUT with profile excluding required field succeeds
             # First create a school using a profile that includes nameOfInstitution
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
@@ -201,6 +203,8 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth grade                      |
 
+        @relational-backend
+        @relational-ci-shard-1
         Scenario: 06 POST with CollectionRule on required collection succeeds and filters collection items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School" with body
                   """

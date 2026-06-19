@@ -258,6 +258,8 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 09 Extension Excluded write profile applies write payload to extension members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Excluded" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Excluded" for resource "Staff" with body

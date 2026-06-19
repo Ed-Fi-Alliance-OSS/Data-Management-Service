@@ -12,6 +12,8 @@ Feature: Profile Write Filtering
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 POST with IncludeOnly write profile silently strips excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
@@ -38,6 +40,8 @@ Feature: Profile Write Filtering
              And the response body should contain fields "schoolId, nameOfInstitution, shortNameOfInstitution"
              And the response body should not contain fields "webSite"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 POST with IncludeOnly write profile preserves identity and allowed fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
@@ -71,6 +75,8 @@ Feature: Profile Write Filtering
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 POST with ExcludeOnly write profile silently strips excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeOnly" for resource "School" with body
                   """
@@ -133,6 +139,8 @@ Feature: Profile Write Filtering
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth grade                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade                   |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 POST with collection item filter silently strips non-matching items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """
@@ -163,6 +171,8 @@ Feature: Profile Write Filtering
              And the "gradeLevels" collection should have 1 item
              And the "gradeLevels" collection should only contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 POST with collection item filter excludes non-matching items from persisted data
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """

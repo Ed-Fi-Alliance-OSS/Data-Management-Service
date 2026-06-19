@@ -228,6 +228,7 @@ Feature: OWASP critical attack path protections
                   | Accept | */*   |
              Then it should respond with 404 or 405
 
+        # DMS-1224: Unignore when DMS returns ODS/API-compatible 415 responses for unsupported write Content-Type values.
         @KnownSecurityGap @ignore
         Scenario: 14 Explicit non JSON content type is rejected
              When a POST request is made to "/ed-fi/schools" with header "Content-Type" value "text/plain"
