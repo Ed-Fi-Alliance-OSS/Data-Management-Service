@@ -24,18 +24,9 @@ restating them.
 
 ## 1. Overview
 
-The legacy DMS storage model keeps all resources and descriptors together in a single
-`dms.document` table. The **relational backend** instead derives a dedicated set of
-tables, views, constraints, and triggers **per resource** from the effective schema
-(the normalized combination of the core `ApiSchema.json` plus any extension schemas).
-
-The relational backend is **opt-in**. The bound setting is `AppSettings:UseRelationalBackend`
-(see [`AppSettings.cs`](../src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs)),
-so the direct environment variable is `AppSettings__UseRelationalBackend=true`. In the
-Docker Compose / E2E environment files the variable is spelled `USE_RELATIONAL_BACKEND=true`
-and is mapped to `AppSettings__UseRelationalBackend` by
-[`local-dms.yml`](../eng/docker-compose/local-dms.yml) and
-[`published-dms.yml`](../eng/docker-compose/published-dms.yml).
+The **relational backend** is the DMS storage model. It derives a dedicated set of tables,
+views, constraints, and triggers **per resource** from the effective schema (the normalized
+combination of the core `ApiSchema.json` plus any extension schemas).
 
 For the design rationale, start with these:
 
@@ -156,7 +147,7 @@ protects the database in two places:
 
 ### The runtime first-use check
 
-When DMS starts with the relational backend enabled, it reads the stored fingerprint
+When DMS starts, it reads the stored fingerprint
 ([`DatabaseFingerprintReaderSupport.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DatabaseFingerprintReaderSupport.cs),
 with PostgreSQL/SQL Server reader implementations in the respective backend projects) and
 compares it to the effective schema it loaded. The check runs in
@@ -305,23 +296,19 @@ tests). Run them with the standard `dotnet test` against the project.
   [`EdFi.DataManagementService.Tests.Integration`](../src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md)
   exercises an in-process DMS against real databases (not the Docker stack).
 
-### Relational end-to-end (E2E) tests
+### End-to-end (E2E) tests
 
-Relational E2E runs against the Docker stack with the relational backend enabled. The full
-setup is documented in [`eng/docker-compose/README.md`](../eng/docker-compose/README.md); the
-suite itself is described in
+E2E runs against the Docker stack. The full setup is documented in
+[`eng/docker-compose/README.md`](../eng/docker-compose/README.md); the suite itself is described in
 [`src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md).
 A typical run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter 'Category=@relational-backend'
+./build-dms.ps1 E2ETest
 ```
 
 > [!NOTE]
-> The environment file physically lives at
-> [`eng/docker-compose/.env.e2e.relational`](../eng/docker-compose/.env.e2e.relational). You pass
-> it as `./.env.e2e.relational` from the **repo root** — `build-dms.ps1`'s resolver locates it
-> under `eng/docker-compose`. The setup/teardown helpers
+> The setup/teardown helpers
 > [`setup-local-dms.ps1`](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1)
 > and `teardown-local-dms.ps1` start and stop the local stack.
 

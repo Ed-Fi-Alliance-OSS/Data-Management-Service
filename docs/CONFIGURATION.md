@@ -26,15 +26,13 @@ file.
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
-| UseRelationalBackend             | When `true`, DMS uses the relational (tables-per-resource) backend instead of the legacy single `dms.document` store. Default: `false`. In the Docker Compose / E2E environment files this is set via `USE_RELATIONAL_BACKEND`, which maps to `AppSettings__UseRelationalBackend`. See the [Relational Backend Developer Guide](./RELATIONAL-BACKEND.md). |
 
 ## MappingPacks
 
 DMS can load precompiled mapping packs (`.mpack`) instead of compiling mapping sets at
 runtime. **Mapping packs are not available yet** — with the default settings (`Enabled` is
 `false`) mapping sets are compiled at runtime today, but the configuration surface exists
-and is validated. These settings are bound whenever `Datastore` is `postgresql` (independent of
-`UseRelationalBackend`); for SQL Server they are bound only when `UseRelationalBackend` is `true`.
+and is validated. These settings are bound for both the PostgreSQL and SQL Server datastores.
 Because mapping-set resolution runs at startup, setting `Enabled` to `true` with no pack
 present makes DMS fail to start when `Required` is `true` or `AllowRuntimeCompileFallback`
 is `false`. See the
