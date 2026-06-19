@@ -249,6 +249,12 @@ To add the Elasticsearch sink:
 
 No DMS source changes. No recompile.
 
+### 3.7 Configuration Management Service
+
+While the proposal above is written in the context of the core DMS code, the
+same plugin loading mechanism SHOULD be used by the Configuration Management
+Service.
+
 ## 4. Security Considerations
 
 ### 4.1 Threat Model
