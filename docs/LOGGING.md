@@ -137,3 +137,70 @@ These examples are general guidelines and not 100% exhaustive.
 * About to connect to a service or run through an interesting algorithm
 * Received information back from a service
   * Metadata only
+
+## Logging Configuration
+
+### Framework
+
+DMS uses **Serilog 4.x** as its sole logging framework, replacing all
+Microsoft.Extensions.Logging providers at startup. Configuration is driven by
+`Serilog.Settings.Configuration`, which reads from `appsettings.json`.
+
+### Default Sinks
+
+Two sinks are active by default:
+
+| Sink | Details |
+|------|---------|
+| **Console** | `{Timestamp} {Level} {Message}{Exception}` |
+| **File** | `./logs/.log`, rolls daily |
+
+### Key Configuration Settings
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `Serilog:MinimumLevel:Default` | `Information` | Global log level |
+| `Serilog:WriteTo` | Console + File | Sink list |
+| `Serilog:Using` | `[Serilog.Sinks.File, Serilog.Sinks.Console]` | Assembly references for sinks |
+| `Serilog:Enrich` | `[FromLogContext]` | Log enrichers |
+| `AppSettings:MaskRequestBodyInLogs` | `true` | Mask request body values at `DEBUG` level |
+| `AppSettings:CorrelationIdHeader` | `"correlationid"` | HTTP header used to correlate requests |
+
+### Overriding Configuration at Runtime
+
+All Serilog settings can be overridden without recompiling, in ascending order
+of precedence:
+
+1. `appsettings.json` (base configuration)
+2. `appsettings.{Environment}.json` (e.g., `appsettings.Production.json`)
+3. Environment variables (double-underscore as path separator)
+4. Command-line arguments
+
+**Example — `appsettings.Production.json`:**
+
+```json
+{
+  "Serilog": {
+    "MinimumLevel": { "Default": "Debug" },
+    "WriteTo": [
+      { "Name": "Console" }
+    ]
+  },
+  "AppSettings": {
+    "MaskRequestBodyInLogs": false
+  }
+}
+```
+
+**Example — environment variables:**
+
+```bash
+Serilog__MinimumLevel__Default=Debug
+Serilog__WriteTo__0__Args__path=/var/log/dms/app.log
+AppSettings__MaskRequestBodyInLogs=false
+```
+
+> [!NOTE]
+> Configuration reload on file change is disabled to work around a .NET
+> file-watcher issue on Linux. A process restart is required to pick up
+> configuration changes.
