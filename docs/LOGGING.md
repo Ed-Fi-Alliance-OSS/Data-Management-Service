@@ -1,12 +1,11 @@
-# Logging Policy
-
-This section describes the logging policy in the Ed-Fi API source
-code. In general, this policy seeks to balance the goals of providing sufficient
-information for an administrator to understand the health of the system and
-understand user interaction with the system with the equally important goals of
-protecting sensitive data and avoiding excessive log storage size.
+# Logging in the Ed-Fi API
 
 ## Logging Principles
+
+These principles seek to balance the goals of providing sufficient information
+for an administrator to understand the health of the system and understand user
+interaction with the system with the equally important goals of protecting
+sensitive data and avoiding excessive log storage size.
 
 * Use structured logging for integration into log-monitoring applications
   (LogStash, Splunk, CloudWatch, etc.).
@@ -23,7 +22,7 @@ protecting sensitive data and avoiding excessive log storage size.
   debug message, use the utility `IsDebugEnabled` and `IsInfoEnabled` functions
   first before executing that logic.
 
-## Log Levels
+### Log Levels
 
 The DMS applications will utilize the following levels when logging messages.
 These levels help the reader to understand if any remedial action is needed, and
@@ -79,26 +78,26 @@ they allow the administrator to tune the amount of data being logged.
 > _content_. In many cases, this will be sufficient to understand why a request
 > failed.
 
-## Examples
+### Examples
 
 These examples are general guidelines and not 100% exhaustive.
 
-### Fatal
+#### Fatal
 
 * Missing required configuration information
 * Out of memory or disk space
 
-### Error
+#### Error
 
 * Unhandled null reference
 * Database connection / transaction failure after exhausting retry attempts
 
-### Warning
+#### Warning
 
 * A database connection / transaction failure occurred, but was recovered with
   an automatic retry
 
-### Informational
+#### Informational
 
 * Received an HTTP request
   * URL
@@ -116,7 +115,7 @@ These examples are general guidelines and not 100% exhaustive.
 * Process startup and shutdown
 * Database created
 
-### Debug
+#### Debug
 
 * Received an HTTP request → add anonymized payload
   * Replace potentially sensitive string and numeric data with `null` before
@@ -150,21 +149,30 @@ Microsoft.Extensions.Logging providers at startup. Configuration is driven by
 
 Two sinks are active by default:
 
-| Sink | Details |
-|------|---------|
+| Sink        | Details                                    |
+| ----------- | ------------------------------------------ |
 | **Console** | `{Timestamp} {Level} {Message}{Exception}` |
-| **File** | `./logs/.log`, rolls daily |
+| **File**    | `./logs/.log`, rolls daily                 |
+
+> [!WARNING]
+> Only the two built-in sinks (Console, File) are available. Adding
+> Elasticsearch, Seq, Splunk, Datadog, etc. requires recompiling with the
+> appropriate NuGet packages.
+>
+> Design document [Runtime Serilog Sink Plugin
+> Loading](../reference/design/serilog-plugin-loading.md) describes a proposal
+> for avoiding recompile.
 
 ### Key Configuration Settings
 
-| Key | Default | Purpose |
-|-----|---------|---------|
-| `Serilog:MinimumLevel:Default` | `Information` | Global log level |
-| `Serilog:WriteTo` | Console + File | Sink list |
-| `Serilog:Using` | `[Serilog.Sinks.File, Serilog.Sinks.Console]` | Assembly references for sinks |
-| `Serilog:Enrich` | `[FromLogContext]` | Log enrichers |
-| `AppSettings:MaskRequestBodyInLogs` | `true` | Mask request body values at `DEBUG` level |
-| `AppSettings:CorrelationIdHeader` | `"correlationid"` | HTTP header used to correlate requests |
+| Key                                 | Default                                       | Purpose                                   |
+| ----------------------------------- | --------------------------------------------- | ----------------------------------------- |
+| `Serilog:MinimumLevel:Default`      | `Information`                                 | Global log level                          |
+| `Serilog:WriteTo`                   | Console + File                                | Sink list                                 |
+| `Serilog:Using`                     | `[Serilog.Sinks.File, Serilog.Sinks.Console]` | Assembly references for sinks             |
+| `Serilog:Enrich`                    | `[FromLogContext]`                            | Log enrichers                             |
+| `AppSettings:MaskRequestBodyInLogs` | `true`                                        | Mask request body values at `DEBUG` level |
+| `AppSettings:CorrelationIdHeader`   | `"correlationid"`                             | HTTP header used to correlate requests    |
 
 ### Overriding Configuration at Runtime
 
