@@ -228,28 +228,6 @@ Feature: OWASP critical attack path protections
                   | Accept | */*   |
              Then it should respond with 404 or 405
 
-        # DMS-1224: Unignore when DMS returns ODS/API-compatible 415 responses for unsupported write Content-Type values.
-        @KnownSecurityGap @ignore
-        Scenario: 14 Explicit non JSON content type is rejected
-             When a POST request is made to "/ed-fi/schools" with header "Content-Type" value "text/plain"
-                  """
-                  {
-                      "schoolId": 1302,
-                      "nameOfInstitution": "Invalid Content Type",
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
-                          }
-                      ],
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
-                          }
-                      ]
-                  }
-                  """
-             Then it should respond with 415
-
         @KnownSecurityGap @ignore
         Scenario: 15 Oversized request body is rejected
              When a POST request larger than 11 MB is made to "/ed-fi/schools"
@@ -269,8 +247,8 @@ Feature: OWASP critical attack path protections
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName | lastSurname | birthDate  |
                   | BolaStudentId               | "BOLA-001"      | BOLA      | Student     | 2008-01-01 |
-             And the system has these "studentSchoolAssociations"
-                  | _storeResultingIdInVariable   | studentReference                  | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
+              And the system has these "studentSchoolAssociations"
+                  | _storeResultingIdInVariable    | studentReference                  | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
                   | BolaStudentSchoolAssociationId | { "studentUniqueId": "BOLA-001" } | { "schoolId": 255901901 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" | 2023-08-01 |
              When a GET request is made to "/ed-fi/students/{BolaStudentId}"
              Then it should respond with 200

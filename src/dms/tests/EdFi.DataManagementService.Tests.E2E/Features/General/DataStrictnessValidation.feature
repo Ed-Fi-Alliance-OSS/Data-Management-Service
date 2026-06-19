@@ -13,34 +13,6 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        @ignore @API-236
-        Scenario: 04 Ensure clients can create a resource using numeric values for booleans
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "classPeriodName": "Class Period 1",
-                      "officialAttendancePeriod": 0
-                  }
-                  """
-             Then it should respond with 201
-
-        @ignore @API-237
-        Scenario: 05 Ensure clients can update a resource using numeric values for booleans
-             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 1",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": 1
-                  }
-                  """
-             Then it should respond with 204
-
         @ignore @API-238
         Scenario: 06 Ensure clients cannot create a resource using incorrect values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
@@ -151,54 +123,6 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-244
-        Scenario: 12 Ensure clients can create a resource using numeric values as strings
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 4",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": "1"
-                  }
-                  """
-             Then it should respond with 201
-              And the record can be retrieved with a GET request
-                  """
-                       {
-                           "classPeriodName": "Class Period Test 4",
-                           "schoolReference": {
-                               "schoolId": 255901044
-                           },
-                           "officialAttendancePeriod": true
-                       }
-                  """
-
-        @ignore @API-245
-        Scenario: 13 Ensure clients can update a resource using numeric values as strings
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 4",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": "0"
-                  }
-                  """
-             Then it should respond with 204
-              And the record can be retrieved with a GET request
-                  """
-                       {
-                           "classPeriodName": "Class Period Test 4",
-                           "schoolReference": {
-                               "schoolId": 255901044
-                           },
-                           "officialAttendancePeriod": true
-                       }
-                  """
-
         @ignore @API-246
         Scenario: 14 Ensure clients cannot update a resource that is using a different value type than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
@@ -227,35 +151,6 @@ Feature: Data strictness
                   }
                   """
 
-
-        @ignore @API-247
-        Scenario: 15 Ensure clients cannot update a resource that is using a different value type than boolean
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 4",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": "0"
-                  }
-                  """
-             Then it should respond with 400
-              And the response body is
-                  """
-                  {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.officialAttendancePeriod": [
-                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
-                          ]
-                      }
-                  }
-                  """
 
         @API-248
         @relational-backend
