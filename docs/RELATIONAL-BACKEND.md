@@ -110,8 +110,10 @@ running service and the database agree on exactly one effective schema.
 
 ### Where the fingerprint lives
 
-The fingerprint is a single row in the `dms.EffectiveSchema` singleton table
-([`EffectiveSchemaTableDefinition.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/EffectiveSchemaTableDefinition.cs)):
+The fingerprint is a single row in the `dms.EffectiveSchema` singleton table (column names in
+[`EffectiveSchemaTableDefinition.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.External/EffectiveSchemaTableDefinition.cs);
+the table DDL and the singleton `CHECK` constraint are emitted by
+[`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs)):
 
 | Column | Meaning |
 |---|---|
@@ -199,7 +201,8 @@ old/new identity and securable values plus a `ChangeVersion`. (Descriptors share
 tracked-change table within that schema rather than one table per resource.) When debugging a stamp or a
 tracked-change row, these are the sources of truth:
 
-- [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write the stamps and tracked-change rows
+- [`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs) (per-resource root tables) and [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) (descriptors) — the stamping-trigger bodies that write the `ContentVersion` / `ContentLastModifiedAt` stamps
+- [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write the tracked-change rows (they read the already-stamped `ContentVersion`)
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
 Inspect the relevant per-resource table under that schema (for example
@@ -306,6 +309,9 @@ A typical relational-lane run from the repo root:
 ```powershell
 ./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter "Category=@relational-backend"
 ```
+
+The environment file lives at [`eng/docker-compose/.env.e2e.relational`](../eng/docker-compose/.env.e2e.relational);
+`build-dms.ps1` resolves the `./.env.e2e.relational` argument to that location automatically.
 
 > [!NOTE]
 > The setup/teardown helpers
