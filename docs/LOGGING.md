@@ -141,9 +141,10 @@ These examples are general guidelines and not 100% exhaustive.
 
 ### Framework
 
-DMS uses **Serilog 4.x** as its sole logging framework, replacing all
-Microsoft.Extensions.Logging providers at startup. Configuration is driven by
-`Serilog.Settings.Configuration`, which reads from `appsettings.json`.
+DMS uses **Serilog 4.x** as its logging framework. The frontend startup code
+creates a Serilog logger from `appsettings.json`, clears the default
+`Microsoft.Extensions.Logging` providers, and adds Serilog back into the host
+logging pipeline. Configuration is driven by `Serilog.Settings.Configuration`.
 
 ### Default Sinks
 
@@ -151,8 +152,8 @@ Two sinks are active by default:
 
 | Sink        | Details                                    |
 | ----------- | ------------------------------------------ |
-| **Console** | `{Timestamp} {Level} {Message}{Exception}` |
-| **File**    | `./logs/.log`, rolls daily                 |
+| **File**    | `./logs/.log`, rolls daily. Template: `{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{NewLine}{Exception}` |
+| **Console** | Template: `{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{Exception}{NewLine}` |
 
 > [!WARNING]
 > Only the two built-in sinks (Console, File) are available. Adding
@@ -168,11 +169,14 @@ Two sinks are active by default:
 | Key                                 | Default                                       | Purpose                                   |
 | ----------------------------------- | --------------------------------------------- | ----------------------------------------- |
 | `Serilog:MinimumLevel:Default`      | `Information`                                 | Global log level                          |
-| `Serilog:WriteTo`                   | Console + File                                | Sink list                                 |
+| `Serilog:WriteTo`                   | File + Console                                | Sink list                                 |
 | `Serilog:Using`                     | `[Serilog.Sinks.File, Serilog.Sinks.Console]` | Assembly references for sinks             |
-| `Serilog:Enrich`                    | `[FromLogContext]`                            | Log enrichers                             |
 | `AppSettings:MaskRequestBodyInLogs` | `true`                                        | Mask request body values at `DEBUG` level |
-| `AppSettings:CorrelationIdHeader`   | `"correlationid"`                             | HTTP header used to correlate requests    |
+| `AppSettings:CorrelationIdHeader`   | `""`                                         | Optional header name used to override the request trace ID |
+
+> [!NOTE]
+> `Enrich.FromLogContext()` is added in code when the Serilog logger is built;
+> there is no default `Serilog:Enrich` entry in the shipped appsettings.
 
 ### Overriding Configuration at Runtime
 
