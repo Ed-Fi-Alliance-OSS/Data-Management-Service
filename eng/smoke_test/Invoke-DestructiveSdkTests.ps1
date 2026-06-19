@@ -45,11 +45,16 @@ if ($SdkPath) {
   $sdkDllPath = Get-ApiSdkDll
 }
 
-# SmokeTest.Console 7.3.20162's SdkConfigurationFactory requires a
-# {SdkNamespace}.Client.HostConfiguration type that only SDKs from the newer
-# Ed-Fi SDK generator carry. The in-run DMS TestSdk (stock openapi-generator)
-# and the pinned EdFi.OdsApi.Sdk 7.3.10132 both lack it, so stay on 7.3.10008.
-$path = Get-SmokeTestTool -PackageVersion '7.3.10008' -PreRelease
+# SmokeTest.Console reflects over the generated SDK to find each resource's verb
+# methods and builds its API client from the SDK's configuration type. This pin
+# carries the two behaviors the four-package smoke surface needs: it maps one
+# resource per POST method, so Homograph's homonym resources (Contact, School,
+# Staff, Student, StudentSchoolAssociation) that share a core OpenAPI tag and land
+# on the same generated Api class no longer collide; and it falls back to the
+# pre-host-builder SDK configuration for stock openapi-generator SDKs (the in-run
+# DMS TestSdk and EdFi.OdsApi.Sdk 7.3.10132), which lack the newer
+# {SdkNamespace}.Client.HostConfiguration type.
+$path = Get-SmokeTestTool -PackageVersion '7.3.20173' -PreRelease
 
 $parameters = @{
   BaseUrl = $BaseUrl
