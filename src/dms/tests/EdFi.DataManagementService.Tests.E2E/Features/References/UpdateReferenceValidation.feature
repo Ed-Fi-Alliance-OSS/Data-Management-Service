@@ -162,9 +162,9 @@ Feature: Update Reference Validation
                   }
                   """
 
-        # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
-        #[DMS-80]
-        @API-114 @ignore
+        @API-114
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
@@ -187,12 +187,13 @@ Feature: Update Reference Validation
                       "id": "{id}",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
+                          "schoolId": 255901,
                           "schoolYear": 2022,
-                          "sectionIdentifier": "25590100102Trad220ALG112011",
+                          "sectionIdentifier": "25590100102Trad220ALG112099",
                           "sessionName": "2021-2022 Fall Semester"
                       },
                       "studentReference": {
-                          "studentUniqueId": "604874"
+                          "studentUniqueId": "604834"
                       },
                       "beginDate": "2021-08-23"
                   }
