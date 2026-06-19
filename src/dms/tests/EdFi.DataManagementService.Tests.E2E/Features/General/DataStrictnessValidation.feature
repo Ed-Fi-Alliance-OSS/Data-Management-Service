@@ -13,38 +13,6 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        @ignore @API-238
-        Scenario: 06 Ensure clients cannot create a resource using incorrect values for booleans
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 1",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": 2
-                  }
-                  """
-             Then it should respond with 400
-              And the response body is
-              # Pending confirmation
-
-        @ignore @API-239
-        Scenario: 07 Ensure clients cannot create a resource using incorrect values for booleans
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 1",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": 2
-                  }
-                  """
-             Then it should respond with 400
-             # Pending confirmation
-
-
         @API-240
         @relational-backend
         @relational-ci-shard-4
@@ -61,11 +29,24 @@ Feature: Data strictness
                   """
              Then it should respond with 201
 
-        @ignore @API-241
+        @API-241
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 09 Ensure clients can update a resource using expected booleans
-             When a PUT request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
+                      "classPeriodName": "Class Period Test 2",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
                       "classPeriodName": "Class Period Test 2",
                       "schoolReference": {
                           "schoolId": 255901044
@@ -75,7 +56,9 @@ Feature: Data strictness
                   """
              Then it should respond with 204
 
-        @ignore @API-242
+        @API-242
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 10 Ensure clients can create a resource using expected booleans as string
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -91,6 +74,7 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
+                           "id": "{id}",
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
                                "schoolId": 255901044
@@ -99,12 +83,25 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-243
+        @API-243
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 11 Ensure clients can update a resource using expected booleans as strings
-             When a PUT request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 2",
+                      "classPeriodName": "Class Period Test 3",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Test 3",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -115,6 +112,7 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
+                           "id": "{id}",
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
                                "schoolId": 255901044
@@ -123,11 +121,24 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-246
+        @API-246
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 14 Ensure clients cannot update a resource that is using a different value type than boolean
-             When a POST request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
+                      "classPeriodName": "Class Period Test 4",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
                           "schoolId": 255901044
@@ -136,6 +147,7 @@ Feature: Data strictness
                   }
                   """
              Then it should respond with 400
+              And the response body is
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -145,9 +157,10 @@ Feature: Data strictness
                       "correlationId": null,
                       "validationErrors": {
                           "$.officialAttendancePeriod": [
-                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
+                              "officialAttendancePeriod Value is \"string\" but should be \"boolean\""
                           ]
-                      }
+                      },
+                      "errors": []
                   }
                   """
 
