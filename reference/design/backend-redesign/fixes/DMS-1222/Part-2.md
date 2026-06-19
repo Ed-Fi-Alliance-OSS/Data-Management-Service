@@ -17,7 +17,6 @@ Current enabled-source inventory:
 | Area | Remaining ignored scenarios | Recommendation |
 |---|---:|---|
 | `Authorization/RoleNamedSecurity/StudentAssessmentAuthorization.feature` | 10 | Convert all |
-| `General/DataStrictnessValidation.feature` | 4 | Convert all |
 | `Security/OwaspCriticalPaths.feature` | 1 | Convert |
 | Total | 15 | Convert all |
 
@@ -78,71 +77,3 @@ Implementation plan:
 | 07 Ensure unauthorized client can not update a StudentAssessment | Convert | Negative update path; refresh 403 body. |
 | 08 Ensure unauthorized client can not delete a StudentAssessment | Convert | Negative delete path; refresh 403 body. |
 
-## General: DataStrictnessValidation.feature
-
-File:
-`src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/DataStrictnessValidation.feature`
-
-Recommendation: convert the four remaining scenarios.
-
-Current implementation evidence:
-
-- `JsonHelpers.TryCoerceStringToBoolean` only coerces JSON string values accepted by
-  `Boolean.TryParse`, such as `"true"` and `"false"`.
-- It does not coerce JSON numeric tokens into booleans.
-- It does not coerce non-boolean strings such as `"string"` into booleans.
-- Active `API-240` already covers POST with a literal JSON boolean.
-- These remaining scenarios should stay in the relational strictness shard, likely
-  `@relational-ci-shard-4`.
-
-| Scenario | Recommendation | Plan |
-|---|---|---|
-| `API-241` / 09 Ensure clients can update a resource using expected booleans | Convert | Add a scenario-local setup POST that creates a classPeriod and stores its id/location, then PUT to `/ed-fi/classPeriods/{id}` with `officialAttendancePeriod: false`. The current URL `/ed-fi/classPeriods` is not a valid update route. |
-| `API-242` / 10 Ensure clients can create a resource using expected booleans as string | Convert | String `"true"` is valid under current coercion. Add relational tags and keep the GET verification expecting boolean `true`. |
-| `API-243` / 11 Ensure clients can update a resource using expected booleans as strings | Convert | Add scenario-local setup, PUT to `/ed-fi/classPeriods/{id}` with `officialAttendancePeriod: "false"`, and fix the expected GET body to match the updated classPeriod identity. The current scenario mixes `Class Period Test 2` in the PUT body with `Class Period Test 3` in the expected body. |
-| `API-246` / 14 Ensure clients cannot update a resource that is using a different value type than boolean | Convert | Preserve this as invalid PUT coverage: seed a valid classPeriod, PUT to `/ed-fi/classPeriods/{id}` with `officialAttendancePeriod: "string"`, and replace the stale Newtonsoft-style error text with current ProblemDetails. If the team only wants POST strictness here, retitle it to create instead, but do not leave the title/verb mismatch. |
-
-## Security: OwaspCriticalPaths.feature
-
-File:
-`src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Security/OwaspCriticalPaths.feature`
-
-Recommendation: convert scenario 15.
-
-`OwaspCriticalPaths.feature` now has only one remaining ignored enabled scenario:
-
-| Scenario | Recommendation | Plan |
-|---|---|---|
-| 15 Oversized request body is rejected | Convert | Remove `@KnownSecurityGap` and `@ignore` if a targeted relational run confirms the current stack returns 413. Keep `@relational-backend` and `@relational-ci-shard-3`. |
-
-Current implementation evidence:
-
-- The frontend configures `KestrelServerOptions.Limits.MaxRequestBodySize` to 10 MB.
-- The E2E step sends a direct `HttpClient` POST with an `application/json` body larger than 11 MB.
-- The scenario already expects a direct 413 response and already has relational shard tags after the
-  ignored tag.
-
-Recommended validation before unignoring:
-
-```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'
-```
-
-If the shard is too broad for local iteration, temporarily run only the generated scenario name or
-line-filter equivalent, then run the shard before relying on the result.
-
-## Final Classification
-
-Convert:
-
-- StudentAssessmentAuthorization scenarios 01, 02.1, 02.2, 03, 04, 05, 06.1, 06.2, 07, and 08.
-- DataStrictness scenarios `API-241`, `API-242`, `API-243`, and `API-246`.
-- OwaspCriticalPaths scenario 15.
-
-Validation notes:
-
-- Use the repo-root relational E2E path from `AGENTS.md`; direct `dotnet test` against a manually
-  started stack is not a valid relational signal unless the relational provisioning helper and test
-  process database variables are also applied.
-- After editing `.feature` tags or scenario text, regenerate or otherwise update the committed
-  `.feature.cs` files before relying on NUnit category selection.

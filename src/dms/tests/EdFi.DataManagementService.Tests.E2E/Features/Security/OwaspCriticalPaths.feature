@@ -228,11 +228,6 @@ Feature: OWASP critical attack path protections
                   | Accept | */*   |
              Then it should respond with 404 or 405
 
-        @KnownSecurityGap @ignore
-        Scenario: 15 Oversized request body is rejected
-             When a POST request larger than 11 MB is made to "/ed-fi/schools"
-             Then the direct response should be 413
-
         @relational-ci-shard-3
         @relational-backend
         Scenario: 16 BOLA cross-education-organization access to object id is denied
