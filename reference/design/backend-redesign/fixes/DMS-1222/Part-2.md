@@ -1,19 +1,5 @@
 # DMS-1222 Part 2 Ignored Scenario Audit
 
-This audit covers the 28 ignored scenarios called out in Part 2 of
-`reference/design/backend-redesign/fixes/DMS-1222.md`.
-
-I did not run E2E tests or change feature/code files. The recommendations below are based on
-the current feature sources, surrounding relational coverage, and implementation behavior visible
-in the current worktree.
-
-Summary recommendation:
-
-| Recommendation | Count |
-|---|---:|
-| Convert to relational backend coverage | 18 |
-| Delete original ignored scenario | 10 |
-| Total | 28 |
 
 ## Authorization: StudentAssessmentAuthorization.feature
 
@@ -80,27 +66,7 @@ Current implementation evidence:
 | API-246 / 14 Ensure clients cannot update a resource that is using a different value type than boolean | Convert | Invalid string `"string"` should remain negative strictness coverage. Update the title/verb and stale error text. |
 | API-247 / 15 Ensure clients cannot update a resource that is using a different value type than boolean | Convert | String `"0"` should be rejected under the current contract. Convert as negative coverage with corrected ProblemDetails. |
 
-## Query Value Casing: URLValidation.feature and ResourceQueriesQueryString.feature
 
-Files:
-
-- `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/URLValidation.feature`
-- `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/ResourceQueries/ResourceQueriesQueryString.feature`
-
-Recommendation for all three ignored scenarios: delete.
-
-These scenarios assert case-insensitive matching of string query values. Nearby active relational
-scenarios already cover case-insensitive query parameter names. The relational read-path design
-notes in `reference/design/backend-redesign/epics/08-relational-read-path/04-query-execution.md`
-explicitly call value casing unresolved and state a default bias toward ordinal/case-sensitive
-string semantics. Current provider integration coverage also checks that changing a string query
-value's case produces no results.
-
-| Scenario | Recommendation | Rationale |
-|---|---|---|
-| URLValidation API-235 / 12 Ensure client can retrieve information through a case insensitive query | Delete | Obsolete DMS-799 cleanup. Query parameter name casing is covered by API-250; value casing should not be normalized unless the product contract changes. |
-| ResourceQueries API-134 / 11 Ensure clients can GET information when querying with mixed case parameter name and value | Delete | The mixed-case parameter name part is already covered by active scenarios. The mixed-case value expectation conflicts with current relational value matching. |
-| ResourceQueries API-135 / 12 Ensure clients can GET information when querying with mixed case parameter name and upper case value | Delete | Same as API-134; this is redundant if value matching remains case-sensitive. |
 
 ## References: UpdateReferenceValidation.feature
 
@@ -109,53 +75,4 @@ File: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/References/Up
 | Scenario | Recommendation | Rationale |
 |---|---|---|
 | API-114 / 05 Ensure clients cannot update a resource that is incorrect from a deep reference | Convert | The DMS-80 CourseOffering/Section referential identity defect appears covered by current relational integration tests for both PostgreSQL and MSSQL. The E2E scenario is still useful as PUT negative reference coverage, but clean the payload before conversion so it isolates the Section failure. |
-
-Conversion notes:
-
-- Current integration scenario `SectionReferentialIdentityScenario` proves a
-  `StudentSectionAssociation` referencing a deep `Section` chain can be created successfully.
-- The ignored E2E scenario currently changes `studentReference` to non-existent `604874` while
-  also expecting only a Section unresolved-reference error. Either seed `604874` or keep the
-  existing `604834` student so the intended deep Section reference failure is isolated.
-- Prefer using all required `sectionReference` identity fields with a wrong value, similar to
-  `CreateReferenceValidation.feature` API-082, instead of relying on omitted fields.
-
-## Resources: CreateResourcesValidation.feature
-
-File: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/CreateResourcesValidation.feature`
-
-| Scenario | Recommendation | Rationale |
-|---|---|---|
-| API-173 / 25 Verify clients cannot POST a resource without permissions | Delete original | This scenario is stale and internally inconsistent. The feature background authenticates the SIS Vendor, the first request does not remove the Authorization header, `Given the user is authenticated` has no active step definition, and both branches expect the old missing-header payload. Current auth middleware returns `urn:ed-fi:api:unauthorized` with `Bearer token required` or `Invalid token`. |
-
-Replacement guidance:
-
-- Do not convert this scenario verbatim.
-- If API-convention auth coverage is still desired here, replace it with two separate current-contract scenarios: missing/empty bearer token and invalid/expired token.
-- Existing active security coverage already covers unauthenticated POST rejection and manipulated expired-token rejection in `Security/OwaspCriticalPaths.feature`, so deleting API-173 is acceptable unless a distinct API-conventions scenario is explicitly required.
-
-## Security: OwaspCriticalPaths.feature
-
-File: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Security/OwaspCriticalPaths.feature`
-
-| Scenario | Recommendation | Rationale |
-|---|---|---|
-| 14 Explicit non JSON content type is rejected | Delete from DMS E2E source until implemented | The generic write path reads the request body without enforcing `application/json`. Profile-specific content type validation exists, but this baseline security behavior is still a real gap. Keep it as a backlog-owned security gap or external TODO, not an ignored source scenario. |
-
-
-## Final Classification
-
-Convert:
-
-- StudentAssessmentAuthorization scenarios 01, 02.1, 02.2, 03, 04, 05, 06.1, 06.2, 07, 08.
-- DataStrictness scenarios API-238, API-241, API-242, API-243, API-246, API-247.
-- UpdateReferenceValidation scenario API-114.
-- OwaspCriticalPaths scenario 15.
-
-Delete original:
-
-- DataStrictness scenarios API-236, API-237, API-239, API-244, API-245.
-- URLValidation scenario API-235.
-- ResourceQueriesQueryString scenarios API-134 and API-135.
-- CreateResourcesValidation scenario API-173.
 

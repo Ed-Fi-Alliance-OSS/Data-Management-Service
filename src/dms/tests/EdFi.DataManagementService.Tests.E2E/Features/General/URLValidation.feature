@@ -399,25 +399,6 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        # Review if we need to delete this scenario in DMS-799
-        @API-235 @ignore
-        Scenario: 12 Ensure client can retrieve information through a case insensitive query
-             When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [
-                      {
-                          "id": "{id}",
-                          "schoolReference": {
-                              "schoolId": 255901044
-                          },
-                          "classPeriodName": "Class Period Test",
-                          "officialAttendancePeriod": true
-                      }
-                  ]
-                  """
-
         @API-250 @relational-backend
         @relational-ci-shard-4
         Scenario: 13 Ensure client can retrieve information through a case insensitive query parameter
