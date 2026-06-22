@@ -106,6 +106,13 @@ A property explicitly set to `null` is removed from the request. For an
 **optional** property this is silent. For a **required** property, dropping the
 `null` leaves the property missing, which fails validation with **HTTP 400**.
 
+### Empty arrays are dropped
+
+An array submitted as `[]` — or one containing only empty objects — is removed
+from the request before it is stored. For an **optional** collection this is
+silent. For a **required** collection, dropping the empty array leaves the
+property missing, which fails validation with **HTTP 400**.
+
 ### Leading and trailing whitespace
 
 Leading and trailing whitespace is trimmed from descriptor `codeValue` and
@@ -141,8 +148,9 @@ The stored value uses the form `yyyy-MM-ddTHH:mm:ssZ`. For example,
 is stored as `2021-09-28T14:15:30Z`.
 
 > [!NOTE]
-> Slash-separated dates are interpreted month-first (`M/d/yyyy`), so an ambiguous
-> value such as `5/6/2009` is read as May 6. To avoid ambiguity, submit dates in
+> Slash-separated dates accept both month-first (`M/d/yyyy`) and day-first
+> (`d/M/yyyy`) forms, with month-first taking precedence — so an ambiguous value
+> such as `5/6/2009` is read as May 6. To avoid ambiguity, submit dates in
 > ISO-8601 (`yyyy-MM-dd`) form.
 
 ## What is not case-sensitive
