@@ -27,6 +27,26 @@ file.
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
+## MappingPacks
+
+DMS can load precompiled mapping packs (`.mpack`) instead of compiling mapping sets at
+runtime. **Mapping packs are not available yet** — with the default settings (`Enabled` is
+`false`) mapping sets are compiled at runtime today, but the configuration surface exists
+and is validated. These settings are bound for both the PostgreSQL and SQL Server datastores.
+Because mapping-set resolution runs at startup, setting `Enabled` to `true` with no pack
+present makes DMS fail to start when `Required` is `true` or `AllowRuntimeCompileFallback`
+is `false`. See the
+[Relational Backend Developer Guide](./RELATIONAL-BACKEND.md#5-mapping-packs-optional).
+
+| Parameter                   | Description                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enabled                     | When `true`, load mapping packs. When `false` (default), mapping sets are compiled at runtime.                                               |
+| Required                    | When `true`, fail fast if a pack is missing or invalid. Only meaningful when `Enabled` is `true`; cannot be `true` while `Enabled` is `false`. Default: `false`. |
+| RootPath                    | Filesystem root directory for `.mpack` files. Used only when `Enabled` is `true`. Default: none.                                            |
+| AllowRuntimeCompileFallback | When `true` (default), allow runtime compilation when a pack is enabled but not found.                                                      |
+| FailureCooldownSeconds      | Seconds a faulted cache entry is retained before eviction. `0` (default) evicts immediately.                                                |
+| CacheMode                   | Cache strategy for compiled mapping sets. Currently only `InMemory` (default).                                                              |
+
 ## Configuration Service AppSettings
 
 The following parameters apply to the DMS Configuration Service (`appsettings.json`).

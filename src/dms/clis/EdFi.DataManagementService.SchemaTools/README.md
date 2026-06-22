@@ -4,6 +4,9 @@ Command-line tool for Ed-Fi DMS schema hashing and DDL generation. Generates
 deterministic SQL artifacts and manifests from `ApiSchema.json` inputs without
 requiring database connectivity.
 
+> For the end-to-end provisioning, schema-fingerprint validation, and testing
+> workflow, see the [Relational Backend Developer Guide](../../../../docs/RELATIONAL-BACKEND.md).
+
 ## Installation
 
 Build from source:
@@ -51,7 +54,7 @@ Generates dialect-specific DDL scripts and manifest files to an output directory
 Does not require database connectivity.
 
 ```bash
-dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect>]
+dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect>] [--ddl-manifest]
 ```
 
 **Options:**
@@ -61,6 +64,7 @@ dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect
 | `--schema` | `-s` | Yes | — | `ApiSchema.json` path(s). First is core, rest are extensions. |
 | `--output` | `-o` | Yes | — | Output directory for generated files |
 | `--dialect` | `-d` | No | `both` | SQL dialect: `pgsql`, `mssql`, or `both` |
+| `--ddl-manifest` | — | No | `false` | Also emit `ddl.manifest.json` (dialect-independent normalized-SQL hash + statement count) for diagnostics |
 
 **Examples:**
 
@@ -83,6 +87,7 @@ dms-schema ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o 
 | `mssql.sql` | `--dialect mssql` or `both` | SQL Server DDL script |
 | `relational-model.{dialect}.manifest.json` | Per selected dialect | Derived relational model inventory (tables, columns, constraints, indexes, views, triggers) |
 | `effective-schema.manifest.json` | Always | Schema fingerprint, components, and resource key seed summary |
+| `ddl.manifest.json` | Only with `--ddl-manifest` | Dialect-independent summary: normalized-SQL SHA-256 and statement count per dialect, for diagnostics |
 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms.
@@ -113,7 +118,7 @@ dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dia
 # Provision a PostgreSQL database
 dms-schema ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
 
-# Provision a SQL Server database (database must already exist)
+# Provision an existing SQL Server database (add --create-database to create it, as in the pgsql examples)
 dms-schema ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
 
 # Core + extension, PostgreSQL
@@ -156,8 +161,11 @@ fail — this is intentional so CI detects infrastructure problems.
 
 ### SQL Server
 
-SQL Server integration tests are **opt-in**. They are skipped unless a
-`MssqlAdmin` connection string is configured. To enable them locally:
+SQL Server integration tests **run by default** — the project's committed `appsettings.json`
+already supplies an `MssqlAdmin` connection string pointing at `localhost`. The skip guard
+only checks that `MssqlAdmin` is set (it does not probe connectivity), so the tests fail on
+connection errors if no SQL Server is reachable there. To point them at your own SQL Server
+locally:
 
 1. Create `appsettings.Test.json` in the `SchemaTools.Tests.Integration` project
    directory (this file is gitignored):
@@ -183,9 +191,9 @@ SQL Server integration tests are **opt-in**. They are skipped unless a
    dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration
    ```
 
-When `MssqlAdmin` is not configured, the SQL Server tests report as skipped
-(not failed). When it is configured, they run and fail on any server issue —
-same behavior as the PostgreSQL tests.
+Because the committed `appsettings.json` always sets `MssqlAdmin`, the SQL Server tests run
+and fail on any server issue — same behavior as the PostgreSQL tests. They report as skipped
+only if `MssqlAdmin` is removed from the committed config.
 
 ## Breaking changes
 
