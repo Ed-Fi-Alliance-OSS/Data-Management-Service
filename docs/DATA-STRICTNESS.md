@@ -116,8 +116,19 @@ property missing, which fails validation with **HTTP 400**.
 
 ### Leading and trailing whitespace
 
-Leading and trailing whitespace is trimmed from descriptor `codeValue` and
-`shortDescription` values. Other string values are stored as submitted.
+How leading and trailing whitespace is handled depends on the property:
+
+- **Descriptor `codeValue` and `shortDescription`.** Leading and trailing
+  whitespace is trimmed before the value is stored.
+- **Pattern-constrained strings.** Some string properties — notably
+  identifier-type fields such as `weekIdentifier` — are defined in the resource's
+  OpenAPI specification with a pattern that disallows leading and trailing
+  whitespace. A value submitted with such whitespace is **rejected with HTTP 400**
+  (a `cannot contain leading or trailing spaces` validation error); it is neither
+  trimmed nor stored.
+- **All other string values.** The value is stored as submitted, with any leading
+  or trailing whitespace preserved. Whether the property is required or optional
+  does not change this — only the property's pattern does.
 
 ### Type coercion from strings
 
