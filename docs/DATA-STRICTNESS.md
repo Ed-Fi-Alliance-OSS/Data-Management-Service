@@ -31,9 +31,10 @@ the correctly cased property was **required**:
   dropped, the required property is now missing. The request fails validation
   with **HTTP 400** (a missing-required-property error).
 - **Optional property, wrong casing.** The wrongly cased property is dropped and,
-  if the rest of the body is valid, the request **can succeed** (`201`/`200`).
-  However, the submitted value is **silently discarded** — it is not stored and
-  will not appear in later `GET` responses.
+  if the rest of the body is valid, the request **can succeed** with the method's
+  normal success status (`201`/`200` for `POST`, `204` for `PUT`). However, the
+  submitted value is **silently discarded** — it is not stored and will not appear
+  in later `GET` responses.
 
 > [!WARNING]
 > An incorrectly cased **optional** property does not produce an error. The value
@@ -131,6 +132,13 @@ when the conversion is unambiguous:
 
 If a string cannot be converted to the expected type, the request fails
 validation with **HTTP 400**.
+
+> [!NOTE]
+> String type coercion is enabled by default but can be disabled by the
+> `BypassStringTypeCoercion` configuration setting (see
+> [Configuration](./CONFIGURATION.md)). When it is disabled, string values are
+> not coerced, so a string such as `"true"` or `"100"` submitted for a boolean or
+> numeric field is rejected with **HTTP 400** rather than being converted.
 
 ### Date and date-time normalization
 
