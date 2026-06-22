@@ -83,7 +83,7 @@ $nuspecPath = "$PSScriptRoot/eng/sdkGen/$PackageName.nuspec"
 
 function DownloadCodeGen {
     if (-not (Test-Path -Path openApi-codegen-cli.jar)) {
-        Invoke-WebRequest -OutFile openApi-codegen-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.9.0/openapi-generator-cli-7.9.0.jar
+        Invoke-WebRequest -OutFile openApi-codegen-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.19.0/openapi-generator-cli-7.19.0.jar
     }
 }
 
@@ -133,7 +133,7 @@ function GenerateSdk {
     --model-package $ModelPackage `
     -o $OutputFolder `
     --operation-id-name-mappings $mappings `
-    --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true" `
+    --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true,library=restsharp" `
     --global-property modelTests=false `
     --global-property apiTests=false `
     --global-property apiDocs=false `
