@@ -4,6 +4,12 @@ This is a suite of end to end tests that will cover different scenarios. They
 are run against a local DMS container that must be rebuilt to stay in sync with
 the codebase.
 
+> [!NOTE]
+> **No hot reload.** The effective schema is fixed at provisioning. After any ApiSchema
+> change, reprovision a fresh database and restart DMS — see the
+> [Relational Backend Developer Guide](../../../../docs/RELATIONAL-BACKEND.md). The full
+> stack setup is documented in [`eng/docker-compose/README.md`](../../../../eng/docker-compose/README.md).
+
 ## Testing Process
 
 You may either run the E2E tests locally from docker containers as is done in

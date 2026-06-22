@@ -40,6 +40,7 @@ for detailed information on how to contribute source code.
 
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
 - [Configuration](./docs/CONFIGURATION.md)
+- [Relational Backend Developer Guide](./docs/RELATIONAL-BACKEND.md)
 - [Docker](./docs/DOCKER.md)
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
