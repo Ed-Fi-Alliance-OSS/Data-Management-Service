@@ -1825,7 +1825,59 @@ ORDER BY
   cw.FinalChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-Note that, to avoid introducing breaking changes, the `/deletes` and `/keyChanges` endpoints must return the identifying field names as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`.
+#### Response field mapping
+
+To avoid introducing breaking changes, the `/deletes` and `/keyChanges` endpoints must return identifying field names exactly as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`. Physical tracked-change column names such as `Old_SchoolId_Unified`, `Old_StudentUniqueId_Unified`, and shortened PostgreSQL names are storage details and must not become response field names.
+
+Runtime response shaping maps the tracked-change value columns back to public fields from metadata, using the `ConcreteResourceModel`, `TrackedChangeTableInfo`, and the resource's query-field mappings:
+
+1. Select only tracked-change value columns whose `Origin` includes `Identity`.
+2. Ignore `PersonDocumentId` value columns when shaping `keyValues`, `oldKeyValues`, and `newKeyValues`. They exist for `ReadChanges` authorization, not for the response contract.
+3. Treat `Scalar` columns as one response field.
+4. Treat paired `DescriptorNamespace` and `DescriptorCodeValue` columns with the same `SourceJsonPath` and `DescriptorJoinName` as one descriptor response field, composing the value as `<namespace>#<codeValue>`.
+5. Use tracked-change system columns for the top-level `id` and `changeVersion` values.
+
+For each logical identity value, resolve the public response field name in this order:
+
+1. Exact path: `TrackedChangeColumnInfo.SourceJsonPath` equals one path in `queryFieldMapping`.
+2. Equality/unification path: `SourceJsonPath` is equivalent to another path through `RelationalResourceModel.KeyUnificationEqualityConstraints`, and that equivalent path appears in `queryFieldMapping`.
+3. Reference alias path: the `queryFieldMapping` path is a generated reference alias that the compiled relational query capability resolves back to the same identity binding or canonical storage column as the tracked value.
+
+The exact-path rule must run before the equality/unification rule. Some resources expose both an exact public field and an equality-related public field for the same stored value; the exact public field wins.
+
+The mapper must not fall back to physical column names or to matching only the final JSONPath segment. If no deterministic `queryFieldMapping` field can be resolved, the resource's Change Query endpoint is unsupported until the metadata is corrected. A diagnostic can mention potential final-segment matches, but those matches are not authoritative enough to shape the response.
+
+Reference aliases are not a separate metadata table or registry. They are `queryFieldMapping` paths generated into `ApiSchema.json` and normalized into `ConcreteResourceModel.QueryFieldMappingsByQueryField`. Relational GET-many already interprets these paths through `ReferenceIdentityQueryTargetResolver.ResolveAliasPath` while compiling `MappingSet.QueryCapabilitiesByResource`. Change Query response mapping must consume that compiled query-capability output so live query filtering and tracked-change response shaping agree.
+
+The Change Query mapper should not reimplement `ResolveAliasPath` or instantiate a second alias resolver. For the alias case, it should read the selected resource's `RelationalQueryCapability` from `MappingSet.QueryCapabilitiesByResource` and inspect `SupportedFieldsByQueryField`. Each `SupportedRelationalQueryField` carries the public `QueryFieldName`, the original `queryFieldMapping` path, and the resolved relational target. When the supported field targets a root column whose `SourceJsonPath` or unified canonical storage column matches the tracked-change logical value, the mapper uses `SupportedRelationalQueryField.QueryFieldName` as the response field name.
+
+Do not use `GetQueryCapabilityOrThrow()` for this mapper lookup. That helper is appropriate for live GET-many execution, but it throws when a resource's overall GET-many capability is intentionally omitted because of an unrelated unsupported query field. Change Query response shaping only needs the supported identity fields that were compiled, so it should read the `RelationalQueryCapability` entry directly and fail only when the needed identity response field cannot be resolved deterministically.
+
+`ResolveAliasPath` only considers schema-mangled query paths with exactly two property segments whose leaf ends with `UniqueId`, for example `$.studentReference.studentEducationOrganizationAssociationUniqueId`. It validates the alias against `DocumentReferenceBinding` metadata and returns a tri-state result:
+
+- `NoMatch`: the path is not a recognized alias shape; the mapper continues to report an unmapped response field.
+- `Match`: exactly one reference identity candidate group matches; the candidate resolves to the representative root-table binding column, and under key unification to its canonical storage column.
+- `Ambiguous`: more than one candidate group matches; the resource is unsupported because there is no deterministic response-field mapping.
+
+The alias bridge recognizes two shapes:
+
+1. **Through-reference aliases**: the resource identity reaches a person unique id through an intermediate reference. The alias leaf is `lowerCamel(TargetResourceName) + "UniqueId"`, and the alias parent is either the identity-source parent or the public person reference parent after role adjustment. The public person parent is deliberately limited to `studentUniqueId -> studentReference`, `staffUniqueId -> staffReference`, and `contactUniqueId -> contactReference`; the mapper must not invent arbitrary `fooUniqueId -> fooReference` relationships.
+2. **Direct-site superclass aliases**: the resource has a direct person reference, but the generated alias leaf names the concrete resource's superclass. The alias leaf is `lowerCamel(SuperclassResource.ResourceName) + "UniqueId"`, the alias parent must be the matched reference object path, and the `ConcreteResourceModel` must carry superclass metadata. Without superclass metadata, this shape does not match.
+
+Both shapes require the candidate to be a local propagated identity binding: the candidate's `ReferenceJsonPath` must be the reference object path plus the identity leaf, and the public `queryFieldMapping` field name must match the role-adjusted identity leaf. These checks intentionally keep the bridge metadata-driven and prevent broad string-convention matching.
+
+For example, `studentAssessmentRegistrations` stores the tracked student unique id in `tracked_changes_edfi.StudentAssessmentRegistration.Old_StudentUniqueId_Unified` / `New_StudentUniqueId_Unified` with `SourceJsonPath = $.studentEducationOrganizationAssociationReference.studentUniqueId`. The public query field is not a direct path match:
+
+```json
+"studentUniqueId": [
+  {
+    "path": "$.studentReference.studentEducationOrganizationAssociationUniqueId",
+    "type": "string"
+  }
+]
+```
+
+The reference-alias rule resolves that generated query path back to the `StudentEducationOrganizationAssociation_StudentUniqueId` identity binding, whose canonical storage column is `StudentUniqueId_Unified`. The response field is therefore `studentUniqueId`, even though the tracked-change storage column is `Old_StudentUniqueId_Unified` / `New_StudentUniqueId_Unified`.
 
 ### /availableChangeVersions endpoint
 

@@ -86,6 +86,11 @@ internal class ApiService : IApiService
     private readonly Lazy<PipelineProvider> _getAvailableChangeVersionsSteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a get tracked changes request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _getTrackedChangesSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly Lazy<JsonNode> _resourceOpenApiSpecification;
@@ -148,6 +153,7 @@ internal class ApiService : IApiService
         _getAvailableChangeVersionsSteps = new Lazy<PipelineProvider>(
             CreateGetAvailableChangeVersionsPipeline
         );
+        _getTrackedChangesSteps = new Lazy<PipelineProvider>(CreateGetTrackedChangesPipeline);
         _resourceOpenApiSpecification = new Lazy<JsonNode>(CreateResourceOpenApiSpecification);
         _descriptorOpenApiSpecification = new Lazy<JsonNode>(CreateDescriptorOpenApiSpecification);
         _changeQueriesOpenApiSpecification = new Lazy<JsonNode?>(CreateChangeQueriesOpenApiSpecification);
@@ -404,6 +410,30 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateGetTrackedChangesPipeline()
+    {
+        var steps = GetCommonInitialSteps();
+        steps.AddRange([
+            new ParseTrackedChangePathMiddleware(_logger),
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
+            _serviceProvider.GetRequiredService<ResolveMappingSetMiddleware>(),
+            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
+            new ValidateEndpointMiddleware(_logger),
+            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+            new BuildResourceInfoMiddleware(
+                _logger,
+                _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+            ),
+            new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+            new ValidateTrackedChangeQueryMiddleware(_logger),
+            new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
     /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
@@ -527,6 +557,17 @@ internal class ApiService : IApiService
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
         await _getAvailableChangeVersionsSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for resource-scoped Change Query tracked changes requests
+    /// </summary>
+    public async Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest)
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
+        await _getTrackedChangesSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 

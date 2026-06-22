@@ -99,6 +99,12 @@ internal class RequestInfo(
     public ChangeVersionRange ChangeVersionRange { get; set; } = ChangeVersionRange.None;
 
     /// <summary>
+    /// The parsed resource-scoped Change Query operation for /deletes or /keyChanges.
+    /// Null outside the tracked Change Query pipeline.
+    /// </summary>
+    public ChangeQueryEndpointOperation? ChangeQueryOperation { get; set; }
+
+    /// <summary>
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>

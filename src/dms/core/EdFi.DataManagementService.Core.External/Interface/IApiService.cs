@@ -48,6 +48,11 @@ public interface IApiService
     Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest);
 
     /// <summary>
+    /// DMS entry point for resource-scoped Change Query tracked changes requests
+    /// </summary>
+    Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest);
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     IList<IDataModelInfo> GetDataModelInfo();

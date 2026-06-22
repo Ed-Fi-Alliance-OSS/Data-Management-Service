@@ -712,6 +712,61 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             );
         }
 
+        [Then("the response body path {string} is stored in request variable {string}")]
+        public async Task ThenTheResponseBodyPathIsStoredInRequestVariable(
+            string jsonPath,
+            string variableName
+        )
+        {
+            JsonNode current = await ResolveResponseBodyPath(jsonPath);
+
+            _scenarioVariables.Add(variableName, current.ToString());
+        }
+
+        [Then("the response body path {string} should equal request variable {string}")]
+        public async Task ThenTheResponseBodyPathShouldEqualRequestVariable(
+            string jsonPath,
+            string variableName
+        )
+        {
+            JsonNode current = await ResolveResponseBodyPath(jsonPath);
+
+            current.ToString().Should().Be(_scenarioVariables.GetValueByName(variableName));
+        }
+
+        private async Task<JsonNode> ResolveResponseBodyPath(string jsonPath)
+        {
+            string responseBody = await _apiResponse.TextAsync();
+            JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+            JsonNode? current = responseJson;
+            foreach (string pathPart in jsonPath.Split('.'))
+            {
+                if (current is JsonObject jsonObject)
+                {
+                    jsonObject.TryGetPropertyValue(pathPart, out current).Should().BeTrue();
+                    continue;
+                }
+
+                if (current is JsonArray jsonArray && int.TryParse(pathPart, out int index))
+                {
+                    index.Should().BeGreaterThanOrEqualTo(0);
+                    index.Should().BeLessThan(jsonArray.Count);
+                    current = jsonArray[index];
+                    continue;
+                }
+
+                current = null;
+                break;
+            }
+
+            current
+                .Should()
+                .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+            return current!;
+        }
+
         [When("a GET request is made to {string} with header {string} value {string}")]
         public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
         {

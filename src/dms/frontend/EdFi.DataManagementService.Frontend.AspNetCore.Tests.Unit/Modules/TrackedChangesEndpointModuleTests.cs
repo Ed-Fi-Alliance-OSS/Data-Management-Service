@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -34,13 +36,27 @@ public class TrackedChangesEndpointModuleTests
         return response;
     }
 
+    private static IFrontendResponse FakeTrackedChangeResponse()
+    {
+        JsonArray body = [new JsonObject { ["source"] = "core" }];
+
+        var response = A.Fake<IFrontendResponse>();
+        A.CallTo(() => response.StatusCode).Returns(200);
+        A.CallTo(() => response.Body).Returns(body);
+        A.CallTo(() => response.Headers).Returns(new Dictionary<string, string> { ["Total-Count"] = "1" });
+        A.CallTo(() => response.ContentType).Returns("application/json");
+        return response;
+    }
+
     [TestCase("deletes")]
     [TestCase("keyChanges")]
-    public async Task It_routes_tracked_change_endpoint_to_empty_stub_without_core_api(
-        string trackedChangeSegment
-    )
+    public async Task It_routes_tracked_change_endpoint_to_core_api(string trackedChangeSegment)
     {
         var apiService = A.Fake<IApiService>();
+        FrontendRequest? capturedRequest = null;
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+            .Invokes((FrontendRequest request) => capturedRequest = request)
+            .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -53,19 +69,31 @@ public class TrackedChangesEndpointModuleTests
         });
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync($"/data/ed-fi/schools/{trackedChangeSegment}");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/data/ed-fi/schools/{trackedChangeSegment}"
+        );
+        request.Headers.Add("X-Test-Header", "header-value");
+
+        var response = await client.SendAsync(request);
         var content = await response.Content.ReadAsStringAsync();
         var body = JsonNode.Parse(content)!.AsArray();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.Should().BeEmpty();
+        body.Should().ContainSingle();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Path.Should().Be($"/ed-fi/schools/{trackedChangeSegment}");
+        capturedRequest.Headers["X-Test-Header"].Should().Be("header-value");
         A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
     }
 
     [Test]
-    public async Task It_returns_total_count_zero_when_requested()
+    public async Task It_passes_total_count_query_to_core_and_returns_core_header()
     {
         var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+            .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -81,7 +109,15 @@ public class TrackedChangesEndpointModuleTests
         var response = await client.GetAsync("/data/ed-fi/schools/deletes?totalCount=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.GetValues("Total-Count").Should().Equal("0");
+        response.Headers.GetValues("Total-Count").Should().Equal("1");
+        A.CallTo(() =>
+                apiService.GetTrackedChanges(
+                    A<FrontendRequest>.That.Matches(request =>
+                        request.QueryParameters["totalCount"] == "true"
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
         A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
     }
 
@@ -89,6 +125,10 @@ public class TrackedChangesEndpointModuleTests
     public async Task It_routes_under_tenant_and_route_qualifier_prefix()
     {
         var apiService = A.Fake<IApiService>();
+        FrontendRequest? capturedRequest = null;
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+            .Invokes((FrontendRequest request) => capturedRequest = request)
+            .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -118,7 +158,19 @@ public class TrackedChangesEndpointModuleTests
         var body = JsonNode.Parse(content)!.AsArray();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.Should().BeEmpty();
+        body.Should().ContainSingle();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Path.Should().Be("/ed-fi/schools/keyChanges");
+        capturedRequest.Tenant.Should().Be("tenant1");
+        capturedRequest
+            .RouteQualifiers[new RouteQualifierName("districtId")]
+            .Should()
+            .Be(new RouteQualifierValue("255902"));
+        capturedRequest
+            .RouteQualifiers[new RouteQualifierName("schoolYear")]
+            .Should()
+            .Be(new RouteQualifierValue("2026"));
         A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
     }
 
@@ -143,6 +195,7 @@ public class TrackedChangesEndpointModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
     }
 
     [Test]
