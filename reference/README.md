@@ -2,6 +2,12 @@
 
 This directory contains design documents, examples, and proof-of-concept implementations for the Ed-Fi Data Management Service Platform. These materials support development, planning, and experimentation efforts.
 
+## Guides
+
+### [AGENTIC-WORKFLOW.md](./AGENTIC-WORKFLOW.md)
+The agent-agnostic process the team uses to take a unit of work from ticket to
+merged PR with the help of an AI coding agent.
+
 ## Directory Structure
 
 ### [design/](./design/)
