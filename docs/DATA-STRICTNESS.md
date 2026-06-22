@@ -101,6 +101,13 @@ request before it is stored, and is not returned by later `GET` requests. The
 request is not rejected solely because it contains unexpected properties. (As
 described above, this is also why an incorrectly cased property is dropped.)
 
+> [!NOTE]
+> The `id` property is an exception to this rule. On `POST`, a request body that
+> contains an `id` property — in **any** casing (`id`, `ID`, `Id`) — is
+> **rejected with HTTP 400** rather than dropped, because resource identifiers
+> cannot be assigned by the client. On `PUT`, `id` is a **required** body property
+> that must match the resource id in the URL path.
+
 ### Null values are dropped
 
 A property explicitly set to `null` is removed from the request. For an
@@ -109,10 +116,11 @@ A property explicitly set to `null` is removed from the request. For an
 
 ### Empty arrays are dropped
 
-An array submitted as `[]` — or one containing only empty objects — is removed
-from the request before it is stored. For an **optional** collection this is
-silent. For a **required** collection, dropping the empty array leaves the
-property missing, which fails validation with **HTTP 400**.
+A **top-level** array submitted as `[]` — or one containing only empty objects —
+is removed from the request before it is stored. For an **optional** collection
+this is silent. For a **required** collection, dropping the empty array leaves the
+property missing, which fails validation with **HTTP 400**. An empty array nested
+inside another collection's elements is not pruned.
 
 ### Leading and trailing whitespace
 
