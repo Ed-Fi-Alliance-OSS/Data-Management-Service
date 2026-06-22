@@ -134,18 +134,26 @@ validation with **HTTP 400**.
 
 ### Date and date-time normalization
 
-Date and date-time values are normalized to ISO-8601:
+How a value is normalized depends on whether the field is a **date** (`format:
+date`, such as `birthDate`) or a **date-time** (`format: date-time`).
 
-- A date-time without a time zone is treated as UTC.
-- A date-time with a time zone or offset is converted to UTC.
+**Date fields.** The only normalization is converting slash-separated dates to
+the dashed ISO-8601 form. The stored value uses the form `yyyy-MM-dd` — no time,
+time zone, or `Z` is added. For example, `5/1/2009` is stored as `2009-05-01`,
+and `2009-05-01` is stored unchanged.
+
+**Date-time fields.** Values are normalized to UTC and stored in the form
+`yyyy-MM-ddTHH:mm:ssZ`:
+
+- A value without a time zone is treated as UTC.
+- A value with a time zone or offset is converted to UTC.
 - A 12-hour time with `AM`/`PM` is accepted and converted to 24-hour UTC.
-- A date supplied without a time is accepted; the time defaults to midnight.
-- Slash-separated dates (for example `9/28/2021`) are accepted and converted to
-  the dashed ISO-8601 form.
+- A value supplied without a time is accepted; the time defaults to midnight.
+- Slash-separated dates (for example `9/28/2021`) are converted to the dashed
+  ISO-8601 form.
 
-The stored value uses the form `yyyy-MM-ddTHH:mm:ssZ`. For example,
-`2021-09-28` is stored as `2021-09-28T00:00:00Z`, and `2021-09-28 2:15:30 PM`
-is stored as `2021-09-28T14:15:30Z`.
+For example, `2021-09-28 2:15:30 PM` is stored as `2021-09-28T14:15:30Z`, and a
+bare `2021-09-28` is stored as `2021-09-28T00:00:00Z`.
 
 > [!NOTE]
 > Slash-separated dates accept both month-first (`M/d/yyyy`) and day-first
