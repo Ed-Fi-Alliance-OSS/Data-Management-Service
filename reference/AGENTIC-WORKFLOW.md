@@ -103,11 +103,14 @@ self-review is clean, and the peer is satisfied.
 ### 1. Ticket intake
 
 Every unit of work starts from a ticket (Jira in our case). Tickets should
-capture the *what* and *why*, with acceptance criteria where possible.
+capture the *what* and *why*, with acceptance criteria.
 
 - **Creating a ticket:** Write a clear summary, a description of the problem or
   feature, and acceptance criteria. Keep tickets scoped to a reviewable unit of
-  work; split epics into child tickets.
+  work; split epics into child tickets. A standalone ticket can live entirely in
+  the issue tracker. Larger, multi-ticket efforts should also have a design
+  document committed to the repository, so the design lives alongside the code it
+  describes and stays reviewable over time.
 - **Reading a ticket:** Have the agent pull the ticket via the CLI
   (e.g. `jira issue view DMS-XXXX --comments 5`) so it can read the description,
   acceptance criteria, and comments directly. Comments often contain decisions
@@ -134,8 +137,12 @@ keeps the whole flow in one place.)
 
 ### 3. Generate an implementation plan
 
-Before writing code, have the agent produce a written implementation plan from
-the ticket and the current state of the codebase. A good plan includes:
+Before the agent produces a plan, have it raise its open questions about the
+ticket first. Surfacing what is unclear up front flushes out gaps, ambiguities,
+and conflicts with the existing design while they are still cheap to resolve,
+instead of letting wrong assumptions get baked into the plan and the code. Once
+those questions are answered, have the agent produce a written implementation
+plan from the ticket and the current state of the codebase. A good plan includes:
 
 - **Context** — what the ticket asks for and why.
 - **Current state** — the relevant existing files, types, and patterns.
@@ -148,9 +155,10 @@ agent and human work through). Writing the plan down makes the agent's intent
 reviewable before any code exists, and the task list keeps implementation
 focused (see Principle 3).
 
-> **Agent prompt pattern:** "Read DMS-XXXX, explore the relevant code, and write
-> an implementation plan and a task checklist. Favor the simplest approach; list
-> anything ambiguous as an open question instead of guessing."
+> **Agent prompt pattern:** "Read DMS-XXXX and explore the relevant code. Before
+> you make a plan, what questions do you have for me?" Then, once answered: "Now
+> write an implementation plan and a task checklist. Favor the simplest approach;
+> list anything still ambiguous as an open question instead of guessing."
 
 ### 4. Review the plan
 
@@ -206,10 +214,12 @@ way the **human approves** the final title, description, and the act of pushing
 
 ### 8. Peer review
 
-A teammate reviews the PR and provides feedback (for us, often via Slack and/or
-inline PR comments). As with self-review, this is a loop: address feedback, push
-fixes, and repeat until the reviewer is satisfied. Automated reviewers (e.g.
-GitHub Copilot's PR review) may also contribute findings here.
+A teammate reviews the PR and provides feedback. We usually do this through a
+direct conversation (chat in our case) rather than inline PR comments, since a
+back-and-forth discussion resolves questions faster than threaded comments. As
+with self-review, this is a loop: address feedback, push fixes, and repeat until
+the reviewer is satisfied. Automated reviewers (e.g. GitHub Copilot's PR review)
+may also contribute findings here.
 
 ### 9. Triage peer feedback
 
