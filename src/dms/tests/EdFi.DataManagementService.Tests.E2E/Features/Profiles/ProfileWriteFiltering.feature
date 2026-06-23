@@ -137,7 +137,7 @@ Feature: Profile Write Filtering
             Then the profile response status is 200
              And the response body should contain fields "nameOfInstitution, educationOrganizationCategories, gradeLevels"
 
-    Rule: Collection item filter on WriteContentType silently strips non-matching items
+    Rule: Collection item filter on WriteContentType rejects non-matching submitted items
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-GradeLevelFilter" and namespacePrefixes "uri://ed-fi.org"
@@ -150,10 +150,10 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until profile write handling of out-of-profile
-        # submitted data matches ODS behavior.
+        # DMS-1229: Quarantined until submitted collection items failing profile
+        # value filters return ODS-style data-validation errors.
         @ignore
-        Scenario: 05 POST with collection item filter silently strips non-matching items
+        Scenario: 05 POST with collection item filter rejects submitted non-matching items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """
                   {
@@ -177,18 +177,15 @@ Feature: Profile Write Filtering
                       ]
                   }
                   """
-            Then the profile response status is 201
-            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School"
-            Then the profile response status is 200
-             And the "gradeLevels" collection should have 1 item
-             And the "gradeLevels" collection should only contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:bad-request:data-validation-failed"
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until profile write handling of out-of-profile
-        # submitted data matches ODS behavior.
+        # DMS-1229: Quarantined until submitted collection items failing profile
+        # value filters return ODS-style data-validation errors.
         @ignore
-        Scenario: 06 POST with collection item filter excludes non-matching items from persisted data
+        Scenario: 06 POST with collection item filter rejects a submitted non-matching item
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """
                   {
@@ -209,7 +206,5 @@ Feature: Profile Write Filtering
                       ]
                   }
                   """
-            Then the profile response status is 201
-            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School"
-            Then the profile response status is 200
-             And the "gradeLevels" collection should not contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:bad-request:data-validation-failed"
