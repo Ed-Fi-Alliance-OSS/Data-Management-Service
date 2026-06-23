@@ -178,6 +178,7 @@ Feature: Update Reference Validation
               And the system has these "sections"
                   | sectionIdentifier           | courseOfferingReference                                                                                    |
                   | 25590100102Trad220ALG112011 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
+                  | 25590100102Trad220ALG112099 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
               And the system has these "studentSectionAssociations" references
                   | beginDate  | sectionReference                                                                                                                                                 | studentReference             |
                   | 2021-08-23 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear": 2022, "sectionIdentifier":"25590100102Trad220ALG112011", "sessionName":"2021-2022 Fall Semester"  } | {"studentUniqueId":"604834"} |
