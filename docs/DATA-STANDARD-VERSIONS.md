@@ -122,6 +122,28 @@ Workflows that build per-version artifacts select the version through a per-work
   reusable workflow (mirroring `build-populated-template.yml`) and matrixing the thin
   caller. That refactor is deferred to a dedicated, separately-validated change.
 
+## Version-coupled tests and special handling
+
+Some tests assert response bodies that embed the running data standard version. They pass
+against whichever version the stack is running (5.2 today), but enabling a **new** version's
+E2E lane requires updating them with that version's *actual* output — which has to be captured
+from a running stack of that version, not hand-written. Known surfaces:
+
+- **`.../Tests.E2E/Features/General/XSDMetadata.feature`** — embeds the version string
+  (`"5.2.0"`), the XSD namespace (`http://ed-fi.org/5.2.0`), and the full per-extension XSD file
+  listing.
+- **`.../Tests.E2E/Features/General/DiscoveryAPI.feature`** — embeds the data model `version`
+  and `informationalVersion`.
+- The **integration-test fixtures** also pin a data standard version when materializing the
+  runtime schema.
+
+**Structural difference, not just a version string (DS 6.1 example):** in DS 6.1 the **TPDM
+model is folded into core** — there is no separate TPDM extension. So a 6.1 `/metadata/xsd`
+response has **no `tpdm` entry** and there is **no `/metadata/xsd/tpdm/...` files endpoint**,
+whereas 5.2 lists TPDM as a distinct extension. Enabling 6.1 E2E therefore means *rewriting*
+these expectations for 6.1, not search-replacing `5.2.0` → `6.1.0`. This is part of the staged
+PR-E2E work (it lands when DS 6.1 joins the E2E lane).
+
 ## Adding a Data Standard version
 
 Adding a version is the same set of small edits regardless of which version:

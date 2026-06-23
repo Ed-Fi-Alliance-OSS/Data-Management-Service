@@ -16,8 +16,8 @@
     <PackageVersion Include="EdFi.DataStandard52.Homograph.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard52.Sample.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard52.TPDM.ApiSchema" Version="1.0.332" />
-    <!-- Data Standard 6.1 publishes Core + Sample + Homograph ApiSchema only; there is no
-         EdFi.DataStandard61.TPDM.ApiSchema on the feed (unlike 5.2). -->
+    <!-- In Data Standard 6.1 the TPDM model is folded into core, so there is no separate
+         EdFi.DataStandard61.TPDM.ApiSchema extension (unlike 5.2); 6.1 is Core + Sample + Homograph. -->
     <PackageVersion Include="EdFi.DataStandard61.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard61.Homograph.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard61.Sample.ApiSchema" Version="1.0.332" />
