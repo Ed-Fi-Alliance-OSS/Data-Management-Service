@@ -33,7 +33,7 @@ BeforeAll {
     # Returns the sorted, unique set of project directories whose COPY source matches the given
     # file pattern. [^\s]+ stops at whitespace, so a COPY destination (e.g. "./frontend/X/") never
     # matches -- only source specs ending in the pattern do.
-    function Get-CopySourceDirs {
+    function Get-CopySourceDir {
         param(
             [Parameter(Mandatory)][string] $DockerfileContent,
             [Parameter(Mandatory)][string] $FilePattern
@@ -57,7 +57,7 @@ BeforeAll {
         return $match.Groups[1].Value
     }
 
-    function Get-PackageReferenceIds {
+    function Get-PackageReferenceId {
         param([Parameter(Mandatory)][AllowEmptyString()][string] $Content)
 
         [regex]::Matches($Content, 'PackageReference\s+Include="([^"]+)"') |
@@ -76,8 +76,8 @@ Describe "DMS-1133 Dockerfile lock-file COPY parity" {
     It "<Area>: COPYs a packages.lock.json for every project whose .csproj it COPYs" -ForEach $LockFileAreas {
         $content = Get-Content -LiteralPath $Dockerfile -Raw
 
-        $csprojDirs = @(Get-CopySourceDirs -DockerfileContent $content -FilePattern '\*\.csproj')
-        $lockDirs = @(Get-CopySourceDirs -DockerfileContent $content -FilePattern 'packages\.lock\.json')
+        $csprojDirs = @(Get-CopySourceDir -DockerfileContent $content -FilePattern '\*\.csproj')
+        $lockDirs = @(Get-CopySourceDir -DockerfileContent $content -FilePattern 'packages\.lock\.json')
 
         $csprojDirs |
             Should -Not -BeNullOrEmpty -Because "the $Area Dockerfile is expected to COPY project files (parser found none)"
@@ -109,8 +109,8 @@ Describe "DMS-1133 build-script Directory.Build.props parity" {
 
         # The analyzer PackageReference set must match, or a regenerated props restores a different
         # graph and dirties/breaks the committed lock files.
-        $committedRefs = @(Get-PackageReferenceIds -Content $committed)
-        $generatedRefs = @(Get-PackageReferenceIds -Content $generated)
+        $committedRefs = @(Get-PackageReferenceId -Content $committed)
+        $generatedRefs = @(Get-PackageReferenceId -Content $generated)
 
         ($generatedRefs -join ", ") |
             Should -Be ($committedRefs -join ", ") -Because "the $Area build-script template and committed Directory.Build.props must declare the same PackageReferences"
