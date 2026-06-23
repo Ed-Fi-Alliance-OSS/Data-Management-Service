@@ -159,6 +159,7 @@ function SetDMSAssemblyInfo {
     <PropertyGroup>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <Product>Ed-Fi API</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
@@ -166,6 +167,16 @@ function SetDMSAssemblyInfo {
         <VersionPrefix>$assembly_version</VersionPrefix>
         <VersionSuffix></VersionSuffix>
     </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="SonarAnalyzer.CSharp">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
 </Project>
 "@
     }

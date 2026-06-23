@@ -12,6 +12,8 @@
             CopyToPublishDirectory="Always"
             CopyToOutputDirectory="Never"
         />
+        <!-- Web SDK auto-includes *.json as Content; exclude the NuGet lock file so it is not published or packed into the .nupkg. -->
+        <Content Remove="packages.lock.json" />
         <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
         <PackageReference Include="EdFi.DataStandard52.ApiSchema" GeneratePathProperty="true" />
         <PackageReference Include="EdFi.DataStandard52.TPDM.ApiSchema" GeneratePathProperty="true" />
