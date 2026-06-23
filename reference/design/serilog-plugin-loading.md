@@ -417,3 +417,56 @@ does not satisfy the goal of deploy-time configuration without recompilation.
 3. **Should hash verification be a v1 feature or deferred?** Including it in v1
    adds complexity but avoids a second release that changes the config schema
    for security-sensitive operators.
+
+## Appendix A: JSON Sink Profile Changes
+
+This appendix describes the separate change set required if the goal is not
+runtime plugin loading, but simply to let operators choose between flat text
+logs and structured JSON logs.
+
+The important distinction is that Serilog already captures structured event
+properties when code uses message templates like `Request completed: {Method}
+{Path}`. What changes is the final sink formatter. Disabling `outputTemplate`
+alone does not produce JSON; it only removes the explicit text layout and still
+leaves the sink rendering plain-text output.
+
+### Required changes
+
+1. Add a JSON formatter package to the frontend project, such as
+   `Serilog.Formatting.Compact` or `Serilog.Formatting.Json`.
+2. Update the application startup code to select a logging profile before the
+   final Serilog logger is built.
+3. Keep the existing text profile for customers who prefer the current
+   human-readable output.
+4. Add a JSON profile that uses a JSON formatter for file and console sinks.
+5. Update `appsettings.json` so operators can select the desired profile without
+   changing code.
+
+### Suggested configuration shape
+
+```json
+"Serilog": {
+  "Profile": "Text",
+  "Profiles": {
+    "Text": {
+      "FilePath": "./logs/.log",
+      "FileOutputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{NewLine}{Exception}",
+      "ConsoleOutputTemplate": "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{Exception}{NewLine}"
+    },
+    "Json": {
+      "FilePath": "./logs/.json"
+    }
+  }
+}
+```
+
+### Implementation notes
+
+- The host must initialize Serilog early enough that startup logging is still
+  captured while the logger profile is being selected.
+- For the JSON profile, the file sink should write to a `.json` file and use a
+  JSON formatter instead of `outputTemplate`.
+- The console sink should follow the same profile choice so operators do not
+  end up with mixed formats from the same process.
+- Text and JSON should remain explicit profiles rather than trying to infer the
+  format from whether `outputTemplate` is present.
