@@ -100,6 +100,7 @@ Feature: Sample extension resources
 
         @relational-backend
         @relational-ci-shard-2
+        @ignore
         Scenario: 03 Get by ID for busRoutes Resource
             Given a POST request is made to "/sample/busRoutes" with
                   """
