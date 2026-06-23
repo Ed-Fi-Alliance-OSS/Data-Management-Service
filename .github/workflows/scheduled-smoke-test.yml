@@ -13,6 +13,12 @@ on:
     paths: # Only run on PRs that change relevant files
       - 'src/Directory.Packages.props'
       - '**/OpenApiDocument.cs'
+      # SDK generation + smoke tooling this workflow exercises, so changes to them
+      # are covered by PR validation instead of only the cron run (DMS-912).
+      - '.github/workflows/scheduled-smoke-test.yml'
+      - 'build-sdk.ps1'
+      - 'eng/smoke_test/**'
+      - 'eng/sdkGen/**'
 
 permissions:
   contents: write
