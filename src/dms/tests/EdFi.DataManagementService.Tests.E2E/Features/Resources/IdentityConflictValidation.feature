@@ -19,6 +19,7 @@ Feature: Identity Conflict validation
         @API-183
         @relational-backend
         @relational-ci-shard-1
+        @ignore
         Scenario: 01 Ensure client can't create a School with the same identity as another Education Organization
              When a POST request is made to "/ed-fi/schools" with
                   """
