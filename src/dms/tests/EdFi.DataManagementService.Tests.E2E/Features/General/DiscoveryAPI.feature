@@ -9,7 +9,6 @@ Feature: The Discovery API provides information about the application version, s
                   """
                   {
                     "applicationName": "Ed-Fi API",
-                    "informationalVersion": "8.0.0",
                     "dataModels": [
                       {
                         "name": "Ed-Fi",

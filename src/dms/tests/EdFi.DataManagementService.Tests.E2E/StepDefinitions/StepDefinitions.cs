@@ -1261,9 +1261,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
             JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
-            // Remove version as it varies between environments
+            // Remove version and the top-level informationalVersion as they vary by build:
+            // locally/CI-built images fall back to the Directory.Build.props value, while
+            // published images carry a MinVer-derived version baked in at build time. The
+            // schema-driven informationalVersion values nested under dataModels are stable and
+            // remain asserted.
             (responseJson as JsonObject)?.Remove("version");
             (expectedBodyJson as JsonObject)?.Remove("version");
+            (responseJson as JsonObject)?.Remove("informationalVersion");
+            (expectedBodyJson as JsonObject)?.Remove("informationalVersion");
 
             // Normalize OAuth URLs - accept both internal Docker and external localhost URLs
             NormalizeOAuthUrl(responseJson);
