@@ -215,3 +215,58 @@ Feature: Update Reference Validation
                       "errors": []
                   }
                   """
+
+        @API-265
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 06 Ensure clients cannot update a resource with an unresolved non-identifying deep reference
+            Given the system has these "courses"
+                  | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
+                  | ALG-2      | [{"identificationCode": "ALG-2", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}] | {"educationOrganizationId":255901} | Algebra II  | 1             |
+              And the system has these "sessions"
+                  | sessionName               | schoolReference     | schoolYearTypeReference | beginDate  | endDate    | totalInstructionalDays | termDescriptor                                 |
+                  | "2021-2022 Fall Semester" | {"schoolId":255901} | {"schoolYear":2022}     | 2021-08-23 | 2021-12-17 | 81                     | "uri://ed-fi.org/TermDescriptor#Fall Semester" |
+              And the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                          | schoolReference     | sessionReference                                                                  |
+                  | ALG-2           | {"courseCode":"ALG-2", "educationOrganizationId":255901} | {"schoolId":255901} | {"schoolId":255901, "schoolYear": 2022, "sessionName":"2021-2022 Fall Semester" } |
+              And the system has these "sections" references
+                  | sectionIdentifier | courseOfferingReference                                                                                    |
+                  | ALG-2-SECTION     | {"localCourseCode":"ALG-2", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
+             When a PUT request is made to referenced resource "/ed-fi/sections/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "sectionIdentifier": "ALG-2-SECTION",
+                      "courseOfferingReference": {
+                          "localCourseCode": "ALG-2",
+                          "schoolId": 255901,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Fall Semester"
+                      },
+                      "classPeriods": [
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "Missing Period",
+                                  "schoolId": 255901
+                              }
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
+                      "status": 409,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.classPeriods[0].classPeriodReference": [
+                              "The referenced ClassPeriod item does not exist."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
