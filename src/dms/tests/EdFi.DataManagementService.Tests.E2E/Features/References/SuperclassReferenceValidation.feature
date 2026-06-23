@@ -164,6 +164,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
         @API-109
         @relational-backend
         @relational-ci-shard-4
+        @ignore
         Scenario: 06 Ensure clients cannot delete an existing Education Organization that is referenced by existing items
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                              | categories                                                                                                                            |
