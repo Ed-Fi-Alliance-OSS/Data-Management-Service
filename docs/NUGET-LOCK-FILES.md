@@ -68,8 +68,10 @@ the committed lock graph too. [`src/dms/Dockerfile`](../src/dms/Dockerfile) and
 > **Maintenance hotspot:** each Dockerfile's `packages.lock.json` COPY list must
 > mirror its `.csproj` COPY list. A future `<ProjectReference>` change can pull a
 > new project into the restore closure; if its lock file is not also copied, the
-> in-image `--locked-mode` restore breaks. This is caught only by the image
-> build, so build both images after changing project references.
+> in-image `--locked-mode` restore breaks. A forgotten COPY entry is caught in CI
+> by [`LockFileParity.Tests.ps1`](../eng/docker-compose/tests/LockFileParity.Tests.ps1),
+> but the lock-file _contents_ are still validated only by the `--locked-mode`
+> restore, so build both images after changing project references.
 
 ### 4. Dependabot cooldown
 
@@ -117,17 +119,24 @@ regenerated lock files, so this workflow finds nothing to commit (no-op) and the
 `--locked-mode` gates pass on the first CI run.
 
 **Edge case (transitive `<ProjectReference>` change, #13950):** the workflow
-pushes the missing lock files, but a `GITHUB_TOKEN` push does not automatically
-run the PR gate — its `synchronize` event, if it creates a run at all, lands as
-an approval-required run. Recovery:
+pushes the missing lock files, but a push made with the built-in `GITHUB_TOKEN`
+does **not** trigger new workflow runs (GitHub's recursion guard), so the
+`--locked-mode` gate does not re-run and stays red on the corrected commit.
+Recovery, most reliable first:
 
-1. **Approve the pending workflow run** if GitHub creates one; otherwise
-2. comment **`@dependabot recreate`**; or
-3. push a **maintainer-owned no-op commit** to the PR branch.
+1. push a **maintainer-owned no-op commit** to the PR branch — a push not made
+   with `GITHUB_TOKEN` re-triggers CI, so this is the dependable fix; or
+2. **approve the pending workflow run** _if_ GitHub created one — a `GITHUB_TOKEN`
+   push usually creates no run, so there is often nothing to approve.
 
 > [!WARNING]
-> A manual "re-run jobs" on the failed run is **not** a reliable fix — it re-runs
-> against the original commit SHA, not the pushed lock-file commit.
+> Two actions that look like fixes but are **not** reliable here:
+>
+> - **`@dependabot recreate`** rebuilds the PR from scratch, which still omits the
+>   transitive lock updates (#13950); the gate fails again and the workflow
+>   re-pushes via `GITHUB_TOKEN`, returning to the same dead-end.
+> - **"Re-run jobs"** on the failed run re-runs against the original commit SHA,
+>   not the pushed lock-file commit.
 
 ## Regenerating lock files locally
 
@@ -158,7 +167,8 @@ builds are the enforcement points.
   the committed props — `RestorePackagesWithLockFile` **and** the analyzer
   `PackageReference`s (`Microsoft.CodeAnalysis.CSharp.CodeStyle`,
   `SonarAnalyzer.CSharp`) — or a regenerated props would restore a different graph
-  and dirty/break the lock files.
+  and dirty/break the lock files. CI enforces this parity via
+  [`LockFileParity.Tests.ps1`](../eng/docker-compose/tests/LockFileParity.Tests.ps1).
 - **`find` over shell glob.** Shell `**` expansion is off by default on Ubuntu
   runners; stage lock files with
   `find src -name "packages.lock.json" -print0 | xargs -0 --no-run-if-empty git add`.
