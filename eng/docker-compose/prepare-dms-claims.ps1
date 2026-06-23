@@ -94,7 +94,7 @@ function Test-TruthyJsonValue {
 
 function Get-EffectiveClaimSetName {
     $repoRoot = Get-BootstrapRepoRoot
-    $claimsPath = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json"
+    $claimsPath = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
     $claims = Read-JsonHashtable -Path $claimsPath -ArtifactName "Embedded claims"
     $claimSetNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 

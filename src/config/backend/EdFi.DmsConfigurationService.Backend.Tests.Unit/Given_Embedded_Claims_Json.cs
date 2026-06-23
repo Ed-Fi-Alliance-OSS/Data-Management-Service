@@ -389,7 +389,7 @@ public class Given_Embedded_Claims_Json
     private static JsonObject LoadEmbeddedClaims()
     {
         Assembly assembly = typeof(ClaimsProvider).Assembly;
-        string resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+        string resourceName = $"{assembly.GetName().Name}.Claims.Standards.ds52.Claims.json";
 
         using Stream stream =
             assembly.GetManifestResourceStream(resourceName)

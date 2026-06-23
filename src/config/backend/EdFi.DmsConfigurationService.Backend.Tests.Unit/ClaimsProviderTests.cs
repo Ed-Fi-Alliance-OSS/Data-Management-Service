@@ -35,6 +35,62 @@ public class ClaimsProviderTests
             .Returns(new ClaimsOptions { ClaimsSource = ClaimsSource.Embedded, ClaimsDirectory = "" });
     }
 
+    /// <summary>
+    /// Exercises the real embedded-resource selection (a real ClaimsProvider, not the testable
+    /// double) to confirm the data-standard version selects the matching Claims/Standards/ds&lt;NN&gt;
+    /// embedded resource and fails fast for an unknown version. DS 5.2 must remain the default.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_data_standard_version_is_configured : ClaimsProviderTests
+    {
+        private ClaimsProvider CreateProvider(string? dataStandardVersion)
+        {
+            var options = new ClaimsOptions { ClaimsSource = ClaimsSource.Embedded };
+            if (dataStandardVersion is not null)
+            {
+                options.DataStandardVersion = dataStandardVersion;
+            }
+            A.CallTo(() => _claimsOptions.Value).Returns(options);
+
+            return new ClaimsProvider(_logger, _claimsOptions, _claimsValidator, _claimsFragmentComposer);
+        }
+
+        [Test]
+        public void It_loads_embedded_ds52_claims_by_default()
+        {
+            ClaimsProvider provider = CreateProvider(null);
+
+            ClaimsLoadResult result = provider.LoadClaimsFromSource();
+
+            Assert.That(result.Failures, Is.Empty);
+            Assert.That(result.Nodes, Is.Not.Null);
+        }
+
+        [Test]
+        public void It_loads_embedded_ds52_claims_when_version_is_5_2()
+        {
+            ClaimsProvider provider = CreateProvider("5.2");
+
+            ClaimsLoadResult result = provider.LoadClaimsFromSource();
+
+            Assert.That(result.Failures, Is.Empty);
+            Assert.That(result.Nodes, Is.Not.Null);
+        }
+
+        [Test]
+        public void It_fails_fast_when_no_embedded_claims_exist_for_the_version()
+        {
+            ClaimsProvider provider = CreateProvider("9.9");
+
+            ClaimsLoadResult result = provider.LoadClaimsFromSource();
+
+            Assert.That(result.Nodes, Is.Null);
+            Assert.That(result.Failures, Is.Not.Empty);
+            Assert.That(result.Failures[0].Message, Does.Contain("9.9"));
+            Assert.That(result.Failures[0].Message, Does.Contain("ds99"));
+        }
+    }
+
     [TestFixture]
     public class Given_LoadClaimsFromSource_is_called : ClaimsProviderTests
     {

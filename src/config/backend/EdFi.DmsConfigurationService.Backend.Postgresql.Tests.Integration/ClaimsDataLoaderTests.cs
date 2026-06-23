@@ -40,7 +40,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     private static int LoadEmbeddedClaimSetCount()
     {
         var assembly = typeof(ClaimsProvider).Assembly;
-        var resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+        var resourceName = $"{assembly.GetName().Name}.Claims.Standards.ds52.Claims.json";
         using var stream =
             assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Could not load embedded resource '{resourceName}'.");

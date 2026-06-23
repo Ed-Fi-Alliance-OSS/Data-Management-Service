@@ -39,6 +39,7 @@ services:
       ClaimsOptions__ClaimsSource: ${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}
       ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
       ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
+      ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
       IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
