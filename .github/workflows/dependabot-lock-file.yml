@@ -21,6 +21,12 @@ on:
 permissions:
   contents: write
 
+# Serialize regeneration per PR so two rapid triggers (e.g. a rebase or force-push)
+# cannot race on the final git push.
+concurrency:
+  group: dependabot-lock-file-${{ github.head_ref }}
+  cancel-in-progress: true
+
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
