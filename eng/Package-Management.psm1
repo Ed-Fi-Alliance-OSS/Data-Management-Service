@@ -15,7 +15,7 @@ if (-not [Net.ServicePointManager]::SecurityProtocol.HasFlag([Net.SecurityProtoc
 # templates, sample-data loaders). Exactly three parts; never a partial like "7.3",
 # which would float to the newest matching feed build. Bumps must be reviewed against
 # the BulkLoadClient XML flag preflight and invocation shape.
-$script:PinnedBulkLoadClientVersion = "7.3.20144"
+$script:PinnedBulkLoadClientVersion = "7.3.20162"
 
 <#
 .SYNOPSIS

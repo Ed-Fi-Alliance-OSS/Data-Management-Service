@@ -77,7 +77,8 @@ function Invoke-SmokeTestUtility {
     Write-Output $ToolPath $options
     $host.UI.RawUI.ForegroundColor = $previousForegroundColor
 
-    $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net8.0/any/EdFi.SmokeTest.Console.dll")
+    $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net*/any/EdFi.SmokeTest.Console.dll")
+    $path = Resolve-Path $path
     &dotnet $path $options
 }
 
@@ -146,7 +147,7 @@ function Get-SmokeTestCredentials {
 
         # Step 4: Create vendor using Dms-Management module
         Write-Host "Creating vendor..."
-        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org" -AccessToken $configToken -Tenant $Tenant
+        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org,uri://sample.ed-fi.org" -AccessToken $configToken -Tenant $Tenant
 
         Write-Host "Vendor created with ID: $vendorId"
 
