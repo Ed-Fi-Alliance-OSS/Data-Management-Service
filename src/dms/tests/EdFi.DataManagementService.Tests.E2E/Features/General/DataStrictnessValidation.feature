@@ -13,6 +13,105 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
+        @ignore
+        @API-236
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 04 Ensure clients can create a resource using numeric 0 for booleans
+             When a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Numeric 0",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": 0
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric 0",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": false
+                       }
+                  """
+
+        @ignore
+        @API-237
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 05 Ensure clients can update a resource using numeric 1 for booleans
+            Given a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Numeric 1",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": false
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Numeric 1",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": 1
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric 1",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": true
+                       }
+                  """
+
+        @API-238
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 06 Ensure clients cannot create a resource using incorrect numeric values for booleans
+             When a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Invalid Numeric 2",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": 2
+                  }
+                  """
+             Then it should respond with 400
+
+        @API-239
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 07 Ensure clients cannot create a resource using incorrect numeric string values for booleans
+             When a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Invalid Numeric String 2",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": "2"
+                  }
+                  """
+             Then it should respond with 400
+
         @API-240
         @relational-backend
         @relational-ci-shard-4
@@ -114,6 +213,73 @@ Feature: Data strictness
                        {
                            "id": "{id}",
                            "classPeriodName": "Class Period Test 3",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": false
+                       }
+                  """
+
+        @ignore
+        @API-244
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 12 Ensure clients can create a resource using numeric string 1 for booleans
+             When a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Numeric String 1",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": "1"
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric String 1",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": true
+                       }
+                  """
+
+        @ignore
+        @API-245
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 13 Ensure clients can update a resource using numeric string 0 for booleans
+            Given a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Numeric String 0",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Numeric String 0",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": "0"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric String 0",
                            "schoolReference": {
                                "schoolId": 255901044
                            },
