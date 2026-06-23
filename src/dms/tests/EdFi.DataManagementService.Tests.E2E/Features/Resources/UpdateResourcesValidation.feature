@@ -316,7 +316,7 @@ Feature: Resources "Update" Operation validations
                     "shortDescription": "Testing",
                     "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
                     "learningResourceMetadataURI": "Testing",
-                    "cost": 2.1300
+                    "cost": 2.13
                   }
                   """
 

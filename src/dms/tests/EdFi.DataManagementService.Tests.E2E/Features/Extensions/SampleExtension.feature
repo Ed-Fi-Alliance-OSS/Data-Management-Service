@@ -151,8 +151,8 @@ Feature: Sample extension resources
                             "busReference": {
                                 "busId": "111"
                             },
-                            "hoursPerWeek": 60.00,
-                            "operatingCost": 5.0000,
+                            "hoursPerWeek": 60,
+                            "operatingCost": 5,
                             "busRouteNumber": 102,
                             "busRouteDirection": "Southbound",
                             "expectedTransitTime": "60",
