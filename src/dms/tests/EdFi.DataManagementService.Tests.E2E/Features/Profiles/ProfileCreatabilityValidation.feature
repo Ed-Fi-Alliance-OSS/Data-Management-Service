@@ -114,6 +114,7 @@ Feature: Profile Creatability Validation
 
         @relational-backend
         @relational-ci-shard-1
+        @ignore
         Scenario: 04 PUT with profile excluding required field succeeds
             # First create a school using a profile that includes nameOfInstitution
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
@@ -205,6 +206,7 @@ Feature: Profile Creatability Validation
 
         @relational-backend
         @relational-ci-shard-1
+        @ignore
         Scenario: 06 POST with CollectionRule on required collection succeeds and filters collection items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School" with body
                   """

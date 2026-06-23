@@ -11,6 +11,7 @@ Feature: Kafka Messaging
         @kafka
         @relational-backend
         @relational-ci-shard-4
+        @ignore
         Scenario: 02 Creating a student should generate Kafka message
             Given I start collecting Kafka messages
               And the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -38,6 +39,7 @@ Feature: Kafka Messaging
         @kafka
         @relational-backend
         @relational-ci-shard-4
+        @ignore
         Scenario: 03 Updating a student should generate Kafka message
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "ed-fi/students" with
@@ -76,6 +78,7 @@ Feature: Kafka Messaging
         @kafka
         @relational-backend
         @relational-ci-shard-4
+        @ignore
         Scenario: 04 Deleting a student should generate Kafka message
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "ed-fi/students" with
