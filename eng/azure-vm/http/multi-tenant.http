@@ -1,0 +1,44 @@
+@base = https://your-label.eastus.cloudapp.azure.com
+@tenant = tenant1
+@schoolYear = 2025
+
+# API client credentials (from bootstrap.ps1 output). If a secret contains characters REST
+# Client treats as variables ({{ }}), pre-encode the Basic header: set @basic = base64(key:secret)
+# and use `Authorization: Basic {{basic}}`. To test tenant2, set @tenant = tenant2 and its creds.
+@key = REPLACE_WITH_TENANT_KEY
+@secret = REPLACE_WITH_TENANT_SECRET
+
+# Bootstrap admin client (from .env) for Configuration Service calls.
+@adminKey = dms-bootstrap-admin
+@adminSecret = REPLACE_WITH_BOOTSTRAP_ADMIN_SECRET
+
+### Discovery (no auth)
+GET {{base}}/mt-dms
+
+### DMS token
+# @name token
+POST {{base}}/mt-dms/oauth/token
+Authorization: Basic {{key}}:{{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+### List schools — tenant + schoolYear are PATH segments for DMS
+GET {{base}}/mt-dms/{{tenant}}/{{schoolYear}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+
+# ---------------------------------------------------------------------------
+# Configuration Service — tenant is a HEADER (not a path segment) here
+# ---------------------------------------------------------------------------
+
+### CMS admin token
+# @name cmsToken
+POST {{base}}/mt-config/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{adminKey}}&client_secret={{adminSecret}}&grant_type=client_credentials&scope=edfi_admin_api/full_access
+
+### List data stores for the tenant
+GET {{base}}/mt-config/v3/dataStores
+Authorization: Bearer {{cmsToken.response.body.access_token}}
+Tenant: {{tenant}}
