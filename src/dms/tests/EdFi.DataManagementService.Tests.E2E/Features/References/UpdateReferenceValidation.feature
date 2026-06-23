@@ -27,7 +27,7 @@ Feature: Update Reference Validation
                   """
                   {
                       "id": "{id}",
-                      "localEducationAgencyId": 102030401,
+                      "localEducationAgencyId": 10203040,
                       "nameOfInstitution": "Institution Test",
                       "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency",
                       "categories": [
