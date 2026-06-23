@@ -120,6 +120,17 @@ The Claims.json file contains two main sections and is used as:
 - **actions**: CRUD operations (Create, Read, Update, Delete, ReadChanges)
 - **authorizationStrategies**: Security strategies applied to each action
 
+### Per-Data-Standard Embedded Claims
+
+The embedded base `Claims.json` is stored per Data Standard version under
+`Claims/Standards/ds<NN>/Claims.json` (`ds52`, `ds61`, ...). `ClaimsProvider`
+selects the version's resource at startup from `ClaimsOptions:DataStandardVersion`
+(environment variable `DMS_CONFIG_DATA_STANDARD_VERSION`, default `5.2`), and fails
+fast if the requested version's resource is absent. This selection applies to the
+**Embedded** and **Hybrid** modes below (both load the embedded base); **Filesystem**
+mode reads its base from disk instead. See
+[Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for the full version mechanism.
+
 ## Claims Loading Modes
 
 ### Mode 1: Embedded Only (Production Default)
