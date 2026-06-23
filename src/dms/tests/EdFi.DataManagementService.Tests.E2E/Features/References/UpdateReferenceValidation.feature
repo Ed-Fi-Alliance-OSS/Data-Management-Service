@@ -165,7 +165,7 @@ Feature: Update Reference Validation
         @API-114
         @relational-backend
         @relational-ci-shard-4
-        Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
+        Scenario: 05 Ensure clients cannot update a resource's identifying deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
                   | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}] | {"educationOrganizationId":255901} | Algebra I   | 1             |
@@ -198,20 +198,16 @@ Feature: Update Reference Validation
                       "beginDate": "2021-08-23"
                   }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Unresolved Reference",
-                      "status": 409,
+                      "detail": "Identifying values for the StudentSectionAssociation resource cannot be changed. Delete and recreate the resource item instead.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                      "title": "Key Change Not Supported",
+                      "status": 400,
                       "correlationId": null,
-                      "validationErrors": {
-                          "$.sectionReference": [
-                              "The referenced Section item does not exist."
-                          ]
-                      },
+                      "validationErrors": {},
                       "errors": []
                   }
                   """
