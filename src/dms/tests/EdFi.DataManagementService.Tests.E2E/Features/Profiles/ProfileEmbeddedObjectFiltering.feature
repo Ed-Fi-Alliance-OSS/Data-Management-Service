@@ -96,6 +96,8 @@ Feature: Profile Embedded Object Filtering
 
         @relational-backend
         @relational-ci-shard-2
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
         @ignore
         Scenario: 03 Write profile excluding nested member does not persist excluded nested update
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-AddressExcludeNameOfCounty" and namespacePrefixes "uri://ed-fi.org"

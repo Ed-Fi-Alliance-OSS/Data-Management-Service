@@ -164,6 +164,8 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
         @API-109
         @relational-backend
         @relational-ci-shard-4
+        # DMS-1012: Quarantined until delete conflict diagnostics can report all
+        # referencing resource types deterministically.
         @ignore
         Scenario: 06 Ensure clients cannot delete an existing Education Organization that is referenced by existing items
             Given the system has these "localEducationAgencies" references

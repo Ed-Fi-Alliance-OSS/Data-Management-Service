@@ -13,6 +13,8 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
         @ignore
         @API-236
         @relational-backend
@@ -41,6 +43,8 @@ Feature: Data strictness
                        }
                   """
 
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
         @ignore
         @API-237
         @relational-backend
@@ -95,6 +99,22 @@ Feature: Data strictness
                   }
                   """
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                              "officialAttendancePeriod Value is \"integer\" but should be \"boolean\""
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
 
         @API-239
         @relational-backend
@@ -111,6 +131,22 @@ Feature: Data strictness
                   }
                   """
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                              "officialAttendancePeriod Value is \"string\" but should be \"boolean\""
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
 
         @API-240
         @relational-backend
@@ -220,6 +256,8 @@ Feature: Data strictness
                        }
                   """
 
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
         @ignore
         @API-244
         @relational-backend
@@ -248,6 +286,8 @@ Feature: Data strictness
                        }
                   """
 
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
         @ignore
         @API-245
         @relational-backend

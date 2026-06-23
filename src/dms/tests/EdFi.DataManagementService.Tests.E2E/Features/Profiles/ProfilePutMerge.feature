@@ -19,6 +19,8 @@ Feature: Profile PUT Merge Functionality
 
         @relational-backend
         @relational-ci-shard-3
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
         @ignore
         Scenario: 01 PUT with collection non-key property exclusion preserves excluded property from existing document
             # First create the school with full address data using IncludeAll profile (nameOfCounty IS saved)
