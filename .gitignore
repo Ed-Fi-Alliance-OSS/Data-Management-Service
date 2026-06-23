@@ -63,6 +63,7 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 eng/docker-compose/.bootstrap/
+eng/docker-compose/.derived/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

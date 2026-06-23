@@ -126,7 +126,12 @@ param(
 
     # Optional test filter for dotnet test operations
     [string]
-    $TestFilter
+    $TestFilter,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). Forwarded to the start scripts, which
+    # compose the matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    [string]
+    $DataStandardVersion
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -929,12 +934,12 @@ function Start-DockerEnvironment {
             if ($UsePublishedImage) {
                 if ($LoadSeedData) {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
                     }
                 }
                 else {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
                     }
                 }
             }
@@ -967,7 +972,7 @@ function Start-DockerEnvironment {
                         $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
                         $env:AppSettings__DeployDatabaseOnStartup = "false"
                         Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
                         }
                     }
                     finally {
@@ -992,7 +997,7 @@ function Start-DockerEnvironment {
                 }
                 else {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
                     }
                 }
 

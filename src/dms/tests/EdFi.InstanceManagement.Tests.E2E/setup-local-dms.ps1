@@ -24,7 +24,11 @@
 [CmdletBinding()]
 param(
     [switch]
-    $SkipDockerBuild
+    $SkipDockerBuild,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
+    [string]
+    $DataStandardVersion
 )
 
 function Test-DmsDocumentTablePresent {
@@ -126,10 +130,10 @@ try {
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup -DataStandardVersion $DataStandardVersion
         }
         else {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup -DataStandardVersion $DataStandardVersion
         }
     }
     finally {
