@@ -2171,7 +2171,7 @@ Keeping these concerns separate means the bootstrap sequence does not need to ch
 
 The current `-LoadSeedData` path in `start-local-dms.ps1` calls `setup-database-template.psm1`, which:
 
-1. Downloads a NuGet package (`EdFi.Dms.Minimal.Template.PostgreSql.*`) identified by the `DATABASE_TEMPLATE_PACKAGE` environment variable.
+1. Downloads a NuGet package (`EdFi.Api.Minimal.Template.PostgreSql.*`) identified by the `DATABASE_TEMPLATE_PACKAGE` environment variable.
 2. Extracts a single `.sql` file from the package.
 3. Copies that SQL file into the running `dms-postgresql` container and executes it with `psql`.
 

@@ -70,7 +70,7 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Promote DataManagementService Package
+      - name: Promote EdFi.Api Package
         shell: pwsh
         run: |
           $arguments = @{
@@ -85,7 +85,7 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
-      - name: Promote DmsConfigurationService Package
+      - name: Promote EdFi.Api.ConfigurationService Package
         shell: pwsh
         run: |
           $arguments = @{
