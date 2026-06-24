@@ -21,9 +21,9 @@ param(
   [string]
   $SdkPath,
 
-  [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
+  [ValidateSet("EdFi.Api.TestSdk", "EdFi.Api.Sdk", "EdFi.OdsApi.Sdk")]
   [string]
-  $SdkNamespace = "EdFi.DmsApi.TestSdk",
+  $SdkNamespace = "EdFi.Api.TestSdk",
 
   # Optional explicit OAuth token URL; without it the console resolves the token
   # endpoint from the DMS discovery document

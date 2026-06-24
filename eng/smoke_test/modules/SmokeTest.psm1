@@ -36,9 +36,9 @@ function Invoke-SmokeTestUtility {
         [string]
         $SdkPath,
 
-        [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
+        [ValidateSet("EdFi.Api.TestSdk", "EdFi.Api.Sdk", "EdFi.OdsApi.Sdk")]
         [string]
-        $SdkNamespace = "EdFi.DmsApi.TestSdk",
+        $SdkNamespace = "EdFi.Api.TestSdk",
 
         # Explicit OAuth token URL for the smoke test console. Without it the console
         # resolves the token endpoint from the DMS discovery document, which only works

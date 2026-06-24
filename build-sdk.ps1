@@ -68,8 +68,8 @@ param(
 
     # Package name for the NuGet package
     [string]
-    [ValidateSet("EdFi.DmsApi.Sdk", "EdFi.DmsApi.TestSdk")]
-    $PackageName = "EdFi.DmsApi.Sdk",
+    [ValidateSet("EdFi.Api.Sdk", "EdFi.Api.TestSdk")]
+    $PackageName = "EdFi.Api.Sdk",
 
     [string]
     $StandardVersion = "5.2.0"
@@ -204,10 +204,10 @@ function PushPackage {
 function Invoke-BuildAndGenerateSdk {
     Invoke-Step { DownloadCodeGen }
 
-    if ($PackageName -eq "EdFi.DmsApi.TestSdk") {
+    if ($PackageName -eq "EdFi.Api.TestSdk") {
         Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
         Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
-    } elseif ($PackageName -eq "EdFi.DmsApi.Sdk") {
+    } elseif ($PackageName -eq "EdFi.Api.Sdk") {
         Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
         Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
     } else {
