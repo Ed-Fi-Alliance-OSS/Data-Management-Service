@@ -2821,6 +2821,75 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().NotContain("@DocumentId");
     }
 
+    [Test]
+    public void It_should_reserve_document_id_parameter_name_when_allocating_proposed_value_parameters()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(parameterization) with
+            {
+                DocumentIdParameterName = candidateParameterName,
+            }
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_reserve_claim_base_parameter_name_when_allocating_proposed_value_parameters()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [100L, 200L],
+            candidateParameterName
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(CreateSingleSubjectProposedSqlSpec(parameterization));
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_reserve_claim_concrete_parameter_names_when_allocating_proposed_value_parameters()
+    {
+        const string claimBaseParameterName = "relationshipAuthorization_0_0_schoolId";
+        const string candidateParameterName = $"{claimBaseParameterName}_0";
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [100L],
+            claimBaseParameterName
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(parameterization, parameterSeed: "schoolId_0")
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_advance_parameter_suffix_until_an_unused_name_is_found()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(
+                parameterization,
+                reservedParameterNames: [candidateParameterName, $"{candidateParameterName}_2"]
+            )
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_3");
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_compile_proposed_auth1_sql_with_expected_ctes_payload_and_final_select(
@@ -3117,6 +3186,27 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Should()
             .Throw<ArgumentException>()
             .WithParameterName("DocumentIdParameterName")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
+    public void It_should_reject_invalid_reserved_parameter_names_for_stored_specs()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectStoredSqlSpec(parameterization) with
+                {
+                    ReservedParameterNames = ["reserved-name"],
+                }
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("ReservedParameterNames")
             .WithMessage("Parameter name must match pattern*");
     }
 
@@ -3537,6 +3627,24 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_invalid_proposed_binding_parameter_seeds()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectProposedSqlSpec(parameterization, parameterSeed: "school-id")
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("parameterName")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
     public void It_should_reject_postgresql_array_claim_parameterization_without_exactly_the_base_parameter()
     {
         var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
@@ -3637,6 +3745,47 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             parameterization,
             10
         );
+
+    private static SingleRecordRelationshipAuthorizationSqlSpec CreateSingleSubjectProposedSqlSpec(
+        AuthorizationClaimEducationOrganizationIdParameterization parameterization,
+        string parameterSeed = "schoolId",
+        IReadOnlyList<string>? reservedParameterNames = null
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var binding = CreateProposedBinding(rootTable, schoolIdColumn) with { ParameterSeed = parameterSeed };
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [binding]),
+        };
+
+        return new SingleRecordRelationshipAuthorizationSqlSpec(
+            [checkSpec],
+            parameterization,
+            10,
+            ReservedParameterNames: reservedParameterNames
+        );
+    }
+
+    private static void AssertSingleProposedValueParameterName(
+        SingleRecordRelationshipAuthorizationSqlPlan plan,
+        string expectedParameterName
+    )
+    {
+        plan.ProposedValueParametersInOrder.Should()
+            .ContainSingle()
+            .Which.ParameterName.Should()
+            .Be(expectedParameterName);
+        plan.ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .StartWith(expectedParameterName);
+    }
 
     private static AuthorizationClaimEducationOrganizationIdParameterization CreateSingleClaimParameterization(
         SqlDialect dialect = SqlDialect.Pgsql

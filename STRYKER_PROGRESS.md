@@ -797,3 +797,29 @@
 - Remaining notes:
   - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected proposed CTE/payload cluster, including stored subject failure SQL, stored/proposed People path SQL, parameter naming/collision diagnostics, and unsupported-dialect diagnostics.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Parameter Allocation And Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - Proposed value parameter reservation mutants ids `6482`, `6488`, `6490`, `6492`, and `6494`, lines `475`, `487`, `494`, `504`, and `512`: removed document-id, claim-base, claim-concrete, binding-seed, and bare-name validation reservations from the proposed parameter allocator.
+  - Proposed value suffix allocation mutants ids `6500`, `6503`, and `6504`, lines `526`-`529`: changed the occupied-name loop condition, decremented the suffix, or replaced the next suffixed candidate with an empty string.
+  - Stored reserved-parameter validation mutant id `7273`, line `1586`: removed validation of explicit reserved parameter names for stored specs.
+- Additional mutants killed by the same assertions:
+  - Reservation and allocation mutants ids `6485`, `6487`, `6495`, `6497`, `6498`, and `6499`.
+  - Reserved-parameter null-coalescing mutant id `7271`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: passed; final run `62` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:49`; `Killed: 553`, `Survived: 80`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-34-16/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6482`, `6488`, `6490`, `6492`, `6494`, `6500`, `6503`, `6504`, and `7273` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `6484`, line `479`, appears equivalent for the current generated parameter-name shape because proposed value parameter names always start with `relationshipAuthorization_`, so the bare default reserved names `documentUuid` and `resourceKeyId` cannot collide with allocator candidates.
+  - Focused timeout id `6502`, line `528`, is a loop-control mutation: removing the suffix increment causes the occupied-name loop to stop making progress when the first suffixed candidate is already reserved.
+  - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected parameter-allocation cluster, including stored/proposed subject failure SQL, People path SQL, duplicate defensive validation, and unsupported-dialect diagnostics.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
