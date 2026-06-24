@@ -1110,3 +1110,29 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain outside this selected batch-boundary and zero-limit cluster, including null guards, argument validation messages, missing/conflicting parameter diagnostics, scalar null binding, and invalid structured-parameter diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans HydrationBatchBuilder Parameter Binding Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs`
+- Mutants selected:
+  - Single-keyset scalar binding `Statement mutation` id `1083`, line `133`: removed adding the `DocumentId` parameter.
+  - Conflicting query-parameter metadata mutants ids `1158`, `1159`, and `1160`, lines `302`-`304`: removed or blanked the conflict diagnostic.
+  - Missing required parameter-value diagnostic string mutants ids `1176` and `1178`, lines `353`-`354`.
+  - Unsupported binding-kind diagnostic `String mutation` id `1184`, line `378`.
+  - Scalar non-null binding `Null coalescing mutation` id `1187`, line `387`: replaced scalar values with `DBNull.Value`.
+  - SQL Server structured value diagnostic mutants ids `1206`, `1207`, and `1208`, lines `449`-`451`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/HydrationBatchBuilderParameterBindingTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/HydrationBatchBuilderParameterBindingTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_HydrationBatchBuilder_Query_Parameter_Binding"`: passed; `10` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs" --concurrency 8` from the test project directory: completed in `00:01:53`; `Killed: 99`, `Survived: 6`, `NoCoverage: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-24.03-27-59/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `1083`, `1158`, `1159`, `1160`, `1176`, `1178`, `1184`, `1187`, `1206`, `1207`, and `1208` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `1054`, `1055`, `1081`, and `1082` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused no-coverage ids `1085` and `1099` are private switch default diagnostics for sealed `PageKeysetSpec` variants and appear unreachable through public `Build`/`AddParameters` inputs.
+  - Focused survivors ids `1218` and `1225` are the previously noted empty-SQL semicolon helper equivalences.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
