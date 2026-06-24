@@ -642,3 +642,28 @@
   - Focused survivors ids `7293`, `7294`, `7295`, `7297`, and `7298`, lines `41`-`49`, are null/spec parameterization guard mutants and are skipped by the loop prompt.
   - Focused `TokenInfoEducationOrganizationSqlCompiler.cs` has no remaining actionable non-null survived, no-coverage, or timeout mutants.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans AuthorizationClaimEducationOrganizationIdParameterization Factory Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/AuthorizationClaimEducationOrganizationIdParameterization.cs`
+- Mutants selected:
+  - `Statement mutation`, id `2`, line `55`: removed base parameter-name validation.
+  - `Statement mutation`, id `6`, line `64`: removed empty claim EdOrg id list rejection.
+  - `String mutation`, id `7`, line `65`: replaced the empty-list validation message with `""`.
+  - `String mutation`, id `10`, line `97`: replaced the unsupported SQL dialect message with `$""`.
+- Additional mutants killed by the same assertions:
+  - Focused `AuthorizationClaimEducationOrganizationIdParameterization.cs` run also killed ordering and threshold branch mutants ids `3`, `4`, `8`, and `9`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/AuthorizationClaimEducationOrganizationIdParameterizationFactoryTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/AuthorizationClaimEducationOrganizationIdParameterizationFactoryTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_AuthorizationClaimEducationOrganizationIdParameterizationFactory"`: passed; `9` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/AuthorizationClaimEducationOrganizationIdParameterization.cs" --concurrency 8` from the test project directory: completed in `00:01:57`; `Killed: 8`, `Survived: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-24.00-39-15/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `2`, `6`, `7`, and `10` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `1`, line `54`, is a null-guard statement mutant and is skipped by the loop prompt.
+  - Focused survivor id `13`, line `106`, appears equivalent because any valid bare base parameter name plus the factory-generated `_<index>` suffix still matches the same bare parameter-name pattern.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

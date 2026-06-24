@@ -122,6 +122,55 @@ public class Given_AuthorizationClaimEducationOrganizationIdParameterizationFact
         parameterization.ParameterNamesInOrder[^1].Should().Be("ClaimEducationOrganizationIds_1998");
     }
 
+    [Test]
+    public void It_rejects_invalid_base_parameter_names()
+    {
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                [42L],
+                "Claim-Education-Organization-Ids"
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Parameter name must match pattern*")
+            .WithParameterName("baseParameterName");
+    }
+
+    [Test]
+    public void It_rejects_empty_claim_id_lists()
+    {
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                [],
+                "ClaimEducationOrganizationIds"
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Authorization claim EdOrg parameterization requires at least one claim EdOrg id.*")
+            .WithParameterName("claimEducationOrganizationIds");
+    }
+
+    [Test]
+    public void It_rejects_unsupported_sql_dialects()
+    {
+        var unsupportedDialect = (SqlDialect)999;
+
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                unsupportedDialect,
+                [42L],
+                "ClaimEducationOrganizationIds"
+            );
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("Authorization claim EdOrg parameterization does not support SQL dialect '999'.");
+    }
+
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
     {
         long[] claimEducationOrganizationIds = new long[count];
