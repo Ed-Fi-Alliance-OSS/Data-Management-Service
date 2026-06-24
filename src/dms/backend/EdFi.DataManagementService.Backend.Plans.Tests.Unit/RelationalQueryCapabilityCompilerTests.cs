@@ -103,6 +103,131 @@ public class Given_RelationalQueryCapabilityCompiler
         capability.SupportedFieldsByQueryField.Should().BeEmpty();
     }
 
+    [Test]
+    public void It_should_reject_unsupported_storage_kind_with_resource_diagnostic()
+    {
+        var rootTable = CreateRootTable(
+            "StudentAssociation",
+            [ScalarColumn("SchoolYear", "$.schoolYear", ScalarKind.Int32)]
+        );
+        var concreteResource = CreateConcreteResource(CreateModel(rootTable, [], [])) with
+        {
+            StorageKind = (ResourceStorageKind)99,
+        };
+
+        Action act = () => new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile query capability: resource 'Ed-Fi.StudentAssociation' has unsupported storage kind '99'."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_case_insensitive_query_field_name_collisions_with_deterministic_message()
+    {
+        var rootTable = CreateRootTable(
+            "StudentAssociation",
+            [ScalarColumn("SchoolYear", "$.schoolYear", ScalarKind.Int32)]
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(rootTable, [], []),
+            ("Last", [("$.last", "string")]),
+            ("last", [("$.last", "string")]),
+            ("First", [("$.first", "string")]),
+            ("first", [("$.first", "string")])
+        );
+
+        Action act = () => new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile query capability: resource 'Ed-Fi.StudentAssociation' contains queryFieldMapping entries that collide case-insensitively: 'First', 'first'; 'Last', 'last'. Rename each colliding entry so every query field name is unique under OrdinalIgnoreCase comparison."
+            );
+    }
+
+    [Test]
+    public void It_should_report_unsupported_query_fields_with_deterministic_reasons_and_no_supported_leakage()
+    {
+        var gradingPeriodDescriptorResource = new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor");
+        var rootTable = CreateRootTable(
+            "StudentAssociation",
+            [
+                ScalarColumn("SchoolYear", "$.schoolYear", ScalarKind.Int32),
+                ScalarColumnWithoutType("MissingScalarType", "$.missingScalarType"),
+                DescriptorColumn(
+                    "AcademicSubjectDescriptorId",
+                    "$.academicSubjectDescriptor",
+                    _academicSubjectDescriptorResource
+                ),
+                DescriptorColumn(
+                    "GradingPeriodDescriptorId",
+                    "$.academicSubjectDescriptor",
+                    gradingPeriodDescriptorResource
+                ),
+            ]
+        );
+        var childTable = CreateChildTable(
+            "StudentAssociation_Credits",
+            [ScalarColumn("Credits", "$.credits")]
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                _studentAssociationResource,
+                rootTable,
+                [rootTable, childTable],
+                [],
+                [
+                    DescriptorEdge(
+                        "$.academicSubjectDescriptor",
+                        rootTable.Table,
+                        "AcademicSubjectDescriptorId",
+                        _academicSubjectDescriptorResource
+                    ),
+                    DescriptorEdge(
+                        "$.academicSubjectDescriptor",
+                        rootTable.Table,
+                        "GradingPeriodDescriptorId",
+                        gradingPeriodDescriptorResource
+                    ),
+                ]
+            ),
+            ("ambiguousField", [("$.academicSubjectDescriptor", "string")]),
+            ("arrayField", [("$.items[*].value", "string")]),
+            ("missingScalarTypeField", [("$.missingScalarType", "string")]),
+            ("multiField", [("$.schoolYear", "number"), ("$.schoolYear", "number")]),
+            ("nonRootField", [("$.credits", "number")]),
+            ("unknownTypeField", [("$.schoolYear", "duration")]),
+            ("unmappedField", [("$.doesNotExist", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        var support = capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>().Subject;
+        support
+            .Omission.Should()
+            .Be(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "queryFieldMapping contains unsupported relational GET-many fields: ambiguousField: resolved to more than one possible root-table predicate target; arrayField: crosses an array scope and cannot compile to a root-table predicate; missingScalarTypeField: did not resolve to a deterministic relational binding; multiField: maps to multiple ApiSchema paths and cannot compile to one deterministic predicate target; nonRootField: targets a non-root relational table; unknownTypeField: did not resolve to a deterministic relational binding; unmappedField: did not resolve to a deterministic relational binding."
+                )
+            );
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+        capability
+            .UnsupportedFieldsByQueryField.Keys.Should()
+            .BeEquivalentTo(
+                "ambiguousField",
+                "arrayField",
+                "missingScalarTypeField",
+                "multiField",
+                "nonRootField",
+                "unknownTypeField",
+                "unmappedField"
+            );
+    }
+
     [TestCase(
         "CourseTranscript",
         "studentUniqueId",
@@ -1161,6 +1286,18 @@ public class Given_RelationalQueryCapabilityCompiler
             SourceJsonPath: Path(sourcePath),
             TargetResource: null,
             Storage: storage ?? new ColumnStorage.Stored()
+        );
+    }
+
+    private static DbColumnModel ScalarColumnWithoutType(string columnName, string sourcePath)
+    {
+        return new DbColumnModel(
+            ColumnName: new DbColumnName(columnName),
+            Kind: ColumnKind.Scalar,
+            ScalarType: null,
+            IsNullable: true,
+            SourceJsonPath: Path(sourcePath),
+            TargetResource: null
         );
     }
 

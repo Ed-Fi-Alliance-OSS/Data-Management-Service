@@ -1693,3 +1693,34 @@
 - Remaining notes:
   - Focused `WritePlanJsonPathConventions.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans RelationalQueryCapabilityCompiler Diagnostics And Omission Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalQueryCapabilityCompiler.cs`
+- Mutants selected:
+  - Unsupported storage-kind diagnostics ids `4904`, `4905`, and `4906`, lines `41`-`43`.
+  - Case-insensitive query-field collision ordering and separator mutants ids `4915` and `4921`, lines `111` and `128`.
+  - Multi-path early return mutant id `4932`, line `159`.
+  - Ambiguous descriptor-target classification mutants ids `4947` and `4948`, lines `214` and `219`.
+  - Root-column scalar-type compatibility mutant id `4981`, line `365`.
+  - Unsupported query type default mutant id `5000`, line `391`.
+  - Unsupported-field omission reason separator and ordering mutants ids `5005` and `5006`, lines `405`-`406`.
+  - Unsupported-field reason text mutants ids `5016` and `5017`, lines `452` and `454`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalQueryCapabilityCompilerTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalQueryCapabilityCompiler.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:03:47`; `Killed: 75`, `Survived: 15`, `NoCoverage: 9`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-59-31/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalQueryCapabilityCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationalQueryCapabilityCompiler"`: passed; `28` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalQueryCapabilityCompiler.cs" --concurrency 8` from the test project directory: focused verification completed in `00:03:39`; `Killed: 90`, `Survived: 7`, `NoCoverage: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-05-46/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `4904`, `4905`, `4906`, `4915`, `4921`, `4932`, `4947`, `4948`, `4981`, `5000`, `5005`, `5006`, `5016`, and `5017` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `4898` is the `concreteResourceModel` null guard and is skipped by the loop prompt.
+  - Focused survivor id `4911` changes query-field processing order; returned dictionaries and omission summaries are sorted or key-based, so this did not expose a stable public contract assertion.
+  - Focused no-coverage ids `4983` and `5018` are private default branches for closed target/failure-kind classifications and appear unreachable through the public compiler contract.
+  - Focused survivor id `5011`, line `431`, removes the descriptor-resource-count short-circuit but still reaches the same ambiguity result through downstream target collapse, so it appears redundant for observable behavior.
+  - Focused survivor ids `5022`, `5024`, `5025`, and `5026` are lookup ordering changes that did not affect externally visible representative target selection in the existing ambiguity-collapse contract.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
