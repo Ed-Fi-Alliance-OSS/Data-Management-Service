@@ -1624,3 +1624,29 @@
 - Remaining notes:
   - Focused `MappingSetProviderOptionsValidator.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans DocumentReferenceLookupPlanCompiler Validation Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs`
+- Mutants selected:
+  - Missing owner table diagnostic `String mutation`, id `909`, line `79`: replaced the missing table message with `$""`.
+  - FK kind validation `Statement mutation`, id `910`, line `84`: removed `ValidateDocumentFkColumnKindOrThrow`.
+  - Missing FK column diagnostic string mutants ids `1011`, `1012`, and `1013`, lines `211`, `212`, and `218`.
+  - Invalid FK kind diagnostic mutants ids `1018`, `1019`, `1020`, `1021`, and `1022`, lines `234`-`238`.
+  - Missing dependency-order diagnostic mutants ids `1026` and `1027`, lines `252`-`253`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReferenceLookupPlanCompilerTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:05:21`; `Killed: 79`, `Survived: 5`, `NoCoverage: 12`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-29-08/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReferenceLookupPlanCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_DocumentReferenceLookupPlanCompiler"`: first run failed on unused helper locals; fixed and reran.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_DocumentReferenceLookupPlanCompiler"`: passed; `8` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReferenceLookupPlanCompiler.cs" --concurrency 8` from the test project directory: focused verification completed in `00:05:19`; `Killed: 90`, `Survived: 3`, `NoCoverage: 3`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-36-30/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `909`, `910`, `1011`, `1012`, `1013`, `1018`, `1019`, `1020`, `1021`, `1022`, `1026`, and `1027` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor ids `901`, `902`, and `903`, lines `33`-`35`, are null guard mutants and are skipped by the loop prompt.
+  - Focused no-coverage ids `911`, `912`, and `913`, lines `97`-`99`, appear redundant because the FK column has already been resolved from the same table columns before the ordinal lookup callback can run.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
