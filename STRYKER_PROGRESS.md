@@ -1393,3 +1393,27 @@
   - Focused survivors/no-coverage ids `5550`, `5551`, `5553`, `5554`, `5562`, and `5573` remain deeper no-claims metadata fallback branches outside this selected cluster.
   - Focused no-coverage ids `5535`, `5608`, `5609`, `5611`, and `5615` remain unsupported enum diagnostic paths outside this selected cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans RelationshipAuthorizationFailureMapper Unsupported Enum Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs`
+- Mutants selected:
+  - Person-subject root binding unsupported value-source diagnostic `String mutation`, id `5535`, line `317`.
+  - Non-person mapping unsupported value-source diagnostic `String mutation`, id `5608`, line `513`.
+  - EdOrg strategy unsupported hierarchy direction diagnostic `String mutation`, id `5611`, line `565`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationFailureMapper"`: passed; `36` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs" --concurrency 8` from the test project directory: completed in `00:01:53`; `Killed: 118`, `Survived: 8`, `NoCoverage: 3`, `Timeout: 0`; report `StrykerOutput/2026-06-24.05-07-20/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `5535`, `5608`, and `5611` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `5423`, `5424`, `5425`, `5472`, `5473`, `5474`, and `5475` are null guard or argument validation statement mutants and are skipped by the loop prompt.
+  - Focused no-coverage id `5468`, line `117`, remains a defensive empty-result check that is unreachable after earlier no-claims input and grouping checks.
+  - Focused survivor id `5550`, line `340`, remains the previously noted equivalent or coverage-limited fallback-chain mutant.
+  - Focused no-coverage ids `5609` and `5615` are unsupported `RelationshipAuthorizationAuth1SubjectFailureKind` diagnostic paths that are unreachable through public mapper inputs because incompatible failure kinds are rejected by `IsFailureKindCompatibleWithValueSource` before subject mapping and hint construction.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

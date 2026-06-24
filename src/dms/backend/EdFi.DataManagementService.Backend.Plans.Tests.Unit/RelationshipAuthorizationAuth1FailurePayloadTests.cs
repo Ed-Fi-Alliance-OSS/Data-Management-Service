@@ -802,6 +802,132 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_throw_when_auth1_person_subject_uses_an_unsupported_value_source()
+    {
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                46,
+                0,
+                authObject,
+                CreatePersonSubject(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student,
+                    AuthNames.StudentDocumentId,
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            ) with
+            {
+                ValueSource = (RelationshipAuthorizationValueSource)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("valueSource")
+            .WithMessage("Unsupported relationship authorization value source.*");
+    }
+
+    [Test]
+    public void It_should_throw_when_auth1_non_person_subject_uses_an_unsupported_value_source()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                47,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ) with
+            {
+                ValueSource = (RelationshipAuthorizationValueSource)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("valueSource")
+            .WithMessage("Unsupported relationship authorization value source.*");
+    }
+
+    [Test]
+    public void It_should_throw_when_auth1_edorg_strategy_uses_an_unsupported_direction()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                48,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ) with
+            {
+                Direction = (RelationshipAuthorizationHierarchyDirection)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("direction")
+            .WithMessage("Unsupported relationship authorization direction.*");
+    }
+
+    [Test]
     public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_for_one_strategy()
     {
         var checkSpecs = new[]
