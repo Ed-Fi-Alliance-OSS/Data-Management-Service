@@ -1650,3 +1650,24 @@
   - Focused survivor ids `901`, `902`, and `903`, lines `33`-`35`, are null guard mutants and are skipped by the loop prompt.
   - Focused no-coverage ids `911`, `912`, and `913`, lines `97`-`99`, appear redundant because the FK column has already been resolved from the same table columns before the ordinal lookup callback can run.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PlanSqlDialectFactory Unsupported Dialect Diagnostic
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlDialectFactory.cs`
+- Mutants selected:
+  - `String mutation`, id `3458`, line `27`: replaced the unsupported SQL dialect diagnostic message with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlDialectFactoryTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespaceAuthorizationFailureMapper.cs" --concurrency 8` from the test project directory: selection baseline completed in `00:01:51`; `Killed: 12`, `Survived: 3`, `NoCoverage: 1`; report `StrykerOutput/2026-06-24.06-45-48/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlDialectFactoryTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PlanSqlDialectFactory"`: passed; `1` test.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlDialectFactory.cs" --concurrency 8` from the test project directory: focused verification completed in `00:01:47`; `Killed: 1`, `Survived: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-48-40/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant id `3458` is `Killed` in the focused JSON report.
+- Remaining notes:
+  - `NamespaceAuthorizationFailureMapper.cs` was not selected for edits because its current focused survivors are null-guard mutants and an unreachable unsupported failure-kind branch blocked by compatibility validation.
+  - Focused `PlanSqlDialectFactory.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
