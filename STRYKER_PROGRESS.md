@@ -1755,3 +1755,37 @@
 - Remaining notes:
   - Focused `RelationshipAuthorizationPeoplePathValidation.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
   - Broad target re-run was skipped because the broad refresh projected roughly `2.5` hours in this invocation. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans ReferenceIdentityQueryTargetResolver Diagnostics And Alias Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityQueryTargetResolver.cs`
+- Mutants selected:
+  - Empty match diagnostic `Statement mutation`, id `4457`, line `69`: removed the throw when a candidate group match has no matched candidates.
+  - Empty match diagnostic `String mutation`, id `4458`, line `71`: replaced the empty-match diagnostic message with `$""`.
+  - Duplicate scalar candidate validation `LogicalNotExpression to un-LogicalNotExpression mutation`, id `4467`, line `124`: validated the representative column instead of non-representative duplicate candidates.
+  - Duplicate scalar candidate validation `Statement mutation`, id `4469`, line `129`: removed validation of non-representative scalar candidate columns.
+  - Descriptor ambiguity ordering mutants ids `4475` and `4476`, line `157`: reversed descriptor resource ordering by resource and project.
+  - Descriptor ambiguity diagnostic `String mutation`, id `4483`, line `167`: removed the multiple-descriptor-resource diagnostic text.
+  - Missing root-column diagnostic mutants ids `4491` and `4492`, lines `195` and `197`: removed the missing-column throw/message.
+  - Descriptor resource formatting `String mutation`, id `4522`, line `336`: removed formatted descriptor resource text.
+  - Person alias map `String mutation` ids `4528`, `4529`, `4530`, and `4531`, lines `357`-`358`: removed staff/contact unique-id-to-reference-name map keys/values.
+  - Alias candidate guard `Logical mutation`, id `4551`, line `435`: changed the unique-id suffix/query-field rejection from `or` to `and`.
+  - Role-prefix boundary mutants ids `4594` and `4597`, lines `540` and `548`: allowed PascalCase base reference names to resolve as role-named references.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReferenceIdentityQueryTargetResolverTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityQueryTargetResolver.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:04:10`; `Killed: 65`, `Survived: 18`, `Timeout: 2`; report `StrykerOutput/2026-06-24.07-24-21/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReferenceIdentityQueryTargetResolverTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReferenceIdentityQueryTargetResolver"`: passed; `20` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityQueryTargetResolver.cs" --concurrency 8` from the test project directory: first focused verification completed in `00:04:03`; `Killed: 79`, `Survived: 13`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-32-48/reports/mutation-report.json`.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityQueryTargetResolver.cs" --concurrency 8` from the test project directory after adding cross-project descriptor ordering and 3-hop person alias assertions: completed in `00:04:05`; `Killed: 84`, `Survived: 7`, `NoCoverage: 7`, `Timeout: 1`; report `StrykerOutput/2026-06-24.07-39-21/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `4457`, `4458`, `4467`, `4469`, `4475`, `4476`, `4483`, `4491`, `4492`, `4522`, `4528`, `4529`, `4530`, `4531`, `4551`, `4594`, and `4597` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `4445`, `4446`, `4453`, `4460`, and `4533` are null-guard or null-query-field guard mutants and are skipped by the loop prompt.
+  - Focused survivor id `4524`, line `340`, appears equivalent for `CollapseExactAmbiguityOrThrow` because exact target columns and matched columns are both normalized by the same ordering helper before comparison.
+  - Focused survivors ids `4603` and `4607`, lines `555` and `558`, remain in the private camel-case helpers outside the selected cluster.
+  - Focused no-coverage ids `4486`, `4487`, `4505`, `4508`, `4517`, `4518`, and `4586` remain in unreachable/defensive branches not selected in this iteration.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
