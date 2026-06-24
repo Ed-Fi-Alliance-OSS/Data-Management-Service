@@ -1417,3 +1417,30 @@
   - Focused survivor id `5550`, line `340`, remains the previously noted equivalent or coverage-limited fallback-chain mutant.
   - Focused no-coverage ids `5609` and `5615` are unsupported `RelationshipAuthorizationAuth1SubjectFailureKind` diagnostic paths that are unreachable through public mapper inputs because incompatible failure kinds are rejected by `IsFailureKindCompatibleWithValueSource` before subject mapping and hint construction.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans MappingSetProvider Diagnostics And Logging Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProvider.cs`
+- Mutants selected:
+  - Key message formatting `String mutation` ids `1918` and `1919`, lines `57` and `58`.
+  - Pack-loaded log and decode failure diagnostics mutants ids `1929`, `1930`, `1935`, `1936`, and `1937`, lines `77`, `78`, `92`, `95`, and `96`.
+  - Required-pack-missing log and diagnostic mutants ids `1940`, `1941`, and `1945`, lines `105`, `106`, and `117`.
+  - Fallback-disabled log, message, and diagnostic mutants ids `1948`, `1949`, `1951`, `1953`, and `1954`, lines `124`, `125`, `131`, `135`, and `136`.
+  - Runtime fallback and compile success logging mutants ids `1955`, `1956`, `1965`, `1966`, `1969`, and `1970`, lines `141`, `142`, `165`, `166`, `176`, and `177`.
+  - No-compiler and runtime failure diagnostic mutants ids `1964`, `1975`, and `1977`, lines `160`, `192`, and `196`.
+  - Compiler `MappingSetUnavailableException` passthrough `Statement mutation` id `1972`, line `187`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetProviderTests.cs`
+- Commands run and results:
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProvider.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:54`; `Killed: 23`, `Survived: 27`, `NoCoverage: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-24.05-11-17/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetProviderTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MappingSetProvider"`: passed; `23` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProvider.cs" --concurrency 8` from the test project directory: final focused run completed in `00:01:53`; `Killed: 48`, `Survived: 3`, `NoCoverage: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.05-16-14/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `1918`, `1919`, `1929`, `1930`, `1935`, `1936`, `1937`, `1940`, `1941`, `1945`, `1948`, `1949`, `1951`, `1953`, `1954`, `1955`, `1956`, `1964`, `1965`, `1966`, `1969`, `1970`, `1972`, `1975`, and `1977` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor ids `1926`, `1957`, and `1968`, lines `73`, `148`, and `174`, are `ConfigureAwait(false)` boolean mutations to `ConfigureAwait(true)` and appear equivalent for observable behavior.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
