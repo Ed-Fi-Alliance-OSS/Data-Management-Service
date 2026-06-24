@@ -992,7 +992,7 @@ public static class DocumentReconstituter
                 },
                 ScalarKind.Decimal => value switch
                 {
-                    decimal d => JsonValue.Create(d),
+                    decimal d => JsonValue.Create(DecimalValueCanonicalizer.NormalizeScale(d)),
                     double dbl => JsonValue.Create(dbl),
                     float f => JsonValue.Create(f),
                     int i => JsonValue.Create(i),
@@ -1019,7 +1019,7 @@ public static class DocumentReconstituter
             int i => JsonValue.Create(i),
             long l => JsonValue.Create(l),
             short s => JsonValue.Create(s),
-            decimal d => JsonValue.Create(d),
+            decimal d => JsonValue.Create(DecimalValueCanonicalizer.NormalizeScale(d)),
             double dbl => JsonValue.Create(dbl),
             float f => JsonValue.Create(f),
             bool b => JsonValue.Create(b),

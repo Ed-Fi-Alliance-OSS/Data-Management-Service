@@ -100,9 +100,6 @@ Feature: Sample extension resources
 
         @relational-backend
         @relational-ci-shard-2
-        # DMS-1235: Quarantined until relational response materialization canonicalizes
-        # decimals instead of preserving fixed database scale.
-        @ignore
         Scenario: 03 Get by ID for busRoutes Resource
             Given a POST request is made to "/sample/busRoutes" with
                   """

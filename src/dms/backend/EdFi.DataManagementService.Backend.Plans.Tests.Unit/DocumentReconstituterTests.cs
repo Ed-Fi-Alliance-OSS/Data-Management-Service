@@ -122,6 +122,153 @@ public class Given_DocumentReconstituter_With_Root_Scalars_Only
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_Decimal_Scalars
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "EducationContent");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _costPath = new(
+        "$.cost",
+        [new JsonPathSegment.Property("cost")]
+    );
+
+    private static readonly JsonPathExpression _hoursPerWeekPath = new(
+        "$.hoursPerWeek",
+        [new JsonPathSegment.Property("hoursPerWeek")]
+    );
+
+    private static readonly JsonPathExpression _operatingCostPath = new(
+        "$.operatingCost",
+        [new JsonPathSegment.Property("operatingCost")]
+    );
+
+    private static readonly JsonPathExpression _zeroValuePath = new(
+        "$.zeroValue",
+        [new JsonPathSegment.Property("zeroValue")]
+    );
+
+    private static readonly JsonPathExpression _negativeValuePath = new(
+        "$.negativeValue",
+        [new JsonPathSegment.Property("negativeValue")]
+    );
+
+    private static readonly JsonPathExpression _canonicalValuePath = new(
+        "$.canonicalValue",
+        [new JsonPathSegment.Property("canonicalValue")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            CreateDecimalColumn(new DbColumnName("Cost"), _costPath, (19, 4)),
+            CreateDecimalColumn(new DbColumnName("HoursPerWeek"), _hoursPerWeekPath, (5, 2)),
+            CreateDecimalColumn(new DbColumnName("OperatingCost"), _operatingCostPath, (19, 4)),
+            CreateDecimalColumn(new DbColumnName("ZeroValue"), _zeroValuePath, (19, 4)),
+            CreateDecimalColumn(new DbColumnName("NegativeValue"), _negativeValuePath, (19, 4)),
+            CreateDecimalColumn(new DbColumnName("CanonicalValue"), _canonicalValuePath, (19, 4)),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_EducationContent",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        object?[] row = [1L, 2.1300m, 60.00m, 5.0000m, 0.0000m, -1.5000m, 12.34m];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_decimal_without_trailing_fractional_zeros()
+    {
+        _result["cost"]!.ToJsonString().Should().Be("2.13");
+    }
+
+    [Test]
+    public void It_should_emit_decimal_integer_without_decimal_point()
+    {
+        _result["hoursPerWeek"]!.ToJsonString().Should().Be("60");
+    }
+
+    [Test]
+    public void It_should_emit_fixed_scale_decimal_integer_without_decimal_point()
+    {
+        _result["operatingCost"]!.ToJsonString().Should().Be("5");
+    }
+
+    [Test]
+    public void It_should_emit_zero_without_decimal_point()
+    {
+        _result["zeroValue"]!.ToJsonString().Should().Be("0");
+    }
+
+    [Test]
+    public void It_should_emit_negative_decimal_without_trailing_fractional_zeros()
+    {
+        _result["negativeValue"]!.ToJsonString().Should().Be("-1.5");
+    }
+
+    [Test]
+    public void It_should_preserve_already_canonical_decimal_scale()
+    {
+        _result["canonicalValue"]!.ToJsonString().Should().Be("12.34");
+    }
+
+    private static DbColumnModel CreateDecimalColumn(
+        DbColumnName columnName,
+        JsonPathExpression sourceJsonPath,
+        (int Precision, int Scale) decimalType
+    )
+    {
+        return new DbColumnModel(
+            ColumnName: columnName,
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.Decimal, Decimal: decimalType),
+            IsNullable: false,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: null
+        );
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_With_Null_Scalar
 {
     private JsonNode _result = null!;
