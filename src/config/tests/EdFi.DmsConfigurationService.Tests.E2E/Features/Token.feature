@@ -87,6 +87,7 @@ Feature: Token validation
                     }
                   """
 
+        @SelfContainedOnly
         Scenario: 04 CMS-minted secret authenticates via raw HTTP Basic auth
              When a POST request is made to "/v3/vendors" with
                   """
