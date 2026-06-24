@@ -1573,3 +1573,34 @@
   - Focused survivor id `3001`, line `1243`, appears equivalent because colliding parameter names are already ordered by the predicate sort key before the diagnostic list is built.
   - Other focused survivors/no-coverage remain in null/argument validation paths, unsupported enum diagnostics, authorization validation diagnostics, People path validation diagnostics, duplicate semantic-predicate capacity-only mutations, and previously noted ordering mutants outside this selected duplicate-predicate diagnostics cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageDocumentIdSqlCompiler People Validation And Unsupported Operator Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`
+- Mutants selected:
+  - People stored-anchor root validation `Statement mutation`, id `2797`, line `814`: removed `ValidateStoredAnchorRootTable`.
+  - People stored-anchor root diagnostic `String mutation`, id `2798`, line `817`: replaced `query root table` context with `""`.
+  - Direct People path root diagnostic `String mutation`, id `2801`, line `844`: replaced `query root table` context with `""`.
+  - Unsupported People path-kind diagnostic `String mutation`, id `2803`, line `865`: replaced the diagnostic message with `""`.
+  - Transitive People path validation `Statement mutation`, id `2805`, line `880`: removed `ValidateTransitivePersonPath`.
+  - Unsupported query-operator SQL-token diagnostic `String mutation`, id `2974`, line `1148`: replaced the diagnostic message with `""`.
+  - Unsupported query-operator sort-key diagnostic `String mutation`, id `2976`, line `1171`: replaced the diagnostic message with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: first run failed because a single invalid operator reached SQL-token validation rather than sort-key validation; fixed by splitting the assertions.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded after the split.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; `130` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: focused run completed in `00:02:46`; `Killed: 351`, `Survived: 18`, `NoCoverage: 16`, `Timeout: 3`; report `StrykerOutput/2026-06-24.06-16-47/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `2797`, `2798`, `2801`, `2803`, `2805`, `2974`, and `2976` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage still include null/argument validation paths, ordering mutants already noted as equivalent or out of cluster, and duplicate semantic-predicate capacity-only mutants.
+  - Focused no-coverage ids `2550`, `2551`, `3026`, and `3028` are unsupported `QueryPredicateTarget` default branches that appear unreachable through the closed public target record hierarchy.
+  - Focused no-coverage id `2795` is an unsupported authorization-subject default branch that appears unreachable through the closed public subject record hierarchy.
+  - Focused no-coverage ids `2731`, `2734`, `2832`, and `2833` are SQL-emission fallback diagnostics guarded earlier by authorization/People-path validation and appear dead through the public compiler contract.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

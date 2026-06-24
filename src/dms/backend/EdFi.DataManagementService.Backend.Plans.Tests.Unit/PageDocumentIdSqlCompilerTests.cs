@@ -406,6 +406,49 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_unsupported_query_operator_sql_tokens()
+    {
+        var unsupportedOperator = (QueryComparisonOperator)999;
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [new QueryValuePredicate(new DbColumnName("Score"), unsupportedOperator, "score")],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("operator")
+            .WithMessage("Unsupported query operator for now.*");
+    }
+
+    [Test]
+    public void It_should_reject_unsupported_query_operator_sort_keys()
+    {
+        var unsupportedOperator = (QueryComparisonOperator)999;
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("Score"),
+                            QueryComparisonOperator.Equal,
+                            "exactScore"
+                        ),
+                        new QueryValuePredicate(new DbColumnName("Score"), unsupportedOperator, "score"),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("operator")
+            .WithMessage("Unsupported query operator sort key.*");
+    }
+
+    [Test]
     public void It_should_fail_fast_for_duplicate_semantic_predicates_after_unified_alias_rewrite()
     {
         var act = () =>
@@ -1493,6 +1536,138 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_people_authorization_stored_anchor_from_a_different_query_root_table()
+    {
+        var queryRootTable = new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation");
+        var subjectRootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreatePersonAuthorizationSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            new DbColumnName("DocumentId"),
+            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+            subjectRootTable
+        );
+
+        Action act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [],
+                    [],
+                    authorization: CreateAuthorizationSpec(
+                        SqlDialect.Pgsql,
+                        CreateAuthorizationStrategy(
+                            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                            subject
+                        )
+                    ),
+                    rootTable: queryRootTable
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"People authorization subject root table '{subjectRootTable}' does not match query root table '{queryRootTable}'."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_direct_people_authorization_path_from_a_different_query_root_table()
+    {
+        var queryRootTable = new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation");
+        var pathRootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var validSubject = (PageDocumentIdAuthorizationPersonSubject)CreatePersonAuthorizationSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            new DbColumnName("Student_DocumentId"),
+            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+            queryRootTable
+        );
+        var invalidSubject = validSubject with
+        {
+            PersonMetadata = validSubject.PersonMetadata with
+            {
+                Path = new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [
+                        new ColumnPathStep(
+                            pathRootTable,
+                            validSubject.Column,
+                            studentTable,
+                            new DbColumnName("DocumentId")
+                        ),
+                    ]
+                ),
+            },
+        };
+
+        Action act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [],
+                    [],
+                    authorization: CreateAuthorizationSpec(
+                        SqlDialect.Pgsql,
+                        CreateAuthorizationStrategy(
+                            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                            invalidSubject
+                        )
+                    ),
+                    rootTable: queryRootTable
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Direct People authorization subject table '{pathRootTable}' does not match query root table '{queryRootTable}'."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_unsupported_people_authorization_path_kind()
+    {
+        var unsupportedPathKind = (RelationshipAuthorizationPersonSubjectPathKind)999;
+        var validSubject = (PageDocumentIdAuthorizationPersonSubject)CreatePersonAuthorizationSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            new DbColumnName("Student_DocumentId"),
+            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+        );
+        var invalidSubject = validSubject with
+        {
+            PersonMetadata = validSubject.PersonMetadata with
+            {
+                Path = new RelationshipAuthorizationPersonSubjectPath(
+                    unsupportedPathKind,
+                    validSubject.PersonMetadata.Path.Steps
+                ),
+            },
+        };
+
+        Action act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [],
+                    [],
+                    authorization: CreateAuthorizationSpec(
+                        SqlDialect.Pgsql,
+                        CreateAuthorizationStrategy(
+                            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                            invalidSubject
+                        )
+                    )
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("subject")
+            .WithMessage("Unsupported People relationship authorization subject path kind.*");
+    }
+
+    [Test]
     public void It_should_close_direct_people_authorization_membership_and_root_subqueries()
     {
         var plan = _compiler.Compile(
@@ -1863,6 +2038,55 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().Contain(ExpectedPeoplePredicate);
         plan.TotalCountSql.Should().NotBeNull();
         plan.TotalCountSql.Should().Contain(ExpectedPeoplePredicate);
+    }
+
+    [Test]
+    public void It_should_reject_transitive_people_authorization_path_with_broken_table_chain()
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var expectedIntermediateTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var actualIntermediateTable = new DbTableName(new DbSchemaName("edfi"), "Section");
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+
+        Action act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [],
+                    [],
+                    authorization: CreateAuthorizationSpec(
+                        SqlDialect.Pgsql,
+                        CreateAuthorizationStrategy(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            CreateTransitivePersonAuthorizationSubject(
+                                RelationshipAuthorizationPersonAuthViewKind.Student,
+                                RelationshipAuthorizationPersonKind.Student,
+                                rootTable,
+                                [
+                                    new ColumnPathStep(
+                                        rootTable,
+                                        new DbColumnName("StudentAcademicRecord_DocumentId"),
+                                        expectedIntermediateTable,
+                                        new DbColumnName("DocumentId")
+                                    ),
+                                    new ColumnPathStep(
+                                        actualIntermediateTable,
+                                        new DbColumnName("Student_DocumentId"),
+                                        studentTable,
+                                        new DbColumnName("DocumentId")
+                                    ),
+                                ]
+                            )
+                        )
+                    ),
+                    rootTable: rootTable
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Transitive People authorization path step 1 source table '{actualIntermediateTable}' does not match previous target table '{expectedIntermediateTable}'."
+            );
     }
 
     [TestCase(
