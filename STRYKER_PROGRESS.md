@@ -329,3 +329,32 @@
   - Temporary focused config `stryker-config.PlanWriteBatchingConventions.tmp.json` was removed after verification.
   - Focused survivor id `3532`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans SimpleUpdateSqlEmitter Validation And Shape Assertions
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleUpdateSqlEmitter.cs`
+- Mutants selected:
+  - `Statement mutation`, id `6274`, line `42`: replaced the empty set-column validation throw with `;`
+  - `String mutation`, id `6275`, line `43`: replaced the empty set-column validation message with `""`
+  - `Statement mutation`, id `6280`, line `50`: replaced the set-column/parameter count validation throw with `;`
+  - `String mutation`, id `6281`, line `51`: replaced the set-column/parameter count validation message with `$""`
+  - `Statement mutation`, id `6287`, line `58`: replaced the empty key-column validation throw with `;`
+  - `String mutation`, id `6288`, line `59`: replaced the empty key-column validation message with `""`
+  - `Statement mutation`, id `6293`, line `66`: replaced the key-column/parameter count validation throw with `;`
+  - `String mutation`, id `6294`, line `67`: replaced the key-column/parameter count validation message with `$""`
+- Additional mutants killed by the same assertions:
+  - Focused `SimpleUpdateSqlEmitter.cs` run also killed SQL-shape and branch mutants ids `6297`, `6299`, `6300`, `6301`, `6304`, `6306`, `6308`, `6310`, `6312`, `6313`, `6314`, `6317`, `6318`, `6320`, `6321`, `6324`, `6326`, `6327`, and `6328`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleUpdateSqlEmitterTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleUpdateSqlEmitterTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SimpleUpdateSqlEmitter"`: passed; `6` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "**/SimpleUpdateSqlEmitter.cs"` from the test project directory: interrupted before completion after it appeared to create the full Backend Plans mutant set; no report was used.
+  - `dotnet stryker --config-file stryker-config.SimpleUpdateSqlEmitter.tmp.json` from the test project directory with a temporary focused config mutating only `**/SimpleUpdateSqlEmitter.cs`: completed in `00:02:46`; `Killed: 27`, `Survived: 3`, `Timeout: 1`; report `StrykerOutput/2026-06-23.23-07-05/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6274`, `6275`, `6280`, `6281`, `6287`, `6288`, `6293`, and `6294` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.SimpleUpdateSqlEmitter.tmp.json` was removed after verification.
+  - Focused survivor ids `6267`, `6268`, and `6269`, plus timeout id `6270`, are null-guard statement mutants on lines `35`-`38` and are skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
