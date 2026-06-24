@@ -273,6 +273,19 @@ public class Given_CompiledReconstitutionPlanTests_With_Sibling_Collections
 public class Given_CompiledReconstitutionPlanTests_With_Invalid_Topology
 {
     [Test]
+    public void It_should_report_multiple_root_tables_after_parent_resolution()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateMultipleRootTablesReadPlan()
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.StudentSchoolAssociation");
+        exception.Message.Should().Contain("expected exactly one root table in page topology, but found 2.");
+    }
+
+    [Test]
     public void It_should_report_missing_root_parent_for_root_extension_tables()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -346,6 +359,102 @@ public class Given_CompiledReconstitutionPlanTests_With_Invalid_Topology
 [TestFixture]
 public class Given_CompiledReconstitutionPlanTests_With_Invalid_Hydration_Metadata
 {
+    [Test]
+    public void It_should_report_missing_root_scope_locator_columns()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateMissingRootScopeLocatorColumnReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for 'edfi.School': root-scope locator column 'MissingDocumentId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_report_missing_immediate_parent_locator_columns()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateMissingImmediateParentLocatorColumnReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for 'edfi.SchoolAddress': immediate-parent locator column 'MissingDocumentId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_report_missing_physical_row_identity_columns()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateMissingPhysicalRowIdentityColumnReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for 'edfi.School': physical-row identity column 'MissingRowId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_report_empty_explicit_root_scope_locator_metadata()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateEmptyRootScopeLocatorMetadataReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot compile compiled reconstitution plan for 'edfi.School': expected exactly one explicit root-scope locator column, but found 0."
+            );
+    }
+
+    [Test]
+    public void It_should_report_empty_explicit_immediate_parent_locator_metadata()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateEmptyImmediateParentLocatorMetadataReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot compile compiled reconstitution plan for 'edfi.SchoolAddress': explicit immediate-parent scope locator metadata is empty for non-root table kind 'Collection'."
+            );
+    }
+
+    [Test]
+    public void It_should_report_multiple_ordinal_columns()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateMultipleOrdinalColumnsReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for 'edfi.School': multiple ordinal columns were found."
+            );
+    }
+
     [Test]
     public void It_should_report_duplicate_hydration_columns()
     {
@@ -530,6 +639,17 @@ file static class CompiledReconstitutionPlanTestData
         return CreateReadPlan([rootTable, addressTable, contactTable], []);
     }
 
+    public static ResourceReadPlan CreateMultipleRootTablesReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var alternateRootTable = CreateRootTable(
+            "AlternateSchool",
+            [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]
+        );
+
+        return CreateReadPlan([rootTable, alternateRootTable], []);
+    }
+
     public static ResourceReadPlan CreateRootExtensionWithoutRootReadPlan()
     {
         var rootExtensionTable = CreateRootExtensionTable("SchoolExtension");
@@ -576,6 +696,118 @@ file static class CompiledReconstitutionPlanTestData
         );
 
         return CreateReadPlan([rootTable, unsupportedTable], []);
+    }
+
+    public static ResourceReadPlan CreateMissingRootScopeLocatorColumnReadPlan()
+    {
+        var rootTable = CreateTable(
+            tableName: "School",
+            jsonScope: CreatePath("$"),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.Root,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [new DbColumnName("MissingDocumentId")],
+            immediateParentScopeLocatorColumns: []
+        );
+
+        return CreateReadPlan([rootTable], []);
+    }
+
+    public static ResourceReadPlan CreateMissingImmediateParentLocatorColumnReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var addressTable = CreateTable(
+            tableName: "SchoolAddress",
+            jsonScope: CreatePath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            keyColumns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)],
+            columns:
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+            ],
+            tableKind: DbTableKind.Collection,
+            physicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("MissingDocumentId")]
+        );
+
+        return CreateReadPlan([rootTable, addressTable], []);
+    }
+
+    public static ResourceReadPlan CreateMissingPhysicalRowIdentityColumnReadPlan()
+    {
+        var rootTable = CreateTable(
+            tableName: "School",
+            jsonScope: CreatePath("$"),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.Root,
+            physicalRowIdentityColumns: [new DbColumnName("MissingRowId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: []
+        );
+
+        return CreateReadPlan([rootTable], []);
+    }
+
+    public static ResourceReadPlan CreateEmptyRootScopeLocatorMetadataReadPlan()
+    {
+        var rootTable = CreateTable(
+            tableName: "School",
+            jsonScope: CreatePath("$"),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.Root,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [],
+            immediateParentScopeLocatorColumns: []
+        );
+
+        return CreateReadPlan([rootTable], []);
+    }
+
+    public static ResourceReadPlan CreateEmptyImmediateParentLocatorMetadataReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var addressTable = CreateTable(
+            tableName: "SchoolAddress",
+            jsonScope: CreatePath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            keyColumns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)],
+            columns:
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+            ],
+            tableKind: DbTableKind.Collection,
+            physicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: []
+        );
+
+        return CreateReadPlan([rootTable, addressTable], []);
+    }
+
+    public static ResourceReadPlan CreateMultipleOrdinalColumnsReadPlan()
+    {
+        var rootTable = CreateRootTable(
+            "School",
+            [
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("FirstOrdinal", ColumnKind.Ordinal),
+                CreateColumn("SecondOrdinal", ColumnKind.Ordinal),
+            ]
+        );
+
+        return CreateReadPlan([rootTable], []);
     }
 
     public static ResourceReadPlan CreateDuplicateHydrationColumnReadPlan()

@@ -1212,3 +1212,30 @@
   - Focused survivor id `127` remains the `ScopeKey.GetHashCode` `hash.Add(part)` statement and is still treated as not a stable equality-contract assertion target.
   - Focused survivors/no-coverage remain outside this selected topology and hydration diagnostics cluster, including column-group diagnostic strings, defensive topology count checks, parent-candidate filtering, fallback identity metadata resolution, and multiple-ordinal diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans CompiledReconstitutionPlan Identity Metadata Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs`
+- Mutants selected:
+  - Root table count diagnostics mutants ids `198`, `199`, and `200`, lines `382`-`384`.
+  - Missing locator and physical identity column-group diagnostics mutants ids `161`, `162`, `163`, `287`, and `288`, lines `244`, `250`, `256`, and `686`-`687`.
+  - Empty explicit root-scope locator fallback mutants ids `291`, `292`, and context string mutant id `295`, lines `696` and `705`.
+  - Empty explicit immediate-parent locator fallback mutants ids `298` and `299`, line `714`.
+  - Multiple ordinal column diagnostics mutants ids `320`, `321`, and `322`, lines `748`-`750`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_CompiledReconstitutionPlanTests"`: passed; `32` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: completed in `00:02:05`; `Killed: 128`, `Survived: 11`, `NoCoverage: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-24.03-59-46/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `161`, `162`, `163`, `198`, `199`, `200`, `287`, `288`, `291`, `292`, `295`, `298`, `299`, `320`, `321`, and `322` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `104`, `156`, and `158` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `127` remains the `ScopeKey.GetHashCode` `hash.Add(part)` statement and is still treated as not a stable equality-contract assertion target.
+  - Focused survivors ids `160`, `171`, `188`, `286`, and `301`, plus no-coverage ids `210`, `211`, `212`, `281`, and `282`, appear defensive, equivalent, or unreachable through the public builder paths covered in this loop.
+  - Focused survivor ids `232` and `235` remain parent-candidate filtering paths outside this selected identity metadata diagnostics cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
