@@ -943,3 +943,24 @@
   - Focused no-coverage id `3809`, line `50`, is the switch discard-arm message for an invalid projection-gating state; the preceding boolean gate prevents that switch arm from being reached through public inputs.
   - Remaining focused survived and no-coverage mutants in `ReadPlanProjectionContractValidator.cs` are outside this selected projection-gating cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans ReadPlanProjectionContractValidator DocumentReferenceLookup Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs`
+- Mutants selected:
+  - DocumentReferenceLookup presence/absence mutants ids `4171`, `4172`, `4176`, and `4177`, lines `864` and `874`.
+  - DocumentReferenceLookup fixed result-shape mutants ids `4180`, `4181`, `4182`, `4183`, `4184`, and `4185`, lines `883`-`888`.
+  - Empty and duplicate lookup source mutants ids `4188`, `4189`, `4196`, `4197`, and `4198`, lines `894` and `907`-`909`.
+  - Missing lookup source hydration table/column diagnostic mutants ids `4199`, `4200`, `4201`, `4202`, and `4203`, lines `918`-`930`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReadPlanCompiler"`: passed; `99` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs" --concurrency 8` from the test project directory: completed in `00:05:07`; `Killed: 260`, `Survived: 25`, `NoCoverage: 61`, `Timeout: 1`; report `StrykerOutput/2026-06-24.02-22-48/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `4171`, `4172`, `4176`, `4177`, `4180`, `4181`, `4182`, `4183`, `4184`, `4185`, `4188`, `4189`, `4196`, `4197`, `4198`, `4199`, `4200`, `4201`, `4202`, and `4203` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain in `ReadPlanProjectionContractValidator.cs` outside this selected DocumentReferenceLookup contract cluster, including null guards, reference projection diagnostics, descriptor projection diagnostics, formatting helpers, and document-reference lookup coverage/order count diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

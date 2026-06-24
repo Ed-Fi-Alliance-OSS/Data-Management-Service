@@ -1044,6 +1044,172 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_null_DocumentReferenceLookup_when_document_reference_bindings_are_present()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with { DocumentReferenceLookup = null };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DocumentReferenceBindings are present while DocumentReferenceLookup is null");
+    }
+
+    [Test]
+    public void It_should_reject_populated_DocumentReferenceLookup_when_document_reference_bindings_are_absent()
+    {
+        var mutatedReadPlan = _pgsqlRootOnlyReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup,
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DocumentReferenceBindings are absent while DocumentReferenceLookup is populated");
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_result_shape_that_changes_fixed_ordinals()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                ResultShape = new DocumentReferenceLookupResultShape(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 2,
+                    ResourceKeyIdOrdinal: 1
+                ),
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was DocumentId='0', DocumentUuid='2', ResourceKeyId='1'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_populated_DocumentReferenceLookup_with_empty_sources()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("document-reference lookup plan must contain at least one source when populated");
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_duplicate_table_and_FK_column()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [source, source],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '1' duplicates table 'edfi.StudentProjection' FK column 'School_DocumentId'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_reference_missing_hydration_tables()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder =
+                [
+                    source with
+                    {
+                        Table = new DbTableName(new DbSchemaName("edfi"), "MissingStudentProjection"),
+                    },
+                ],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '0' references table 'edfi.MissingStudentProjection' that is not present in compiled table plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_reference_missing_FK_columns()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [source with { FkColumn = new DbColumnName("Missing_DocumentId") }],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '0' on table 'edfi.StudentProjection' references FK column 'Missing_DocumentId' that does not exist in table columns"
+            );
+    }
+
+    [Test]
     public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
