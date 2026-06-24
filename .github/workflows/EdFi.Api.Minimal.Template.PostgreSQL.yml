@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.Dms.Minimal.Template.PostgreSQL
+name: Pkg EdFi.Api.Minimal.Template.PostgreSQL
 on:
   release:
     types:
@@ -20,7 +20,7 @@ on:
 
 env:
   STANDARD_VERSION: "5.2.0"
-  PACKAGE_NAME: "EdFi.Dms.Minimal.Template.PostgreSQL.5.2.0"
+  PACKAGE_NAME: "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PROVENANCE_FILE: "minimal.template.intoto.jsonl"
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}

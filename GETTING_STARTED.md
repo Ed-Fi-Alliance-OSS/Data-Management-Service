@@ -164,7 +164,7 @@ template package name using the .env variable:
 **Example:**
 
 ```env
-DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Minimal.Template.PostgreSql.5.2.0
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
 ```
 
 Then, run the following commands in PowerShell to start the local DMS instance,

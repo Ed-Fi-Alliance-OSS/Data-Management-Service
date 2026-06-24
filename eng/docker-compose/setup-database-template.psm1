@@ -27,7 +27,7 @@ function LoadSeedData {
     Write-Host -ForegroundColor Cyan "Loading database template for database '$Database' using package '$PackageId'"
 
     if ([string]::IsNullOrWhiteSpace($PackageId)) {
-        $PackageId = "EdFi.Dms.Minimal.Template.PostgreSql.5.2.0"
+        $PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
         Write-Host -ForegroundColor Yellow "Environment variable DATABASE_TEMPLATE_PACKAGE is not set. Using default package: $PackageId"
     } else {
         Write-Host -ForegroundColor Green "Using package from environment variable: $PackageId"
