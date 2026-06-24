@@ -443,3 +443,35 @@
   - Focused survivor ids `6238`, `6239`, `6254`, and `6255` are null-guard statement mutants and are skipped by the loop prompt.
   - Focused no-coverage mutant id `6263`, line `72`, is in the null parameter-row branch and is skipped by the loop prompt.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans DescriptorQueryCapabilityCompiler Descriptor Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/DescriptorQueryCapabilityCompiler.cs`
+- Mutants selected:
+  - `Linq method mutation (OrderBy() to OrderByDescending())`, id `529`, line `133`: reversed deterministic case-insensitive collision group ordering.
+  - `String mutation`, id `537`, line `151`: replaced the collision-group separator with `""`.
+  - `Logical mutation`, id `550`, line `188`: changed query-field mismatch detection from path-count-or-path/type mismatch to path-count-and-path mismatch.
+  - `Linq method mutation (OrderBy() to OrderByDescending())`, id `559`, line `208`: reversed unexpected field ordering.
+  - `String mutation`, id `561`, line `211`: replaced unexpected field quoting with `$""`.
+  - `Equality mutation`, id `580`, line `227`: changed unexpected-field presence check from `> 0` to `< 0`.
+  - `Statement mutation`, id `584`, line `229`: removed unexpected-field summary append.
+  - `String mutation`, id `585`, line `229`: replaced unexpected-field message prefix with `$""`.
+  - `String mutation`, id `586`, line `229`: replaced unexpected-field join separator with `""`.
+  - `String mutation`, id `588`, line `233`: replaced the mismatch reason prefix with `""`.
+  - `String mutation`, id `590`, line `239`: replaced formatted query-field path separator with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MappingSetCompiler"`: passed; `17` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.DescriptorQueryCapabilityCompiler.tmp.json` from the test project directory with a temporary focused config mutating only `**/DescriptorQueryCapabilityCompiler.cs`: completed in `00:03:47`; `Killed: 78`, `Survived: 5`, `Timeout: 4`; report `StrykerOutput/2026-06-23.23-36-25/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `529`, `537`, `550`, `559`, `561`, `580`, `584`, `585`, `586`, `588`, and `590` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.DescriptorQueryCapabilityCompiler.tmp.json` was removed after verification.
+  - Focused no-coverage mutants ids `505`, `506`, `507`, `508`, and `509` are unsupported-storage and missing-descriptor-metadata diagnostics outside this selected cluster.
+  - Focused survived/timeout mutants ids `517`, `519`, `521`, `523`, `525`, `526`, and `527` are missing descriptor-column diagnostics and are skipped by the loop prompt because they require null descriptor metadata columns.
+  - Focused survivor id `542`, line `161`, appears equivalent after the collision check because the pre-`ToDictionary` ordering of query-field mappings is not externally observable.
+  - Focused timeouts ids `482`, `483`, and `489`, lines `21`, `22`, and `24`, are descriptor field-definition string mutations outside this selected diagnostics cluster.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
