@@ -502,6 +502,30 @@ public sealed record DuplicateVisibleCollectionItemCollisionWritableProfileValid
     );
 
 /// <summary>
+/// Category-3 failure for a submitted collection item that fails the writable
+/// profile's collection value filter. Distinct from
+/// <see cref="ForbiddenSubmittedDataWritableProfileValidationFailure"/> so the
+/// API layer can map value-filter violations to the ODS-compatible
+/// data-validation response instead of the data-policy-enforced response.
+/// </summary>
+public sealed record CollectionValueFilterViolationWritableProfileValidationFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    ImmutableArray<string> RequestJsonPaths,
+    string FilterPropertyName,
+    FilterMode FilterMode,
+    ImmutableArray<string> FilterValues,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : WritableProfileValidationFailure(
+        ProfileFailureEmitter.RequestVisibilityAndWritableShaping,
+        "Submitted collection item failed the writable profile value filter.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
 /// Base category-4 typed failure emitted when a request attempts to create new
 /// visible data that the writable profile does not allow.
 /// </summary>
@@ -992,6 +1016,52 @@ public static class ProfileFailures
             normalizedRequestJsonPaths,
             normalizedForbiddenCanonicalMemberPaths,
             mergedDiagnostics
+        );
+    }
+
+    public static CollectionValueFilterViolationWritableProfileValidationFailure CollectionValueFilterViolation(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        string jsonScope,
+        IEnumerable<string> requestJsonPaths,
+        string filterPropertyName,
+        FilterMode filterMode,
+        IEnumerable<string> filterValues,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(jsonScope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filterPropertyName);
+        ArgumentNullException.ThrowIfNull(requestJsonPaths);
+        ArgumentNullException.ThrowIfNull(filterValues);
+
+        ImmutableArray<string> normalizedRequestJsonPaths = NormalizeRequiredStrings(
+            requestJsonPaths,
+            nameof(requestJsonPaths)
+        );
+
+        ImmutableArray<string> normalizedFilterValues = NormalizeOptionalStrings(
+            filterValues,
+            nameof(filterValues)
+        );
+
+        return new(
+            context,
+            jsonScope,
+            ScopeKind.Collection,
+            normalizedRequestJsonPaths,
+            filterPropertyName,
+            filterMode,
+            normalizedFilterValues,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.Scope(jsonScope, ScopeKind.Collection),
+                new ProfileFailureDiagnostic.RequestPaths(normalizedRequestJsonPaths)
+            )
         );
     }
 
