@@ -182,4 +182,15 @@ public class ClientSecretValidationTests
 
         Regex.IsMatch(secret, ClientSecretValidation.BuildComplexityPattern(options)).Should().BeTrue();
     }
+
+    [Test]
+    public void It_should_accept_caller_supplied_secrets_containing_a_space_alongside_a_valid_special_character()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
+
+        Regex
+            .IsMatch("Valid Secret1!", ClientSecretValidation.BuildComplexityPattern(options))
+            .Should()
+            .BeTrue();
+    }
 }
