@@ -235,3 +235,97 @@
   - Temporary focused config `stryker-config.MssqlPlanDialect.tmp.json` was removed after verification.
   - Focused survivors remain in `MssqlPlanDialect.cs` outside this DDL-shape cluster: comparison null-guard mutants ids `2023`, `2024`, and `2025` at lines `80`-`82`.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+
+## 2026-06-23 - Backend Plans DocumentMetadataColumns Select Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/IPlanSqlDialect.cs`
+- Mutants selected:
+  - `String mutation`, id `1344`, line `103`: replaced the `SELECT` line text with `""`
+  - `String mutation`, id `1346`, line `103`: replaced the `d.` document-id alias text with `""`
+  - `Statement mutation`, id `1355`, line `108`: removed the metadata-column line append
+  - `Conditional (true) mutation`, id `1356`, line `108`: forced every metadata-column line to end with `,`
+  - `Conditional (false) mutation`, id `1357`, line `108`: forced every metadata-column line to omit `,`
+- Additional mutants killed by the same assertions:
+  - All other focused mutants in `IPlanSqlDialect.cs`; focused report has `Killed: 25`, `Survived: 0`, `Timeout: 0`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MssqlPlanDialectTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MssqlPlanDialectTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MssqlPlanDialect"`: passed; `2` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.IPlanSqlDialect.tmp.json` from the test project directory with a temporary focused config mutating only `**/IPlanSqlDialect.cs`: completed in `00:02:18`; `Killed: 25`, `Survived: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-23.22-20-23/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `1344`, `1346`, `1355`, `1356`, and `1357` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.IPlanSqlDialect.tmp.json` was removed after verification.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans PgsqlPlanDialect Keyset Temp Table DDL Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PgsqlPlanDialect.cs`
+- Mutants selected:
+  - `String mutation`, id `3288`, line `49`: replaced the opening keyset temp-table column-list text with `""`
+- Additional mutants killed by the same assertion:
+  - Focused `PgsqlPlanDialect.cs` run also killed string mutants ids `3285`, `3286`, `3287`, and `3289` around the keyset temp-table DDL.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PgsqlPlanDialectTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PgsqlPlanDialectTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PgsqlPlanDialect"`: passed; `1` test.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.PgsqlPlanDialect.tmp.json` from the test project directory with a temporary focused config mutating only `**/PgsqlPlanDialect.cs`: completed in `00:02:32`; `Killed: 18`, `Survived: 7`, `Timeout: 0`; report `StrykerOutput/2026-06-23.22-25-52/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant id `3288` is `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.PgsqlPlanDialect.tmp.json` was removed after verification.
+  - Focused survivors in `PgsqlPlanDialect.cs` are null-guard statement mutants, which are skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans PlanWriteBatchingConventions Exception Messages
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanWriteBatchingConventions.cs`
+- Mutants selected:
+  - `String mutation`, id `3540`, line `53`: replaced the `parametersPerRow` out-of-range validation message with `""`
+  - `String mutation`, id `3548`, line `64`: replaced the row-width failure message prefix with `$""`
+  - `String mutation`, id `3549`, line `65`: replaced the row-width failure message suffix with `$""`
+- Additional mutants killed by the same assertions:
+  - Focused `PlanWriteBatchingConventions.cs` run also killed statement mutants ids `3539` and `3547` around the two exception throws.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PlanWriteBatchingConventions"`: passed; `11` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.PlanWriteBatchingConventions.tmp.json` from the test project directory with a temporary focused config mutating only `**/PlanWriteBatchingConventions.cs`: completed in `00:02:25`; `Killed: 13`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-23.22-32-21/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3540`, `3548`, and `3549` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.PlanWriteBatchingConventions.tmp.json` was removed after verification.
+  - Focused survivor id `3532`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
+  - Focused no-coverage mutant id `3551`, line `91`, is the unsupported-dialect message in the private `GetLimits` switch.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans PlanWriteBatchingConventions Unsupported Dialect
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanWriteBatchingConventions.cs`
+- Mutants selected:
+  - `String mutation`, id `3551`, line `91`: replaced the unsupported SQL dialect message with `""`
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PlanWriteBatchingConventions"`: passed; `12` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.PlanWriteBatchingConventions.tmp.json` from the test project directory with a temporary focused config mutating only `**/PlanWriteBatchingConventions.cs`: completed in `00:02:28`; `Killed: 14`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-23.22-55-54/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MssqlPlanDialectTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PgsqlPlanDialectTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MssqlPlanDialect|FullyQualifiedName~Given_PgsqlPlanDialect|FullyQualifiedName~Given_PlanWriteBatchingConventions"`: passed; `15` tests.
+- Verification:
+  - Confirmed selected mutant id `3551` is `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.PlanWriteBatchingConventions.tmp.json` was removed after verification.
+  - Focused survivor id `3532`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

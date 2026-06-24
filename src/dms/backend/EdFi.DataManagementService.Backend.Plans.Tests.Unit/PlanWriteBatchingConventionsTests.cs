@@ -46,19 +46,44 @@ public class Given_PlanWriteBatchingConventions
     {
         var act = () => PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(dialect, parametersPerRow);
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("Parameters per row must be at least 1. (Parameter 'parametersPerRow')*")
+            .WithParameterName("parametersPerRow");
     }
 
-    [TestCase(SqlDialect.Mssql, 2101)]
-    [TestCase(SqlDialect.Pgsql, 65536)]
+    [TestCase(
+        SqlDialect.Mssql,
+        2101,
+        "Cannot derive bulk-insert batch size for dialect 'Mssql'. Row width 2101 exceeds max parameters per command (2100)."
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        65536,
+        "Cannot derive bulk-insert batch size for dialect 'Pgsql'. Row width 65536 exceeds max parameters per command (65535)."
+    )]
     public void It_should_fail_fast_when_row_width_exceeds_dialect_parameter_limit(
         SqlDialect dialect,
-        int parametersPerRow
+        int parametersPerRow,
+        string expectedMessage
     )
     {
         var act = () => PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(dialect, parametersPerRow);
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<InvalidOperationException>().WithMessage(expectedMessage);
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_dialect_is_unsupported()
+    {
+        const SqlDialect unsupportedDialect = (SqlDialect)999;
+
+        var act = () => PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(unsupportedDialect, 1);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("Unsupported SQL dialect. (Parameter 'dialect')*")
+            .WithParameterName("dialect");
     }
 
     [Test]

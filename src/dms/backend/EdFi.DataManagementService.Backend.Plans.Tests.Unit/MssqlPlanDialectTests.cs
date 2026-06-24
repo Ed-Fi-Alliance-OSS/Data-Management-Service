@@ -44,4 +44,29 @@ public class Given_MssqlPlanDialect
                 """
             );
     }
+
+    [Test]
+    public void It_should_emit_canonical_document_metadata_select()
+    {
+        _dialect.AppendDocumentMetadataSelect(_writer, _keyset);
+
+        _writer
+            .ToString()
+            .Should()
+            .Be(
+                """
+                SELECT
+                    d.[DocumentId],
+                    d.[DocumentUuid],
+                    d.[ContentVersion],
+                    d.[IdentityVersion],
+                    d.[ContentLastModifiedAt],
+                    d.[IdentityLastModifiedAt]
+                FROM [dms].[Document] d
+                INNER JOIN [#page] k ON d.[DocumentId] = k.[DocumentId]
+                ORDER BY d.[DocumentId];
+
+                """
+            );
+    }
 }
