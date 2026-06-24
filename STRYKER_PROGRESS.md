@@ -1287,3 +1287,30 @@
   - Focused survivor ids `5997` and `6003` are null-guard statement mutants and are skipped by the loop prompt.
   - Briefly inspected `RelationshipAuthorizationAuth1FailurePayload.cs` with a focused baseline report `StrykerOutput/2026-06-24.04-10-11/reports/mutation-report.json`; remaining focused mutants are null guards, equivalent positive-count parsing behavior, or a timeout from removing the SQL Server payload loop increment, so no tests were changed there.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans JsonScopeAttachmentResolver Parser And Attachment Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/JsonScopeAttachmentResolver.cs`
+- Mutants selected:
+  - Unsupported kind and attachment diagnostic string/statement mutants ids `1381`, `1382`, `1386`, `1387`, and `1388`, lines `26`-`45`.
+  - Attachment failure boolean mutant id `1400`, line `77`; unsupported scope segment string mutant id `1427`, line `117`.
+  - Canonical/explicit segment selection mutants ids `1430`, `1433`, `1434`, and `1436`, lines `127`-`133`.
+  - Missing immediate parent diagnostic mutants ids `1447`, `1448`, and `1449`, lines `156`-`158`.
+  - Segment equality and prefix mutants ids `1510`, `1513`, `1516`, and `1521`, lines `231`-`250`.
+  - Restricted canonical parser/tokenizer mutants ids `1532`, `1533`, `1534`, `1535`, `1536`, `1537`, `1539`, `1540`, `1541`, `1542`, `1543`, `1545`, `1548`, `1549`, `1550`, `1551`, `1553`, `1554`, `1555`, `1557`, `1559`, `1560`, `1561`, `1563`, `1564`, `1565`, `1566`, `1568`, `1570`, `1571`, `1573`, `1574`, `1575`, `1576`, `1577`, `1578`, `1579`, `1580`, `1581`, `1582`, `1583`, `1584`, `1585`, and `1586`, lines `266`-`333`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/JsonScopeAttachmentResolverTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/JsonScopeAttachmentResolver.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:55`; `Killed: 42`, `Survived: 7`, `NoCoverage: 60`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-22-03/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/JsonScopeAttachmentResolverTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_JsonScopeAttachmentResolver"`: passed; final run `19` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/JsonScopeAttachmentResolver.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:00`; `Killed: 104`, `Survived: 2`, `Timeout: 3`; report `StrykerOutput/2026-06-24.04-28-51/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed all selected mutant ids listed above are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivor id `1431`, line `128`, appears equivalent because removing the root fast path still parses canonical `$` to the same empty segment list.
+  - Focused survivor id `1506`, line `224`, depends on an explicitly constructed empty extension project segment; the canonical parser rejects empty property segments before this shape is produced.
+  - Focused timeouts ids `1547`, `1556`, and `1569`, lines `282`, `293`, and `314`, are parser loop-control or throw-removal mutations that prevent invalid-token/property parsing from terminating.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
