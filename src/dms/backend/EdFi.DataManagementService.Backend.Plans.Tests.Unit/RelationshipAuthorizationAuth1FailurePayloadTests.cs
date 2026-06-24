@@ -2640,8 +2640,13 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
         var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
         var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
         var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
         var firstHopColumn = new DbColumnName("StudentAcademicRecord_DocumentId");
+        var secondHopColumn = new DbColumnName("StudentSchoolAssociation_DocumentId");
         var subject = CreateTransitivePersonSubject(
             RelationshipAuthorizationPersonAuthViewKind.Student,
             RelationshipAuthorizationPersonKind.Student,
@@ -2655,6 +2660,12 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 ),
                 new ColumnPathStep(
                     studentAcademicRecordTable,
+                    secondHopColumn,
+                    studentSchoolAssociationTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentSchoolAssociationTable,
                     AuthNames.StudentDocumentId,
                     studentTable,
                     new DbColumnName("DocumentId")
@@ -2684,11 +2695,14 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var parameterName = plan.ProposedValueParametersInOrder.Should().ContainSingle().Which.ParameterName;
         var proposedValue = ProposedValueFragment(dialect, parameterName);
         var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var secondHopDocumentId = QuoteIdentifier(dialect, secondHopColumn.Value);
         var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
         var invalidDataColumn = QuoteIdentifier(dialect, "InvalidData");
         var invalidDataPathPredicate =
-            $"{proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL)";
+            $"{proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL)";
+        var authorizationExistsSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
 
         plan.AuthorizationSql.Should()
             .Contain($"SELECT CASE WHEN {invalidDataPathPredicate} THEN 1 ELSE 0 END AS {invalidDataColumn}");
@@ -2696,7 +2710,24 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain($"CASE WHEN invalid_data.{invalidDataColumn} = 1 THEN 'p' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain(
-                $"CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_0.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+                $"CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL AND {authorizationExistsSql}) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "    SELECT",
+                    "        0,",
+                    "        0,",
+                    $"        CASE WHEN invalid_data.{invalidDataColumn} = 1 THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL AND {authorizationExistsSql}) THEN 1 ELSE 0 END",
+                    "",
+                    "    FROM (",
+                    $"        SELECT CASE WHEN {invalidDataPathPredicate} THEN 1 ELSE 0 END AS {invalidDataColumn}",
+                    "    ) invalid_data",
+                    "),",
+                    "failed_subjects AS ("
+                )
             );
         CountOccurrences(plan.AuthorizationSql, invalidDataPathPredicate).Should().Be(1);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
@@ -2986,6 +3017,18 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var failed = QuoteIdentifier(dialect, "Failed");
         var payload = QuoteIdentifier(dialect, "Payload");
         var authorizationResult = QuoteIdentifier(dialect, "AuthorizationResult");
+        var targetEdOrgId = QuoteIdentifier(dialect, AuthNames.TargetEdOrgId.Value);
+        var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var firstProposedValue = ProposedValueFragment(
+            dialect,
+            plan.ProposedValueParametersInOrder[0].ParameterName
+        );
+        var secondProposedValue = ProposedValueFragment(
+            dialect,
+            plan.ProposedValueParametersInOrder[1].ParameterName
+        );
+        var claimEdOrgFilter = ClaimEducationOrganizationIdFilterFragment(dialect);
+        var edOrgAuthRelation = QuoteRelation(dialect, AuthNames.EdOrgIdToEdOrgId);
         var payloadSql =
             dialect is SqlDialect.Pgsql
                 ? $"CONCAT('1|', '21|', COUNT(1)::text, '|', STRING_AGG(CONCAT({strategyOrdinal}, ':', {subjectOrdinal}, ':', {failureKind}), ',' ORDER BY {strategyOrdinal}, {subjectOrdinal}))"
@@ -3003,6 +3046,27 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                     '\n',
                     "WITH",
                     $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+                    "    SELECT",
+                    "        0,",
+                    "        0,",
+                    $"        CASE WHEN {firstProposedValue} IS NULL THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN {firstProposedValue} IS NULL OR NOT ({firstProposedValue}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_0 WHERE a0_0.{targetEdOrgId} = {firstProposedValue} AND a0_0.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+                    "",
+                    "    UNION ALL",
+                    "    SELECT",
+                    "        1,",
+                    "        0,",
+                    $"        CASE WHEN {secondProposedValue} IS NULL THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN {secondProposedValue} IS NULL OR NOT ({secondProposedValue}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a1_0 WHERE a1_0.{sourceEdOrgId} = {secondProposedValue} AND a1_0.{targetEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+                    "",
+                    "),"
                 )
             );
         plan.AuthorizationSql.Should()
