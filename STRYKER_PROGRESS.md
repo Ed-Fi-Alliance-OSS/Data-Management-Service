@@ -475,3 +475,27 @@
   - Focused survivor id `542`, line `161`, appears equivalent after the collision check because the pre-`ToDictionary` ordering of query-field mappings is not externally observable.
   - Focused timeouts ids `482`, `483`, and `489`, lines `21`, `22`, and `24`, are descriptor field-definition string mutations outside this selected diagnostics cluster.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans PageDocumentIdAuthorizationSpecAdapter Failure Branches
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdAuthorizationSpecAdapter.cs`
+- Mutants selected:
+  - `String mutation`, id `2463`, line `21`: replaced the missing claim EducationOrganization parameterization message with `""`.
+  - `Statement mutation`, id `2481`, line `72`: removed the non-root EdOrg subject rejection.
+  - `String mutation`, id `2482`, line `73`: replaced the non-root EdOrg subject message prefix with `$""`.
+  - `String mutation`, id `2483`, line `74`: replaced the non-root EdOrg subject message suffix with `""`.
+  - `Statement mutation`, id `2487`, line `94`: removed the mismatched people stored-anchor root rejection.
+  - `String mutation`, id `2488`, line `95`: replaced the mismatched people stored-anchor root message with `$""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdAuthorizationSpecAdapterTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdAuthorizationSpecAdapterTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdAuthorizationSpecAdapter"`: passed; `14` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.PageDocumentIdAuthorizationSpecAdapter.tmp.json` from the test project directory with a temporary focused config mutating only `**/PageDocumentIdAuthorizationSpecAdapter.cs`: completed in `00:01:54`; `Killed: 10`, `Survived: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-23.23-43-26/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `2463`, `2481`, `2482`, `2483`, `2487`, and `2488` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.PageDocumentIdAuthorizationSpecAdapter.tmp.json` was removed after verification.
+  - Focused survivor ids `2462`, line `16`, and `2476`, line `63`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
