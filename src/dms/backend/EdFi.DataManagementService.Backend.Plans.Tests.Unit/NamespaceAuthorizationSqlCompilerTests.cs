@@ -315,6 +315,43 @@ public class Given_NamespaceAuthorizationSqlCompiler
         act.Should().Throw<ArgumentException>().WithMessage("*at least one check*");
     }
 
+    [TestCase(
+        "document-id",
+        "proposedNamespace",
+        nameof(NamespaceAuthorizationSqlSpec.DocumentIdParameterName)
+    )]
+    [TestCase(
+        "documentId",
+        "proposed-namespace",
+        nameof(NamespaceAuthorizationSqlSpec.ProposedNamespaceParameterName)
+    )]
+    public void It_rejects_invalid_single_record_namespace_authorization_parameter_names(
+        string documentIdParameterName,
+        string proposedNamespaceParameterName,
+        string expectedParameterName
+    )
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var spec = new NamespaceAuthorizationSqlSpec(
+            [StoredCheck(0)],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            ),
+            documentIdParameterName,
+            proposedNamespaceParameterName
+        );
+
+        var act = () => compiler.Compile(spec);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Parameter name must match pattern*")
+            .WithParameterName(expectedParameterName);
+    }
+
     [Test]
     public void It_throws_when_a_namespace_check_uses_an_unsupported_value_source()
     {

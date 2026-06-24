@@ -533,3 +533,25 @@
   - Focused survivors ids `2145` and `2146`, lines `60` and `64`, are bare-parameter-name validation mutants outside this selected SQL block-shape cluster.
   - Focused survivor id `2153`, line `81`, and no-coverage id `2287`, line `281`, are unsupported-dialect defensive-message paths that are unreachable through the public compiler constructor because `SqlDialectFactory.Create` rejects unsupported dialect values first.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans NamespaceAuthorizationSqlCompiler Parameter Name Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespaceAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - `Statement mutation`, id `2145`, line `60`: removed `DocumentIdParameterName` bare-parameter-name validation.
+  - `Statement mutation`, id `2146`, line `64`: removed `ProposedNamespaceParameterName` bare-parameter-name validation.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespaceAuthorizationSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespaceAuthorizationSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_NamespaceAuthorizationSqlCompiler"`: passed; `16` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.NamespaceAuthorizationSqlCompiler.tmp.json` from the test project directory with a temporary focused config mutating only `**/NamespaceAuthorizationSqlCompiler.cs`: completed in `00:02:02`; `Killed: 118`, `Survived: 4`, `NoCoverage: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-23.23-54-22/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `2145` and `2146` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.NamespaceAuthorizationSqlCompiler.tmp.json` was removed after verification.
+  - Focused survivors ids `2142`, `2143`, and `2144`, lines `57`-`59`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `2153`, line `81`, and no-coverage id `2287`, line `281`, remain unsupported-dialect defensive-message paths that are unreachable through the public compiler constructor because `SqlDialectFactory.Create` rejects unsupported dialect values first.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
