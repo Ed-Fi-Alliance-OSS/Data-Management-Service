@@ -170,6 +170,29 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// Get a specific XSD file under a tenant prefix
+    /// </summary>
+    public async Task<HttpResponseMessage> GetXsdFileWithTenantAsync(
+        string tenant,
+        string section,
+        string fileName
+    )
+    {
+        var url = $"/{tenant}/metadata/xsd/{section}/{fileName}.xsd";
+
+        // Use shared HttpClient for unauthenticated requests
+        if (string.IsNullOrEmpty(_accessToken))
+        {
+            var fullUrl = $"{_baseUrl}{url}";
+            var response = await _sharedHttpClient.GetAsync(fullUrl);
+            return response;
+        }
+
+        var authenticatedResponse = await _httpClient.GetAsync(url);
+        return authenticatedResponse;
+    }
+
+    /// <summary>
     /// GET view-claimsets management endpoint (tenant-aware)
     /// </summary>
     public async Task<HttpResponseMessage> GetViewClaimsetsAsync(string? tenant = null)

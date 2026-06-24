@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -14,14 +13,8 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
+public class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
-    [GeneratedRegex(@"\/(?<section>[^/]+)\/files?")]
-    private static partial Regex PathExpressionRegex();
-
-    [GeneratedRegex(@"\/(?<section>[^/]+)\/(?<fileName>[^/]+).xsd?")]
-    private static partial Regex FilePathExpressionRegex();
-
     private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -81,16 +74,14 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
             return;
         }
 
-        var request = httpContext.Request;
-        Match match = PathExpressionRegex().Match(request.Path);
-        if (!match.Success)
+        string? section = httpContext.Request.RouteValues["section"] as string;
+        if (string.IsNullOrEmpty(section))
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(ErrorResourcePath);
             return;
         }
 
-        string section = match.Groups["section"].Value;
         if (!contentProvider.IsXsdSectionKnown(section))
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
@@ -98,7 +89,12 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
             return;
         }
 
-        var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
+        const string fileListSegment = "/files";
+        var url = httpContext.Request.UrlWithPathSegment();
+        var baseUrl = url.EndsWith(fileListSegment, StringComparison.Ordinal)
+            ? $"{url[..^fileListSegment.Length]}/"
+            : url;
+
         var withFullPath = new List<string>();
         var xsdFiles = contentProvider.ListXsdFiles(section);
 
@@ -126,14 +122,13 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
             return Results.Empty;
         }
 
-        var request = httpContext.Request;
-        Match match = FilePathExpressionRegex().Match(request.Path);
-        if (!match.Success)
+        string? section = httpContext.Request.RouteValues["section"] as string;
+        string? fileName = httpContext.Request.RouteValues["fileName"] as string;
+        if (string.IsNullOrEmpty(section) || string.IsNullOrEmpty(fileName))
         {
             return Results.NotFound(ErrorResourcePath);
         }
-        string section = match.Groups["section"].Value;
-        var fileName = match.Groups["fileName"].Value;
+
         var fileFullName = $"{fileName}.xsd";
         var content = contentProvider.TryLoadXsdContent(fileFullName, section);
         if (content is not null)

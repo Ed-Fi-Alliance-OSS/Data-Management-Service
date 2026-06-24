@@ -16,6 +16,7 @@ using FluentAssertions;
 using ImpromptuInterface;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -264,6 +265,184 @@ public class XsdMetaDataModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task MultiTenant_XsdMetaData_Files_Returns_Xsd_File_Content()
+    {
+        // Arrange
+        Lazy<Stream> fileStream = new(() =>
+        {
+            var content = "test-content";
+            MemoryStream ms = new(Encoding.UTF8.GetBytes(content));
+            return ms;
+        });
+
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("test.xsd", "ed-fi")).Returns(fileStream);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => _apiService!);
+                    collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/tenant1/metadata/xsd/ed-fi/test.xsd");
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("test-content");
+    }
+
+    [Test]
+    public async Task MultiTenant_XsdMetaData_Files_Returns_404_For_Missing_File()
+    {
+        // Arrange
+        A.CallTo(() => _contentProvider!.TryLoadXsdContent("not-exists.xsd", "ed-fi"))
+            .Returns((Lazy<Stream>?)null);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => _apiService!);
+                    collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/tenant1/metadata/xsd/ed-fi/not-exists.xsd");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task MultiTenant_XsdMetaData_Returns_Files()
+    {
+        // Arrange
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => _apiService!);
+                    collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/tenant1/metadata/xsd/ed-fi/files");
+        var content = await response.Content.ReadAsStringAsync();
+
+        var files = JsonSerializer.Deserialize<List<string>>(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        files.Should().NotBeNull();
+        files?.Count().Should().Be(3);
+    }
+
+    [Test]
+    public async Task MultiTenant_XsdMetaData_FileListUrl_Is_Not_Corrupted_When_Tenant_Or_Section_Contains_Files()
+    {
+        // Arrange: section "myfiles" and tenant "tenantfiles1" both contain the word "files".
+        // The old .Replace("files","") approach would corrupt the URLs; verify it does not.
+        var files = new List<string> { "a.xsd" };
+        A.CallTo(() => _contentProvider!.IsXsdSectionKnown("myfiles")).Returns(true);
+        A.CallTo(() => _contentProvider!.ListXsdFiles("myfiles")).Returns(files);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => _apiService!);
+                    collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/tenantfiles1/metadata/xsd/myfiles/files");
+        var content = await response.Content.ReadAsStringAsync();
+
+        var returnedFiles = JsonSerializer.Deserialize<List<string>>(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        returnedFiles.Should().NotBeNull();
+        returnedFiles.Should().Equal("http://localhost/tenantfiles1/metadata/xsd/myfiles/a.xsd");
     }
 }
 
