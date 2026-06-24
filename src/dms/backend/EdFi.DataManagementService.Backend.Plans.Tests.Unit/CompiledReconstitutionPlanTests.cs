@@ -270,6 +270,116 @@ public class Given_CompiledReconstitutionPlanTests_With_Sibling_Collections
 }
 
 [TestFixture]
+public class Given_CompiledReconstitutionPlanTests_With_Invalid_Topology
+{
+    [Test]
+    public void It_should_report_missing_root_parent_for_root_extension_tables()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateRootExtensionWithoutRootReadPlan()
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.StudentSchoolAssociation");
+        exception.Message.Should().Contain("table 'edfi.SchoolExtension'");
+        exception.Message.Should().Contain("at scope '$._ext.Sample'");
+        exception.Message.Should().Contain("expected exactly one root table at scope '$', but found none.");
+    }
+
+    [Test]
+    public void It_should_report_missing_collection_parent_for_collection_extension_scope_tables()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateCollectionExtensionScopeWithoutCollectionReadPlan()
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.StudentSchoolAssociation");
+        exception.Message.Should().Contain("table 'edfi.SchoolAddressExtension'");
+        exception.Message.Should().Contain("at scope '$.addresses[*]._ext.Sample'");
+        exception
+            .Message.Should()
+            .Contain(
+                "expected exactly one collection table aligned to the extended base scope at scope '$.addresses[*]', but found none."
+            );
+    }
+
+    [Test]
+    public void It_should_report_ambiguous_parent_table_matches()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateAmbiguousCollectionParentReadPlan()
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.StudentSchoolAssociation");
+        exception.Message.Should().Contain("table 'edfi.SchoolAddress'");
+        exception.Message.Should().Contain("at scope '$.addresses[*]'");
+        exception
+            .Message.Should()
+            .Contain(
+                "expected exactly one root or collection table at scope '$', but found 2: 'edfi.School', 'edfi.AlternateSchool'."
+            );
+    }
+
+    [Test]
+    public void It_should_report_unsupported_table_kinds()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateUnsupportedTableKindReadPlan()
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.StudentSchoolAssociation");
+        exception
+            .Message.Should()
+            .Contain(
+                "table 'edfi.UnsupportedTable' uses unsupported table kind 'Unspecified' for page topology."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_CompiledReconstitutionPlanTests_With_Invalid_Hydration_Metadata
+{
+    [Test]
+    public void It_should_report_duplicate_hydration_columns()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateDuplicateHydrationColumnReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for 'edfi.School': duplicate hydration column 'DocumentId' was encountered."
+            );
+    }
+
+    [Test]
+    public void It_should_report_duplicate_tables_when_building_column_ordinals()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CompiledReconstitutionPlanCache.GetOrBuild(
+                CompiledReconstitutionPlanTestData.CreateDuplicateTableReadPlan()
+            )
+        )!;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Cannot build compiled reconstitution plan for resource 'Ed-Fi.StudentSchoolAssociation': duplicate table 'edfi.School' was encountered."
+            );
+    }
+}
+
+[TestFixture]
 public class Given_CompiledReconstitutionPlanTests_With_ScopeKey
 {
     private ScopeKey _first = null!;
@@ -420,6 +530,78 @@ file static class CompiledReconstitutionPlanTestData
         return CreateReadPlan([rootTable, addressTable, contactTable], []);
     }
 
+    public static ResourceReadPlan CreateRootExtensionWithoutRootReadPlan()
+    {
+        var rootExtensionTable = CreateRootExtensionTable("SchoolExtension");
+
+        return CreateReadPlan([rootExtensionTable], []);
+    }
+
+    public static ResourceReadPlan CreateCollectionExtensionScopeWithoutCollectionReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var extensionScopeTable = CreateCollectionExtensionScopeTable("SchoolAddressExtension");
+
+        return CreateReadPlan([rootTable, extensionScopeTable], []);
+    }
+
+    public static ResourceReadPlan CreateAmbiguousCollectionParentReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var alternateRootTable = CreateRootTable(
+            "AlternateSchool",
+            [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]
+        );
+        var addressTable = CreateCollectionTable("SchoolAddress", "$.addresses[*]", "addresses");
+
+        return CreateReadPlan([rootTable, alternateRootTable, addressTable], []);
+    }
+
+    public static ResourceReadPlan CreateUnsupportedTableKindReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var unsupportedTable = CreateTable(
+            tableName: "UnsupportedTable",
+            jsonScope: CreatePath(
+                "$.unsupported[*]",
+                new JsonPathSegment.Property("unsupported"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.Unspecified,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")]
+        );
+
+        return CreateReadPlan([rootTable, unsupportedTable], []);
+    }
+
+    public static ResourceReadPlan CreateDuplicateHydrationColumnReadPlan()
+    {
+        var rootTable = CreateRootTable(
+            "School",
+            [
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+            ]
+        );
+
+        return CreateReadPlan([rootTable], []);
+    }
+
+    public static ResourceReadPlan CreateDuplicateTableReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var duplicateRootTable = CreateRootTable(
+            "School",
+            [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]
+        );
+
+        return CreateReadPlan([rootTable, duplicateRootTable], []);
+    }
+
     private static RelationalResourceModel CreateDescriptorProjectionModel()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "Assessment");
@@ -541,25 +723,16 @@ file static class CompiledReconstitutionPlanTestData
 
     private static DbTableModel CreateRootTable(string tableName, IReadOnlyList<DbColumnModel> columns)
     {
-        return new DbTableModel(
-            Table: new DbTableName(_schema, tableName),
-            JsonScope: CreatePath("$"),
-            Key: new TableKey(
-                ConstraintName: $"PK_{tableName}",
-                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            Columns: columns,
-            Constraints: []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                TableKind: DbTableKind.Root,
-                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
-                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
-                ImmediateParentScopeLocatorColumns: [],
-                SemanticIdentityBindings: []
-            ),
-        };
+        return CreateTable(
+            tableName: tableName,
+            jsonScope: CreatePath("$"),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: columns,
+            tableKind: DbTableKind.Root,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: []
+        );
     }
 
     private static DbTableModel CreateCollectionTable(
@@ -568,30 +741,92 @@ file static class CompiledReconstitutionPlanTestData
         string scopeProperty
     )
     {
-        return new DbTableModel(
-            Table: new DbTableName(_schema, tableName),
-            JsonScope: CreatePath(
+        return CreateTable(
+            tableName: tableName,
+            jsonScope: CreatePath(
                 canonicalScope,
                 new JsonPathSegment.Property(scopeProperty),
                 new JsonPathSegment.AnyArrayElement()
             ),
-            Key: new TableKey(
-                ConstraintName: $"PK_{tableName}",
-                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
-            ),
-            Columns:
+            keyColumns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)],
+            columns:
             [
                 CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
                 CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
             ],
+            tableKind: DbTableKind.Collection,
+            physicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")]
+        );
+    }
+
+    private static DbTableModel CreateRootExtensionTable(string tableName)
+    {
+        return CreateTable(
+            tableName: tableName,
+            jsonScope: CreatePath(
+                "$._ext.Sample",
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("Sample")
+            ),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.RootExtension,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")]
+        );
+    }
+
+    private static DbTableModel CreateCollectionExtensionScopeTable(string tableName)
+    {
+        return CreateTable(
+            tableName: tableName,
+            jsonScope: CreatePath(
+                "$.addresses[*]._ext.Sample",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("Sample")
+            ),
+            keyColumns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)],
+            columns:
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+            ],
+            tableKind: DbTableKind.CollectionExtensionScope,
+            physicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("CollectionItemId")]
+        );
+    }
+
+    private static DbTableModel CreateTable(
+        string tableName,
+        JsonPathExpression jsonScope,
+        IReadOnlyList<DbKeyColumn> keyColumns,
+        IReadOnlyList<DbColumnModel> columns,
+        DbTableKind tableKind,
+        IReadOnlyList<DbColumnName> physicalRowIdentityColumns,
+        IReadOnlyList<DbColumnName> rootScopeLocatorColumns,
+        IReadOnlyList<DbColumnName> immediateParentScopeLocatorColumns
+    )
+    {
+        return new DbTableModel(
+            Table: new DbTableName(_schema, tableName),
+            JsonScope: jsonScope,
+            Key: new TableKey(ConstraintName: $"PK_{tableName}", Columns: keyColumns),
+            Columns: columns,
             Constraints: []
         )
         {
             IdentityMetadata = new DbTableIdentityMetadata(
-                TableKind: DbTableKind.Collection,
-                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
-                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
-                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                TableKind: tableKind,
+                PhysicalRowIdentityColumns: physicalRowIdentityColumns,
+                RootScopeLocatorColumns: rootScopeLocatorColumns,
+                ImmediateParentScopeLocatorColumns: immediateParentScopeLocatorColumns,
                 SemanticIdentityBindings: []
             ),
         };
