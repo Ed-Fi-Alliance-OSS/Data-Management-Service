@@ -1496,3 +1496,34 @@
   - Focused timeouts ids `2526`, `2530`, and `2534` are predicate duplicate-scan loop-control mutations.
   - Focused survivors remain in PageDocumentId authorization SQL parentheses, People path validation, unsupported enum diagnostics, and duplicate semantic-predicate diagnostics outside this selected join and ordering cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageDocumentIdSqlCompiler Authorization SQL Shape And Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`
+- Mutants selected:
+  - Namespace authorization group separator mutants ids `2741`, `2745`, and `2747`, lines `673` and `675`.
+  - Namespace check root-table diagnostic string mutant id `2756`, line `709`.
+  - Authorization strategy close-parenthesis mutants ids `2775` and `2777`, line `738`.
+  - Transitive People authorization subquery close mutants ids `2851` and `2853`, line `940`.
+  - Direct People authorization subquery close mutants ids `2875` and `2877`, line `969`.
+  - People auth-view membership close mutants ids `2895` and `2897`, line `990`.
+  - EdOrg authorization subject root-table diagnostic mutants ids `2901`, `2902`, and `2903`, lines `1003`-`1005`.
+  - Direct-claim authorization group close mutants ids `2914` and `2916`, line `1021`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: first run failed because a newly combined direct-claim assertion omitted the authorization table `FROM` fragment.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded after fixing the assertion.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; `120` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: first focused run completed in `00:02:51`; `Killed: 326`, `Survived: 37`, `Timeout: 3`; report `StrykerOutput/2026-06-24.05-47-38/reports/mutation-report.json`. It killed the namespace, strategy, and diagnostics mutants, but the People/direct-claim close assertions were still too loose.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded after tightening close-count assertions.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; `120` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:49`; `Killed: 334`, `Survived: 29`, `NoCoverage: 22`, `Timeout: 3`; report `StrykerOutput/2026-06-24.05-51-37/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `2741`, `2745`, `2747`, `2756`, `2775`, `2777`, `2851`, `2853`, `2875`, `2877`, `2895`, `2897`, `2901`, `2902`, `2903`, `2914`, and `2916` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain in null/argument validation paths, unsupported enum diagnostics, People path validation diagnostics, duplicate semantic-predicate helper behavior, and ordering mutants already noted in prior PageDocumentIdSqlCompiler entries.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
