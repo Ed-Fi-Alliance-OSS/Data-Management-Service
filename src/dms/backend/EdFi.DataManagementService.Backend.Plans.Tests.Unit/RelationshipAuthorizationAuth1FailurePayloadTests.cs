@@ -2054,17 +2054,26 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
         var failureKind = QuoteIdentifier(dialect, "FailureKind");
         var failed = QuoteIdentifier(dialect, "Failed");
+        var payload = QuoteIdentifier(dialect, "Payload");
+        var authorizationResult = QuoteIdentifier(dialect, "AuthorizationResult");
+        var contentVersion = QuoteIdentifier(dialect, "ContentVersion");
         var schoolId = QuoteIdentifier(dialect, "SchoolId");
         var localEducationAgencyId = QuoteIdentifier(dialect, "LocalEducationAgencyId");
         var targetEdOrgId = QuoteIdentifier(dialect, AuthNames.TargetEdOrgId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
         var edOrgAuthRelation = QuoteRelation(dialect, AuthNames.EdOrgIdToEdOrgId);
         var claimEdOrgFilter = ClaimEducationOrganizationIdFilterFragment(dialect);
+        var authorizationSuccessSql =
+            $"NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 0)";
+        var auth1AbortSql =
+            dialect is SqlDialect.Pgsql
+                ? $"{QuoteIdentifier(dialect, "dms")}.{QuoteIdentifier(dialect, "throw_error")}('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode}', (SELECT {payload} FROM failure_payload))"
+                : $"CAST(CONCAT('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode} - ', (SELECT {payload} FROM failure_payload)) AS INT)";
         var expectedTargetCtePrefix = string.Join(
             '\n',
             "WITH target AS (",
             "    SELECT",
-            $"        d.{QuoteIdentifier(dialect, "ContentVersion")},",
+            $"        d.{contentVersion},",
             $"        r.{QuoteIdentifier(dialect, "LocalEducationAgencyId")},",
             $"        r.{QuoteIdentifier(dialect, "SchoolId")}",
             $"    FROM {QuoteRelation(dialect, schoolTable)} r",
@@ -2112,13 +2121,16 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             );
         plan.AuthorizationSql.Should().Contain(")\nSELECT CASE");
         plan.AuthorizationSql.Should()
-            .Contain(
+            .EndWith(
                 string.Join(
                     '\n',
-                    $"END AS {QuoteIdentifier(dialect, "AuthorizationResult")},",
-                    QuoteIdentifier(dialect, "ContentVersion"),
+                    "SELECT CASE",
+                    $"    WHEN {authorizationSuccessSql} THEN 1",
+                    $"    ELSE {auth1AbortSql}",
+                    $"END AS {authorizationResult},",
+                    contentVersion,
                     "FROM target;"
-                )
+                ) + "\n"
             );
     }
 
@@ -2885,6 +2897,72 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         CountOccurrences(plan.AuthorizationSql, invalidDataPathPredicate).Should().Be(1);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_transitive_people_paths_with_disconnected_steps()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var firstHopColumn = new DbColumnName("StudentAcademicRecord_DocumentId");
+        var secondHopColumn = new DbColumnName("StudentSchoolAssociation_DocumentId");
+        var subject = CreateTransitivePersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            rootTable,
+            [
+                new ColumnPathStep(
+                    rootTable,
+                    firstHopColumn,
+                    studentAcademicRecordTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentSchoolAssociationTable,
+                    secondHopColumn,
+                    studentTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentTable,
+                    AuthNames.StudentDocumentId,
+                    studentTable,
+                    new DbColumnName("DocumentId")
+                ),
+            ]
+        );
+        var proposedBinding = CreateProposedBinding(rootTable, firstHopColumn);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateProposedPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            subject,
+                            RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+                            proposedBinding
+                        ),
+                    ],
+                    parameterization,
+                    20
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*path step 1 source table*does not match previous target table*");
     }
 
     [Test]
