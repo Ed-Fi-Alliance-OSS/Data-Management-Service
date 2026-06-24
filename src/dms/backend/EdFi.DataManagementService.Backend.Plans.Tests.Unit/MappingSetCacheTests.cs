@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
@@ -246,6 +247,67 @@ public class Given_MappingSetCache
         compileInvocationCount.Should().Be(1, "compilation should happen only once during cooldown");
     }
 
+    [Test]
+    public async Task It_should_log_cache_hits_with_the_mapping_set_key()
+    {
+        var key = CreateMappingSetKey(new string('h', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var logger = new CapturingLogger<MappingSetCache>();
+        var cache = new MappingSetCache((_, _) => Task.FromResult(compiledMappingSet), logger);
+
+        await cache.GetOrCreateAsync(key, CancellationToken.None);
+
+        var cachedResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
+
+        cachedResult.Should().BeSameAs(compiledMappingSet);
+        logger
+            .Records.Should()
+            .ContainSingle(record =>
+                record.Level == LogLevel.Debug
+                && record.Message
+                    == $"Mapping set cache hit for EffectiveSchemaHash {key.EffectiveSchemaHash}, Dialect {key.Dialect}"
+            );
+    }
+
+    [Test]
+    public async Task It_should_evict_faulted_entry_after_cooldown_period()
+    {
+        var key = CreateMappingSetKey(new string('i', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(
+            async (_, _) =>
+            {
+                var invocationCount = Interlocked.Increment(ref compileInvocationCount);
+                await Task.Yield();
+
+                if (invocationCount == 1)
+                {
+                    throw new InvalidOperationException("transient failure");
+                }
+
+                return compiledMappingSet;
+            },
+            failureCooldown: TimeSpan.FromMilliseconds(20)
+        );
+
+        var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
+        await firstAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("transient failure");
+
+        var duringCooldownAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
+        await duringCooldownAct
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("transient failure");
+        compileInvocationCount.Should().Be(1);
+
+        var result = await WaitForSuccessfulRetryAsync(cache, key);
+
+        result.Should().BeSameAs(compiledMappingSet);
+        compileInvocationCount.Should().Be(2);
+    }
+
     private static MappingSetKey CreateMappingSetKey(
         string effectiveSchemaHash,
         SqlDialect dialect,
@@ -333,4 +395,58 @@ public class Given_MappingSetCache
 
         return hash;
     }
+
+    private static async Task<MappingSet> WaitForSuccessfulRetryAsync(
+        MappingSetCache cache,
+        MappingSetKey key
+    )
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        InvalidOperationException? lastFailure = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20));
+
+            try
+            {
+                return await cache.GetOrCreateAsync(key, CancellationToken.None);
+            }
+            catch (InvalidOperationException ex)
+            {
+                lastFailure = ex;
+            }
+        }
+
+        throw new AssertionException(
+            $"Expected the faulted mapping set cache entry to be evicted after its cooldown. Last failure: {lastFailure?.Message}"
+        );
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogRecord> _records = [];
+
+        public IReadOnlyList<LogRecord> Records => _records;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+
+            _records.Add(new LogRecord(logLevel, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed record LogRecord(LogLevel Level, string Message, Exception? Exception);
 }

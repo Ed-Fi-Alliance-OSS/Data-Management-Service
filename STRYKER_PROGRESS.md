@@ -1444,3 +1444,27 @@
 - Remaining notes:
   - Focused survivor ids `1926`, `1957`, and `1968`, lines `73`, `148`, and `174`, are `ConfigureAwait(false)` boolean mutations to `ConfigureAwait(true)` and appear equivalent for observable behavior.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans MappingSetCache Hit Logging And Cooldown Eviction
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCache.cs`
+- Mutants selected:
+  - Cache-hit logger selection and message mutants ids `1803`, `1810`, and `1811`, lines `27` and `61`-`62`.
+  - Delayed failure-cooldown eviction mutants ids `1833` and `1837`, lines `133` and `148`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCacheTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCache.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:58`; `Killed: 6`, `Survived: 9`, `NoCoverage: 3`, `Timeout: 6`; report `StrykerOutput/2026-06-24.05-20-14/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCacheTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MappingSetCache"`: passed; `8` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCache.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:06`; `Killed: 11`, `Survived: 5`, `NoCoverage: 2`, `Timeout: 6`; report `StrykerOutput/2026-06-24.05-23-50/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `1803`, `1810`, `1811`, `1833`, and `1837` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivor id `1814` and no-coverage ids `1817` and `1818` are private null/double-start defensive guard mutants and are skipped by this loop.
+  - Focused survivor ids `1812`, `1821`, and `1836` are `ConfigureAwait(false)` boolean mutations to `ConfigureAwait(true)` and appear equivalent for observable behavior.
+  - Focused survivor id `1829`, line `127`, changes `failureCooldown <= TimeSpan.Zero` to `< TimeSpan.Zero`; with `TimeSpan.Zero`, the mutated async delayed eviction also completes immediately, so this appears equivalent at the public cache contract.
+  - Focused timeouts ids `1806`, `1808`, `1815`, `1822`, `1825`, and `1827` are wait/completion-control mutations that prevent the public asynchronous calls from completing rather than exposing a stable additional assertion.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
