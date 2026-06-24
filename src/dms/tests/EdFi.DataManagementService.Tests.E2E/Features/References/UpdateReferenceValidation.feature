@@ -165,7 +165,7 @@ Feature: Update Reference Validation
         @API-114
         @relational-backend
         @relational-ci-shard-4
-        Scenario: 05 Ensure clients cannot update a resource's identifying deep reference
+        Scenario: 05 Ensure clients cannot update a resource with an unresolved identifying deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
                   | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}] | {"educationOrganizationId":255901} | Algebra I   | 1             |
@@ -178,7 +178,6 @@ Feature: Update Reference Validation
               And the system has these "sections"
                   | sectionIdentifier           | courseOfferingReference                                                                                    |
                   | 25590100102Trad220ALG112011 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
-                  | 25590100102Trad220ALG112099 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
               And the system has these "studentSectionAssociations" references
                   | beginDate  | sectionReference                                                                                                                                                 | studentReference             |
                   | 2021-08-23 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear": 2022, "sectionIdentifier":"25590100102Trad220ALG112011", "sessionName":"2021-2022 Fall Semester"  } | {"studentUniqueId":"604834"} |
@@ -199,16 +198,20 @@ Feature: Update Reference Validation
                       "beginDate": "2021-08-23"
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Identifying values for the StudentSectionAssociation resource cannot be changed. Delete and recreate the resource item instead.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-                      "title": "Key Change Not Supported",
-                      "status": 400,
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
+                      "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.sectionReference": [
+                              "The referenced Section item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
