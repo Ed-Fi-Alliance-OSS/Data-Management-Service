@@ -2821,6 +2821,98 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().NotContain("@DocumentId");
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_proposed_auth1_sql_with_expected_ctes_payload_and_final_select(
+        SqlDialect dialect
+    )
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Inverted,
+                        1,
+                        1,
+                        CreateSubject(
+                            "LocalEducationAgencyId",
+                            "$.localEducationAgencyReference.localEducationAgencyId"
+                        )
+                    ),
+                ],
+                parameterization,
+                21
+            )
+        );
+
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var payload = QuoteIdentifier(dialect, "Payload");
+        var authorizationResult = QuoteIdentifier(dialect, "AuthorizationResult");
+        var payloadSql =
+            dialect is SqlDialect.Pgsql
+                ? $"CONCAT('1|', '21|', COUNT(1)::text, '|', STRING_AGG(CONCAT({strategyOrdinal}, ':', {subjectOrdinal}, ':', {failureKind}), ',' ORDER BY {strategyOrdinal}, {subjectOrdinal}))"
+                : $"CONCAT('1|', '21|', COUNT(1), '|', STRING_AGG(CONCAT({strategyOrdinal}, ':', {subjectOrdinal}, ':', {failureKind}), ',') WITHIN GROUP (ORDER BY {strategyOrdinal}, {subjectOrdinal}))";
+        var authorizationSuccessSql =
+            $"NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 1)";
+        var auth1AbortSql =
+            dialect is SqlDialect.Pgsql
+                ? $"{QuoteIdentifier(dialect, "dms")}.{QuoteIdentifier(dialect, "throw_error")}('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode}', (SELECT {payload} FROM failure_payload))"
+                : $"CAST(CONCAT('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode} - ', (SELECT {payload} FROM failure_payload)) AS INT)";
+
+        plan.AuthorizationSql.Should()
+            .StartWith(
+                string.Join(
+                    '\n',
+                    "WITH",
+                    $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "),",
+                    "failed_subjects AS (",
+                    "    SELECT * FROM subject_failures",
+                    $"    WHERE {failed} = 1",
+                    "),",
+                    "failure_payload AS (",
+                    $"    SELECT {payloadSql} AS {payload}",
+                    "    FROM failed_subjects",
+                    ")",
+                    "SELECT CASE"
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .EndWith(
+                string.Join(
+                    '\n',
+                    "SELECT CASE",
+                    $"    WHEN {authorizationSuccessSql} THEN 1",
+                    $"    ELSE {auth1AbortSql}",
+                    $"END AS {authorizationResult}",
+                    ";"
+                ) + "\n"
+            );
+        plan.AuthorizationSql.Should().NotContain(QuoteIdentifier(dialect, "ContentVersion"));
+    }
+
     [Test]
     public void It_should_reject_postgresql_proposed_auth1_sql_for_non_edorg_hierarchy_auth_object()
     {

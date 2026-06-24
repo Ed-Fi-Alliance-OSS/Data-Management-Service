@@ -775,3 +775,25 @@
   - Focused survivors ids `6337` and `6338`, lines `66`-`67`, are null-guard statement mutants and are skipped by the loop prompt.
   - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected validation-boundary cluster, including proposed SQL assembly, final select internals, and subject failure payload shape.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Proposed CTE And Payload Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - Proposed SQL assembly statement/string/boolean mutants ids `6523`, `6524`, `6526`, `6527`, `6528`, `6529`, `6530`, `6532`, and `6535`, lines `577`-`587`.
+  - Failure payload CTE projection and source mutants ids `7082`, `7084`, `7088`, `7090`, `7091`, `7092`, `7093`, and `7094`, lines `1404`-`1423`.
+  - Final SELECT/auth result statement/string mutants ids `7102`, `7104`, `7106`, `7107`, `7108`, `7110`, `7112`, `7128`, and `7129`, lines `1440`-`1465`.
+  - PostgreSQL and SQL Server payload ordering/abort mutants ids `7140`, `7141`, `7143`, `7144`, `7145`, `7147`, `7148`, `7149`, `7151`, `7152`, `7153`, `7155`, `7156`, `7157`, `7159`, `7170`, `7171`, `7173`, `7174`, `7175`, `7177`, `7178`, `7179`, `7181`, `7182`, `7183`, `7185`, `7186`, `7187`, `7189`, `7192`, `7196`, `7235`, `7236`, `7238`, `7239`, `7241`, and `7243`, lines `1476`-`1541`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: first run failed because the expected final SQL suffix omitted the terminal newline; final run passed with `56` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:53`; `Killed: 543`, `Survived: 87`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-22-25/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6523`, `6524`, `6526`, `6527`, `6528`, `6529`, `6530`, `6532`, `6535`, `7082`, `7084`, `7088`, `7090`, `7091`, `7092`, `7093`, `7094`, `7102`, `7104`, `7106`, `7107`, `7108`, `7110`, `7112`, `7128`, `7129`, `7140`, `7141`, `7143`, `7144`, `7145`, `7147`, `7148`, `7149`, `7151`, `7152`, `7153`, `7155`, `7156`, `7157`, `7159`, `7170`, `7171`, `7173`, `7174`, `7175`, `7177`, `7178`, `7179`, `7181`, `7182`, `7183`, `7185`, `7186`, `7187`, `7189`, `7192`, `7196`, `7235`, `7236`, `7238`, `7239`, `7241`, and `7243` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected proposed CTE/payload cluster, including stored subject failure SQL, stored/proposed People path SQL, parameter naming/collision diagnostics, and unsupported-dialect diagnostics.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
