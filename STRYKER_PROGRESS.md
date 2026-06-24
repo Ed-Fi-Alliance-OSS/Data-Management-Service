@@ -1314,3 +1314,32 @@
   - Focused survivor id `1506`, line `224`, depends on an explicitly constructed empty extension project segment; the canonical parser rejects empty property segments before this shape is produced.
   - Focused timeouts ids `1547`, `1556`, and `1569`, lines `282`, `293`, and `314`, are parser loop-control or throw-removal mutations that prevent invalid-token/property parsing from terminating.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans RelationshipAuthorizationFailureMapper No-Claims And Ordinal Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs`
+- Mutants selected:
+  - No-claims metadata validation and value-source consistency mutants ids `5426`, `5428`, `5433`, `5434`, `5435`, `5436`, `5443`, `5445`, and `5447`, lines `34`-`51`.
+  - No-claims strategy ordering, local-order tie-break, and sorted claim-id mutants ids `5451`, `5452`, and `5469`, lines `68` and `125`.
+  - AUTH1 unknown strategy ordinal validation mutants ids `5503`, `5508`, and `5510`, lines `190`-`191`.
+  - People and non-person no-claims metadata fallback mutants ids `5544`, `5545`, `5546`, `5547`, `5555`, `5556`, `5557`, `5558`, `5559`, `5560`, `5561`, `5574`, `5585`, and `5586`, lines `337`-`394`.
+  - Strategy hint selection mutants ids `5593` and `5594`, line `416`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MssqlPlanDialect.cs" --concurrency 8` from the test project directory: exploratory focused run completed in `00:02:05`; only null-guard survivors remained.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PgsqlPlanDialect.cs" --concurrency 8` from the test project directory: exploratory focused run completed in `00:02:03`; only null-guard survivors remained.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:51`; `Killed: 62`, `Survived: 44`, `NoCoverage: 23`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-39-06/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationFailureMapper"`: passed; final run `27` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs" --concurrency 8` from the test project directory: final focused run completed in `00:01:54`; `Killed: 101`, `Survived: 17`, `NoCoverage: 11`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-48-23/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `5426`, `5428`, `5433`, `5434`, `5435`, `5436`, `5443`, `5445`, `5447`, `5451`, `5452`, `5469`, `5503`, `5508`, `5510`, `5544`, `5545`, `5546`, `5547`, `5555`, `5556`, `5557`, `5558`, `5559`, `5560`, `5561`, `5574`, `5585`, `5586`, `5593`, and `5594` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `5423`, `5424`, `5425`, `5472`, `5473`, `5474`, and `5475` are null guard or argument validation statement mutants and are skipped by the loop prompt.
+  - Focused survivor/no-coverage ids `5454`, `5460`, and `5468` are defensive malformed no-claims grouping and empty-result checks; normal planner-produced no-claims failures share valid strategy identities.
+  - Focused survivors/no-coverage ids `5550`, `5551`, `5553`, `5554`, `5562`, and `5573` are deeper fallback branches outside this selected no-claims priority cluster.
+  - Focused survivors/no-coverage ids `5485`, `5488`, `5602`, `5608`, `5609`, `5611`, `5612`, `5613`, `5614`, and `5615` remain in AUTH1 mixed value-source validation and unsupported enum diagnostic paths outside this selected cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
