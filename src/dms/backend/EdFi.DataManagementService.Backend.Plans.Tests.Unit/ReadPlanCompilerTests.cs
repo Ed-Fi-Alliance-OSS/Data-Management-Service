@@ -229,6 +229,122 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_skip_projection_contract_validation_for_non_relational_storage()
+    {
+        var readPlan = CreateReadPlanWithoutProjectionPlans(
+            _pgsqlProjectionReadPlan with
+            {
+                Model = _pgsqlProjectionReadPlan.Model with
+                {
+                    StorageKind = ResourceStorageKind.SharedDescriptorTable,
+                },
+            }
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_missing_reference_identity_projection_plans_when_document_reference_bindings_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutReferenceIdentityProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_missing_descriptor_projection_plans_when_descriptor_edge_sources_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutDescriptorProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty");
+    }
+
+    [Test]
+    public void It_should_reject_missing_projection_plan_sets_when_reference_and_descriptor_metadata_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty, and DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_reference_identity_projection_plans_when_document_reference_bindings_are_absent()
+    {
+        var readPlan = CreateReadPlanWithUnexpectedReferenceIdentityProjectionPlans(
+            _pgsqlRootOnlyReadPlan,
+            _pgsqlProjectionReadPlan
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are absent while ReferenceIdentityProjectionPlansInDependencyOrder is populated"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_plans_when_descriptor_edge_sources_are_absent()
+    {
+        var readPlan = CreateReadPlanWithUnexpectedDescriptorProjectionPlans(
+            _pgsqlRootOnlyReadPlan,
+            _pgsqlProjectionReadPlan
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DescriptorEdgeSources are absent while DescriptorProjectionPlansInOrder is populated"
+            );
+    }
+
+    [Test]
     public void It_should_reject_reference_identity_projection_binding_duplicates_that_omit_another_modeled_binding()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(

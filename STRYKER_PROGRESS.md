@@ -915,3 +915,31 @@
   - Focused no-coverage mutants ids `6432`, `6433`, `6438`, `6439`, `6460`, `6716`, `6746`, `6766`, `6767`, `6947`, `6948`, `6963`, `6964`, `7087`, `7261`, `7284`, `7285`, `7290`, and `7291` remain in static metadata mismatch, unsupported-dialect, duplicate-parameter, or defensive path diagnostics outside public compiler inputs.
   - Focused timeout ids `6331`, `6332`, `6430`, and `6502` remain in static constant/type-check or loop-control mutations; id `6502` is the previously noted proposed value suffix allocation timeout.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans ReadPlanProjectionContractValidator Projection Gating
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs`
+- Mutants selected:
+  - Non-relational short-circuit `Statement mutation` id `3787`, line `26`: removed early `return`.
+  - Required projection gate/logical mutants ids `3788`, `3792`, `3796`, and `3797`, lines `30`, `33`, and `36`.
+  - Missing projection diagnostic mutants ids `3801`, `3802`, `3803`, `3805`, `3807`, `3808`, and `3810`, lines `44`-`53`.
+  - Unexpected reference projection-plan gate mutants ids `3811`, `3812`, `3815`, `3817`, and `3818`, lines `57`-`62`.
+  - Unexpected descriptor projection-plan gate mutants ids `3819`, `3820`, `3823`, `3825`, and `3826`, lines `67`-`72`.
+- Additional mutants killed by the same assertions:
+  - Storage-kind equality mutant id `3785`, count boundary mutants ids `3790` and `3794`, and hydration-map statement mutants ids `3827`, `3828`, and `3829`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanProjectionMutationHelper.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanProjectionMutationHelper.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReadPlanCompiler"`: passed; `92` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs" --concurrency 8` from the test project directory: completed in `00:05:08`; `Killed: 239`, `Survived: 26`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-14-20/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3787`, `3788`, `3792`, `3796`, `3797`, `3801`, `3802`, `3803`, `3805`, `3807`, `3808`, `3810`, `3811`, `3812`, `3815`, `3817`, `3818`, `3819`, `3820`, `3823`, `3825`, and `3826` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `3783` and `3784`, lines `21`-`22`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused no-coverage id `3809`, line `50`, is the switch discard-arm message for an invalid projection-gating state; the preceding boolean gate prevents that switch arm from being reached through public inputs.
+  - Remaining focused survived and no-coverage mutants in `ReadPlanProjectionContractValidator.cs` are outside this selected projection-gating cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

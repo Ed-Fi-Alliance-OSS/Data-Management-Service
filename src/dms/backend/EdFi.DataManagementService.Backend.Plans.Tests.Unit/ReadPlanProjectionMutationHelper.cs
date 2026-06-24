@@ -66,6 +66,50 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static ResourceReadPlan CreateReadPlanWithoutReferenceIdentityProjectionPlans(
+        ResourceReadPlan readPlan
+    )
+    {
+        return readPlan with { ReferenceIdentityProjectionPlansInDependencyOrder = [] };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithoutDescriptorProjectionPlans(ResourceReadPlan readPlan)
+    {
+        return readPlan with { DescriptorProjectionPlansInOrder = [] };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithoutProjectionPlans(ResourceReadPlan readPlan)
+    {
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder = [],
+            DescriptorProjectionPlansInOrder = [],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithUnexpectedReferenceIdentityProjectionPlans(
+        ResourceReadPlan readPlan,
+        ResourceReadPlan projectionSourceReadPlan
+    )
+    {
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+                projectionSourceReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithUnexpectedDescriptorProjectionPlans(
+        ResourceReadPlan readPlan,
+        ResourceReadPlan projectionSourceReadPlan
+    )
+    {
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = projectionSourceReadPlan.DescriptorProjectionPlansInOrder,
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithReferenceTargetResource(
         ResourceReadPlan readPlan,
         QualifiedResourceName targetResource
