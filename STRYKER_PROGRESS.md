@@ -1604,3 +1604,23 @@
   - Focused no-coverage id `2795` is an unsupported authorization-subject default branch that appears unreachable through the closed public subject record hierarchy.
   - Focused no-coverage ids `2731`, `2734`, `2832`, and `2833` are SQL-emission fallback diagnostics guarded earlier by authorization/People-path validation and appear dead through the public compiler contract.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans MappingSetProviderOptionsValidator Required Disabled Message
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProviderOptionsValidator.cs`
+- Mutants selected:
+  - `String mutation`, id `1984`, line `23`: replaced the second sentence of the `MappingPacks:Required`/`MappingPacks:Enabled` conflict validation message with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetProviderOptionsValidatorTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProviderOptionsValidator.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:50`; `Killed: 10`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-22-52/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetProviderOptionsValidatorTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MappingSetProviderOptionsValidator"`: passed; `7` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetProviderOptionsValidator.cs" --concurrency 8` from the test project directory: focused verification completed in `00:01:54`; `Killed: 11`, `Survived: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-25-27/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant id `1984` is `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused `MappingSetProviderOptionsValidator.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
