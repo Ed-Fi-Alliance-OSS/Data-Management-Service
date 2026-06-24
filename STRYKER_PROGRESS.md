@@ -1789,3 +1789,26 @@
   - Focused survivors ids `4603` and `4607`, lines `555` and `558`, remain in the private camel-case helpers outside the selected cluster.
   - Focused no-coverage ids `4486`, `4487`, `4505`, `4508`, `4517`, `4518`, and `4586` remain in unreachable/defensive branches not selected in this iteration.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans KeyUnificationPresenceConventions Predicate Contract
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/KeyUnificationPresenceConventions.cs`
+- Mutants selected:
+  - `Logical mutation`, id `1589`, line `14`: changed the predicate from requiring scalar, nullable, and boolean to accepting scalar-and-nullable or boolean.
+  - `Logical mutation`, id `1590`, line `14`: changed the predicate from requiring scalar and nullable to accepting scalar or nullable.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeyUnificationPresenceConventionsTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs" --concurrency 8` from the test project directory: selection baseline completed in `00:01:57`; `Killed: 22`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-46-37/reports/mutation-report.json`.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/KeyUnificationPresenceConventions.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:10`; `Killed: 3`, `Survived: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-48-52/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeyUnificationPresenceConventionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_KeyUnificationPresenceConventions"`: first run failed on analyzer `S1128` for an unnecessary using; after removing it, passed; `5` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/KeyUnificationPresenceConventions.cs" --concurrency 8` from the test project directory: focused verification completed in `00:02:02`; `Killed: 5`, `Survived: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-52-46/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `1589` and `1590` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused `KeyUnificationPresenceConventions.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - `MappingSetLookupExtensions.cs` was not selected for edits because its fresh focused survivor is a null-guard statement mutant skipped by the loop prompt.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
