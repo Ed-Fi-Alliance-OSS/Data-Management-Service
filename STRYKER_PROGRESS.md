@@ -1161,3 +1161,28 @@
   - Focused survivor id `127` is the `ScopeKey.GetHashCode` `hash.Add(part)` statement; killing it would require asserting unequal hash values, which is not a stable equality contract.
   - Focused survivors/no-coverage remain outside this selected lookup and locator contract cluster, including property-order construction, topology diagnostics, parent resolution diagnostics, fallback identity metadata resolution, and multiple-ordinal diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans CompiledReconstitutionPlan Property Order And Sibling Topology
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs`
+- Mutants selected:
+  - Property-order table-scope and scalar-source mutants ids `170`, `173`, and `179`, lines `294`, `296`, and `309`.
+  - Reference identity field property-order mutant id `181`, line `313`.
+  - Sibling subtree topology ordering mutant id `203`, lines `395`-`396`.
+  - Inspected property-order survivors ids `171` and `188`, lines `294` and `334`, and treated them as not actionable: adding the root `$` scope has no property segment to add, and the duplicate-path guard is redundant with `PropertyOrderNode.GetOrAddChild`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_CompiledReconstitutionPlanTests"`: passed; final run `19` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: first focused run completed in `00:02:04`; `Killed: 95`, `Survived: 28`, `NoCoverage: 21`; report `StrykerOutput/2026-06-24.03-42-43/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`: succeeded after adding the nested reference identity field assertion.
+  - `git diff --check`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_CompiledReconstitutionPlanTests"`: passed; `19` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:03`; `Killed: 96`, `Survived: 27`, `NoCoverage: 21`; report `StrykerOutput/2026-06-24.03-45-47/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `170`, `173`, `179`, `181`, and `203` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain outside this selected property-order and sibling-topology cluster, including null guards, topology failure diagnostics, parent resolution diagnostics, fallback identity metadata resolution, and multiple-ordinal diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

@@ -206,6 +206,70 @@ public class Given_CompiledReconstitutionPlanTests_With_Table_Local_Projection_B
 }
 
 [TestFixture]
+public class Given_CompiledReconstitutionPlanTests_With_Property_Order
+{
+    private CompiledReconstitutionPlan _compiledPlan = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(
+            CompiledReconstitutionPlanTestData.CreatePropertyOrderReadPlan()
+        );
+    }
+
+    [Test]
+    public void It_should_include_table_scope_scalar_source_and_reference_object_paths()
+    {
+        _compiledPlan
+            .PropertyOrder.ChildrenInOrder.Select(static child => child.Key)
+            .Should()
+            .Equal(
+                "calendarReference",
+                "educationOrganizationReferences",
+                "schoolReference",
+                "studentUniqueId"
+            );
+    }
+
+    [Test]
+    public void It_should_include_reference_identity_field_paths()
+    {
+        var schoolReferenceOrder = _compiledPlan.PropertyOrder.ChildrenInOrder.Single(static child =>
+            child.Key == "schoolReference"
+        );
+
+        schoolReferenceOrder
+            .Value.ChildrenInOrder.Select(static child => child.Key)
+            .Should()
+            .Equal("schoolId");
+    }
+}
+
+[TestFixture]
+public class Given_CompiledReconstitutionPlanTests_With_Sibling_Collections
+{
+    private CompiledReconstitutionPlan _compiledPlan = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(
+            CompiledReconstitutionPlanTestData.CreateSiblingCollectionReadPlan()
+        );
+    }
+
+    [Test]
+    public void It_should_keep_sibling_tables_in_dependency_order()
+    {
+        _compiledPlan
+            .TablePlansInDependencyOrder.Select(static tablePlan => tablePlan.TableModel.JsonScope.Canonical)
+            .Should()
+            .Equal("$", "$.addresses[*]", "$.contacts[*]");
+    }
+}
+
+[TestFixture]
 public class Given_CompiledReconstitutionPlanTests_With_ScopeKey
 {
     private ScopeKey _first = null!;
@@ -254,6 +318,8 @@ public class Given_CompiledReconstitutionPlanTests_With_ScopeKey
 
 file static class CompiledReconstitutionPlanTestData
 {
+    private static readonly DbSchemaName _schema = new("edfi");
+
     public static ResourceReadPlan CreateDescriptorProjectionReadPlan()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateDescriptorProjectionModel());
@@ -277,6 +343,81 @@ file static class CompiledReconstitutionPlanTestData
                 ),
             ],
         };
+    }
+
+    public static ResourceReadPlan CreatePropertyOrderReadPlan()
+    {
+        var rootTable = CreateRootTable(
+            "StudentSchoolAssociation",
+            [
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn(
+                    "StudentUSI",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    CreatePath("$.studentUniqueId", new JsonPathSegment.Property("studentUniqueId"))
+                ),
+                CreateColumn("School_DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("School_SchoolId", ColumnKind.Scalar),
+                CreateColumn("Calendar_DocumentId", ColumnKind.ParentKeyPart),
+            ]
+        );
+        var educationOrganizationReferenceTable = CreateCollectionTable(
+            "StudentSchoolAssociationEducationOrganizationReference",
+            "$.educationOrganizationReferences[*]",
+            "educationOrganizationReferences"
+        );
+
+        return CreateReadPlan(
+            [rootTable, educationOrganizationReferenceTable],
+            [
+                new ReferenceIdentityProjectionTablePlan(
+                    rootTable.Table,
+                    [
+                        new ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: false,
+                            ReferenceObjectPath: CreatePath(
+                                "$.calendarReference",
+                                new JsonPathSegment.Property("calendarReference")
+                            ),
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                            FkColumnOrdinal: 4,
+                            IdentityFieldOrdinalsInOrder: []
+                        ),
+                        new ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: false,
+                            ReferenceObjectPath: CreatePath(
+                                "$.schoolReference",
+                                new JsonPathSegment.Property("schoolReference")
+                            ),
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                            FkColumnOrdinal: 2,
+                            IdentityFieldOrdinalsInOrder:
+                            [
+                                new ReferenceIdentityProjectionFieldOrdinal(
+                                    ReferenceJsonPath: CreatePath(
+                                        "$.schoolReference.schoolId",
+                                        new JsonPathSegment.Property("schoolReference"),
+                                        new JsonPathSegment.Property("schoolId")
+                                    ),
+                                    ColumnOrdinal: 3,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+
+    public static ResourceReadPlan CreateSiblingCollectionReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var addressTable = CreateCollectionTable("SchoolAddress", "$.addresses[*]", "addresses");
+        var contactTable = CreateCollectionTable("SchoolContact", "$.contacts[*]", "contacts");
+
+        return CreateReadPlan([rootTable, addressTable, contactTable], []);
     }
 
     private static RelationalResourceModel CreateDescriptorProjectionModel()
@@ -370,4 +511,109 @@ file static class CompiledReconstitutionPlanTestData
             ]
         );
     }
+
+    private static ResourceReadPlan CreateReadPlan(
+        IReadOnlyList<DbTableModel> tablesInDependencyOrder,
+        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referencePlans
+    )
+    {
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
+            PhysicalSchema: _schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: tablesInDependencyOrder[0],
+            TablesInDependencyOrder: tablesInDependencyOrder,
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new ResourceReadPlan(
+            Model: model,
+            KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            TablePlansInDependencyOrder: tablesInDependencyOrder.Select(static table => new TableReadPlan(
+                table,
+                "SELECT 1;\n"
+            )),
+            ReferenceIdentityProjectionPlansInDependencyOrder: referencePlans,
+            DescriptorProjectionPlansInOrder: []
+        );
+    }
+
+    private static DbTableModel CreateRootTable(string tableName, IReadOnlyList<DbColumnModel> columns)
+    {
+        return new DbTableModel(
+            Table: new DbTableName(_schema, tableName),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: $"PK_{tableName}",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+    }
+
+    private static DbTableModel CreateCollectionTable(
+        string tableName,
+        string canonicalScope,
+        string scopeProperty
+    )
+    {
+        return new DbTableModel(
+            Table: new DbTableName(_schema, tableName),
+            JsonScope: CreatePath(
+                canonicalScope,
+                new JsonPathSegment.Property(scopeProperty),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: $"PK_{tableName}",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+    }
+
+    private static DbColumnModel CreateColumn(
+        string name,
+        ColumnKind kind,
+        RelationalScalarType? scalarType = null,
+        JsonPathExpression? sourceJsonPath = null
+    )
+    {
+        return new DbColumnModel(
+            ColumnName: new DbColumnName(name),
+            Kind: kind,
+            ScalarType: scalarType ?? new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: null
+        );
+    }
+
+    private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments) =>
+        new(canonical, segments);
 }
