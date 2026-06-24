@@ -1468,3 +1468,31 @@
   - Focused survivor id `1829`, line `127`, changes `failureCooldown <= TimeSpan.Zero` to `< TimeSpan.Zero`; with `TimeSpan.Zero`, the mutated async delayed eviction also completes immediately, so this appears equivalent at the public cache contract.
   - Focused timeouts ids `1806`, `1808`, `1815`, `1822`, `1825`, and `1827` are wait/completion-control mutations that prevent the public asynchronous calls from completing rather than exposing a stable additional assertion.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageDocumentIdSqlCompiler Join And Ordering Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`
+- Mutants selected:
+  - `Linq method mutation`, id `2505`, line `71`: changed the document-UUID predicate join requirement from `Any` to `All`.
+  - `Linq method mutation`, id `2509`, line `82`: changed the descriptor namespace-check join requirement from `Any` to `All`.
+  - `Linq method mutation`, id `2519`, line `143`: changed predicate operator tie-break ordering from ascending to descending.
+  - `Linq method mutation`, id `2568`, line `312`: changed duplicate filter-parameter group ordering from ascending to descending.
+  - `String mutation`, id `2687`, line `585`: replaced the document join equality fragment with `$""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:52`; `Killed: 310`, `Survived: 48`, `NoCoverage: 27`, `Timeout: 3`; report `StrykerOutput/2026-06-24.05-28-15/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; final run `116` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:55`; `Killed: 317`, `Survived: 43`, `NoCoverage: 25`, `Timeout: 3`; report `StrykerOutput/2026-06-24.05-38-17/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `2505`, `2509`, `2519`, `2568`, and `2687` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivor ids `2494`, `2495`, `2496`, `2594`, `2603`, `2616`, `2617`, `2637`, `2643`, and related no-coverage ids around the same validation blocks are null-guard or null-entry validation mutants and are skipped by the loop prompt.
+  - Focused survivor id `2518`, line `143`, appears equivalent because parameter-name ordering is after the semantic duplicate key and duplicate diagnostics sort colliding parameter names independently.
+  - Focused survivor id `2567`, line `312`, appears equivalent because duplicate parameter-name groups are case-insensitive groups; two distinct groups cannot share the same first group value under the ignore-case primary ordering.
+  - Focused timeouts ids `2526`, `2530`, and `2534` are predicate duplicate-scan loop-control mutations.
+  - Focused survivors remain in PageDocumentId authorization SQL parentheses, People path validation, unsupported enum diagnostics, and duplicate semantic-predicate diagnostics outside this selected join and ordering cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

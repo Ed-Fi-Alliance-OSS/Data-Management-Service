@@ -134,6 +134,120 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_join_document_table_when_any_predicate_targets_document_uuid()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new QueryPredicateTarget.DocumentUuid(),
+                        QueryComparisonOperator.Equal,
+                        "documentUuid"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("SchoolId"),
+                        QueryComparisonOperator.Equal,
+                        "schoolId"
+                    ),
+                ],
+                [],
+                includeTotalCountSql: true
+            )
+        );
+
+        const string ExpectedDocumentJoin =
+            "INNER JOIN \"dms\".\"Document\" doc ON doc.\"DocumentId\" = r.\"DocumentId\"";
+        const string ExpectedDocumentUuidPredicate = "doc.\"DocumentUuid\" = @documentUuid";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDocumentJoin);
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDocumentUuidPredicate);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedDocumentJoin);
+        plan.TotalCountSql.Should().Contain(ExpectedDocumentUuidPredicate);
+    }
+
+    [Test]
+    public void It_should_join_descriptor_table_when_any_predicate_targets_descriptor_column()
+    {
+        var plan = _compiler.Compile(
+            CreateDescriptorSpec(
+                [
+                    new QueryValuePredicate(
+                        new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                        QueryComparisonOperator.Equal,
+                        "namespace"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("ResourceKeyId"),
+                        QueryComparisonOperator.Equal,
+                        "resourceKeyId"
+                    ),
+                ],
+                includeTotalCountSql: true
+            )
+        );
+
+        const string ExpectedDescriptorJoin =
+            "INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"";
+        const string ExpectedDescriptorPredicate = "d.\"Namespace\" = @namespace";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorJoin);
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorPredicate);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedDescriptorJoin);
+        plan.TotalCountSql.Should().Contain(ExpectedDescriptorPredicate);
+    }
+
+    [Test]
+    public void It_should_join_descriptor_table_when_any_namespace_check_targets_descriptor_table()
+    {
+        var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var descriptorTable = new DbTableName(new DbSchemaName("dms"), "Descriptor");
+        var namespaceColumn = new DbColumnName("Namespace");
+        var plan = _compiler.Compile(
+            new PageDocumentIdQuerySpec(
+                RootTable: documentTable,
+                Predicates: [],
+                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+                IncludeTotalCountSql: true,
+                Authorization: new PageDocumentIdAuthorizationSpec(
+                    Strategies: [],
+                    NamespaceChecks:
+                    [
+                        new NamespaceAuthorizationCheckSpec(
+                            0,
+                            NamespaceAuthorizationCheckValueSource.Stored,
+                            documentTable,
+                            namespaceColumn
+                        ),
+                        new NamespaceAuthorizationCheckSpec(
+                            1,
+                            NamespaceAuthorizationCheckValueSource.Stored,
+                            descriptorTable,
+                            namespaceColumn
+                        ),
+                    ],
+                    NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
+                        SqlDialect.Pgsql,
+                        ["uri://ed-fi.org/"],
+                        "namespacePrefixes"
+                    )
+                )
+            )
+        );
+
+        const string ExpectedDescriptorJoin =
+            "INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"";
+        const string ExpectedDescriptorNamespacePredicate = "d.\"Namespace\" LIKE ANY(@namespacePrefixes)";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorJoin);
+        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorNamespacePredicate);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedDescriptorJoin);
+        plan.TotalCountSql.Should().Contain(ExpectedDescriptorNamespacePredicate);
+    }
+
+    [Test]
     public void It_should_emit_predicates_in_stable_sorted_order_after_unified_alias_rewrite()
     {
         var plan = _compiler.Compile(
@@ -199,6 +313,53 @@ public class Given_PageDocumentIdSqlCompiler
                 QuerySqlParameterRole.Offset,
                 QuerySqlParameterRole.Limit
             );
+    }
+
+    [Test]
+    public void It_should_sort_predicates_by_operator_name_after_column_rewrite()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("Score"),
+                        QueryComparisonOperator.Like,
+                        "scorePattern"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("Score"),
+                        QueryComparisonOperator.GreaterThan,
+                        "minimumScore"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("Score"),
+                        QueryComparisonOperator.Equal,
+                        "exactScore"
+                    ),
+                ],
+                []
+            )
+        );
+
+        var equalityPredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "r.\"Score\" = @exactScore",
+            StringComparison.Ordinal
+        );
+        var greaterThanPredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "r.\"Score\" > @minimumScore",
+            StringComparison.Ordinal
+        );
+        var likePredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "r.\"Score\" LIKE @scorePattern",
+            StringComparison.Ordinal
+        );
+
+        equalityPredicateIndex.Should().BeGreaterThan(-1);
+        greaterThanPredicateIndex.Should().BeGreaterThan(equalityPredicateIndex);
+        likePredicateIndex.Should().BeGreaterThan(greaterThanPredicateIndex);
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("exactScore", "minimumScore", "scorePattern", "offset", "limit");
     }
 
     [Test]
@@ -506,6 +667,46 @@ public class Given_PageDocumentIdSqlCompiler
             .Message.Should()
             .Contain(
                 "Duplicate filter parameter names are not allowed (case-insensitive). Colliding names: [['SchoolId', 'schoolId']]."
+            );
+    }
+
+    [Test]
+    public void It_should_report_duplicate_filter_parameter_name_groups_in_stable_order()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolYear"),
+                            QueryComparisonOperator.Equal,
+                            "beta"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("CalendarYear"),
+                            QueryComparisonOperator.Equal,
+                            "Alpha"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "alpha"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("LocalEducationAgencyId"),
+                            QueryComparisonOperator.Equal,
+                            "Beta"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("Predicates")
+            .WithMessage(
+                "Duplicate filter parameter names are not allowed (case-insensitive). Colliding names: [['Alpha', 'alpha'], ['Beta', 'beta']]. Rename filter parameters so each name is unique.*"
             );
     }
 
