@@ -703,3 +703,25 @@
   - Focused survivors ids `5272`, `5275`, and `5278`, lines `282` and `288`, appear equivalent for relationship positive-count parsing because accepting `0` still fails on the subject-failure section count before producing a payload.
   - Focused timeout id `5310`, line `360`, is a loop-control mutation that prevents SQL Server payload extraction from advancing.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans MappingSetLookupExtensions Read Lookup Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs`
+- Mutants selected:
+  - `String mutation`, id `1899`, line `52`: replaced the mapping-set key portion of the missing relational read-plan diagnostic with `$""`.
+  - `Statement mutation`, id `1902`, line `58`: removed the unknown storage-kind read-plan lookup exception.
+  - `String mutation`, id `1903`, line `59`: replaced the unknown storage-kind resource/key diagnostic prefix with `$""`.
+  - `String mutation`, id `1904`, line `60`: replaced the unknown storage-kind value diagnostic with `$""`.
+  - `String mutation`, id `1905`, line `61`: replaced the unknown storage-kind suffix with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_MappingSetLookupExtensions"`: passed; `32` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs" --concurrency 8` from the test project directory: completed in `00:01:49`; `Killed: 22`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-24.00-55-09/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `1899`, `1902`, `1903`, `1904`, and `1905` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `1887`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
