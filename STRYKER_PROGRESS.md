@@ -555,3 +555,41 @@
   - Focused survivors ids `2142`, `2143`, and `2144`, lines `57`-`59`, are null-guard statement mutants and are skipped by the loop prompt.
   - Focused survivor id `2153`, line `81`, and no-coverage id `2287`, line `281`, remain unsupported-dialect defensive-message paths that are unreachable through the public compiler constructor because `SqlDialectFactory.Create` rejects unsupported dialect values first.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans TokenInfoEducationOrganizationSqlCompiler Final Select Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs`
+- Mutants selected:
+  - `Statement mutation`, id `7513`, line `445`: removed final `SELECT`.
+  - `String mutation`, id `7514`, line `445`: replaced final `SELECT` with `""`.
+  - `Statement mutation`, id `7516`, line `448`: removed target EducationOrganizationId column append.
+  - `String mutation`, ids `7518` and `7519`, lines `449` and `451`: removed target EducationOrganizationId alias pieces.
+  - `Statement mutation`, id `7520`, line `452`: removed target NameOfInstitution column append.
+  - `String mutation`, ids `7522` and `7523`, lines `453` and `455`: removed target NameOfInstitution alias pieces.
+  - `Statement mutation`, id `7524`, line `456`: removed target Discriminator column append.
+  - `String mutation`, ids `7526` and `7527`, lines `457` and `459`: removed target Discriminator alias pieces.
+  - `Statement mutation`, id `7528`, line `460`: removed ancestor Discriminator column append.
+  - `String mutation`, ids `7530` and `7531`, lines `461` and `463`: removed ancestor Discriminator alias pieces.
+  - `Statement mutation`, id `7532`, line `464`: removed ancestor EducationOrganizationId column append.
+  - `String mutation`, id `7534`, line `465`: removed ancestor EducationOrganizationId alias separator.
+  - `Statement mutation`, ids `7535` and `7537`, lines `470` and `471`: removed final result source and target join lines.
+  - `String mutation`, ids `7536` and `7538`, lines `470` and `471`: removed final result source and target join text.
+  - `Statement mutation`, ids `7540`, `7543`, and `7546`, lines `474`, `475`, and `476`: removed target join predicate pieces.
+  - `Statement mutation`, ids `7547`, `7550`, `7553`, and `7556`, lines `479`, `482`, `483`, and `484`: removed ancestor link join and predicate pieces.
+- Additional mutants killed by the same assertion:
+  - Focused `TokenInfoEducationOrganizationSqlCompiler.cs` run also killed final ancestor join and ordering mutants ids `7557`, `7558`, `7560`, `7562`, `7563`, `7565`, `7566`, `7567`, `7568`, `7570`, `7571`, `7572`, `7573`, `7574`, `7575`, `7576`, `7577`, and `7580`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_TokenInfoEducationOrganizationSqlCompiler"`: passed; `8` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.TokenInfoEducationOrganizationSqlCompiler.tmp.json` using focused relative mutate paths was interrupted or produced an all-ignored report; relative paths did not match Stryker's absolute source keys in this solution-context run.
+  - `dotnet stryker --config-file stryker-config.TokenInfoEducationOrganizationSqlCompiler.tmp.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:20`; `Killed: 108`, `Survived: 79`, `Timeout: 0`; report `StrykerOutput/2026-06-24.00-08-20/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `7513`, `7514`, `7516`, `7518`, `7519`, `7520`, `7522`, `7523`, `7524`, `7526`, `7527`, `7528`, `7530`, `7531`, `7532`, `7534`, `7535`, `7536`, `7537`, `7538`, `7540`, `7543`, `7546`, `7547`, `7550`, `7553`, and `7556` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.TokenInfoEducationOrganizationSqlCompiler.tmp.json` was removed after verification.
+  - Focused survivors in `TokenInfoEducationOrganizationSqlCompiler.cs` remain outside this selected final SELECT cluster, including earlier CTE shape and validation diagnostics.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

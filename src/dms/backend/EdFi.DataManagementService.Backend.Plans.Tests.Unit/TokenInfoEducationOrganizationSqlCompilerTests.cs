@@ -145,6 +145,36 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
     }
 
     [Test]
+    public void It_should_emit_the_final_result_select_with_target_and_ancestor_relationships()
+    {
+        var plan = Compile(SqlDialect.Pgsql);
+
+        plan.EducationOrganizationSql.Should()
+            .Contain(
+                """
+                SELECT
+                    target."EducationOrganizationId" AS "EducationOrganizationId",
+                    target."NameOfInstitution" AS "NameOfInstitution",
+                    target."Discriminator" AS "Discriminator",
+                    ancestor."Discriminator" AS "AncestorDiscriminator",
+                    ancestor."EducationOrganizationId" AS "AncestorEducationOrganizationId"
+                FROM accessible_targets a
+                INNER JOIN concrete_edorg target
+                    ON target."EducationOrganizationId" = a."EducationOrganizationId"
+                INNER JOIN ancestor_links link
+                    ON link."TargetEducationOrganizationId" = a."EducationOrganizationId"
+                INNER JOIN concrete_edorg ancestor
+                    ON ancestor."EducationOrganizationId" = link."SourceEducationOrganizationId"
+                ORDER BY
+                    target."EducationOrganizationId" ASC,
+                    ancestor."EducationOrganizationId" ASC,
+                    target."Discriminator" ASC,
+                    ancestor."Discriminator" ASC;
+                """
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_an_edorg_member_does_not_project_name_of_institution()
     {
         var compiler = new TokenInfoEducationOrganizationSqlCompiler(SqlDialect.Pgsql);
