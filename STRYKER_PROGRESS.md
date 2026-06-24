@@ -749,3 +749,29 @@
 - Remaining notes:
   - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected stored target CTE cluster, including normalization/validation, proposed SQL assembly, final select internals, and subject failure payload shape.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Validation Boundaries
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - Document parameter-name validation `Statement mutation` id `6339`, lines `68`-`71`.
+  - Emitted AUTH1 index validation mutants ids `6341`, `6344`, and `6345`, lines `73`-`78`.
+  - Empty check-spec and empty-subject validation mutants ids `6349`, `6350`, `6352`, `6356`, and `6357`, lines `84`-`93`.
+  - Subject root-table and parameter collision validation `Statement mutation` ids `6359` and `6363`, lines `103` and `110`.
+  - Homogeneous target/value-source normalization mutants ids `6365`, `6369`, `6371`, and `6375`, lines `129`-`140`.
+  - Stored and proposed root-target normalization mutants ids `6381`, `6382`, `6386`, `6387`, `6390`, `6393`, and `6394`, lines `161`-`186`.
+  - Proposed binding validation mutants ids `6404`, `6405`, `6415`, `6416`, `6419`, `6420`, `6423`, `6424`, and `6425`, lines `198`-`234`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: passed; `54` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:53`; `Killed: 471`, `Survived: 159`, `NoCoverage: 32`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-14-47/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6339`, `6341`, `6344`, `6345`, `6349`, `6350`, `6352`, `6356`, `6357`, `6359`, `6363`, `6365`, `6369`, `6371`, `6375`, `6381`, `6382`, `6386`, `6387`, `6390`, `6393`, `6394`, `6404`, `6405`, `6415`, `6416`, `6419`, `6420`, `6423`, `6424`, and `6425` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `6337` and `6338`, lines `66`-`67`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected validation-boundary cluster, including proposed SQL assembly, final select internals, and subject failure payload shape.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

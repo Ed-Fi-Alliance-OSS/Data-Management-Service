@@ -2955,6 +2955,496 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_allow_zero_emitted_auth1_index()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                ],
+                parameterization,
+                0
+            )
+        );
+
+        plan.AuthorizationSql.Should().Contain("CONCAT('1|', '0|', COUNT(1)::text, '|'");
+    }
+
+    [Test]
+    public void It_should_reject_negative_emitted_auth1_indexes()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                        ),
+                    ],
+                    parameterization,
+                    -1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("spec")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_invalid_document_id_parameter_names()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectStoredSqlSpec(parameterization) with
+                {
+                    DocumentIdParameterName = "Document-Id",
+                }
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("DocumentIdParameterName")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
+    public void It_should_reject_empty_check_spec_batches()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(new SingleRecordRelationshipAuthorizationSqlSpec([], parameterization, 1));
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("Single-record relationship authorization requires at least one check spec.*");
+    }
+
+    [Test]
+    public void It_should_reject_batches_with_any_empty_subject_list()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                        ),
+                        CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 1, 1),
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "Single-record relationship authorization check specs require at least one subject.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_subjects_outside_the_single_record_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject(
+                                "LocalEducationAgencyId",
+                                "$.localEducationAgencyReference.localEducationAgencyId",
+                                localEducationAgencyTable,
+                                "LocalEducationAgency"
+                            )
+                        ),
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("checkSpecs")
+            .WithMessage("*does not match root table*");
+    }
+
+    [Test]
+    public void It_should_reject_claim_parameter_names_that_collide_with_document_id()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "DocumentId"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () => compiler.Compile(CreateSingleSubjectStoredSqlSpec(parameterization));
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "DocumentId parameter name must not collide with claim EdOrg authorization parameter names.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_stored_value_source_mismatches_even_when_targets_are_stored()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var storedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        storedCheckSpec,
+                        storedCheckSpec with
+                        {
+                            ValueSource = RelationshipAuthorizationValueSource.Proposed,
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*must be all stored-value or all proposed-value*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_value_source_mismatches_even_when_targets_are_proposed()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var proposedCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        proposedCheckSpec,
+                        proposedCheckSpec with
+                        {
+                            ValueSource = RelationshipAuthorizationValueSource.Stored,
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*must be all stored-value or all proposed-value*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_check_specs_that_do_not_share_one_root_target()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var storedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        storedCheckSpec,
+                        storedCheckSpec with
+                        {
+                            CheckTarget = new RelationshipAuthorizationCheckTarget.Stored(
+                                new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
+                                new DbColumnName("DocumentId")
+                            ),
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Single-record relationship authorization stored check specs must share one root target.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_proposed_check_specs_that_do_not_share_one_root_target()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var schoolCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var localEducationAgencyId = new DbColumnName("LocalEducationAgencyId");
+        var localEducationAgencyCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            1,
+            1,
+            CreateSubject(
+                localEducationAgencyId.Value,
+                "$.localEducationAgencyReference.localEducationAgencyId",
+                localEducationAgencyTable,
+                "LocalEducationAgency"
+            )
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                localEducationAgencyTable,
+                [CreateProposedBinding(localEducationAgencyTable, localEducationAgencyId)]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [schoolCheckSpec, localEducationAgencyCheckSpec],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "Single-record relationship authorization proposed check specs must share one root target.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_proposed_check_specs_when_binding_count_does_not_match_subject_count()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, []),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*has 1 subjects but 0 root bindings*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_target_a_different_table_than_the_root()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(localEducationAgencyTable, new DbColumnName("SchoolId"))]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*targets table*root target*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_do_not_match_the_subject_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var localEducationAgencyId = new DbColumnName("LocalEducationAgencyId");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject(
+                localEducationAgencyId.Value,
+                "$.localEducationAgencyReference.localEducationAgencyId",
+                localEducationAgencyTable,
+                "LocalEducationAgency"
+            )
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(rootTable, localEducationAgencyId)]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*subject proposed anchor targets table*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_do_not_match_the_subject_column()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(rootTable, new DbColumnName("LocalEducationAgencyId"))]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*subject proposed anchor targets column*");
+    }
+
+    [Test]
+    public void It_should_reject_blank_proposed_binding_parameter_seeds()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var binding = CreateProposedBinding(rootTable, new DbColumnName("SchoolId")) with
+        {
+            ParameterSeed = " ",
+        };
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [binding]),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile.Should().Throw<ArgumentException>().WithParameterName("binding.ParameterSeed");
+    }
+
+    [Test]
     public void It_should_reject_postgresql_array_claim_parameterization_without_exactly_the_base_parameter()
     {
         var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
@@ -3054,6 +3544,15 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             ],
             parameterization,
             10
+        );
+
+    private static AuthorizationClaimEducationOrganizationIdParameterization CreateSingleClaimParameterization(
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
         );
 
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
