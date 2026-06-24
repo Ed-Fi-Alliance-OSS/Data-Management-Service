@@ -47,12 +47,16 @@ public class Given_CompiledReconstitutionPlanTests_Cache
 public class Given_CompiledReconstitutionPlanTests_With_Table_Metadata
 {
     private CompiledReconstitutionPlan _compiledPlan = null!;
+    private TableReconstitutionPlan _rootTablePlan = null!;
+    private TableReconstitutionPlan _childTablePlan = null!;
 
     [SetUp]
     public void SetUp()
     {
         var readPlan = HydrationTestHelper.BuildSchoolReadPlan("edfi", SqlDialect.Pgsql);
         _compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        _rootTablePlan = _compiledPlan.TablePlansInDependencyOrder[0];
+        _childTablePlan = _compiledPlan.TablePlansInDependencyOrder[1];
     }
 
     [Test]
@@ -77,6 +81,75 @@ public class Given_CompiledReconstitutionPlanTests_With_Table_Metadata
         nestedChildTablePlan.ImmediateParentScopeLocatorOrdinals.Should().Equal(2);
         nestedChildTablePlan.PhysicalRowIdentityOrdinals.Should().Equal(0);
         nestedChildTablePlan.OrdinalColumnOrdinal.Should().Be(3);
+    }
+
+    [Test]
+    public void It_should_resolve_table_plans_by_table_name()
+    {
+        _compiledPlan.GetTablePlanOrThrow(_rootTablePlan.Table).Should().BeSameAs(_rootTablePlan);
+    }
+
+    [Test]
+    public void It_should_fail_when_the_requested_table_is_missing()
+    {
+        var missingTable = new DbTableName(new DbSchemaName("edfi"), "MissingSchoolTable");
+
+        var exception = Assert.Throws<KeyNotFoundException>(() =>
+            _compiledPlan.GetTablePlanOrThrow(missingTable)
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.School");
+        exception.Message.Should().Contain("does not contain table");
+        exception.Message.Should().Contain(missingTable.ToString());
+    }
+
+    [Test]
+    public void It_should_fail_when_duplicate_table_plans_are_supplied()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new CompiledReconstitutionPlan(
+                _compiledPlan.ReadPlan,
+                [_rootTablePlan, _rootTablePlan],
+                _compiledPlan.PropertyOrder
+            )
+        )!;
+
+        exception.Message.Should().Contain("Ed-Fi.School");
+        exception.Message.Should().Contain("contains duplicate table");
+        exception.Message.Should().Contain(_rootTablePlan.Table.ToString());
+    }
+
+    [Test]
+    public void It_should_resolve_single_locator_ordinals()
+    {
+        _rootTablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow().Should().Be(0);
+        _childTablePlan.ResolveSingleImmediateParentScopeLocatorOrdinalOrThrow().Should().Be(1);
+    }
+
+    [Test]
+    public void It_should_fail_when_root_scope_locator_count_is_not_one()
+    {
+        var invalidTablePlan = _rootTablePlan with { RootScopeLocatorOrdinals = [] };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            invalidTablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow()
+        )!;
+
+        exception.Message.Should().Contain(_rootTablePlan.Table.ToString());
+        exception.Message.Should().Contain("requires exactly one root-scope locator ordinal");
+        exception.Message.Should().Contain("but found 0");
+    }
+
+    [Test]
+    public void It_should_fail_when_immediate_parent_locator_count_is_not_one()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            _rootTablePlan.ResolveSingleImmediateParentScopeLocatorOrdinalOrThrow()
+        )!;
+
+        exception.Message.Should().Contain(_rootTablePlan.Table.ToString());
+        exception.Message.Should().Contain("requires exactly one immediate-parent locator ordinal");
+        exception.Message.Should().Contain("but found 0");
     }
 }
 
@@ -158,6 +231,24 @@ public class Given_CompiledReconstitutionPlanTests_With_ScopeKey
 
         keys.Contains(_second).Should().BeTrue();
         _first.GetHashCode().Should().Be(_second.GetHashCode());
+    }
+
+    [Test]
+    public void It_should_match_itself()
+    {
+        _first.Equals(_first).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_not_match_keys_with_different_part_counts()
+    {
+        _first.Equals(new ScopeKey([1L, 2L])).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_not_match_keys_with_different_part_values()
+    {
+        _first.Equals(new ScopeKey([1L, 2L, "B"])).Should().BeFalse();
     }
 }
 

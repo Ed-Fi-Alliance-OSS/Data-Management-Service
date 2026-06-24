@@ -1136,3 +1136,28 @@
   - Focused no-coverage ids `1085` and `1099` are private switch default diagnostics for sealed `PageKeysetSpec` variants and appear unreachable through public `Build`/`AddParameters` inputs.
   - Focused survivors ids `1218` and `1225` are the previously noted empty-SQL semicolon helper equivalences.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans CompiledReconstitutionPlan Lookup And Locator Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs`
+- Mutants selected:
+  - `ScopeKey` equality-contract mutants ids `106`, `108`, `109`, `114`, `115`, and `121`, lines `27`-`41`.
+  - Single root-scope locator diagnostics mutants ids `133`, `134`, and `135`, lines `130`-`132`.
+  - Single immediate-parent locator diagnostics mutants ids `137`, `139`, `140`, and `141`, lines `141`-`145`.
+  - Duplicate compiled table diagnostics mutants ids `146`, `147`, and `148`, lines `171`-`173`.
+  - Missing compiled table diagnostics mutants ids `152`, `153`, and `154`, lines `196`-`198`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:04`; `Killed: 72`, `Survived: 35`, `NoCoverage: 37`; report `StrykerOutput/2026-06-24.03-32-14/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_CompiledReconstitutionPlanTests"`: passed; `16` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:04`; `Killed: 91`, `Survived: 32`, `NoCoverage: 21`; report `StrykerOutput/2026-06-24.03-35-37/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `106`, `108`, `109`, `114`, `115`, `121`, `133`, `134`, `135`, `137`, `139`, `140`, `141`, `146`, `147`, `148`, `152`, `153`, and `154` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `104`, `156`, and `158` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `127` is the `ScopeKey.GetHashCode` `hash.Add(part)` statement; killing it would require asserting unequal hash values, which is not a stable equality contract.
+  - Focused survivors/no-coverage remain outside this selected lookup and locator contract cluster, including property-order construction, topology diagnostics, parent resolution diagnostics, fallback identity metadata resolution, and multiple-ordinal diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
