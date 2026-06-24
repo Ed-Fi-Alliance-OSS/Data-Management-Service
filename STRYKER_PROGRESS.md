@@ -358,3 +358,28 @@
   - Temporary focused config `stryker-config.SimpleUpdateSqlEmitter.tmp.json` was removed after verification.
   - Focused survivor ids `6267`, `6268`, and `6269`, plus timeout id `6270`, are null-guard statement mutants on lines `35`-`38` and are skipped by the loop prompt.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans SimpleDeleteSqlEmitter Validation And Shape Assertions
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleDeleteSqlEmitter.cs`
+- Mutants selected:
+  - `Statement mutation`, id `6216`, line `36`: replaced the empty where-column validation throw with `;`
+  - `String mutation`, id `6217`, line `37`: replaced the empty where-column validation message with `""`
+  - `Statement mutation`, id `6222`, line `44`: replaced the where-column/parameter count validation throw with `;`
+  - `String mutation`, id `6223`, line `45`: replaced the where-column/parameter count validation message with `$""`
+- Additional mutants killed by the same assertions:
+  - Focused `SimpleDeleteSqlEmitter.cs` run also killed SQL-shape mutants ids `6226`, `6228`, `6229`, `6232`, `6234`, `6235`, and `6236`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleDeleteSqlEmitterTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleDeleteSqlEmitterTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SimpleDeleteSqlEmitter"`: passed; `4` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.SimpleDeleteSqlEmitter.tmp.json` from the test project directory with a temporary focused config mutating only `**/SimpleDeleteSqlEmitter.cs`: completed in `00:02:28`; `Killed: 12`, `Survived: 1`, `Timeout: 0`; report `StrykerOutput/2026-06-23.23-13-13/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6216`, `6217`, `6222`, and `6223` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.SimpleDeleteSqlEmitter.tmp.json` was removed after verification.
+  - Focused survivor id `6211`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
