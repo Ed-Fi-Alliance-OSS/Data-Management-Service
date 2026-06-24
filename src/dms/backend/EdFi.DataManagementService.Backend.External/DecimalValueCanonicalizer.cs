@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend.External;
 /// <summary>
 /// Canonicalizes decimal values to fixed-point form with no insignificant trailing fractional zeros.
 /// </summary>
-public static class DecimalValueCanonicalizer
+internal static class DecimalValueCanonicalizer
 {
     private const string FixedPointFormat = "0.############################";
 
@@ -20,7 +20,7 @@ public static class DecimalValueCanonicalizer
         | NumberStyles.AllowDecimalPoint
         | NumberStyles.AllowExponent;
 
-    public static string CanonicalizeText(string value)
+    internal static string CanonicalizeText(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
 
@@ -29,12 +29,12 @@ public static class DecimalValueCanonicalizer
             : value;
     }
 
-    public static string ToCanonicalText(decimal value)
+    private static string ToCanonicalText(decimal value)
     {
         return value == 0m ? "0" : value.ToString(FixedPointFormat, CultureInfo.InvariantCulture);
     }
 
-    public static decimal NormalizeScale(decimal value)
+    internal static decimal NormalizeScale(decimal value)
     {
         return decimal.Parse(ToCanonicalText(value), NumberStyles.Number, CultureInfo.InvariantCulture);
     }

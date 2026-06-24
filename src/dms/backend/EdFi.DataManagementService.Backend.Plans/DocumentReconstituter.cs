@@ -428,12 +428,19 @@ public static class DocumentReconstituter
                 continue;
             }
 
+            if (column.ScalarType is not RelationalScalarType scalarType)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot reconstitute scalar column '{column.ColumnName.Value}' on table '{tableModel.Table}' because scalar type metadata is missing."
+                );
+            }
+
             var (targetObject, propertyName) = ResolvePathRelativeToScope(
                 target,
                 column.SourceJsonPath.Value,
                 tableModel.JsonScope
             );
-            targetObject[propertyName] = ConvertToJsonValue(value, column.ScalarType);
+            targetObject[propertyName] = ConvertToJsonValue(value, scalarType);
         }
     }
 
@@ -964,80 +971,51 @@ public static class DocumentReconstituter
     /// <summary>
     /// Converts a CLR value from a hydrated row to a <see cref="JsonValue"/>.
     /// </summary>
-    private static JsonNode ConvertToJsonValue(object value, RelationalScalarType? scalarType = null)
+    private static JsonNode ConvertToJsonValue(object value, RelationalScalarType scalarType)
     {
-        if (scalarType is not null)
+        return scalarType.Kind switch
         {
-            return scalarType.Kind switch
+            ScalarKind.String => value switch
             {
-                ScalarKind.String => value switch
-                {
-                    string str => JsonValue.Create(str),
-                    Guid g => JsonValue.Create(g.ToString()),
-                    _ => ThrowUnsupportedScalarValue(value, scalarType),
-                },
-                ScalarKind.Int32 => value switch
-                {
-                    int i => JsonValue.Create(i),
-                    long l => JsonValue.Create(l),
-                    short s => JsonValue.Create(s),
-                    _ => ThrowUnsupportedScalarValue(value, scalarType),
-                },
-                ScalarKind.Int64 => value switch
-                {
-                    long l => JsonValue.Create(l),
-                    int i => JsonValue.Create(i),
-                    short s => JsonValue.Create(s),
-                    _ => ThrowUnsupportedScalarValue(value, scalarType),
-                },
-                ScalarKind.Decimal => value switch
-                {
-                    decimal d => JsonValue.Create(DecimalValueCanonicalizer.NormalizeScale(d)),
-                    double dbl => JsonValue.Create(dbl),
-                    float f => JsonValue.Create(f),
-                    int i => JsonValue.Create(i),
-                    long l => JsonValue.Create(l),
-                    short s => JsonValue.Create(s),
-                    _ => ThrowUnsupportedScalarValue(value, scalarType),
-                },
-                ScalarKind.Boolean => value switch
-                {
-                    bool b => JsonValue.Create(b),
-                    _ => ThrowUnsupportedScalarValue(value, scalarType),
-                },
-                ScalarKind.Date => ConvertDateValue(value, scalarType),
-                ScalarKind.DateTime => ConvertDateTimeValue(value, scalarType),
-                ScalarKind.Time => ConvertTimeValue(value, scalarType),
-                _ => throw new InvalidOperationException(
-                    $"Cannot reconstitute scalar value: unsupported relational scalar kind '{scalarType.Kind}'."
-                ),
-            };
-        }
-
-        return value switch
-        {
-            int i => JsonValue.Create(i),
-            long l => JsonValue.Create(l),
-            short s => JsonValue.Create(s),
-            decimal d => JsonValue.Create(DecimalValueCanonicalizer.NormalizeScale(d)),
-            double dbl => JsonValue.Create(dbl),
-            float f => JsonValue.Create(f),
-            bool b => JsonValue.Create(b),
-            string str => JsonValue.Create(str),
-            DateTime dt => JsonValue.Create(
-                NormalizeUtcDateTime(dt)
-                    .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
+                string str => JsonValue.Create(str),
+                Guid g => JsonValue.Create(g.ToString()),
+                _ => ThrowUnsupportedScalarValue(value, scalarType),
+            },
+            ScalarKind.Int32 => value switch
+            {
+                int i => JsonValue.Create(i),
+                long l => JsonValue.Create(l),
+                short s => JsonValue.Create(s),
+                _ => ThrowUnsupportedScalarValue(value, scalarType),
+            },
+            ScalarKind.Int64 => value switch
+            {
+                long l => JsonValue.Create(l),
+                int i => JsonValue.Create(i),
+                short s => JsonValue.Create(s),
+                _ => ThrowUnsupportedScalarValue(value, scalarType),
+            },
+            ScalarKind.Decimal => value switch
+            {
+                decimal d => JsonValue.Create(DecimalValueCanonicalizer.NormalizeScale(d)),
+                double dbl => JsonValue.Create(dbl),
+                float f => JsonValue.Create(f),
+                int i => JsonValue.Create(i),
+                long l => JsonValue.Create(l),
+                short s => JsonValue.Create(s),
+                _ => ThrowUnsupportedScalarValue(value, scalarType),
+            },
+            ScalarKind.Boolean => value switch
+            {
+                bool b => JsonValue.Create(b),
+                _ => ThrowUnsupportedScalarValue(value, scalarType),
+            },
+            ScalarKind.Date => ConvertDateValue(value, scalarType),
+            ScalarKind.DateTime => ConvertDateTimeValue(value, scalarType),
+            ScalarKind.Time => ConvertTimeValue(value, scalarType),
+            _ => throw new InvalidOperationException(
+                $"Cannot reconstitute scalar value: unsupported relational scalar kind '{scalarType.Kind}'."
             ),
-            DateTimeOffset dto => JsonValue.Create(
-                dto.UtcDateTime.ToString(
-                    "yyyy-MM-ddTHH:mm:ssZ",
-                    System.Globalization.CultureInfo.InvariantCulture
-                )
-            ),
-            DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
-            TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
-            Guid g => JsonValue.Create(g.ToString()),
-            _ => ThrowUnsupportedScalarValue(value, scalarType),
         };
     }
 
@@ -1082,12 +1060,10 @@ public static class DocumentReconstituter
         };
     }
 
-    private static JsonNode ThrowUnsupportedScalarValue(object value, RelationalScalarType? scalarType)
+    private static JsonNode ThrowUnsupportedScalarValue(object value, RelationalScalarType scalarType)
     {
-        var scalarKind = scalarType is null ? "<unspecified>" : scalarType.Kind.ToString();
-
         throw new InvalidOperationException(
-            $"Cannot reconstitute scalar value of CLR type '{value.GetType().FullName}' as relational scalar kind '{scalarKind}'."
+            $"Cannot reconstitute scalar value of CLR type '{value.GetType().FullName}' as relational scalar kind '{scalarType.Kind}'."
         );
     }
 
