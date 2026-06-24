@@ -212,44 +212,6 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        # Review if we need to delete this scenario in DMS-799
-        @API-134 @ignore
-        Scenario: 11 Ensure clients can GET information when querying with mixed case parameter name and value
-             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [{
-                      "id": "{id}",
-                      "schoolReference": {
-                          "schoolId": 2
-                      },
-                      "weekIdentifier": "Week One",
-                      "beginDate": "2024-05-15",
-                      "endDate": "2024-05-22",
-                      "totalInstructionalDays": 2
-                  }]
-                  """
-
-        # Review if we need to delete this scenario in DMS-799
-        @API-135 @ignore
-        Scenario: 12 Ensure clients can GET information when querying with mixed case parameter name and upper case value
-             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [{
-                      "id": "{id}",
-                      "schoolReference": {
-                          "schoolId": 2
-                      },
-                      "weekIdentifier": "Week One",
-                      "beginDate": "2024-05-15",
-                      "endDate": "2024-05-22",
-                      "totalInstructionalDays": 2
-                  }]
-                  """
-
         @relational-backend
         @relational-ci-shard-4
         Scenario: 13 Ensure clients get empty array when querying datetime with no time component and no midnight match

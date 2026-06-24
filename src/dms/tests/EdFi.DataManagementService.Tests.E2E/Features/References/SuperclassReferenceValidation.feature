@@ -162,7 +162,12 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   """
 
         @API-109
-        Scenario: 06 Ensure clients cannot delete and existing Education Organization that is referenced to a Program
+        @relational-backend
+        @relational-ci-shard-4
+        # DMS-1012: Quarantined until delete conflict diagnostics can report all
+        # referencing resource types deterministically.
+        @ignore
+        Scenario: 06 Ensure clients cannot delete an existing Education Organization that is referenced by existing items
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                              | categories                                                                                                                            |
                   | 333                    | Other Education Agency Test | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}] |

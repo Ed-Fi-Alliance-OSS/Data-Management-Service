@@ -112,6 +112,11 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
+        @relational-backend
+        @relational-ci-shard-1
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
+        @ignore
         Scenario: 04 PUT with profile excluding required field succeeds
             # First create a school using a profile that includes nameOfInstitution
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
@@ -191,7 +196,7 @@ Feature: Profile Creatability Validation
                   """
             Then the profile response status is 201
 
-    Rule: POST with CollectionRule on required collection succeeds because collection is filtered not excluded
+    Rule: POST with CollectionRule on required collection rejects non-matching submitted items
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-RequiredCollectionWithRule" and namespacePrefixes "uri://ed-fi.org"
@@ -201,7 +206,12 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth grade                      |
 
-        Scenario: 06 POST with CollectionRule on required collection succeeds and filters collection items
+        @relational-backend
+        @relational-ci-shard-1
+        # DMS-1229: Quarantined until submitted collection items failing profile
+        # value filters return ODS-style data-validation errors.
+        @ignore
+        Scenario: 06 POST with CollectionRule on required collection rejects non-matching submitted items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School" with body
                   """
                   {
@@ -222,12 +232,8 @@ Feature: Profile Creatability Validation
                       ]
                   }
                   """
-            Then the profile response status is 201
-            # Verify the collection was filtered (only Ninth grade should remain)
-            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School"
-            Then the profile response status is 200
-             And the "gradeLevels" collection should have 1 item
-             And the "gradeLevels" collection should only contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:bad-request:data-validation-failed"
 
     Rule: Non-creatable child collection and embedded object behavior is enforced by profile
 

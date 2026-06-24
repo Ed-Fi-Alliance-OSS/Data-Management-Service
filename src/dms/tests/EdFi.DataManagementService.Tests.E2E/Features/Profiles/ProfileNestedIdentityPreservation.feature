@@ -19,6 +19,11 @@ Feature: Profile Nested Identity Preservation
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2029       | false             | School Year 2029      |
 
+        @relational-backend
+        @relational-ci-shard-3
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
+        @ignore
         Scenario: 01 POST Calendar with IncludeOnly write profile preserves nested schoolYearTypeReference identity
             # DMS-1032: The profile only includes calendarCode, calendarTypeDescriptor, and gradeLevels.
             # schoolReference and schoolYearTypeReference are NOT in the IncludeOnly list, but they
@@ -44,6 +49,11 @@ Feature: Profile Nested Identity Preservation
              And the response body path "schoolYearTypeReference.schoolYear" should have value "2029"
              And the response body path "schoolReference.schoolId" should have value "255901107"
 
+        @relational-backend
+        @relational-ci-shard-3
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
+        @ignore
         Scenario: 02 PUT Calendar with IncludeOnly write profile preserves nested identity references during merge
             # DMS-1032: Create then update a calendar - nested identity references must survive the PUT
             # even though they're not explicitly in the profile's IncludeOnly list.

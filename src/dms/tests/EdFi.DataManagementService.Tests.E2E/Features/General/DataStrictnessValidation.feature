@@ -13,26 +13,58 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        @ignore @API-236
-        Scenario: 04 Ensure clients can create a resource using numeric values for booleans
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
+        @ignore
+        @API-236
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 04 Ensure clients can create a resource using numeric 0 for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
+                      "classPeriodName": "Class Period Numeric 0",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
-                      "classPeriodName": "Class Period 1",
                       "officialAttendancePeriod": 0
                   }
                   """
              Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric 0",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": false
+                       }
+                  """
 
-        @ignore @API-237
-        Scenario: 05 Ensure clients can update a resource using numeric values for booleans
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
+        @ignore
+        @API-237
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 05 Ensure clients can update a resource using numeric 1 for booleans
+            Given a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "classPeriodName": "Class Period Numeric 1",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": false
+                  }
+                  """
              When a PUT request is made to "/ed-fi/classPeriods/{id}" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 1",
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Numeric 1",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -40,13 +72,26 @@ Feature: Data strictness
                   }
                   """
              Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                       {
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric 1",
+                           "schoolReference": {
+                               "schoolId": 255901044
+                           },
+                           "officialAttendancePeriod": true
+                       }
+                  """
 
-        @ignore @API-238
-        Scenario: 06 Ensure clients cannot create a resource using incorrect values for booleans
+        @API-238
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 06 Ensure clients cannot create a resource using incorrect numeric values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 1",
+                      "classPeriodName": "Class Period Invalid Numeric 2",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -55,23 +100,53 @@ Feature: Data strictness
                   """
              Then it should respond with 400
               And the response body is
-              # Pending confirmation
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                              "officialAttendancePeriod Value is \"integer\" but should be \"boolean\""
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
 
-        @ignore @API-239
-        Scenario: 07 Ensure clients cannot create a resource using incorrect values for booleans
+        @API-239
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 07 Ensure clients cannot create a resource using incorrect numeric string values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 1",
+                      "classPeriodName": "Class Period Invalid Numeric String 2",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
-                      "officialAttendancePeriod": 2
+                      "officialAttendancePeriod": "2"
                   }
                   """
              Then it should respond with 400
-             # Pending confirmation
-
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                              "officialAttendancePeriod Value is \"string\" but should be \"boolean\""
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
 
         @API-240
         @relational-backend
@@ -89,11 +164,24 @@ Feature: Data strictness
                   """
              Then it should respond with 201
 
-        @ignore @API-241
+        @API-241
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 09 Ensure clients can update a resource using expected booleans
-             When a PUT request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
+                      "classPeriodName": "Class Period Test 2",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
                       "classPeriodName": "Class Period Test 2",
                       "schoolReference": {
                           "schoolId": 255901044
@@ -103,7 +191,9 @@ Feature: Data strictness
                   """
              Then it should respond with 204
 
-        @ignore @API-242
+        @API-242
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 10 Ensure clients can create a resource using expected booleans as string
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -119,6 +209,7 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
+                           "id": "{id}",
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
                                "schoolId": 255901044
@@ -127,12 +218,25 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-243
+        @API-243
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 11 Ensure clients can update a resource using expected booleans as strings
-             When a PUT request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 2",
+                      "classPeriodName": "Class Period Test 3",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Test 3",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -143,6 +247,7 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
+                           "id": "{id}",
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
                                "schoolId": 255901044
@@ -151,12 +256,17 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-244
-        Scenario: 12 Ensure clients can create a resource using numeric values as strings
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
+        @ignore
+        @API-244
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 12 Ensure clients can create a resource using numeric string 1 for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 4",
+                      "classPeriodName": "Class Period Numeric String 1",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -167,7 +277,8 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
-                           "classPeriodName": "Class Period Test 4",
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric String 1",
                            "schoolReference": {
                                "schoolId": 255901044
                            },
@@ -175,12 +286,28 @@ Feature: Data strictness
                        }
                   """
 
-        @ignore @API-245
-        Scenario: 13 Ensure clients can update a resource using numeric values as strings
-             When a POST request is made to "/ed-fi/classPeriods" with
+        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
+        # for schema boolean fields (0/1 and "0"/"1").
+        @ignore
+        @API-245
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 13 Ensure clients can update a resource using numeric string 0 for booleans
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 4",
+                      "classPeriodName": "Class Period Numeric String 0",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "Class Period Numeric String 0",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
@@ -191,53 +318,38 @@ Feature: Data strictness
               And the record can be retrieved with a GET request
                   """
                        {
-                           "classPeriodName": "Class Period Test 4",
+                           "id": "{id}",
+                           "classPeriodName": "Class Period Numeric String 0",
                            "schoolReference": {
                                "schoolId": 255901044
                            },
-                           "officialAttendancePeriod": true
+                           "officialAttendancePeriod": false
                        }
                   """
 
-        @ignore @API-246
+        @API-246
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 14 Ensure clients cannot update a resource that is using a different value type than boolean
-             When a POST request is made to "/ed-fi/classPeriods" with
+            Given a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
+                      "classPeriodName": "Class Period Test 4",
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                  {
+                      "id": "{id}",
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
                           "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "string"
-                  }
-                  """
-             Then it should respond with 400
-                  """
-                  {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.officialAttendancePeriod": [
-                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
-                          ]
-                      }
-                  }
-                  """
-
-
-        @ignore @API-247
-        Scenario: 15 Ensure clients cannot update a resource that is using a different value type than boolean
-             When a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "classPeriodName": "Class Period Test 4",
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "officialAttendancePeriod": "0"
                   }
                   """
              Then it should respond with 400
@@ -251,11 +363,13 @@ Feature: Data strictness
                       "correlationId": null,
                       "validationErrors": {
                           "$.officialAttendancePeriod": [
-                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
+                              "officialAttendancePeriod Value is \"string\" but should be \"boolean\""
                           ]
-                      }
+                      },
+                      "errors": []
                   }
                   """
+
 
         @API-248
         @relational-backend

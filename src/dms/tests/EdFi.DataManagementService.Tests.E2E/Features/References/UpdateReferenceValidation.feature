@@ -17,6 +17,8 @@ Feature: Update Reference Validation
                   | 2022       | true              | 2021-2022             |
 
         @API-110
+        @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                             |
@@ -25,7 +27,7 @@ Feature: Update Reference Validation
                   """
                   {
                       "id": "{id}",
-                      "localEducationAgencyId": 102030401,
+                      "localEducationAgencyId": 10203040,
                       "nameOfInstitution": "Institution Test",
                       "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency",
                       "categories": [
@@ -39,12 +41,16 @@ Feature: Update Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "Identifying values for the LocalEducationAgency resource cannot be changed. Delete and recreate the resource item instead.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-                      "title": "Key Change Not Supported",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.categories[0].educationOrganizationCategoryDescriptor": [
+                              "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/educationorganizationcategorydescriptor#fake' does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -156,10 +162,10 @@ Feature: Update Reference Validation
                   }
                   """
 
-        # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
-        #[DMS-80]
-        @API-114 @ignore
-        Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
+        @API-114
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 05 Ensure clients cannot update a resource with an unresolved identifying deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
                   | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}] | {"educationOrganizationId":255901} | Algebra I   | 1             |
@@ -181,12 +187,13 @@ Feature: Update Reference Validation
                       "id": "{id}",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
+                          "schoolId": 255901,
                           "schoolYear": 2022,
-                          "sectionIdentifier": "25590100102Trad220ALG112011",
+                          "sectionIdentifier": "25590100102Trad220ALG112099",
                           "sessionName": "2021-2022 Fall Semester"
                       },
                       "studentReference": {
-                          "studentUniqueId": "604874"
+                          "studentUniqueId": "604834"
                       },
                       "beginDate": "2021-08-23"
                   }
@@ -203,6 +210,61 @@ Feature: Update Reference Validation
                       "validationErrors": {
                           "$.sectionReference": [
                               "The referenced Section item does not exist."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+
+        @API-265
+        @relational-backend
+        @relational-ci-shard-4
+        Scenario: 06 Ensure clients cannot update a resource with an unresolved non-identifying deep reference
+            Given the system has these "courses"
+                  | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
+                  | ALG-2      | [{"identificationCode": "ALG-2", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}] | {"educationOrganizationId":255901} | Algebra II  | 1             |
+              And the system has these "sessions"
+                  | sessionName               | schoolReference     | schoolYearTypeReference | beginDate  | endDate    | totalInstructionalDays | termDescriptor                                 |
+                  | "2021-2022 Fall Semester" | {"schoolId":255901} | {"schoolYear":2022}     | 2021-08-23 | 2021-12-17 | 81                     | "uri://ed-fi.org/TermDescriptor#Fall Semester" |
+              And the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                          | schoolReference     | sessionReference                                                                  |
+                  | ALG-2           | {"courseCode":"ALG-2", "educationOrganizationId":255901} | {"schoolId":255901} | {"schoolId":255901, "schoolYear": 2022, "sessionName":"2021-2022 Fall Semester" } |
+              And the system has these "sections" references
+                  | sectionIdentifier | courseOfferingReference                                                                                    |
+                  | ALG-2-SECTION     | {"localCourseCode":"ALG-2", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"} |
+             When a PUT request is made to referenced resource "/ed-fi/sections/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "sectionIdentifier": "ALG-2-SECTION",
+                      "courseOfferingReference": {
+                          "localCourseCode": "ALG-2",
+                          "schoolId": 255901,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Fall Semester"
+                      },
+                      "classPeriods": [
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "Missing Period",
+                                  "schoolId": 255901
+                              }
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
+                      "status": 409,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.classPeriods[0].classPeriodReference": [
+                              "The referenced ClassPeriod item does not exist."
                           ]
                       },
                       "errors": []

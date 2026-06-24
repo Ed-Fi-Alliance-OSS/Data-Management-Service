@@ -648,65 +648,6 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-173 @ignore @APIConventions @POST
-        Scenario: 25 Verify clients cannot POST a resource without permissions
-             When a POST request is made to "/ed-fi/students" with
-                  """
-                  {
-                      "studentUniqueId": "54721642123",
-                      "birthDate": "2007-08-13",
-                      "firstName": "John",
-                      "lastSurname": "Doe"
-                  }
-                  """
-             Then it should respond with 401
-              And the response body is
-                  """
-                  {
-                      "detail": "The caller could not be authenticated.",
-                      "type": "urn:ed-fi:api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "correlationId": "4ebd1a6d-5ab2-40c8-a54b-fb8a5103c18b",
-                      "errors": [
-                          "Authorization header is missing."
-                      ]
-                  }
-                  """
-              And the response header contains
-                  """
-                  content-type: application/problem+json
-                  """
-            Given the user is authenticated
-              And the token is expired
-             When a POST request is made to "/ed-fi/students" with
-                  """
-                  {
-                      "studentUniqueId": "54721642123",
-                      "birthDate": "2007-08-13",
-                      "firstName": "John",
-                      "lastSurname": "Doe"
-                  }
-                  """
-             Then it should respond with 401
-              And the response body is
-                  """
-                  {
-                      "detail": "The caller could not be authenticated.",
-                      "type": "urn:ed-fi:api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "correlationId": "4ebd1a6d-5ab2-40c8-a54b-fb8a5103c18b",
-                      "errors": [
-                          "Authorization header is missing."
-                      ]
-                  }
-                  """
-              And the response header contains
-                  """
-                  content-type: application/problem+json
-                  """
-
         @API-174 @APIConventions @POST @relational-backend
         @relational-ci-shard-1
         Scenario: 26 Validate special characters values during POST action

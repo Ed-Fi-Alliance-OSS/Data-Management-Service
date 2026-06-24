@@ -1,3 +1,6 @@
+@relational-backend
+@relational-ci-shard-3
+@ResetClaimsetsAfterScenario
 Feature: StudentAssessment Authorization
 
         Background:
@@ -22,11 +25,11 @@ Feature: StudentAssessment Authorization
                   | _storeResultingIdInVariable | studentAssessmentIdentifier | reportedSchoolReference   | studentReference          | assessmentReference                                                                                  |
                   | studentAssessmentId         | Test Student Assessment     | {"schoolId": "255901001"} | {"studentUniqueId": "61"} | {"assessmentIdentifier": "Test Assessment","namespace": "uri://ed-fi.org/Assessment/Assessment.xml"} |
 
-    # StudentAssessments have NamespaceBased authorization by default. Tests must be run after overriding authorization to RelationshipsWithEdOrgsOnly.
-    @ignore
     Rule: When the client is authorized
         Background:
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
+            Given a claim set is uploaded to CMS that grants "studentAssessment" access to "E2E-StudentAssessmentRelationshipsClaimSet" using authorization strategy "RelationshipsWithEdOrgsOnly"
+              And the claim set upload to CMS should be successful
+              And the claimSet "E2E-StudentAssessmentRelationshipsClaimSet" is authorized with educationOrganizationIds "255901001"
 
         Scenario: 01 Ensure authorized client can create a StudentAssessment
              When a POST request is made to "/ed-fi/studentAssessments" with
@@ -110,11 +113,11 @@ Feature: StudentAssessment Authorization
              When a DELETE request is made to "/ed-fi/studentAssessments/{studentAssessmentId}"
              Then it should respond with 204
 
-    # StudentAssessments have NamespaceBased authorization by default. Tests must be run after overriding authorization to RelationshipsWithEdOrgsOnly.
-    @ignore
     Rule: When the client is unauthorized
         Background:
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901044"
+            Given a claim set is uploaded to CMS that grants "studentAssessment" access to "E2E-StudentAssessmentRelationshipsClaimSet" using authorization strategy "RelationshipsWithEdOrgsOnly"
+              And the claim set upload to CMS should be successful
+              And the claimSet "E2E-StudentAssessmentRelationshipsClaimSet" is authorized with educationOrganizationIds "255901044"
 
         Scenario: 05 Ensure unauthorized client can not create a StudentAssessment
              When a POST request is made to "/ed-fi/studentAssessments" with
@@ -136,13 +139,13 @@ Feature: StudentAssessment Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
+                     "detail": "Access to the requested data could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization",
                      "title": "Authorization Denied",
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901044') and the resource item's 'ReportedSchool' value."
                      ]
                   }
                   """
@@ -153,13 +156,13 @@ Feature: StudentAssessment Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
+                     "detail": "Access to the requested data could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization",
                      "title": "Authorization Denied",
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901044') and the resource item's 'ReportedSchool' value."
                      ]
                   }
                   """
@@ -193,13 +196,13 @@ Feature: StudentAssessment Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
+                     "detail": "Access to the requested data could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization",
                      "title": "Authorization Denied",
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901044') and the resource item's 'ReportedSchool' value."
                      ]
                   }
                   """
@@ -210,13 +213,13 @@ Feature: StudentAssessment Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
+                     "detail": "Access to the requested data could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization",
                      "title": "Authorization Denied",
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901044') and the resource item's 'ReportedSchool' value."
                      ]
                   }
                   """
