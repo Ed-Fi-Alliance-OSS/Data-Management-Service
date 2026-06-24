@@ -281,3 +281,83 @@ public class Given_NamespacePrefixParameterizationFactory
         actEmpty.Should().Throw<ArgumentException>().WithParameterName("namespacePrefixes");
     }
 }
+
+[TestFixture]
+[Parallelizable]
+public class Given_NamespacePrefixParameterizationValidator
+{
+    private const string ParameterizationName = "namespacePrefixes";
+    private const string UnsupportedDialectMessagePrefix = "Namespace authorization";
+
+    [Test]
+    public void It_rejects_invalid_base_parameter_names_with_parameterization_context()
+    {
+        var parameterization = new NamespacePrefixParameterization(
+            NamespacePrefixParameterizationKind.MssqlScalar,
+            "namespace-prefixes",
+            ["uri://ed-fi.org/"],
+            ["uri://ed-fi.org/%"],
+            ["namespacePrefixes_0"]
+        );
+
+        var act = () => Validate(parameterization, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName(
+                $"{ParameterizationName}.{nameof(NamespacePrefixParameterization.BaseParameterName)}"
+            );
+    }
+
+    [Test]
+    public void It_rejects_invalid_parameter_names_with_parameterization_context()
+    {
+        var parameterization = new NamespacePrefixParameterization(
+            NamespacePrefixParameterizationKind.MssqlScalar,
+            "namespacePrefixes",
+            ["uri://ed-fi.org/"],
+            ["uri://ed-fi.org/%"],
+            ["namespace-prefixes-0"]
+        );
+
+        var act = () => Validate(parameterization, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName(
+                $"{ParameterizationName}.{nameof(NamespacePrefixParameterization.ParameterNamesInOrder)}"
+            );
+    }
+
+    [Test]
+    public void It_rejects_pgsql_array_parameterizations_when_the_parameter_name_is_not_the_base_name()
+    {
+        var parameterization = new NamespacePrefixParameterization(
+            NamespacePrefixParameterizationKind.PgsqlArray,
+            "namespacePrefixes",
+            ["uri://ed-fi.org/"],
+            ["uri://ed-fi.org/%"],
+            ["namespacePrefixes_0"]
+        );
+
+        var act = () => Validate(parameterization);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "PostgreSQL array namespace prefix parameterizations require exactly the base parameter name.*"
+            )
+            .WithParameterName("namespacePrefixParameterization");
+    }
+
+    private static void Validate(
+        NamespacePrefixParameterization namespacePrefixParameterization,
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        NamespacePrefixParameterizationValidator.ValidateOrThrow(
+            namespacePrefixParameterization,
+            dialect,
+            ParameterizationName,
+            UnsupportedDialectMessagePrefix
+        );
+}

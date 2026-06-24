@@ -77,6 +77,54 @@ public class Given_PlanNamingConventions
     }
 
     [Test]
+    public void It_should_reserve_suffixes_from_explicit_names_before_generating_duplicates()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a_5", "a", "a"]);
+
+        deduplicated.Should().Equal("a_5", "a", "a_6");
+    }
+
+    [Test]
+    public void It_should_not_move_suffix_reservation_backwards_for_later_explicit_names()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a_5", "a_2", "a", "a"]);
+
+        deduplicated.Should().Equal("a_5", "a_2", "a", "a_6");
+    }
+
+    [Test]
+    public void It_should_advance_suffix_reservation_when_later_explicit_names_use_higher_suffixes()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a", "a_5", "a"]);
+
+        deduplicated.Should().Equal("a", "a_5", "a_6");
+    }
+
+    [Test]
+    public void It_should_treat_suffix_one_as_numeric_when_deduplicating_explicit_suffixes()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a_1", "a_1"]);
+
+        deduplicated.Should().Equal("a_1", "a_2");
+    }
+
+    [Test]
+    public void It_should_treat_zero_suffixes_as_literal_names()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a_0", "a_0"]);
+
+        deduplicated.Should().Equal("a_0", "a_0_2");
+    }
+
+    [Test]
+    public void It_should_treat_leading_separator_suffixes_as_literal_names()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["_1", "_1"]);
+
+        deduplicated.Should().Equal("_1", "_1_2");
+    }
+
+    [Test]
     public void It_should_derive_and_deduplicate_write_parameter_names_from_ordered_columns()
     {
         var parameterNames = PlanNamingConventions.DeriveWriteParameterNamesInOrder([

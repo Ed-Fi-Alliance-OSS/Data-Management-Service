@@ -48,6 +48,20 @@ public class Given_PlanSqlWriterExtensions
         act.Should().Throw<ArgumentException>().WithParameterName("bareName");
     }
 
+    [TestCase("")]
+    [TestCase(" ")]
+    public void It_should_reject_whitespace_bare_parameter_names_with_specific_validation_message(
+        string bareName
+    )
+    {
+        var act = () => PlanSqlWriterExtensions.ValidateBareParameterName(bareName, "customName");
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Parameter name cannot be null or whitespace.*")
+            .WithParameterName("customName");
+    }
+
     [Test]
     public void It_should_emit_multiline_where_with_uppercase_keywords_and_canonical_indentation()
     {

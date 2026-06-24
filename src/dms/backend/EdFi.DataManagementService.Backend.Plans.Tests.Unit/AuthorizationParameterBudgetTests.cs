@@ -215,6 +215,20 @@ public class Given_AuthorizationParameterBudget
             .BeTrue();
     }
 
+    [Test]
+    public void It_rejects_a_negative_non_authorization_parameter_count()
+    {
+        Action act = () =>
+            AuthorizationParameterBudget.ExceedsCommandParameterLimit(
+                SqlDialect.Mssql,
+                namespacePrefixParameterization: null,
+                claimEducationOrganizationIdParameterization: null,
+                nonAuthorizationParameterCount: -1
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("nonAuthorizationParameterCount");
+    }
+
     private static IReadOnlyList<string> CreateNamespacePrefixes(int count)
     {
         string[] namespacePrefixes = new string[count];
