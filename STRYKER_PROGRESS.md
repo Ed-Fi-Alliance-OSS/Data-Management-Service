@@ -1261,3 +1261,29 @@
   - Focused survivor id `127` remains the `ScopeKey.GetHashCode` `hash.Add(part)` statement and is still treated as not a stable equality-contract assertion target.
   - Focused survivors/no-coverage ids `160`, `171`, `188`, `210`, `211`, `212`, `281`, `282`, `286`, and `301` remain defensive, equivalent, or unreachable through public builder behavior already inspected in the previous loop entry.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans RelationshipAuthorizationPlanningHelpers Ordering And Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanningHelpers.cs`
+- Mutants selected:
+  - `String mutation`, id `5995`, line `21`: replaced the unsupported person securable-element kind diagnostic with `""`.
+  - `Statement mutation`, id `5998`, line `28`: removed the blank `planningContext` validation.
+  - `String mutation`, ids `6000` and `6001`, lines `36` and `39`: replaced missing and multiple root-scope locator diagnostics with `$""`.
+  - `Linq method mutation`, ids `6004`, `6005`, `6006`, `6008`, and `6011`, line `50`: changed `OrderFailures` tie-breakers from ascending to descending.
+  - `Null coalescing mutation`, ids `6013` and `6014`, lines `51` and `52`: ignored configured strategy and relationship local order values.
+  - `Linq method mutation`, id `6021`, line `65`: changed unresolved contributor ordering from minimum contribution order to maximum contribution order.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlanningHelpersTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanningHelpers.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:05`; `Killed: 8`, `Survived: 11`, `NoCoverage: 3`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-13-01/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlanningHelpersTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationPlanningHelpers"`: passed; `10` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanningHelpers.cs" --concurrency 8` from the test project directory: final focused run completed in `00:01:59`; `Killed: 20`, `Survived: 2`, `NoCoverage: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-17-37/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `5995`, `5998`, `6000`, `6001`, `6004`, `6005`, `6006`, `6008`, `6011`, `6013`, `6014`, and `6021` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivor ids `5997` and `6003` are null-guard statement mutants and are skipped by the loop prompt.
+  - Briefly inspected `RelationshipAuthorizationAuth1FailurePayload.cs` with a focused baseline report `StrykerOutput/2026-06-24.04-10-11/reports/mutation-report.json`; remaining focused mutants are null guards, equivalent positive-count parsing behavior, or a timeout from removing the SQL Server payload loop increment, so no tests were changed there.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
