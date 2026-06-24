@@ -1724,3 +1724,34 @@
   - Focused survivor id `5011`, line `431`, removes the descriptor-resource-count short-circuit but still reaches the same ambiguity result through downstream target collapse, so it appears redundant for observable behavior.
   - Focused survivor ids `5022`, `5024`, `5025`, and `5026` are lookup ordering changes that did not affect externally visible representative target selection in the existing ambiguity-collapse contract.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans RelationshipAuthorizationPeoplePathValidation Path Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPeoplePathValidation.cs`
+- Mutants selected:
+  - `Logical mutation`, id `5637`, line `67`: changed the direct-root subject table/column mismatch check from `or` to `and`.
+  - `Statement mutation`, id `5642`, line `69`: removed the direct-root mismatch throw.
+  - `String mutation`, id `5643`, line `70`: replaced the direct-root mismatch diagnostic message with `$""`.
+  - `Statement mutation`, id `5653`, line `92`: removed the transitive step source-table mismatch throw.
+  - `String mutation`, id `5654`, line `93`: replaced the transitive step source-table mismatch diagnostic message with `$""`.
+  - `String mutation`, id `5655`, line `100`: replaced the missing target-table diagnostic message with `$""`.
+  - `Statement mutation`, id `5665`, line `117`: removed the terminal source-table mismatch throw.
+  - `String mutation`, id `5666`, line `118`: replaced the terminal source-table mismatch diagnostic message with `$""`.
+  - `Logical mutation`, id `5667`, lines `123`-`124`: changed the terminal subject table/column mismatch check from `or` to `and`.
+  - `Statement mutation`, id `5672`, line `127`: removed the terminal subject mismatch throw.
+  - `String mutation`, id `5673`, line `128`: replaced the terminal subject mismatch diagnostic message with `$""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPeoplePathValidationTests.cs`
+- Commands run and results:
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json` from the test project directory: broad refresh was interrupted at about `1.3%` because it had not produced a JSON report and was still projecting roughly `2.5` hours; no report from this interrupted run was used for selection.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPeoplePathValidation.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:00`; `Killed: 31`, `Survived: 2`, `NoCoverage: 9`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-15-46/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPeoplePathValidationTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationPeoplePathValidation"`: passed; `9` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPeoplePathValidation.cs" --concurrency 8` from the test project directory: focused verification completed in `00:01:59`; `Killed: 42`, `Survived: 0`, `NoCoverage: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-20-07/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `5637`, `5642`, `5643`, `5653`, `5654`, `5655`, `5665`, `5666`, `5667`, `5672`, and `5673` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused `RelationshipAuthorizationPeoplePathValidation.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because the broad refresh projected roughly `2.5` hours in this invocation. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
