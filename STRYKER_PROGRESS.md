@@ -1527,3 +1527,27 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain in null/argument validation paths, unsupported enum diagnostics, People path validation diagnostics, duplicate semantic-predicate helper behavior, and ordering mutants already noted in prior PageDocumentIdSqlCompiler entries.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageDocumentIdSqlCompiler Authorization Normalization Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`
+- Mutants selected:
+  - Empty authorization subject validation `Statement mutation`, id `2613`, line `433`: removed the `ArgumentException` throw.
+  - Empty authorization subject validation `String mutation`, id `2614`, line `434`: replaced the diagnostic message with `$""`.
+  - Empty authorization normalization `Block removal mutation`, id `2632`, line `460`: removed the `return null` block when strategies and namespace checks are both empty.
+  - Strategy-present validation gate `Equality mutation`, id `2633`, line `464`: changed `normalizedStrategies.Length > 0` to `normalizedStrategies.Length < 0`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; first run `121` tests, final run `122` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: first focused run completed in `00:02:50`; `Killed: 338`, `Survived: 27`, `Timeout: 3`; report `StrykerOutput/2026-06-24.05-58-00/reports/mutation-report.json`. It killed ids `2613`, `2614`, and `2632`; id `2633` still survived.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory after adding the claim-parameterization validation assertion: completed in `00:02:46`; `Killed: 341`, `Survived: 24`, `NoCoverage: 20`, `Timeout: 3`; report `StrykerOutput/2026-06-24.06-01-56/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `2613`, `2614`, `2632`, and `2633` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `2594`, `2602`, `2603`, `2605`, `2616`, `2617`, `2637`, and `2643` are null-guard or null-entry validation mutants and are skipped by the loop prompt.
+  - Focused survivor id `2645` and related validation diagnostics remain outside this selected normalization cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

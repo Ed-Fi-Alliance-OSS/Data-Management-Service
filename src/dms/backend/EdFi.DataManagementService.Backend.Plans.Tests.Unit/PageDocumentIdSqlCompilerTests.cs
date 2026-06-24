@@ -2146,12 +2146,20 @@ public class Given_PageDocumentIdSqlCompiler
     public void It_should_treat_an_empty_authorization_strategy_list_as_no_authorization(SqlDialect dialect)
     {
         var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var claimParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [255901001L, 255901002L],
+            RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+        );
         var plan = compiler.Compile(
             CreateSpec(
                 [],
                 [],
                 includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(claimEducationOrganizationIds: [])
+                authorization: new PageDocumentIdAuthorizationSpec(
+                    [],
+                    ClaimEducationOrganizationIdParameterization: claimParameterization
+                )
             )
         );
 
@@ -2164,6 +2172,55 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
             .Should()
             .BeEmpty();
+    }
+
+    [Test]
+    public void It_should_reject_authorization_strategy_without_subjects()
+    {
+        var authorization = CreateAuthorizationSpec(
+            [255901001L],
+            new PageDocumentIdAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                []
+            )
+        );
+
+        Action act = () => _compiler.Compile(CreateSpec([], [], authorization: authorization));
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Authorization strategy 'RelationshipsWithEdOrgsOnly' requires at least one authorization subject.*"
+            )
+            .WithParameterName("authorization");
+    }
+
+    [Test]
+    public void It_should_validate_claim_parameterization_when_authorization_strategies_are_present()
+    {
+        var invalidClaimParameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+            "claim-education-organization-ids",
+            [255901001L],
+            ["claim-education-organization-ids"]
+        );
+        var authorization = new PageDocumentIdAuthorizationSpec(
+            [
+                CreateAuthorizationStrategy(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    CreateAuthorizationSubject("SchoolId")
+                ),
+            ],
+            invalidClaimParameterization
+        );
+
+        Action act = () => _compiler.Compile(CreateSpec([], [], authorization: authorization));
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName(
+                $"{nameof(PageDocumentIdAuthorizationSpec.ClaimEducationOrganizationIdParameterization)}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.BaseParameterName)}"
+            );
     }
 
     [Test]
