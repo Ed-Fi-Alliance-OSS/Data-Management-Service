@@ -1531,6 +1531,36 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_no_claims_metadata_references_an_unknown_strategy_identity()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var checkSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            34,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var unmatchedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            35,
+            0,
+            CreateSubject("LocalEducationAgencyId", "$.localEducationAgencyReference.localEducationAgencyId")
+        );
+
+        AssertNoClaimsFailureDoesNotMap(
+            [checkSpec],
+            [
+                CreateNoClaimsFailure(
+                    resource,
+                    unmatchedCheckSpec,
+                    unmatchedCheckSpec.Subjects[0].AuthObject,
+                    "unknown strategy hint"
+                ),
+            ]
+        );
+    }
+
+    [Test]
     public void It_should_fail_closed_when_no_claims_value_sources_are_not_homogeneous()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
@@ -1995,6 +2025,197 @@ public class Given_RelationshipAuthorizationFailureMapper
         failedSubject.Hint.Should().Be("path mismatch hint");
         failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
         failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_use_default_no_claims_subject_hint_when_people_metadata_has_no_matching_auth_object()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var edOrgAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                43,
+                0,
+                studentAuthObject,
+                studentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [CreateNoClaimsFailure(resource, checkSpecs[0], edOrgAuthObject, "wrong auth object hint")],
+            [],
+            16,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_skip_mismatched_people_no_claims_metadata_before_generic_people_metadata()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var contactAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Contact
+        );
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var contactSubject = CreatePersonSubject(
+            SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Contact,
+            AuthNames.ContactDocumentId,
+            "$.contactReference.contactUniqueId",
+            "ContactUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                44,
+                0,
+                studentAuthObject,
+                studentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    contactAuthObject,
+                    contactSubject,
+                    "wrong contact hint"
+                ),
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    studentAuthObject,
+                    studentSubject,
+                    "generic student hint"
+                ) with
+                {
+                    PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                        RelationshipAuthorizationPersonKind.Student,
+                        studentAuthObject
+                    ),
+                },
+            ],
+            [],
+            17,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("generic student hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_use_default_no_claims_subject_hint_when_non_person_metadata_is_only_people_metadata()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var subject = CreateSubject("SchoolId", "$.schoolReference.schoolId");
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 45, 0, subject),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    studentAuthObject,
+                    studentSubject,
+                    "person-only metadata hint"
+                ),
+            ],
+            [],
+            18,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToEducationOrganizationId");
+        failedSubject.PersonSubject.Should().BeNull();
     }
 
     [Test]

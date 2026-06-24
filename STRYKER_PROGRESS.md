@@ -916,6 +916,31 @@
   - Focused timeout ids `6331`, `6332`, `6430`, and `6502` remain in static constant/type-check or loop-control mutations; id `6502` is the previously noted proposed value suffix allocation timeout.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
 
+## 2026-06-24 - Backend Plans RelationshipAuthorizationFailureMapper No-Claims Fallback Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs`
+- Mutants selected:
+  - Unknown no-claims strategy identity guard mutants ids `5454` and `5460`, lines `74`-`78`.
+  - People no-claims fallback mutants ids `5551`, `5553`, and `5554`, lines `340` and `348`.
+  - Non-person generic fallback mutant id `5562`, line `353`.
+  - Mismatched people metadata rejection mutant id `5573`, line `373`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationFailureMapper"`: passed; `33` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs" --concurrency 8` from the test project directory: completed in `00:01:55`; `Killed: 115`, `Survived: 8`, `NoCoverage: 6`, `Timeout: 0`; report `StrykerOutput/2026-06-24.05-01-25/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `5454`, `5460`, `5551`, `5553`, `5554`, `5562`, and `5573` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `5423`, `5424`, `5425`, `5472`, `5473`, `5474`, and `5475` are null guard or argument validation statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `5550`, line `340`, appears equivalent or coverage-limited for this chain: when the path-mismatch fallback line is reached, replacing the coalescing expression with that same fallback does not change the selected metadata; tests that distinguish generic precedence short-circuit before line `340` under the original code.
+  - Focused no-coverage id `5468`, line `117`, remains a defensive empty-result check that is unreachable after the earlier no-claims input and grouping checks.
+  - Focused no-coverage ids `5535`, `5608`, `5609`, `5611`, and `5615` remain unsupported enum diagnostic paths outside this selected no-claims fallback cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
 ## 2026-06-24 - Backend Plans ReadPlanProjectionContractValidator Projection Gating
 
 - Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
