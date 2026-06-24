@@ -667,3 +667,39 @@
   - Focused survivor id `1`, line `54`, is a null-guard statement mutant and is skipped by the loop prompt.
   - Focused survivor id `13`, line `106`, appears equivalent because any valid bare base parameter name plus the factory-generated `_<index>` suffix still matches the same bare parameter-name pattern.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans AUTH1 Payload And Namespace Mapper Boundaries
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production files:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationAuth1FailurePayload.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespaceAuthorizationAuth1FailurePayload.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespaceAuthorizationFailureMapper.cs`
+- Mutants selected:
+  - Namespace payload constructor validation mutants ids `2049` and `2050`, lines `49` and `52`.
+  - Namespace payload unsupported-kind encoding message mutant id `2084`, line `137`.
+  - Namespace mapper emitted-index boundary mutant id `2104`, line `36`.
+  - Namespace mapper unsupported value-source message mutant id `2117`, line `106`.
+  - Relationship subject ordinal validation mutants ids `5176`, `5177`, `5182`, and `5183`, lines `34`-`46`.
+  - Relationship payload emitted-index and empty-subject validation mutants ids `5187`, `5190`, and `5191`, lines `74`-`79`.
+  - Relationship parser/extractor boundary mutants ids `5208`, `5234`, `5242`, `5249`, `5294`, `5298`, `5300`, `5308`, `5314`, `5323`, `5326`, and `5329`, lines `129`, `183`, `213`, `228`, `334`, `344`, `347`, `356`, `365`, and `373`.
+  - Relationship unsupported-kind encoding message mutant id `5282`, line `300`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespaceAuthorizationAuth1FailurePayloadTests.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespaceAuthorizationFailureMapperTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format RelationshipAuthorizationAuth1FailurePayloadTests.cs NamespaceAuthorizationAuth1FailurePayloadTests.cs NamespaceAuthorizationFailureMapperTests.cs`: succeeded.
+  - `dotnet test EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationAuth1FailurePayloadCodec|FullyQualifiedName~Given_NamespaceAuthorizationAuth1FailurePayloadCodec|FullyQualifiedName~Given_NamespaceAuthorizationFailureMapper"`: passed; final run `69` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.Auth1Transport.tmp.json --concurrency 8` from the test project directory with a temporary focused config mutating the three selected AUTH1 files: first run completed in `00:01:57`; `Killed: 141`, `Survived: 11`, `NoCoverage: 4`, `Timeout: 1`.
+  - `dotnet stryker --config-file stryker-config.Auth1Transport.tmp.json --concurrency 8` after adding relationship parser/extractor boundary assertions: completed in `00:01:59`; `Killed: 146`, `Survived: 9`, `NoCoverage: 1`, `Timeout: 1`; report `StrykerOutput/2026-06-24.00-49-17/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `2049`, `2050`, `2084`, `2104`, `2117`, `5176`, `5177`, `5182`, `5183`, `5187`, `5190`, `5191`, `5208`, `5234`, `5242`, `5249`, `5282`, `5294`, `5298`, `5300`, `5308`, `5314`, `5323`, `5326`, and `5329` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.Auth1Transport.tmp.json` was removed after verification.
+  - Focused survivors ids `2052`, `2096`, `2097`, `2098`, `5185`, and `5198` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused no-coverage id `2116`, line `91`, is an unsupported namespace failure-kind mapping message that is unreachable because unknown namespace AUTH1 failure kinds fail compatibility before mapping.
+  - Focused survivors ids `5272`, `5275`, and `5278`, lines `282` and `288`, appear equivalent for relationship positive-count parsing because accepting `0` still fails on the subject-failure section count before producing a payload.
+  - Focused timeout id `5310`, line `360`, is a loop-control mutation that prevents SQL Server payload extraction from advancing.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

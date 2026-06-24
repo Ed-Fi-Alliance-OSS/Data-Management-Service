@@ -19,6 +19,84 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
 {
     [Test]
+    public void It_should_reject_negative_strategy_ordinals()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                -1,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("strategyOrdinal")
+            .WithMessage("AUTH1 strategy ordinal cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_negative_subject_ordinals()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                -1,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("subjectOrdinal")
+            .WithMessage("AUTH1 subject ordinal cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_allow_zero_ordinals_and_zero_emitted_auth1_index()
+    {
+        var subjectFailure = new RelationshipAuthorizationAuth1SubjectFailure(
+            0,
+            0,
+            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+        );
+        var payload = new RelationshipAuthorizationAuth1FailurePayload(0, [subjectFailure]);
+
+        payload.EmittedAuth1Index.Should().Be(0);
+        payload.SubjectFailures.Should().ContainSingle().Which.Should().Be(subjectFailure);
+    }
+
+    [Test]
+    public void It_should_reject_negative_emitted_auth1_indexes()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1FailurePayload(
+                -1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("emittedAuth1Index")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_empty_subject_failure_lists()
+    {
+        var act = () => new RelationshipAuthorizationAuth1FailurePayload(0, []);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("subjectFailures")
+            .WithMessage("AUTH1 relationship authorization payload requires at least one subject failure.*");
+    }
+
+    [Test]
     public void It_should_encode_and_parse_the_versioned_failure_set_payload()
     {
         var payload = new RelationshipAuthorizationAuth1FailurePayload(
@@ -80,6 +158,44 @@ public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
         sqlServerPayload.SubjectFailures.Should().HaveCount(2);
     }
 
+    [Test]
+    public void It_should_extract_sql_server_payloads_when_the_marker_starts_the_message_and_the_payload_ends_the_message()
+    {
+        const string payloadText = "1|9|1|0:0:n";
+        var parsed = RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+            SqlDialect.Mssql,
+            null,
+            $"AUTH1 - {payloadText}",
+            out var payload
+        );
+
+        parsed.Should().BeTrue();
+        payload!.EmittedAuth1Index.Should().Be(9);
+        payload.SubjectFailures.Should().ContainSingle();
+    }
+
+    [Test]
+    public void It_should_throw_for_unknown_failure_kinds_when_encoding()
+    {
+        var payload = new RelationshipAuthorizationAuth1FailurePayload(
+            0,
+            [
+                new RelationshipAuthorizationAuth1SubjectFailure(
+                    0,
+                    0,
+                    (RelationshipAuthorizationAuth1SubjectFailureKind)999
+                ),
+            ]
+        );
+
+        var act = () => RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(payload);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("failureKind")
+            .WithMessage("Unsupported AUTH1 relationship failure kind.*");
+    }
+
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "1|7|1|0:0:n", true)]
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, null, true)]
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "", true)]
@@ -126,6 +242,118 @@ public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
         result.Should().Be(expected);
     }
 
+    [Test]
+    public void It_should_not_identify_provider_failures_for_unsupported_sql_dialects()
+    {
+        var result = RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n"
+        );
+
+        result.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_the_provider_message_is_blank()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            " ",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_postgresql_error_code_does_not_match()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Pgsql,
+            "P0001",
+            "1|7|1|0:0:n",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_sql_server_message_lacks_the_marker()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "Conversion failed without an AUTH1 payload.",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_for_unsupported_sql_dialects()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_return_no_payload_when_provider_payload_extraction_fails()
+    {
+        var parsed = RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n",
+            out var payload
+        );
+
+        parsed.Should().BeFalse();
+        payload.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_fail_sql_server_payload_extraction_when_the_marker_has_no_payload()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "AUTH1 - ",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_extract_sql_server_payloads_with_lowercase_boundary_characters()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "AUTH1 - az.",
+            out var payloadText
+        );
+
+        extracted.Should().BeTrue();
+        payloadText.Should().Be("az");
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
     [TestCase("2|7|1|0:0:n")]
     [TestCase("1|7|2|0:0:n")]
     [TestCase("1|7|2|0:0:n,")]

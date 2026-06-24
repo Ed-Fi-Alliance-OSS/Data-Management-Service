@@ -130,6 +130,26 @@ public class Given_NamespaceAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_the_emitted_index_matches_the_planned_check_count()
+    {
+        var plannedChecks = new[] { CreatePlannedCheck(NamespaceAuthorizationCheckValueSource.Stored) };
+        var payload = new NamespaceAuthorizationAuth1FailurePayload(
+            plannedChecks.Length,
+            NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+        );
+
+        var mapped = NamespaceAuthorizationFailureMapper.TryMapAuth1Failure(
+            payload,
+            plannedChecks,
+            _twoPrefixes,
+            out var failure
+        );
+
+        mapped.Should().BeFalse();
+        failure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_closed_when_planned_checks_are_empty()
     {
         var payload = new NamespaceAuthorizationAuth1FailurePayload(
@@ -186,6 +206,28 @@ public class Given_NamespaceAuthorizationFailureMapper
 
         mapped.Should().BeFalse();
         failure.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_reject_unsupported_planned_check_value_sources()
+    {
+        var payload = new NamespaceAuthorizationAuth1FailurePayload(
+            0,
+            NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+        );
+
+        var act = () =>
+            NamespaceAuthorizationFailureMapper.TryMapAuth1Failure(
+                payload,
+                [(NamespaceAuthorizationCheckValueSource)999],
+                _twoPrefixes,
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("valueSource")
+            .WithMessage("Unsupported namespace authorization value source.*");
     }
 
     private static NamespaceAuthorizationCheckValueSource CreatePlannedCheck(
