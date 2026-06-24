@@ -1671,3 +1671,25 @@
   - `NamespaceAuthorizationFailureMapper.cs` was not selected for edits because its current focused survivors are null-guard mutants and an unreachable unsupported failure-kind branch blocked by compatibility validation.
   - Focused `PlanSqlDialectFactory.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans WritePlanJsonPathConventions Prefix Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanJsonPathConventions.cs`
+- Mutants selected:
+  - `String mutation`, id `7905`, line `30`: replaced the not-prefix diagnostic prefix with `$""`.
+  - `String mutation`, id `7912`, line `40`: replaced the stripped-wildcard diagnostic prefix with `$""`.
+  - `Boolean mutation`, id `7929`, line `65`: changed the segment-type mismatch return to `true`.
+  - `Boolean mutation`, id `7937`, line `74`: changed the property-name mismatch return to `true`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanJsonPathConventionsTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanJsonPathConventions.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:10`; `Killed: 16`, `Survived: 2`, `NoCoverage: 2`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-52-25/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanJsonPathConventionsTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_WritePlanJsonPathConventions"`: passed; `6` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanJsonPathConventions.cs" --concurrency 8` from the test project directory: focused verification completed in `00:02:10`; `Killed: 20`, `Survived: 0`, `NoCoverage: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.06-55-34/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `7905`, `7912`, `7929`, and `7937` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused `WritePlanJsonPathConventions.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
