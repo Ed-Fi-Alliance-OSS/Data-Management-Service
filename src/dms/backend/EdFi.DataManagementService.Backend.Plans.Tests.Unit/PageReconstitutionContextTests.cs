@@ -199,6 +199,123 @@ public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_A
 }
 
 [TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_A_Physical_Row_Identity
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithoutPhysicalRowIdentity(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.School' does not define a physical row identity."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_An_Immediate_Parent_Locator
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan =
+            PageReconstitutionContextTestData.CreateCompiledPlanWithoutImmediateParentScopeLocator(
+                pageData.ReadPlan
+            );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.SchoolAddress' does not define a immediate parent locator."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Child_Table_Before_Its_Parent
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithAddressBeforeRoot(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': parent table 'edfi.School' was not available before child table 'edfi.SchoolAddress'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_An_Empty_Child_Table_Before_Its_Parent
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithoutAddressRows();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithAddressBeforeRoot(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': parent table 'edfi.School' was not available when ordering child table 'edfi.SchoolAddress'."
+            );
+    }
+}
+
+[TestFixture]
 public class Given_RowNode_With_An_Already_Attached_Child_Row
 {
     private Exception _exception = null!;
@@ -665,6 +782,42 @@ file static class PageReconstitutionContextTestData
         return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
     }
 
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutPhysicalRowIdentity(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[0] = tablePlans[0] with { PhysicalRowIdentityOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutImmediateParentScopeLocator(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[1] = tablePlans[1] with { ImmediateParentScopeLocatorOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithAddressBeforeRoot(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+
+        return new CompiledReconstitutionPlan(
+            compiledPlan.ReadPlan,
+            [tablePlans[1], tablePlans[0], tablePlans[2]],
+            compiledPlan.PropertyOrder
+        );
+    }
+
     public static PageData CreateHappyPathPage()
     {
         var readPlan = CreateReadPlan();
@@ -705,6 +858,27 @@ file static class PageReconstitutionContextTestData
                         new DescriptorUriRow(602L, "uri://ed-fi.org/SchoolCategoryDescriptor#Charter"),
                     ]),
                 ]
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
+    public static PageData CreatePageWithoutAddressRows()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata: [CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111")],
+                rootRows:
+                [
+                    [101, "First School"],
+                ],
+                addressRows: [],
+                periodRows: []
             ),
             readPlan.Model.Root.Table,
             readPlan.Model.TablesInDependencyOrder[1].Table,

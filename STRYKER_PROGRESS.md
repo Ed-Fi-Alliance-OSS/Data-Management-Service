@@ -1060,3 +1060,29 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain outside this selected descriptor and scope-validation cluster, including null guards, null ordinal formatting, unavailable parent-table/order diagnostics, missing immediate-parent locator diagnostics, and null/unknown scope-key formatting.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageReconstitutionContext Parent Availability And Scope Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs`
+- Mutants selected:
+  - `String mutation`, id `3090`, line `294`: replaced the missing physical-row-identity scope description with `""`.
+  - `Statement mutation`, id `3224`, line `614`: removed the unavailable immediate-parent table exception.
+  - `String mutation`, ids `3225` and `3226`, lines `615`-`616`: replaced unavailable immediate-parent table diagnostic text with `$""`.
+  - `String mutation`, id `3227`, line `624`: replaced the missing immediate-parent locator scope description with `""`.
+  - `Statement mutation`, id `3244`, line `660`: removed the unavailable parent table during child-ordering exception.
+  - `String mutation`, ids `3245` and `3246`, lines `661`-`662`: replaced unavailable parent table during child-ordering diagnostic text with `$""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageReconstitutionContext|FullyQualifiedName~Given_RowNode"`: passed; `31` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs" --concurrency 8` from the test project directory: completed in `00:02:03`; `Killed: 142`, `Survived: 23`, `NoCoverage: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-24.03-10-05/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3090`, `3224`, `3225`, `3226`, `3227`, `3244`, `3245`, and `3246` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `3030`, `3032`, `3033`, `3034`, `3061`, `3071`, `3072`, `3073`, `3074`, `3075`, `3077`, `3079`, `3080`, `3082`, `3083`, `3084`, `3085`, `3086`, `3121`, `3134`, and `3186` are null-guard or duplicate defensive null-validation mutants and are skipped by the loop prompt.
+  - Focused survivors/no-coverage ids `3045`, `3056`, `3058`, `3265`, and `3268` are null/null-formatting or null-ToString formatting paths and are skipped by the loop prompt.
+  - Focused no-coverage ids `3220` and `3221` are the defensive `ImmediateParentTable` null-coalescing diagnostic inside a method called only after `ImmediateParentTable is not null`; they appear unreachable through public `Build` behavior.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
