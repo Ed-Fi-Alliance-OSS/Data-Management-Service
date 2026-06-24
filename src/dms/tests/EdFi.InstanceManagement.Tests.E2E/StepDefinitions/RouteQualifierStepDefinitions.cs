@@ -354,4 +354,35 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             Console.WriteLine($"Response body: {responseBody}");
         }
     }
+
+    [When("a GET request is made to XSD file {string} in section {string} with tenant {string}")]
+    public async Task WhenAGetRequestIsMadeToXsdFileInSectionWithTenant(
+        string fileName,
+        string section,
+        string tenantName
+    )
+    {
+        // XSD file endpoints are public and don't require authentication
+        using var xsdClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET XSD file '{fileName}' in section '{section}' with tenant: '{tenantName}'");
+
+        context.LastResponse = await xsdClient.GetXsdFileWithTenantAsync(tenantName, section, fileName);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
+    [Then("the response content type should be {string}")]
+    public void ThenTheResponseContentTypeShouldBe(string expectedMediaType)
+    {
+        context.LastResponse.Should().NotBeNull();
+        context.LastResponse!.Content.Headers.ContentType?.MediaType.Should().Be(expectedMediaType);
+    }
 }
