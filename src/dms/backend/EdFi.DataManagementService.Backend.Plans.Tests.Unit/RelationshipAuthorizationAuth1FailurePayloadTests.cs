@@ -2389,11 +2389,22 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
 
+        var authObject = subject.AuthObject;
+        var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var subjectValueColumn = QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value);
+        var claimEducationOrganizationIdColumn = QuoteIdentifier(
+            dialect,
+            authObject.ClaimEducationOrganizationIdColumn.Value
+        );
+        var authorizationSuccessSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{subjectValueColumn} = target.{documentId} AND a0_0.{claimEducationOrganizationIdColumn}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
+
         plan.AuthorizationSql.Should().Contain($"FROM {QuoteRelation(dialect, rootTable)} r");
         plan.AuthorizationSql.Should()
             .Contain(
                 $"CASE WHEN target.{QuoteIdentifier(dialect, "DocumentId")} IS NULL THEN 's' ELSE 'n' END"
             );
+        plan.AuthorizationSql.Should().Contain($"CASE WHEN NOT {authorizationSuccessSql} THEN 1 ELSE 0 END");
         plan.AuthorizationSql.Should()
             .Contain(
                 $"a0_0.{QuoteIdentifier(dialect, authViewPersonDocumentIdColumnName)} = target.{QuoteIdentifier(dialect, "DocumentId")}"
@@ -2457,17 +2468,159 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var firstHopColumn = QuoteIdentifier(dialect, "StudentAcademicRecord_DocumentId");
         var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var pathExistsSql =
+            $"SELECT 1 FROM {QuoteRelation(dialect, rootTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{firstHopColumn} WHERE p0_0_0.{documentId} = target.{documentId} AND p0_0_1.{studentDocumentId} IS NOT NULL";
+        var authorizationExistsSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
 
         plan.AuthorizationSql.Should()
-            .Contain(
-                $"CASE WHEN NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, rootTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{firstHopColumn} WHERE p0_0_0.{documentId} = target.{documentId} AND p0_0_1.{studentDocumentId} IS NOT NULL) THEN 's' ELSE 'n' END"
-            );
+            .Contain($"CASE WHEN NOT EXISTS ({pathExistsSql}) THEN 's' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain(
-                $"AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+                $"CASE WHEN NOT EXISTS ({pathExistsSql} AND {authorizationExistsSql}) THEN 1 ELSE 0 END"
             );
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [Test]
+    public void It_should_reject_people_subjects_whose_stored_anchor_does_not_match_the_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var mismatchedRootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateDirectPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthNames.StudentDocumentId,
+            rootTable
+        );
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new InvalidOperationException("Expected a person authorization subject.");
+        var mismatchedSubject = subject with
+        {
+            PersonMetadata = personMetadata with
+            {
+                StoredAnchor = new RelationshipAuthorizationPersonStoredAnchor(
+                    mismatchedRootTable,
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            mismatchedSubject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("checkSpecs")
+            .WithMessage("*does not match root table*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_self_people_subjects_whose_column_does_not_match_the_root_document_id()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateSelfPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            rootTable
+        ) with
+        {
+            Column = AuthNames.StudentDocumentId,
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            subject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile.Should().Throw<InvalidOperationException>().WithMessage("*root DocumentId column*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_direct_people_paths_whose_source_table_does_not_match_the_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var mismatchedRootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateDirectPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthNames.StudentDocumentId,
+            rootTable
+        );
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new InvalidOperationException("Expected a person authorization subject.");
+        var mismatchedSubject = subject with
+        {
+            PersonMetadata = personMetadata with
+            {
+                Path = new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [
+                        new ColumnPathStep(
+                            mismatchedRootTable,
+                            AuthNames.StudentDocumentId,
+                            new DbTableName(new DbSchemaName("edfi"), "Student"),
+                            new DbColumnName("DocumentId")
+                        ),
+                    ]
+                ),
+            },
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            mismatchedSubject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile.Should().Throw<InvalidOperationException>().WithMessage("*does not match root table*");
     }
 
     [TestCase(SqlDialect.Pgsql)]

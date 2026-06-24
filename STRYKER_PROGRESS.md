@@ -866,3 +866,29 @@
 - Remaining notes:
   - Focused survivors and no-coverage mutants remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected proposed subject-failure SQL cluster, including early diagnostics, stored People success SQL, unsupported People path-kind messages, defensive null/message paths, and duplicate/unsupported-dialect validation diagnostics.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Stored People Path Assertions
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - People stored-anchor diagnostic string mutant id `6445`, line `305`: replaced the root-table description with `""`.
+  - Self People path validation statement mutant id `6457`, line `354`: removed self root DocumentId validation.
+  - Direct People path diagnostic string mutant id `6458`, line `368`: replaced the root-table description with `""`.
+  - Stored self People authorization success wrapper mutants ids `6718`, `6720`, `6722`, and `6724`, lines `855` and `867`: removed or emptied the `EXISTS (...)` wrapper.
+  - Stored transitive People authorization success wrapper mutants ids `6732` and `6734`, line `885`: removed or emptied the outer `EXISTS (` wrapper.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: passed; `65` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:51`; `Killed: 630`, `Survived: 13`, `NoCoverage: 19`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-58-49/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6445`, `6457`, `6458`, `6718`, `6720`, `6722`, `6724`, `6732`, and `6734` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `6335`, `6337`, and `6338` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivors ids `6456`, `6459`, `6461`, and `6748` appear redundant for the public `Compile` behavior: the same malformed People path inputs are rejected by earlier or later validation on the same compile path.
+  - Focused no-coverage mutants ids `6432`, `6433`, `6438`, `6439`, `6460`, `6716`, `6746`, `6766`, `6767`, `6947`, `6948`, `6963`, `6964`, `7087`, `7261`, `7284`, `7285`, `7290`, and `7291` remain in defensive or unsupported-path diagnostics outside this selected cluster.
+  - Focused timeout id `6502`, line `528`, remains a loop-control mutation in proposed value suffix allocation.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
