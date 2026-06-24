@@ -14,17 +14,11 @@ internal static class DecimalValueCanonicalizer
 {
     private const string FixedPointFormat = "0.############################";
 
-    private const NumberStyles DecimalTextStyles =
-        NumberStyles.Float
-        | NumberStyles.AllowLeadingSign
-        | NumberStyles.AllowDecimalPoint
-        | NumberStyles.AllowExponent;
-
     internal static string CanonicalizeText(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        return decimal.TryParse(value, DecimalTextStyles, CultureInfo.InvariantCulture, out var parsed)
+        return decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
             ? ToCanonicalText(parsed)
             : value;
     }

@@ -11,6 +11,5 @@
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans" />
-        <InternalsVisibleTo Include="EdFi.DataManagementService.Core" />
     </ItemGroup>
 </Project>
