@@ -216,6 +216,102 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             );
     }
 
+    [TestCaseSource(nameof(PeopleRelationshipStrategyNameCases))]
+    public void It_identifies_people_relationship_strategy_names(
+        string strategyName,
+        bool expectedIsPeopleStrategy
+    )
+    {
+        RelationshipAuthorizationStrategyClassifier
+            .IsPeopleRelationshipStrategy(strategyName)
+            .Should()
+            .Be(expectedIsPeopleStrategy);
+    }
+
+    [TestCase("WithSomething")]
+    [TestCase("SchoolWith")]
+    public void It_rejects_custom_view_names_without_a_complete_basis_and_suffix(string strategyName)
+    {
+        var classification = Classify(CreateMappingSet(_queryResource), strategyName);
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
+
+        var failure = classification.SecurityConfigurationFailures[0];
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
+        failure.Location.Should().BeNull();
+        failure
+            .Hint.Should()
+            .Be(
+                $"Strategy '{strategyName}' is not a recognized built-in strategy and does not match the {{BasisResource}}With... custom-view convention."
+            );
+    }
+
+    [TestCase("UnknownWithNestedWithSomething", "UnknownWithNested")]
+    [TestCase("WithPrefixWithSomething", "WithPrefix")]
+    public void It_uses_the_last_valid_with_delimiter_when_reporting_unknown_custom_view_basis_resource(
+        string strategyName,
+        string expectedBasisResourceName
+    )
+    {
+        var classification = Classify(CreateMappingSet(_queryResource), strategyName);
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
+
+        var failure = classification.SecurityConfigurationFailures[0];
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource);
+        failure
+            .Location.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationFailureLocation(
+                    AuthorizationObjectName: expectedBasisResourceName
+                )
+            );
+        failure
+            .Hint.Should()
+            .Be(
+                $"Strategy '{strategyName}' matches the {{BasisResource}}With... custom-view convention, but its basis resource could not be resolved."
+            );
+    }
+
+    [Test]
+    public void It_prefers_the_longest_matching_basis_resource_for_custom_view_classification()
+    {
+        var classification = Classify(
+            CreateMappingSet(new("Ed-Fi", "School"), new("Ed-Fi", "SchoolWithCategory")),
+            "SchoolWithCategoryWithSomething"
+        );
+
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
+        classification
+            .KnownButNotEnabledStrategies[0]
+            .BasisResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "SchoolWithCategory"));
+    }
+
+    [Test]
+    public void It_uses_schema_endpoint_order_to_choose_between_extension_custom_view_basis_homographs()
+    {
+        var classification = Classify(
+            CreateMappingSet(new("Zulu", "School"), new("Alpha", "School")),
+            "SchoolWithSomething"
+        );
+
+        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
+        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
+        classification
+            .KnownButNotEnabledStrategies[0]
+            .BasisResource.Should()
+            .Be(new QualifiedResourceName("Zulu", "School"));
+    }
+
     [Test]
     public void It_prefers_the_standard_edfi_basis_resource_when_custom_view_homographs_exist()
     {
@@ -444,6 +540,45 @@ public class Given_RelationshipAuthorizationStrategyClassifier
                 ),
             }
         ).SetName("RelationshipsWithStudentsOnlyThroughResponsibility");
+    }
+
+    private static IEnumerable<TestCaseData> PeopleRelationshipStrategyNameCases()
+    {
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            false
+        ).SetName("RelationshipsWithEdOrgsOnly");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            false
+        ).SetName("RelationshipsWithEdOrgsOnlyInverted");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            true
+        ).SetName("RelationshipsWithEdOrgsAndPeople");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            true
+        ).SetName("RelationshipsWithEdOrgsAndPeopleInverted");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            true
+        ).SetName("RelationshipsWithPeopleOnly");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            true
+        ).SetName("RelationshipsWithStudentsOnly");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            true
+        ).SetName("RelationshipsWithStudentsOnlyThroughResponsibility");
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+            false
+        ).SetName("NoFurtherAuthorizationRequired");
+        yield return new TestCaseData("CustomAuthorizationStrategy", false).SetName(
+            "CustomAuthorizationStrategy"
+        );
     }
 
     private static RelationshipAuthorizationStrategySubjectEligibility EdOrgEligibility() =>

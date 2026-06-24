@@ -383,3 +383,40 @@
   - Temporary focused config `stryker-config.SimpleDeleteSqlEmitter.tmp.json` was removed after verification.
   - Focused survivor id `6211`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans RelationshipAuthorizationStrategyClassifier Custom View And People Strategy Assertions
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationStrategyClassifier.cs`
+- Mutants selected:
+  - `Logical mutation`, id `6024`, line `116`: changed people-strategy detection from supported-and-includes-people to supported-or-includes-people.
+  - `String mutation`, id `6068`, line `263`: replaced the unknown custom-view basis hint with `$""`.
+  - `Equality mutation`, id `6078`, line `317`: changed the custom-view delimiter loop guard from `>= 0` to `> 0`.
+  - `Logical mutation`, id `6083`, line `325`: changed complete custom-view delimiter validation from basis-and-suffix to basis-or-suffix.
+  - `Equality mutation`, id `6086`, line `325`: allowed a leading `With` delimiter as a valid basis boundary.
+  - `Equality mutation`, id `6088`, line `325`: allowed a trailing `With` delimiter as a valid suffix boundary.
+  - `Arithmetic mutation`, id `6089`, line `325`: changed the trailing delimiter boundary from subtracting the delimiter length to adding it.
+  - `String mutation`, id `6090`, line `325`: replaced the delimiter-length string with `""`.
+  - `Linq method mutation (Max() to Min())`, id `6100`, line `353`: selected the first instead of last valid delimiter for unknown basis reporting.
+  - `Linq method mutation (Max() to Min())`, id `6101`, line `358`: selected the shortest instead of longest matching basis resource.
+  - `Statement mutation`, id `6109`, line `385`: removed project endpoint-order tracking for custom-view basis tie-breaking.
+  - `Linq method mutation (ThenBy() to ThenByDescending())`, id `6112`, line `391`: reversed project endpoint-order tie-breaking.
+  - `Linq method mutation (Any() to All())`, id `6117`, line `424`: required all eligible subjects to be people subjects.
+  - `Equality mutation`, id `6118`, line `425`: changed people-subject kind detection.
+  - `Logical mutation`, id `6120`, line `426`: changed people-subject kind matching from alternatives to conjunction.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationStrategyClassifierTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationStrategyClassifierTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_RelationshipAuthorizationStrategyClassifier"`: passed; `32` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.RelationshipAuthorizationStrategyClassifier.tmp.json` from the test project directory with a temporary focused config mutating only `**/RelationshipAuthorizationStrategyClassifier.cs`: completed in `00:02:19`; `Killed: 59`, `Survived: 5`, `Timeout: 3`; report `StrykerOutput/2026-06-23.23-20-29/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6024`, `6068`, `6078`, `6083`, `6086`, `6088`, `6089`, `6090`, `6100`, `6101`, `6109`, `6112`, `6117`, `6118`, and `6120` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.RelationshipAuthorizationStrategyClassifier.tmp.json` was removed after verification.
+  - Focused survivor ids `6026` and `6027`, lines `125`-`126`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `6076`, line `316`, appears equivalent for externally visible delimiter behavior because subsequent loop iterations still find valid `With` delimiters.
+  - Focused survivor id `6110`, line `391`, appears equivalent because `ResolvePreferredBasisResource` is only called with non-empty candidate resources.
+  - Focused survivor id `6111`, line `391`, appears equivalent under the current mapping-set contract because distinct projects receive distinct endpoint-order values before the final project-name ordering tie-breaker.
+  - Focused timeouts ids `6077`, `6080`, and `6081`, lines `317` and `320`, are loop-control mutations that prevent delimiter scanning from terminating.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
