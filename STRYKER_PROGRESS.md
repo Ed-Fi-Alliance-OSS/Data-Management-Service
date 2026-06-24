@@ -420,3 +420,26 @@
   - Focused survivor id `6111`, line `391`, appears equivalent under the current mapping-set contract because distinct projects receive distinct endpoint-order values before the final project-name ordering tie-breaker.
   - Focused timeouts ids `6077`, `6080`, and `6081`, lines `317` and `320`, are loop-control mutations that prevent delimiter scanning from terminating.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-23 - Backend Plans SimpleInsertSqlEmitter Empty Column Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleInsertSqlEmitter.cs`
+- Mutants selected:
+  - `Statement mutation`, id `6243`, line `33`: replaced the empty-column validation throw with `;`
+  - `String mutation`, id `6244`, line `33`: replaced the empty-column validation message with `""`
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitterTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitterTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SimpleInsertSqlEmitter"`: passed; `8` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.SimpleInsertSqlEmitter.tmp.json` from the test project directory with a temporary focused config mutating only `**/SimpleInsertSqlEmitter.cs`: first run completed in `00:02:23`; `Killed: 7`, `Survived: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-23.23-26-41/reports/mutation-report.json`.
+  - `dotnet stryker --config-file stryker-config.SimpleInsertSqlEmitter.tmp.json` from the test project directory after tightening the empty-column test input: completed in `00:02:23`; `Killed: 8`, `Survived: 4`, `Timeout: 0`; report `StrykerOutput/2026-06-23.23-29-46/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6243` and `6244` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Temporary focused config `stryker-config.SimpleInsertSqlEmitter.tmp.json` was removed after verification.
+  - Focused survivor ids `6238`, `6239`, `6254`, and `6255` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused no-coverage mutant id `6263`, line `72`, is in the null parameter-row branch and is skipped by the loop prompt.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
