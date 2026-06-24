@@ -2017,6 +2017,80 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain("NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0)");
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_stored_target_cte_with_ordered_root_columns(SqlDialect dialect)
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+                        CreateSubject(
+                            "LocalEducationAgencyId",
+                            "$.localEducationAgencyReference.localEducationAgencyId"
+                        )
+                    ),
+                ],
+                parameterization,
+                5
+            )
+        );
+
+        var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var schoolTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var expectedTargetCtePrefix = string.Join(
+            '\n',
+            "WITH target AS (",
+            "    SELECT",
+            $"        d.{QuoteIdentifier(dialect, "ContentVersion")},",
+            $"        r.{QuoteIdentifier(dialect, "LocalEducationAgencyId")},",
+            $"        r.{QuoteIdentifier(dialect, "SchoolId")}",
+            $"    FROM {QuoteRelation(dialect, schoolTable)} r",
+            $"    INNER JOIN {QuoteRelation(dialect, documentTable)} d",
+            $"        ON d.{documentId} = r.{documentId}",
+            $"    WHERE r.{documentId} = @DocumentId",
+            "),",
+            $"subject_failures ({QuoteIdentifier(dialect, "StrategyOrdinal")}, {QuoteIdentifier(dialect, "SubjectOrdinal")}, {QuoteIdentifier(dialect, "FailureKind")}, {QuoteIdentifier(dialect, "Failed")}) AS ("
+        );
+
+        plan.AuthorizationSql.Should().StartWith(expectedTargetCtePrefix);
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "    FROM target",
+                    "),",
+                    "failed_subjects AS (",
+                    "    SELECT * FROM subject_failures",
+                    $"    WHERE {QuoteIdentifier(dialect, "Failed")} = 1",
+                    "),",
+                    "failure_payload AS ("
+                )
+            );
+        plan.AuthorizationSql.Should().Contain(")\nSELECT CASE");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    $"END AS {QuoteIdentifier(dialect, "AuthorizationResult")},",
+                    QuoteIdentifier(dialect, "ContentVersion"),
+                    "FROM target;"
+                )
+            );
+    }
+
     [Test]
     public void It_should_compile_sql_server_auth1_sql_with_scalar_claim_edorg_parameters_below_threshold()
     {

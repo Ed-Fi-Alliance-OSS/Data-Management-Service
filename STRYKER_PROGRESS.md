@@ -725,3 +725,27 @@
 - Remaining notes:
   - Focused survivor id `1887`, line `31`, is a null-guard statement mutant and is skipped by the loop prompt.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Stored Target CTE Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - `Statement mutation` and `String mutation` ids `6507`-`6518`, lines `560`-`568`: removed or altered stored SQL assembly calls for the target CTE, subject failures CTE, failed subjects CTE, failure payload CTE, and final stored select.
+  - `Boolean mutation` ids `6520` and `6521`, line `568`: changed the stored final select flags for content version and target source.
+  - `Statement mutation` and `String mutation` ids `6538`, `6539`, `6541`, `6542`, `6544`, `6546`-`6549`, `6555`, `6557`-`6559`, `6566`, `6567`, and `6568`-`6598`, lines `601`-`635`: removed or altered the `WITH target` header, ordered root-column projection, root/document joins, and document-id filter.
+  - `Equality mutation`, `PostIncrementExpression to PostDecrementExpression mutation`, `Conditional mutation`, and `Arithmetic mutation` ids `6551`, `6553`, `6560`, `6561`, `6563`, and `6564`, lines `613`-`617`: changed target CTE root-column loop ordering and comma behavior.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: passed; final run `38` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: first focused run completed in `00:02:50`; `Killed: 409`, `Survived: 199`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-01-42/reports/mutation-report.json`.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` after adding CTE transition assertions: completed in `00:02:46`; `Killed: 436`, `Survived: 172`, `Timeout: 1`; report `StrykerOutput/2026-06-24.01-05-26/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected stored SQL assembly mutants ids `6507`-`6518`, `6520`, and `6521` are `Killed` in the final focused JSON report, with id `6519` a compile error.
+  - Confirmed selected target CTE shape and ordering mutants in lines `601`-`635` are `Killed` in the final focused JSON report, with append-to-prepend and invalid count mutants either compile errors or ignored by Stryker.
+- Remaining notes:
+  - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected stored target CTE cluster, including normalization/validation, proposed SQL assembly, final select internals, and subject failure payload shape.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
