@@ -301,6 +301,19 @@ public class Given_CompiledReconstitutionPlanTests_With_Invalid_Topology
     }
 
     [Test]
+    public void It_should_ignore_non_root_tables_at_root_scope_when_resolving_root_extension_parent()
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(
+            CompiledReconstitutionPlanTestData.CreateRootExtensionWithNonRootCandidateAtRootScopeReadPlan()
+        );
+
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var extensionTable = new DbTableName(new DbSchemaName("edfi"), "SchoolExtension");
+
+        compiledPlan.GetTablePlanOrThrow(extensionTable).ImmediateParentTable.Should().Be(rootTable);
+    }
+
+    [Test]
     public void It_should_report_missing_collection_parent_for_collection_extension_scope_tables()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -655,6 +668,24 @@ file static class CompiledReconstitutionPlanTestData
         var rootExtensionTable = CreateRootExtensionTable("SchoolExtension");
 
         return CreateReadPlan([rootExtensionTable], []);
+    }
+
+    public static ResourceReadPlan CreateRootExtensionWithNonRootCandidateAtRootScopeReadPlan()
+    {
+        var rootTable = CreateRootTable("School", [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)]);
+        var nonRootCandidateAtRootScope = CreateTable(
+            tableName: "SchoolRootScopeExtension",
+            jsonScope: CreatePath("$"),
+            keyColumns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)],
+            columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart)],
+            tableKind: DbTableKind.RootExtension,
+            physicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+            rootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            immediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")]
+        );
+        var rootExtensionTable = CreateRootExtensionTable("SchoolExtension");
+
+        return CreateReadPlan([rootTable, nonRootCandidateAtRootScope, rootExtensionTable], []);
     }
 
     public static ResourceReadPlan CreateCollectionExtensionScopeWithoutCollectionReadPlan()

@@ -1239,3 +1239,25 @@
   - Focused survivors ids `160`, `171`, `188`, `286`, and `301`, plus no-coverage ids `210`, `211`, `212`, `281`, and `282`, appear defensive, equivalent, or unreachable through the public builder paths covered in this loop.
   - Focused survivor ids `232` and `235` remain parent-candidate filtering paths outside this selected identity metadata diagnostics cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans CompiledReconstitutionPlan Parent Kind Filtering
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs`
+- Mutants selected:
+  - `Statement mutation`, id `232`, line `515`: removed the `continue` that excludes parent candidates with disallowed table kinds.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_CompiledReconstitutionPlanTests"`: passed; `33` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/CompiledReconstitutionPlan.cs" --concurrency 8` from the test project directory: completed in `00:02:15`; `Killed: 129`, `Survived: 10`, `NoCoverage: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-24.04-06-03/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant id `232` is `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `235`, line `520`, removes the self-parent candidate skip. It appears defensive/equivalent for supported table scopes because a non-root table's expected parent scope is an ancestor or base extension scope, not its own restricted scope; root-extension tables are not allowed root-extension parents.
+  - Focused survivors ids `104`, `156`, and `158` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `127` remains the `ScopeKey.GetHashCode` `hash.Add(part)` statement and is still treated as not a stable equality-contract assertion target.
+  - Focused survivors/no-coverage ids `160`, `171`, `188`, `210`, `211`, `212`, `281`, `282`, `286`, and `301` remain defensive, equivalent, or unreachable through public builder behavior already inspected in the previous loop entry.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
