@@ -823,3 +823,24 @@
   - Focused timeout id `6502`, line `528`, is a loop-control mutation: removing the suffix increment causes the occupied-name loop to stop making progress when the first suffixed candidate is already reserved.
   - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected parameter-allocation cluster, including stored/proposed subject failure SQL, People path SQL, duplicate defensive validation, and unsupported-dialect diagnostics.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans SingleRecordRelationshipAuthorizationSqlCompiler Stored Subject Failure SQL Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`
+- Mutants selected:
+  - Stored subject failure `UNION ALL` and emitted-subject index mutants ids `6626`, `6627`, `6628`, `6630`, `6631`, `6633`, and `6634`, lines `669`, `671`, and `681`.
+  - Stored EdOrg subject failure SELECT shape mutants ids `6646`, `6647`, `6649`, `6650`, `6651`, `6652`, `6660`, and `6671`, lines `732`, `736`, `737`, `741`, and `755`.
+  - Stored direct People subject failure SELECT shape mutants ids `6676`, `6677`, `6679`, `6680`, `6681`, `6682`, `6690`, `6691`, `6693`, `6697`, `6698`, and `6699`, lines `770`, `774`, `775`, `785`, `786`, `799`, and `800`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: passed; `62` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:03:04`; `Killed: 580`, `Survived: 52`, `NoCoverage: 29`, `Timeout: 2`; report `StrykerOutput/2026-06-24.01-41-14/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `6626`, `6627`, `6628`, `6630`, `6631`, `6633`, `6634`, `6646`, `6647`, `6649`, `6650`, `6651`, `6652`, `6660`, `6671`, `6676`, `6677`, `6679`, `6680`, `6681`, `6682`, `6690`, `6691`, `6693`, `6697`, `6698`, and `6699` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors remain in `SingleRecordRelationshipAuthorizationSqlCompiler.cs` outside this selected stored subject-failure SQL cluster, including stored/proposed People path SQL, proposed subject failure SQL, null guards, duplicate defensive validation, and unsupported-dialect diagnostics.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

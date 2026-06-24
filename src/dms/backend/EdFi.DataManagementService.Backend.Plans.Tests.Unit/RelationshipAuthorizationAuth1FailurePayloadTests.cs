@@ -2050,6 +2050,16 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
         var schoolTable = new DbTableName(new DbSchemaName("edfi"), "School");
         var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var schoolId = QuoteIdentifier(dialect, "SchoolId");
+        var localEducationAgencyId = QuoteIdentifier(dialect, "LocalEducationAgencyId");
+        var targetEdOrgId = QuoteIdentifier(dialect, AuthNames.TargetEdOrgId.Value);
+        var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var edOrgAuthRelation = QuoteRelation(dialect, AuthNames.EdOrgIdToEdOrgId);
+        var claimEdOrgFilter = ClaimEducationOrganizationIdFilterFragment(dialect);
         var expectedTargetCtePrefix = string.Join(
             '\n',
             "WITH target AS (",
@@ -2062,10 +2072,31 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             $"        ON d.{documentId} = r.{documentId}",
             $"    WHERE r.{documentId} = @DocumentId",
             "),",
-            $"subject_failures ({QuoteIdentifier(dialect, "StrategyOrdinal")}, {QuoteIdentifier(dialect, "SubjectOrdinal")}, {QuoteIdentifier(dialect, "FailureKind")}, {QuoteIdentifier(dialect, "Failed")}) AS ("
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("
+        );
+        var expectedSubjectFailureSelects = string.Join(
+            '\n',
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+            "    SELECT",
+            "        0,",
+            "        0,",
+            $"        CASE WHEN target.{schoolId} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN target.{schoolId} IS NULL OR NOT (target.{schoolId}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_0 WHERE a0_0.{targetEdOrgId} = target.{schoolId} AND a0_0.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "    UNION ALL",
+            "    SELECT",
+            "        0,",
+            "        1,",
+            $"        CASE WHEN target.{localEducationAgencyId} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN target.{localEducationAgencyId} IS NULL OR NOT (target.{localEducationAgencyId}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_1 WHERE a0_1.{targetEdOrgId} = target.{localEducationAgencyId} AND a0_1.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "),"
         );
 
         plan.AuthorizationSql.Should().StartWith(expectedTargetCtePrefix);
+        plan.AuthorizationSql.Should().Contain(expectedSubjectFailureSelects);
         plan.AuthorizationSql.Should()
             .Contain(
                 string.Join(
@@ -2257,6 +2288,27 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
 
         var subjectColumn = QuoteIdentifier(dialect, personDocumentIdColumnName);
         var authObject = subject.AuthObject;
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var subjectValueColumn = QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value);
+        var claimEducationOrganizationIdColumn = QuoteIdentifier(
+            dialect,
+            authObject.ClaimEducationOrganizationIdColumn.Value
+        );
+        var expectedSubjectFailureSelect = string.Join(
+            '\n',
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+            "    SELECT",
+            "        0,",
+            "        0,",
+            $"        CASE WHEN target.{subjectColumn} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{subjectValueColumn} = target.{subjectColumn} AND a0_0.{claimEducationOrganizationIdColumn}{ClaimEducationOrganizationIdFilterFragment(dialect)}) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "),"
+        );
 
         plan.AuthorizationSql.Should()
             .Contain($"CASE WHEN target.{subjectColumn} IS NULL THEN 's' ELSE 'n' END");
@@ -2264,6 +2316,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain(
                 $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value)} = target.{subjectColumn} AND a0_0.{QuoteIdentifier(dialect, authObject.ClaimEducationOrganizationIdColumn.Value)}{ClaimEducationOrganizationIdFilterFragment(dialect)})"
             );
+        plan.AuthorizationSql.Should().Contain(expectedSubjectFailureSelect);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
     }
