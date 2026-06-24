@@ -1015,3 +1015,28 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain in `PageReconstitutionContext.cs` outside this selected document-link lookup conflict cluster, including null guards, row-node ordinal conversion diagnostics, page-shape validation diagnostics, and scope-key formatting diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageReconstitutionContext Page Shape Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs`
+- Mutants selected:
+  - Ordinal conversion diagnostics: equality mutant id `3047`, line `99`; statement mutant id `3051`, line `101`; string mutants ids `3053`, `3054`, and `3059`, lines `120`-`125`.
+  - Existing page-shape diagnostics strengthened: string mutants ids `3097`, `3102`, and `3104`, lines `305`, `313`, and `315`.
+  - Missing document, row, descriptor, and scope-key diagnostic mutants ids `3118`, `3119`, `3125`, `3126`, `3127`, `3131`, `3132`, and `3136`, lines `365`-`404`.
+  - Metadata/root/table validation mutants ids `3142`, `3143`, `3144`, `3148`, `3152`, `3159`, `3162`, `3201`, `3202`, `3204`, `3209`, `3210`, `3211`, `3212`, `3216`, `3217`, and `3218`, lines `425`-`591`.
+  - Parent/root mismatch and invalid root-document-id diagnostics: string/statement mutants ids `3231`, `3233`, `3236`, `3237`, `3238`, `3239`, `3256`, `3257`, `3258`, and `3264`, lines `630`-`710`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageReconstitutionContext"`: passed; final run `24` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs" --concurrency 8` from the test project directory: first focused run completed in `00:01:58`; `Killed: 117`, `Survived: 34`, `NoCoverage: 19`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-54-01/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs && dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageReconstitutionContext"`: succeeded; `24` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs" --concurrency 8` from the test project directory: final focused run completed in `00:02:00`; `Killed: 125`, `Survived: 26`, `NoCoverage: 19`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-57-21/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3047`, `3051`, `3053`, `3054`, `3059`, `3097`, `3102`, `3104`, `3118`, `3119`, `3125`, `3126`, `3127`, `3131`, `3132`, `3136`, `3142`, `3143`, `3144`, `3148`, `3152`, `3159`, `3162`, `3201`, `3202`, `3204`, `3209`, `3210`, `3211`, `3212`, `3216`, `3217`, `3218`, `3231`, `3233`, `3236`, `3237`, `3238`, `3239`, `3256`, `3257`, `3258`, and `3264` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `3030`, `3032`, `3033`, `3034`, `3061`, `3071`, `3072`, `3073`, `3074`, `3075`, `3077`, `3079`, `3080`, `3082`, `3083`, `3084`, `3085`, `3086`, `3121`, and `3134` are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivors/no-coverage remain outside this selected page-shape diagnostics cluster, including null ordinal formatting, attaching an already-parented row, descriptor lookup conflicts, unavailable parent-table/order diagnostics, missing scope definitions, and null scope-key formatting.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
