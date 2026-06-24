@@ -618,3 +618,27 @@
 - Remaining notes:
   - Focused survivors in `TokenInfoEducationOrganizationSqlCompiler.cs` are outside this selected validation-diagnostics cluster. Remaining survivors include null-guard/parameterization guard mutants at lines `41`-`49` and SQL CTE text-shape mutants at lines `289`-`440`.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans TokenInfoEducationOrganizationSqlCompiler CTE SQL Shape
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs`
+- Mutants selected:
+  - BuildSql CTE separator statement/string mutants ids `7374` and `7375`, line `289`; ids `7377` and `7378`, line `292`; ids `7380` and `7381`, line `294`.
+  - Concrete EducationOrganization projection CTE shape mutants: equality/negate mutants ids `7390`, `7391`, and `7392`, line `308`; statement/string mutants ids `7394`, `7395`, `7396`, `7397`, `7402`, `7403`, `7405`, and `7406`, lines `310`-`325`.
+  - Claimed EducationOrganization CTE shape statement/string mutants ids `7419`, `7420`, `7422`, `7423`, `7424`, `7425`, `7426`, `7427`, `7428`, `7433`, `7434`, and `7436`, lines `344`-`364`.
+  - Accessible targets CTE shape statement/string mutants ids `7441`, `7442`, `7444`, `7446`, `7447`, `7449`, `7450`, `7451`, `7452`, `7454`, `7456`, `7461`, `7462`, `7463`, `7464`, `7466`, `7467`, `7468`, `7469`, and `7471`, lines `372`-`400`.
+  - Ancestor links CTE shape statement/string mutants ids `7476`, `7477`, `7479`, `7480`, `7481`, `7482`, `7484`, `7485`, `7486`, `7487`, `7489`, `7491`, `7496`, `7497`, `7498`, `7499`, `7504`, `7508`, `7509`, `7510`, and `7511`, lines `408`-`440`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_TokenInfoEducationOrganizationSqlCompiler"`: passed; `23` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:10`; `Killed: 203`, `Survived: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-24.00-33-57/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected CTE SQL shape mutant ids `7374`, `7375`, `7377`, `7378`, `7380`, `7381`, `7390`, `7391`, `7392`, `7394`, `7395`, `7396`, `7397`, `7402`, `7403`, `7405`, `7406`, `7419`, `7420`, `7422`, `7423`, `7424`, `7425`, `7426`, `7427`, `7428`, `7433`, `7434`, `7436`, `7441`, `7442`, `7444`, `7446`, `7447`, `7449`, `7450`, `7451`, `7452`, `7454`, `7456`, `7461`, `7462`, `7463`, `7464`, `7466`, `7467`, `7468`, `7469`, `7471`, `7476`, `7477`, `7479`, `7480`, `7481`, `7482`, `7484`, `7485`, `7486`, `7487`, `7489`, `7491`, `7496`, `7497`, `7498`, `7499`, `7504`, `7508`, `7509`, `7510`, and `7511` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors ids `7293`, `7294`, `7295`, `7297`, and `7298`, lines `41`-`49`, are null/spec parameterization guard mutants and are skipped by the loop prompt.
+  - Focused `TokenInfoEducationOrganizationSqlCompiler.cs` has no remaining actionable non-null survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

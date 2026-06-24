@@ -106,6 +106,70 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
     }
 
     [Test]
+    public void It_should_emit_the_cte_chain_for_concrete_claimed_accessible_and_ancestor_rows()
+    {
+        var plan = Compile(SqlDialect.Pgsql);
+
+        plan.EducationOrganizationSql.Should()
+            .Contain(
+                """
+                WITH concrete_edorg AS (
+                    SELECT
+                        r."SchoolId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Ed-Fi:School' AS "Discriminator"
+                    FROM "edfi"."School" r
+                    UNION ALL
+                    SELECT
+                        r."LocalEducationAgencyId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Ed-Fi:LocalEducationAgency' AS "Discriminator"
+                    FROM "edfi"."LocalEducationAgency" r
+                    UNION ALL
+                    SELECT
+                        r."CustomEducationOrganizationId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Sample:CustomEducationOrganization' AS "Discriminator"
+                    FROM "sample"."CustomEducationOrganization" r
+                ),
+                claimed_edorg AS (
+                    SELECT
+                        c."EducationOrganizationId",
+                        c."NameOfInstitution",
+                        c."Discriminator"
+                    FROM concrete_edorg c
+                    WHERE c."EducationOrganizationId" = ANY(@ClaimEducationOrganizationIds)
+                ),
+                accessible_targets AS (
+                    SELECT DISTINCT
+                        h."TargetEducationOrganizationId" AS "EducationOrganizationId"
+                    FROM "auth"."EducationOrganizationIdToEducationOrganizationId" h
+                    INNER JOIN claimed_edorg c
+                        ON h."SourceEducationOrganizationId" = c."EducationOrganizationId"
+                    UNION
+                    SELECT
+                        c."EducationOrganizationId"
+                    FROM claimed_edorg c
+                ),
+                ancestor_links AS (
+                    SELECT
+                        h."TargetEducationOrganizationId",
+                        h."SourceEducationOrganizationId"
+                    FROM "auth"."EducationOrganizationIdToEducationOrganizationId" h
+                    INNER JOIN accessible_targets a
+                        ON h."TargetEducationOrganizationId" = a."EducationOrganizationId"
+                    UNION
+                    SELECT
+                        a."EducationOrganizationId" AS "TargetEducationOrganizationId",
+                        a."EducationOrganizationId" AS "SourceEducationOrganizationId"
+                    FROM accessible_targets a
+                )
+                SELECT
+                """
+            );
+    }
+
+    [Test]
     public void It_should_emit_sql_server_scalar_claim_filters_and_bracket_quoted_relations()
     {
         var plan = Compile(SqlDialect.Mssql, [222L, 111L]);
