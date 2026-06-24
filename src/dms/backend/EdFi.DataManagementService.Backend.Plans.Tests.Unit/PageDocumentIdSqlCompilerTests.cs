@@ -413,24 +413,24 @@ public class Given_PageDocumentIdSqlCompiler
                 CreateSpec(
                     [
                         new QueryValuePredicate(
-                            new DbColumnName("AliasTwo"),
+                            new DbColumnName("AliasAlpha"),
                             QueryComparisonOperator.Equal,
                             "zParam"
                         ),
                         new QueryValuePredicate(
-                            new DbColumnName("AliasOne"),
+                            new DbColumnName("AliasZulu"),
                             QueryComparisonOperator.Equal,
                             "aParam"
                         ),
                     ],
                     [
                         CreateUnifiedAliasMapping(
-                            new DbColumnName("AliasTwo"),
+                            new DbColumnName("AliasAlpha"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
                         ),
                         CreateUnifiedAliasMapping(
-                            new DbColumnName("AliasOne"),
+                            new DbColumnName("AliasZulu"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
                         ),
@@ -441,7 +441,81 @@ public class Given_PageDocumentIdSqlCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Duplicate predicate after unified alias rewrite for semantic key (presenceColumn='Student_DocumentId', canonicalColumn='CanonicalStudentUniqueId', operator='Equal'). Colliding original columns: ['AliasOne', 'AliasTwo']. Colliding parameter names: ['aParam', 'zParam']."
+                "Duplicate predicate after unified alias rewrite for semantic key (presenceColumn='Student_DocumentId', canonicalColumn='CanonicalStudentUniqueId', operator='Equal'). Colliding original columns: ['AliasAlpha', 'AliasZulu']. Colliding parameter names: ['aParam', 'zParam']."
+            );
+    }
+
+    [Test]
+    public void It_should_allow_shared_canonical_columns_when_presence_gates_differ()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("StudentAlias"),
+                        QueryComparisonOperator.Equal,
+                        "studentUniqueId"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("ContactAlias"),
+                        QueryComparisonOperator.Equal,
+                        "contactUniqueId"
+                    ),
+                ],
+                [
+                    CreateUnifiedAliasMapping(
+                        new DbColumnName("StudentAlias"),
+                        new DbColumnName("PersonUniqueId_Unified"),
+                        new DbColumnName("Student_DocumentId")
+                    ),
+                    CreateUnifiedAliasMapping(
+                        new DbColumnName("ContactAlias"),
+                        new DbColumnName("PersonUniqueId_Unified"),
+                        new DbColumnName("Contact_DocumentId")
+                    ),
+                ]
+            )
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain(
+                "r.\"Contact_DocumentId\" IS NOT NULL AND r.\"PersonUniqueId_Unified\" = @contactUniqueId"
+            );
+        plan.PageDocumentIdSql.Should()
+            .Contain(
+                "r.\"Student_DocumentId\" IS NOT NULL AND r.\"PersonUniqueId_Unified\" = @studentUniqueId"
+            );
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("contactUniqueId", "studentUniqueId", "offset", "limit");
+    }
+
+    [Test]
+    public void It_should_report_duplicate_ungated_predicates_with_none_presence_key()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "firstSchoolId"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "secondSchoolId"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Duplicate predicate after unified alias rewrite for semantic key (presenceColumn='<none>', canonicalColumn='SchoolId', operator='Equal'). Colliding original columns: ['SchoolId', 'SchoolId']. Colliding parameter names: ['firstSchoolId', 'secondSchoolId']."
             );
     }
 

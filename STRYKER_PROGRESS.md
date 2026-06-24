@@ -1551,3 +1551,25 @@
   - Focused survivors ids `2594`, `2602`, `2603`, `2605`, `2616`, `2617`, `2637`, and `2643` are null-guard or null-entry validation mutants and are skipped by the loop prompt.
   - Focused survivor id `2645` and related validation diagnostics remain outside this selected normalization cluster.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageDocumentIdSqlCompiler Duplicate Predicate Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`
+- Mutants selected:
+  - Ungated duplicate semantic-key diagnostic string mutant id `2979`, line `1181`: replaced the `<none>` presence-column marker with `""`.
+  - Duplicate semantic-key comparison logical mutant id `2987`, line `1201`: changed target/presence matching from conjunctive to disjunctive.
+  - Duplicate original-column ordering `Statement mutation` id `3000`, line `1242`: removed the deterministic original-column sort before diagnostic formatting.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageDocumentIdSqlCompiler"`: passed; `124` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:53`; `Killed: 344`, `Survived: 22`, `NoCoverage: 19`, `Timeout: 3`; report `StrykerOutput/2026-06-24.06-08-47/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `2979`, `2987`, and `3000` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor id `3001`, line `1243`, appears equivalent because colliding parameter names are already ordered by the predicate sort key before the diagnostic list is built.
+  - Other focused survivors/no-coverage remain in null/argument validation paths, unsupported enum diagnostics, authorization validation diagnostics, People path validation diagnostics, duplicate semantic-predicate capacity-only mutations, and previously noted ordering mutants outside this selected duplicate-predicate diagnostics cluster.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
