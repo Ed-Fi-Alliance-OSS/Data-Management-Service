@@ -144,6 +144,93 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
 }
 
 [TestFixture]
+public class Given_PageReconstitutionContext_With_Conflicting_Descriptor_Uri_Rows
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithConflictingDescriptorRows();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: descriptor hydration returned conflicting URIs for descriptor ID 601."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_A_Root_Scope_Locator
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithoutRootScopeLocator(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.School' does not define a root scope locator."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_RowNode_With_An_Already_Attached_Child_Row
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(pageData.ReadPlan);
+        var rootTablePlan = compiledPlan.GetTablePlanOrThrow(pageData.RootTable);
+        var addressTablePlan = compiledPlan.GetTablePlanOrThrow(pageData.AddressTable);
+        var firstParent = new RowNode(rootTablePlan, [101L, "First School"], new ScopeKey([101L]), 101L);
+        var secondParent = new RowNode(rootTablePlan, [202L, "Second School"], new ScopeKey([202L]), 202L);
+        var child = new RowNode(addressTablePlan, [101L, 101L, 1, "North City"], new ScopeKey([101L]), 101L);
+
+        firstParent.AttachChild(child);
+
+        _exception = Assert.Throws<InvalidOperationException>(() => secondParent.AttachChild(child))!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot attach row from table 'edfi.SchoolAddress' more than once. Physical row identity: [101]."
+            );
+    }
+}
+
+[TestFixture]
 public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup_Rows
 {
     private const long LookupDocumentId = 901L;
@@ -544,6 +631,38 @@ file static class PageReconstitutionContextTestData
                 DocumentReferenceLookup = new HydratedDocumentReferenceLookup(lookupRows),
             },
         };
+    }
+
+    public static PageData CreatePageWithConflictingDescriptorRows()
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                DescriptorRowsInPlanOrder =
+                [
+                    new HydratedDescriptorRows([
+                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                    ]),
+                    new HydratedDescriptorRows([
+                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Conflict"),
+                    ]),
+                ],
+            },
+        };
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutRootScopeLocator(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[0] = tablePlans[0] with { RootScopeLocatorOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
     }
 
     public static PageData CreateHappyPathPage()

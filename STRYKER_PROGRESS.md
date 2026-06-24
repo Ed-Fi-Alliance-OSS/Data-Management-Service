@@ -1040,3 +1040,23 @@
   - Focused survivors ids `3030`, `3032`, `3033`, `3034`, `3061`, `3071`, `3072`, `3073`, `3074`, `3075`, `3077`, `3079`, `3080`, `3082`, `3083`, `3084`, `3085`, `3086`, `3121`, and `3134` are null-guard statement mutants and are skipped by the loop prompt.
   - Focused survivors/no-coverage remain outside this selected page-shape diagnostics cluster, including null ordinal formatting, attaching an already-parented row, descriptor lookup conflicts, unavailable parent-table/order diagnostics, missing scope definitions, and null scope-key formatting.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageReconstitutionContext Descriptor And Scope Validation
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs`
+- Mutants selected:
+  - Already-attached child row diagnostics mutants ids `3064`, `3065`, and `3066`, lines `133`-`135`.
+  - Descriptor URI conflict diagnostics mutants ids `3192`, `3193`, and `3194`, lines `522`-`524`.
+  - Missing root-scope locator diagnostics mutants ids `3250`, `3262`, and `3263`, lines `678` and `701`-`702`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageReconstitutionContext|FullyQualifiedName~Given_RowNode"`: passed; `27` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs" --concurrency 8` from the test project directory: completed in `00:01:58`; `Killed: 134`, `Survived: 25`, `NoCoverage: 11`, `Timeout: 0`; report `StrykerOutput/2026-06-24.03-03-41/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3064`, `3065`, `3066`, `3192`, `3193`, `3194`, `3250`, `3262`, and `3263` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain outside this selected descriptor and scope-validation cluster, including null guards, null ordinal formatting, unavailable parent-table/order diagnostics, missing immediate-parent locator diagnostics, and null/unknown scope-key formatting.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
