@@ -593,3 +593,28 @@
   - Temporary focused config `stryker-config.TokenInfoEducationOrganizationSqlCompiler.tmp.json` was removed after verification.
   - Focused survivors in `TokenInfoEducationOrganizationSqlCompiler.cs` remain outside this selected final SELECT cluster, including earlier CTE shape and validation diagnostics.
   - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans TokenInfoEducationOrganizationSqlCompiler Validation Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs`
+- Mutants selected:
+  - Dialect validation mutants ids `7302` and `7303`, lines `71`-`72`, and ids `7306` and `7307`, lines `79`-`80`.
+  - EducationOrganization union view count mutants ids `7313`, `7317`, and `7318`, lines `107`-`110`.
+  - Union member validation mutants ids `7328`, `7329`, `7332`, and `7333`, lines `139`-`147`.
+  - Output column diagnostics mutants ids `7336`, `7337`, `7343`, and `7344`, lines `182`, `185`, `208`, and `211`.
+  - Union arm projection diagnostics mutants ids `7347`, `7351`, `7352`, `7353`, `7356`, `7360`, `7361`, and `7362`, lines `222`-`251`.
+  - NameOfInstitution duplicate-column diagnostic mutant id `7368`, line `272`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/TokenInfoEducationOrganizationSqlCompilerTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_TokenInfoEducationOrganizationSqlCompiler"`: first run failed because two expected messages used `EducationOrganizationId` instead of the compiler's `EducationOrganizationIdColumn` diagnostic label.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_TokenInfoEducationOrganizationSqlCompiler"` after fixing expectations: passed; `22` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs" --concurrency 8` from the test project directory: completed in `00:02:14`; `Killed: 133`, `Survived: 75`, `Timeout: 0`; report `StrykerOutput/2026-06-24.00-28-09/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `7302`, `7303`, `7306`, `7307`, `7313`, `7317`, `7318`, `7328`, `7329`, `7332`, `7333`, `7336`, `7337`, `7343`, `7344`, `7347`, `7351`, `7352`, `7353`, `7356`, `7360`, `7361`, `7362`, and `7368` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors in `TokenInfoEducationOrganizationSqlCompiler.cs` are outside this selected validation-diagnostics cluster. Remaining survivors include null-guard/parameterization guard mutants at lines `41`-`49` and SQL CTE text-shape mutants at lines `289`-`440`.
+  - Broad target re-run was skipped because the previous broad run took about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
