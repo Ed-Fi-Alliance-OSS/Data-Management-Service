@@ -5,7 +5,7 @@
 
 services:
   dms:
-    image: edfialliance/data-management-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api:${DMS_IMAGE_TAG:-pre}
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
       AppSettings__AuthenticationService: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}

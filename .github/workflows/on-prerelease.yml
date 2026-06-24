@@ -17,7 +17,7 @@ env:
   DMS_PACKAGE_NAME: "EdFi.DataManagementService"
   CS_PACKAGE_NAME: "EdFi.DmsConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-  CONFIG_IMAGE_NAME: "edfialliance/dms-configuration-service"
+  CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   REF: ${{ github.ref_name }}

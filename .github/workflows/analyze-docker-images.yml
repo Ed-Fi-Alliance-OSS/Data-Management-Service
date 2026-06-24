@@ -32,8 +32,8 @@ jobs:
       matrix:
         dockerfile:
           [
-            { name: "edfialliance/data-management-service", path: "src/dms", dockerfile: "Dockerfile" },
-            { name: "edfialliance/dms-configuration-service", path: "src/config", dockerfile: "Dockerfile" }
+            { name: "edfialliance/ed-fi-api", path: "src/dms", dockerfile: "Dockerfile" },
+            { name: "edfialliance/ed-fi-api-configuration-service", path: "src/config", dockerfile: "Dockerfile" }
           ]
     name: Analyze ${{ matrix.dockerfile.name }}
     continue-on-error: true

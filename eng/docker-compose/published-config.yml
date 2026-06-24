@@ -5,7 +5,7 @@
 
 services:
   config:
-    image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
     container_name: dms-config-service
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}

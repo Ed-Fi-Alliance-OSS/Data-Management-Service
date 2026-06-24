@@ -393,7 +393,7 @@ function Invoke-PushPackage {
 }
 
 $dockerTagBase = "local"
-$dockerTagDMS = "$($dockerTagBase)/dms-configuration-service"
+$dockerTagDMS = "$($dockerTagBase)/ed-fi-api-configuration-service"
 
 function DockerBuild {
     $versionArgs = @()

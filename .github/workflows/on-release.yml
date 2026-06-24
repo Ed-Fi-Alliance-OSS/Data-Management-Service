@@ -145,7 +145,7 @@ jobs:
       - name: Prepare Release Tags
         id: prepare-tags
         run: |
-          IMAGE_NAME="edfialliance/dms-configuration-service"
+          IMAGE_NAME="edfialliance/ed-fi-api-configuration-service"
           MAJOR_TAG="${{ github.ref_name }}"
           MAJOR_TAG=${MAJOR_TAG#v}
           MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
