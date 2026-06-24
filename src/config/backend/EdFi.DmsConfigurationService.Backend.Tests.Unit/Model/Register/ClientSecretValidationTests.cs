@@ -140,4 +140,57 @@ public class ClientSecretValidationTests
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("greater than or equal to 4");
     }
+
+    [Test]
+    public void It_should_exclude_transport_unsafe_characters_from_the_generated_alphabets()
+    {
+        string[] unsafeCharacters = ["+", "%", "=", "&", " "];
+
+        foreach (var character in unsafeCharacters)
+        {
+            ClientSecretValidation.GeneratedSpecialAlphabet.Should().NotContain(character);
+            ClientSecretValidation.GeneratedClientSecretAlphabet.Should().NotContain(character);
+        }
+    }
+
+    [Test]
+    public void It_should_generate_secrets_free_of_transport_unsafe_characters()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 32, MaximumLength = 128 };
+        string[] unsafeCharacters = ["+", "%", "=", "&", " "];
+
+        for (var iteration = 0; iteration < 500; iteration++)
+        {
+            var secret = ClientSecretValidation.GenerateSecretWithMinimumLength(options);
+
+            foreach (var character in unsafeCharacters)
+            {
+                secret.Should().NotContain(character);
+            }
+
+            Regex.IsMatch(secret, ClientSecretValidation.BuildComplexityPattern(options)).Should().BeTrue();
+        }
+    }
+
+    [TestCase("ValidSecret1+")]
+    [TestCase("ValidSecret1%")]
+    [TestCase("ValidSecret1=")]
+    [TestCase("ValidSecret1&")]
+    public void It_should_accept_transport_unsafe_special_characters_in_caller_supplied_secrets(string secret)
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
+
+        Regex.IsMatch(secret, ClientSecretValidation.BuildComplexityPattern(options)).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_accept_caller_supplied_secrets_containing_a_space_alongside_a_valid_special_character()
+    {
+        var options = new ClientSecretValidationOptions { MinimumLength = 10, MaximumLength = 16 };
+
+        Regex
+            .IsMatch("Valid Secret1!", ClientSecretValidation.BuildComplexityPattern(options))
+            .Should()
+            .BeTrue();
+    }
 }

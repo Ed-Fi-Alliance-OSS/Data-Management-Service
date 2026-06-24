@@ -76,6 +76,28 @@ public class KeycloakClientRepositoryTests
         }
 
         [Test]
+        public async Task It_should_generate_a_secret_free_of_transport_unsafe_characters()
+        {
+            var clientUuid = Guid.NewGuid().ToString();
+            var existingClient = new Client
+            {
+                ClientId = "test-client",
+                Secret = "ExistingSecret123!",
+                Name = "Test Client",
+            };
+
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid)).Returns(existingClient);
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", clientUuid, existingClient))
+                .Returns(true);
+
+            var result = await _repository.ResetCredentialsAsync(clientUuid);
+
+            result.Should().BeOfType<ClientResetResult.Success>();
+            var success = (ClientResetResult.Success)result;
+            success.ClientSecret.Should().NotContainAny("+", "%", "=", "&", " ");
+        }
+
+        [Test]
         public async Task It_should_return_failure_unknown_when_the_update_does_not_succeed()
         {
             var clientUuid = Guid.NewGuid().ToString();

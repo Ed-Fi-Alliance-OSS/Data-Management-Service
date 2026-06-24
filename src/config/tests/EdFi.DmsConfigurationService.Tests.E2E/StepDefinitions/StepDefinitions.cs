@@ -536,6 +536,43 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await GetClientAccessToken(_applicationKey, _applicationSecret, "edfi_admin_api/full_access");
     }
 
+    [When("a token is requested using raw HTTP Basic auth with the captured credentials")]
+    public async Task WhenATokenIsRequestedUsingRawHttpBasicAuthWithTheCapturedCredentials()
+    {
+        var credentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{_applicationKey}:{_applicationSecret}")
+        );
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string> { { "grant_type", "client_credentials" } }
+        );
+        APIRequestContextOptions? options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+                { "Authorization", $"Basic {credentials}" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        if (playwrightContext.ApiRequestContext != null)
+        {
+            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+        }
+    }
+
+    [Then("the response body has a non-empty access_token")]
+    public async Task ThenTheResponseBodyHasANonEmptyAccessToken()
+    {
+        string responseJsonString = await _apiResponse.TextAsync();
+        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        responseJson["access_token"]!
+            .GetValue<string>()
+            .Should()
+            .NotBeNullOrWhiteSpace("access_token should be non-empty");
+    }
+
     [Then("the response body contains an object matching")]
     public async Task ThenTheResponseBodyContainsAnObjectMatching(string expectedPartial)
     {
