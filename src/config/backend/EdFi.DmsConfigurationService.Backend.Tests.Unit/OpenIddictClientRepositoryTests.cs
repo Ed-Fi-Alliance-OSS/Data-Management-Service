@@ -501,5 +501,23 @@ public class OpenIddictClientRepositoryTests
                 .BeTrue();
             A.CallTo(() => _secretHasher.HashSecretAsync(success.ClientSecret)).MustHaveHappenedOnceExactly();
         }
+
+        [Test]
+        public async Task It_should_generate_a_secret_free_of_transport_unsafe_characters()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataRepository.UpdateClientSecretAsync(A<Guid>._, A<string>._, A<IDbConnection>._)
+                )
+                .Returns(1);
+
+            // Act
+            var result = await _repository.ResetCredentialsAsync(Guid.NewGuid().ToString());
+
+            // Assert
+            result.Should().BeOfType<ClientResetResult.Success>();
+            var success = (ClientResetResult.Success)result;
+            success.ClientSecret.Should().NotContainAny("+", "%", "=", "&", " ");
+        }
     }
 }
