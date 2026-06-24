@@ -72,6 +72,43 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     }
 
     [Test]
+    public void It_should_emit_single_document_keyset_batch_with_statement_boundaries()
+    {
+        _pgsqlBatch
+            .Should()
+            .StartWith(
+                """
+                DROP TABLE IF EXISTS "page";
+                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+
+                INSERT INTO "page" ("DocumentId") VALUES (@DocumentId);
+
+                SELECT
+                    d."DocumentId",
+                """
+            );
+        _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\";\n\nSELECT root columns FROM root;\n\n");
+        _pgsqlBatch.Should().Contain("SELECT root columns FROM root;\n\nSELECT child columns FROM child;\n");
+
+        _mssqlBatch
+            .Should()
+            .StartWith(
+                """
+                IF OBJECT_ID('tempdb..[#page]') IS NOT NULL
+                    DROP TABLE [#page];
+                CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY);
+
+                INSERT INTO [#page] ([DocumentId]) VALUES (@DocumentId);
+
+                SELECT
+                    d.[DocumentId],
+                """
+            );
+        _mssqlBatch.Should().Contain("ORDER BY d.[DocumentId];\n\nSELECT root columns FROM root;\n\n");
+        _mssqlBatch.Should().Contain("SELECT root columns FROM root;\n\nSELECT child columns FROM child;\n");
+    }
+
+    [Test]
     public void It_should_emit_document_metadata_select()
     {
         _pgsqlBatch.Should().Contain("\"DocumentUuid\"");
@@ -191,6 +228,29 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset
 
         totalCountIndex.Should().BePositive();
         docMetadataIndex.Should().BeGreaterThan(totalCountIndex);
+    }
+
+    [Test]
+    public void It_should_emit_query_keyset_batch_with_terminated_statement_boundaries()
+    {
+        _pgsqlBatch
+            .Should()
+            .StartWith(
+                """
+                DROP TABLE IF EXISTS "page";
+                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+
+                WITH page_ids AS (
+                SELECT r."DocumentId" FROM "edfi"."School" r ORDER BY r."DocumentId" LIMIT @limit OFFSET @offset
+                )
+                INSERT INTO "page" ("DocumentId")
+                SELECT "DocumentId" FROM page_ids;
+
+                SELECT COUNT(*) AS TotalCount FROM "edfi"."School" r;
+
+                SELECT
+                """
+            );
     }
 }
 
@@ -320,9 +380,74 @@ public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
             .Contain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
     }
 
+    [TestCaseSource(nameof(ZeroLimitValues))]
+    public void It_should_materialize_an_empty_keyset_for_all_integral_zero_limit_values(
+        object zeroLimitValue
+    )
+    {
+        var plan = BuildTestReadPlan(SqlDialect.Mssql);
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+
+        var batch = HydrationBatchBuilder.Build(
+            plan,
+            CreateLimitKeyset(compiler, includeTotalCountSql: true, zeroLimitValue),
+            SqlDialect.Mssql
+        );
+
+        batch.Should().Contain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
+        batch.Should().NotContain("WITH page_ids AS (");
+        batch.Should().NotContain("FETCH NEXT @limit ROWS ONLY");
+    }
+
+    [TestCaseSource(nameof(NonZeroOrUnsupportedLimitValues))]
+    public void It_should_materialize_the_query_keyset_for_non_zero_or_unsupported_limit_values(
+        object limitValue
+    )
+    {
+        var plan = BuildTestReadPlan(SqlDialect.Mssql);
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+
+        var batch = HydrationBatchBuilder.Build(
+            plan,
+            CreateLimitKeyset(compiler, includeTotalCountSql: true, limitValue),
+            SqlDialect.Mssql
+        );
+
+        batch.Should().Contain("WITH page_ids AS (");
+        batch.Should().Contain("FETCH NEXT @limit ROWS ONLY");
+        batch.Should().NotContain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
+    }
+
+    [Test]
+    public void It_should_materialize_the_query_keyset_when_the_query_plan_has_no_limit_parameter()
+    {
+        var plan = BuildTestReadPlan(SqlDialect.Mssql);
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: "SELECT r.[DocumentId] FROM [edfi].[School] r ORDER BY r.[DocumentId]",
+                TotalCountSql: null,
+                PageParametersInOrder: [new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset")],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L }
+        );
+
+        var batch = HydrationBatchBuilder.Build(plan, keyset, SqlDialect.Mssql);
+
+        batch.Should().Contain("WITH page_ids AS (");
+        batch.Should().Contain("SELECT r.[DocumentId] FROM [edfi].[School] r ORDER BY r.[DocumentId]");
+        batch.Should().NotContain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
+    }
+
     private static PageKeysetSpec.Query CreateZeroLimitKeyset(
         PageDocumentIdSqlCompiler compiler,
         bool includeTotalCountSql
+    ) => CreateLimitKeyset(compiler, includeTotalCountSql, 0L);
+
+    private static PageKeysetSpec.Query CreateLimitKeyset(
+        PageDocumentIdSqlCompiler compiler,
+        bool includeTotalCountSql,
+        object limitValue
     )
     {
         var compiledQueryPlan = compiler.Compile(
@@ -336,9 +461,15 @@ public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
 
         return new PageKeysetSpec.Query(
             compiledQueryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 0L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limitValue }
         );
     }
+
+    private static IEnumerable<object> ZeroLimitValues() =>
+        [(byte)0, (sbyte)0, (short)0, (ushort)0, 0, 0U, 0L, 0UL];
+
+    private static IEnumerable<object> NonZeroOrUnsupportedLimitValues() =>
+        [(byte)1, (sbyte)1, (short)1, (ushort)1, 1, 1U, 1L, 1UL, "0"];
 }
 
 [TestFixture]
@@ -519,6 +650,12 @@ public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
         childSelectIndex.Should().BePositive();
         firstDescriptorIndex.Should().BeGreaterThan(childSelectIndex);
         secondDescriptorIndex.Should().BeGreaterThan(firstDescriptorIndex);
+        _pgsqlBatch
+            .Should()
+            .Contain(
+                "SELECT child columns FROM child;\n\nSELECT descriptor rows FROM root_descriptor;\n\nSELECT descriptor rows FROM child_descriptor;\n\n"
+            );
+        _pgsqlBatch.Should().NotContain(";;");
     }
 
     [Test]
@@ -588,6 +725,12 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
             SecondDescriptorSqlMarker,
             LookupSqlMarker
         );
+        batch
+            .Should()
+            .Contain(
+                $"SELECT child columns FROM child;\n\n{FirstDescriptorSqlMarker}\n\n{SecondDescriptorSqlMarker}\n\n{LookupSqlMarker}\n\n"
+            );
+        batch.Should().NotContain(";;");
     }
 
     [Test]

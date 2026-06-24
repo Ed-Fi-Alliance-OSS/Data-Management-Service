@@ -49,7 +49,7 @@ services:
       - dms
     restart: unless-stopped
     healthcheck:
-      test: curl -s http://localhost:8081/health >/dev/null || exit 1
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 50

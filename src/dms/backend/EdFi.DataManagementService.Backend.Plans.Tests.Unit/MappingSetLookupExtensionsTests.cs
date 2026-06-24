@@ -353,7 +353,31 @@ public class Given_MappingSetLookupExtensions
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentAddress*mapping set*RelationalTables*compiled relational-table read plan*internal compilation/selection bug*"
+                $"Read plan lookup failed for resource '{FormatResource(_nonRootOnlyResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(_mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
+                    + "was found. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
+    public void It_should_treat_unknown_read_plan_storage_kind_as_internal_bug()
+    {
+        var unknownStorageKind = (ResourceStorageKind)99;
+        var mappingSet = ReplaceConcreteResourceStorageKind(
+            _mappingSet,
+            _nonRootOnlyResource,
+            unknownStorageKind
+        );
+
+        var act = () => mappingSet.GetReadPlanOrThrow(_nonRootOnlyResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Read plan lookup failed for resource '{FormatResource(_nonRootOnlyResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{unknownStorageKind}' "
+                    + "is not recognized."
             );
     }
 
@@ -1035,6 +1059,31 @@ public class Given_MappingSetLookupExtensions
         return mappingSet with
         {
             ReadPlansByResource = readPlansByResource.ToFrozenDictionary(),
+        };
+    }
+
+    private static MappingSet ReplaceConcreteResourceStorageKind(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceStorageKind storageKind
+    )
+    {
+        return mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder =
+                [
+                    .. mappingSet.Model.ConcreteResourcesInNameOrder.Select(concreteResourceModel =>
+                        concreteResourceModel.RelationalModel.Resource.Equals(resource)
+                            ? concreteResourceModel with
+                            {
+                                StorageKind = storageKind,
+                            }
+                            : concreteResourceModel
+                    ),
+                ],
+            },
         };
     }
 

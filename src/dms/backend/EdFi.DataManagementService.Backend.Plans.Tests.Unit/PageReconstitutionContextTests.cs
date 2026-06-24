@@ -106,6 +106,312 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
         rootRow.Should().NotBeSameAs(addressRow);
         addressRow.Should().NotBeSameAs(periodRow);
     }
+
+    [Test]
+    public void It_should_fail_when_a_document_lookup_is_missing()
+    {
+        Action act = () => _context.GetDocumentOrThrow(303L);
+
+        act.Should()
+            .Throw<KeyNotFoundException>()
+            .WithMessage("Page reconstitution context for 'Ed-Fi.School' does not contain DocumentId 303.");
+    }
+
+    [Test]
+    public void It_should_fail_when_a_physical_row_lookup_is_missing()
+    {
+        Action act = () =>
+            _context.GetRowOrThrow(_addressTable, new ScopeKey(["missing-address", "alternate"]));
+
+        act.Should()
+            .Throw<KeyNotFoundException>()
+            .WithMessage(
+                $"Page reconstitution context for 'Ed-Fi.School' does not contain table '{_addressTable}' row [\"missing-address\", \"alternate\"]."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_when_a_descriptor_lookup_is_missing()
+    {
+        Action act = () => _context.GetDescriptorUriOrThrow(999L);
+
+        act.Should()
+            .Throw<KeyNotFoundException>()
+            .WithMessage(
+                "Page reconstitution context for 'Ed-Fi.School' does not contain descriptor ID 999."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Conflicting_Descriptor_Uri_Rows
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithConflictingDescriptorRows();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: descriptor hydration returned conflicting URIs for descriptor ID 601."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_A_Root_Scope_Locator
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithoutRootScopeLocator(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.School' does not define a root scope locator."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_A_Physical_Row_Identity
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithoutPhysicalRowIdentity(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.School' does not define a physical row identity."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Table_That_Does_Not_Define_An_Immediate_Parent_Locator
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan =
+            PageReconstitutionContextTestData.CreateCompiledPlanWithoutImmediateParentScopeLocator(
+                pageData.ReadPlan
+            );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.SchoolAddress' does not define a immediate parent locator."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Child_Table_Before_Its_Parent
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithAddressBeforeRoot(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': parent table 'edfi.School' was not available before child table 'edfi.SchoolAddress'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_An_Empty_Child_Table_Before_Its_Parent
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithoutAddressRows();
+        var compiledPlan = PageReconstitutionContextTestData.CreateCompiledPlanWithAddressBeforeRoot(
+            pageData.ReadPlan
+        );
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(compiledPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': parent table 'edfi.School' was not available when ordering child table 'edfi.SchoolAddress'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_RowNode_With_An_Already_Attached_Child_Row
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(pageData.ReadPlan);
+        var rootTablePlan = compiledPlan.GetTablePlanOrThrow(pageData.RootTable);
+        var addressTablePlan = compiledPlan.GetTablePlanOrThrow(pageData.AddressTable);
+        var firstParent = new RowNode(rootTablePlan, [101L, "First School"], new ScopeKey([101L]), 101L);
+        var secondParent = new RowNode(rootTablePlan, [202L, "Second School"], new ScopeKey([202L]), 202L);
+        var child = new RowNode(addressTablePlan, [101L, 101L, 1, "North City"], new ScopeKey([101L]), 101L);
+
+        firstParent.AttachChild(child);
+
+        _exception = Assert.Throws<InvalidOperationException>(() => secondParent.AttachChild(child))!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot attach row from table 'edfi.SchoolAddress' more than once. Physical row identity: [101]."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup_Rows
+{
+    private const long LookupDocumentId = 901L;
+    private const short ResourceKeyId = 7;
+    private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+
+    private PageReconstitutionContext _context = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+        ]);
+
+        _context = PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage);
+    }
+
+    [Test]
+    public void It_should_deduplicate_identical_lookup_rows()
+    {
+        _context.DocumentLinkLookupById.Should().ContainSingle();
+        _context
+            .DocumentLinkLookupById[LookupDocumentId]
+            .Should()
+            .Be(new DocumentLinkLookupEntry(_documentUuid, ResourceKeyId));
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Conflicting_Document_Link_Lookup_Rows
+{
+    private const long LookupDocumentId = 901L;
+    private const short ResourceKeyId = 7;
+    private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+    private static readonly Guid _conflictingDocumentUuid = Guid.Parse(
+        "99998888-7777-6666-5555-444433332222"
+    );
+
+    [TestCase(true, false, TestName = "different_DocumentUuid")]
+    [TestCase(false, true, TestName = "different_ResourceKeyId")]
+    public void It_should_fail_fast_when_duplicate_DocumentId_resolves_to_different_link_target(
+        bool changeDocumentUuid,
+        bool changeResourceKeyId
+    )
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(
+                LookupDocumentId,
+                changeDocumentUuid ? _conflictingDocumentUuid : _documentUuid,
+                changeResourceKeyId ? (short)(ResourceKeyId + 1) : ResourceKeyId
+            ),
+        ]);
+
+        Action act = () => PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot build page reconstitution context: document-reference lookup returned conflicting rows for DocumentId 901."
+            );
+    }
 }
 
 [TestFixture]
@@ -126,8 +432,37 @@ public class Given_PageReconstitutionContext_With_Duplicate_Root_Rows
     [Test]
     public void It_should_fail_fast()
     {
-        _exception.Message.Should().Contain("duplicate root row");
-        _exception.Message.Should().Contain("DocumentId 101");
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': duplicate root row for DocumentId 101 in table 'edfi.School'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Duplicate_Document_Metadata_Rows
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDuplicateDocumentMetadataRows();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': duplicate document metadata row for DocumentId 101."
+            );
     }
 }
 
@@ -149,8 +484,11 @@ public class Given_PageReconstitutionContext_With_Duplicate_Physical_Row_Identit
     [Test]
     public void It_should_fail_fast()
     {
-        _exception.Message.Should().Contain("duplicate physical row identity");
-        _exception.Message.Should().Contain("SchoolAddress");
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': table 'edfi.SchoolAddress' contains duplicate physical row identity [101]."
+            );
     }
 }
 
@@ -172,8 +510,37 @@ public class Given_PageReconstitutionContext_With_An_Orphaned_Child_Row
     [Test]
     public void It_should_fail_fast()
     {
-        _exception.Message.Should().Contain("orphaned row");
-        _exception.Message.Should().Contain("SchoolAddressPeriod");
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': orphaned row in table 'edfi.SchoolAddressPeriod' with immediate parent table 'edfi.SchoolAddress' and locator [999]."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Child_Row_Whose_Root_Document_Does_Not_Match_Its_Parent
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithChildRootDocumentMismatch();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': row in table 'edfi.SchoolAddressPeriod' resolved to parent table 'edfi.SchoolAddress', but the child root document id 202 did not match parent root document id 101."
+            );
     }
 }
 
@@ -195,9 +562,11 @@ public class Given_PageReconstitutionContext_With_A_Metadata_Row_Without_A_Root_
     [Test]
     public void It_should_fail_fast()
     {
-        _exception.Message.Should().Contain("document metadata row");
-        _exception.Message.Should().Contain("DocumentId 202");
-        _exception.Message.Should().Contain("no matching root row");
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': document metadata row for DocumentId 202 has no matching root row."
+            );
     }
 }
 
@@ -209,7 +578,7 @@ public class Given_PageReconstitutionContext_With_Extra_Root_Rows_Not_In_Metadat
     [SetUp]
     public void SetUp()
     {
-        var pageData = PageReconstitutionContextTestData.CreatePageWithExtraRootRow();
+        var pageData = PageReconstitutionContextTestData.CreatePageWithExtraRootRows();
 
         _exception = Assert.Throws<InvalidOperationException>(() =>
             PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
@@ -219,8 +588,145 @@ public class Given_PageReconstitutionContext_With_Extra_Root_Rows_Not_In_Metadat
     [Test]
     public void It_should_fail_fast()
     {
-        _exception.Message.Should().Contain("not present in page metadata");
-        _exception.Message.Should().Contain("[303]");
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': root rows were hydrated for document ids not present in page metadata: [202, 303]."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Duplicate_Hydrated_Table_Rows
+{
+    private Exception _exception = null!;
+    private DbTableName _rootTable = default;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDuplicateHydratedTableRows();
+        _rootTable = pageData.RootTable;
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                $"Cannot build page reconstitution context: duplicate hydrated row set for table '{_rootTable}'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Unexpected_Hydrated_Tables
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithUnexpectedHydratedTables();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': hydrated rows contained unexpected tables [edfi.AlphaUnexpected, edfi.ZebraUnexpected]."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_Without_A_Required_Hydrated_Table
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithoutRequiredHydratedTable();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context for 'Ed-Fi.School': hydrated rows did not contain required table 'edfi.SchoolAddressPeriod'."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Root_Row_That_Does_Not_Resolve_To_A_DocumentId
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithInvalidRootDocumentId();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot build page reconstitution context: table 'edfi.School' root scope locator [\"not-a-document-id\"] could not be resolved to a single DocumentId."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_A_Collection_Row_Whose_Ordinal_Cannot_Be_Converted
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithInvalidAddressOrdinal();
+
+        _exception = Assert.Throws<InvalidOperationException>(() =>
+            PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage)
+        )!;
+    }
+
+    [Test]
+    public void It_should_fail_fast()
+    {
+        _exception
+            .Message.Should()
+            .Be(
+                "Cannot order hydrated child rows: table 'edfi.SchoolAddress' column 'Ordinal' at ordinal '2' contains 'first' (type: System.String) that cannot be converted to an ordinal."
+            );
+
+        _exception.InnerException.Should().BeOfType<FormatException>();
     }
 }
 
@@ -228,6 +734,89 @@ file static class PageReconstitutionContextTestData
 {
     private static readonly DbSchemaName _schema = new("edfi");
     private static readonly QualifiedResourceName _resource = new("Ed-Fi", "School");
+
+    public static PageData CreatePageWithDocumentLinkLookup(
+        IReadOnlyList<DocumentReferenceLookupRow> lookupRows
+    )
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                DocumentReferenceLookup = new HydratedDocumentReferenceLookup(lookupRows),
+            },
+        };
+    }
+
+    public static PageData CreatePageWithConflictingDescriptorRows()
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                DescriptorRowsInPlanOrder =
+                [
+                    new HydratedDescriptorRows([
+                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                    ]),
+                    new HydratedDescriptorRows([
+                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Conflict"),
+                    ]),
+                ],
+            },
+        };
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutRootScopeLocator(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[0] = tablePlans[0] with { RootScopeLocatorOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutPhysicalRowIdentity(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[0] = tablePlans[0] with { PhysicalRowIdentityOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithoutImmediateParentScopeLocator(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[1] = tablePlans[1] with { ImmediateParentScopeLocatorOrdinals = [] };
+
+        return new CompiledReconstitutionPlan(compiledPlan.ReadPlan, tablePlans, compiledPlan.PropertyOrder);
+    }
+
+    public static CompiledReconstitutionPlan CreateCompiledPlanWithAddressBeforeRoot(
+        ResourceReadPlan readPlan
+    )
+    {
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var tablePlans = compiledPlan.TablePlansInDependencyOrder.ToArray();
+
+        return new CompiledReconstitutionPlan(
+            compiledPlan.ReadPlan,
+            [tablePlans[1], tablePlans[0], tablePlans[2]],
+            compiledPlan.PropertyOrder
+        );
+    }
 
     public static PageData CreateHappyPathPage()
     {
@@ -276,6 +865,27 @@ file static class PageReconstitutionContextTestData
         );
     }
 
+    public static PageData CreatePageWithoutAddressRows()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata: [CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111")],
+                rootRows:
+                [
+                    [101, "First School"],
+                ],
+                addressRows: [],
+                periodRows: []
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
     public static PageData CreatePageWithDuplicateRootRows()
     {
         var readPlan = CreateReadPlan();
@@ -288,6 +898,31 @@ file static class PageReconstitutionContextTestData
                 [
                     [101, "First School"],
                     [101L, "Duplicate Root"],
+                ],
+                addressRows: [],
+                periodRows: []
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
+    public static PageData CreatePageWithDuplicateDocumentMetadataRows()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata:
+                [
+                    CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111"),
+                    CreateDocumentMetadataRow(101L, "bbbbbbbb-2222-2222-2222-222222222222"),
+                ],
+                rootRows:
+                [
+                    [101, "First School"],
                 ],
                 addressRows: [],
                 periodRows: []
@@ -350,6 +985,38 @@ file static class PageReconstitutionContextTestData
         );
     }
 
+    public static PageData CreatePageWithChildRootDocumentMismatch()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata:
+                [
+                    CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111"),
+                    CreateDocumentMetadataRow(202L, "bbbbbbbb-2222-2222-2222-222222222222"),
+                ],
+                rootRows:
+                [
+                    [101, "First School"],
+                    [202, "Second School"],
+                ],
+                addressRows:
+                [
+                    [101, 101, 1, "North City"],
+                ],
+                periodRows:
+                [
+                    [201, 101, 202, 1, "2024-08-15"],
+                ]
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
     public static PageData CreatePageWithMetadataRowWithoutRoot()
     {
         var readPlan = CreateReadPlan();
@@ -375,7 +1042,7 @@ file static class PageReconstitutionContextTestData
         );
     }
 
-    public static PageData CreatePageWithExtraRootRow()
+    public static PageData CreatePageWithExtraRootRows()
     {
         var readPlan = CreateReadPlan();
 
@@ -387,6 +1054,7 @@ file static class PageReconstitutionContextTestData
                 [
                     [101, "First School"],
                     [303, "Extra Root"],
+                    [202, "Second Extra Root"],
                 ],
                 addressRows: [],
                 periodRows: []
@@ -395,6 +1063,132 @@ file static class PageReconstitutionContextTestData
             readPlan.Model.TablesInDependencyOrder[1].Table,
             readPlan.Model.TablesInDependencyOrder[2].Table
         );
+    }
+
+    public static PageData CreatePageWithDuplicateHydratedTableRows()
+    {
+        var pageData = CreateHappyPathPage();
+        var rootRows = pageData.HydratedPage.TableRowsInDependencyOrder[0];
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                TableRowsInDependencyOrder =
+                [
+                    rootRows,
+                    rootRows,
+                    pageData.HydratedPage.TableRowsInDependencyOrder[1],
+                    pageData.HydratedPage.TableRowsInDependencyOrder[2],
+                ],
+            },
+        };
+    }
+
+    public static PageData CreatePageWithUnexpectedHydratedTables()
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                TableRowsInDependencyOrder =
+                [
+                    .. pageData.HydratedPage.TableRowsInDependencyOrder,
+                    new HydratedTableRows(CreateUnexpectedTable("ZebraUnexpected"), []),
+                    new HydratedTableRows(CreateUnexpectedTable("AlphaUnexpected"), []),
+                ],
+            },
+        };
+    }
+
+    public static PageData CreatePageWithoutRequiredHydratedTable()
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                TableRowsInDependencyOrder =
+                [
+                    pageData.HydratedPage.TableRowsInDependencyOrder[0],
+                    pageData.HydratedPage.TableRowsInDependencyOrder[1],
+                ],
+            },
+        };
+    }
+
+    public static PageData CreatePageWithInvalidRootDocumentId()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata: [CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111")],
+                rootRows:
+                [
+                    ["not-a-document-id", "First School"],
+                ],
+                addressRows: [],
+                periodRows: []
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
+    public static PageData CreatePageWithInvalidAddressOrdinal()
+    {
+        var readPlan = CreateReadPlan();
+
+        return new PageData(
+            readPlan,
+            CreateHydratedPage(
+                documentMetadata: [CreateDocumentMetadataRow(101L, "aaaaaaaa-1111-1111-1111-111111111111")],
+                rootRows:
+                [
+                    [101, "First School"],
+                ],
+                addressRows:
+                [
+                    [101, 101, "first", "North City"],
+                    [102, 101, 2, "East City"],
+                ],
+                periodRows: []
+            ),
+            readPlan.Model.Root.Table,
+            readPlan.Model.TablesInDependencyOrder[1].Table,
+            readPlan.Model.TablesInDependencyOrder[2].Table
+        );
+    }
+
+    private static DbTableModel CreateUnexpectedTable(string tableName)
+    {
+        var table = new DbTableName(_schema, tableName);
+
+        return new DbTableModel(
+            Table: table,
+            JsonScope: CreatePath($"$.{tableName}"),
+            Key: new TableKey(
+                ConstraintName: $"PK_{tableName}",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [CreateColumn("DocumentId", ColumnKind.ParentKeyPart, ScalarKind.Int64, false)],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
     }
 
     private static ResourceReadPlan CreateReadPlan()

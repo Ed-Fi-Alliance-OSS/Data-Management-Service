@@ -15,6 +15,21 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_NamespaceAuthorizationAuth1FailurePayloadCodec
 {
     [Test]
+    public void It_should_reject_negative_emitted_auth1_indexes()
+    {
+        var act = () =>
+            new NamespaceAuthorizationAuth1FailurePayload(
+                -1,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("emittedAuth1Index")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [Test]
     public void It_should_encode_a_mismatch_payload_with_the_ns1_discriminator()
     {
         var payload = new NamespaceAuthorizationAuth1FailurePayload(
@@ -25,6 +40,22 @@ public class Given_NamespaceAuthorizationAuth1FailurePayloadCodec
         var encoded = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(payload);
 
         encoded.Should().Be("ns1|0|m");
+    }
+
+    [Test]
+    public void It_should_throw_for_unknown_failure_kinds_when_encoding()
+    {
+        var payload = new NamespaceAuthorizationAuth1FailurePayload(
+            0,
+            (NamespaceAuthorizationAuth1FailureKind)999
+        );
+
+        var act = () => NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(payload);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("failureKind")
+            .WithMessage("Unsupported AUTH1 namespace failure kind.*");
     }
 
     [TestCase(0, NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch, "ns1|0|m")]

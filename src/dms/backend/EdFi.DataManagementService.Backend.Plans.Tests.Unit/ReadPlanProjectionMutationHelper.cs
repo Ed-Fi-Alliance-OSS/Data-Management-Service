@@ -66,6 +66,50 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static ResourceReadPlan CreateReadPlanWithoutReferenceIdentityProjectionPlans(
+        ResourceReadPlan readPlan
+    )
+    {
+        return readPlan with { ReferenceIdentityProjectionPlansInDependencyOrder = [] };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithoutDescriptorProjectionPlans(ResourceReadPlan readPlan)
+    {
+        return readPlan with { DescriptorProjectionPlansInOrder = [] };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithoutProjectionPlans(ResourceReadPlan readPlan)
+    {
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder = [],
+            DescriptorProjectionPlansInOrder = [],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithUnexpectedReferenceIdentityProjectionPlans(
+        ResourceReadPlan readPlan,
+        ResourceReadPlan projectionSourceReadPlan
+    )
+    {
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+                projectionSourceReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithUnexpectedDescriptorProjectionPlans(
+        ResourceReadPlan readPlan,
+        ResourceReadPlan projectionSourceReadPlan
+    )
+    {
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = projectionSourceReadPlan.DescriptorProjectionPlansInOrder,
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithReferenceTargetResource(
         ResourceReadPlan readPlan,
         QualifiedResourceName targetResource
@@ -100,6 +144,55 @@ internal static class ReadPlanProjectionMutationHelper
         var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
 
         sources[sourceIndex] = sources[sourceIndex] with { DescriptorResource = descriptorResource };
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. sources],
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithDescriptorProjectionSourceTable(
+        ResourceReadPlan readPlan,
+        DbTableName table,
+        int sourceIndex = 0,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        sources[sourceIndex] = sources[sourceIndex] with { Table = table };
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. sources],
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithDescriptorProjectionSourceOrdinal(
+        ResourceReadPlan readPlan,
+        int descriptorIdColumnOrdinal,
+        int sourceIndex = 0,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        sources[sourceIndex] = sources[sourceIndex] with
+        {
+            DescriptorIdColumnOrdinal = descriptorIdColumnOrdinal,
+        };
         descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
         {
             SourcesInOrder = [.. sources],
@@ -398,6 +491,70 @@ internal static class ReadPlanProjectionMutationHelper
 
         descriptorProjectionPlans[0] = descriptorProjectionPlans[1];
         descriptorProjectionPlans[1] = firstPlan;
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithAppendedDescriptorProjectionSource(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. sources, sources[sourceIndex]],
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithOmittedDescriptorProjectionSource(
+        ResourceReadPlan readPlan,
+        int omittedSourceIndex,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+        var sources = descriptorProjectionPlan
+            .SourcesInOrder.Where((_, index) => index != omittedSourceIndex)
+            .ToArray();
+
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. sources],
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithDescriptorProjectionSourceCount(
+        ResourceReadPlan readPlan,
+        int sourceCount,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. descriptorProjectionPlan.SourcesInOrder.Take(sourceCount)],
+        };
 
         return readPlan with
         {

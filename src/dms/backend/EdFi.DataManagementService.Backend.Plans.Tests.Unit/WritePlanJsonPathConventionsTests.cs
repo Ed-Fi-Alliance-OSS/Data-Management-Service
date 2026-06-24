@@ -49,7 +49,9 @@ public class Given_WritePlanJsonPathConventions
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*scope '$.addresses[*]' is not a prefix*");
+            .WithMessage(
+                "Cannot derive scope-relative path for source '$.studentUniqueId': scope '$.addresses[*]' is not a prefix."
+            );
     }
 
     [Test]
@@ -61,7 +63,43 @@ public class Given_WritePlanJsonPathConventions
                 Path("$.addresses[*].periods[*].beginDate")
             );
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*contains '[*]'*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot derive scope-relative path for source '$.addresses[*].periods[*].beginDate' under scope '$.addresses[*]': stripped path contains '[*]'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_scope_wildcard_does_not_match_source_property()
+    {
+        var act = () =>
+            WritePlanJsonPathConventions.DeriveScopeRelativePath(
+                Path("$.addresses[*]"),
+                Path("$.addresses.city")
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot derive scope-relative path for source '$.addresses.city': scope '$.addresses[*]' is not a prefix."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_scope_property_name_does_not_match_source_property_name()
+    {
+        var act = () =>
+            WritePlanJsonPathConventions.DeriveScopeRelativePath(
+                Path("$.addresses[*].city"),
+                Path("$.addresses[*].postalCode")
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot derive scope-relative path for source '$.addresses[*].postalCode': scope '$.addresses[*].city' is not a prefix."
+            );
     }
 
     private static JsonPathExpression Path(string canonicalPath)

@@ -102,6 +102,71 @@ public class Given_DocumentReferenceLookupPlanCompiler
             .Equal("School_DocumentId", "Sponsor_DocumentId");
     }
 
+    [Test]
+    public void It_should_report_when_binding_owner_table_is_missing_from_table_lookup()
+    {
+        var model = BuildModelWithCollectionTableBinding();
+        var tablesByName = model
+            .TablesInDependencyOrder.Where(static table => table.Table.Name != "StudentAddress")
+            .ToDictionary(static table => table.Table, static table => table);
+
+        Action act = () => CompileLookup(model, SqlDialect.Pgsql, tablesByName);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile document-reference lookup plan for 'edfi.StudentAddress': owning table is not present in TablesInDependencyOrder."
+            );
+    }
+
+    [Test]
+    public void It_should_report_when_binding_fk_column_is_missing()
+    {
+        var model = BuildModelWithMissingFkColumnBinding();
+
+        Action act = () => CompileLookup(model, SqlDialect.Pgsql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile document-reference lookup plan for 'edfi.StudentAddress': document-reference binding '$.addresses[*].schoolReference' FK column 'Missing_DocumentId' does not exist in table columns."
+            );
+    }
+
+    [Test]
+    public void It_should_report_when_binding_fk_column_is_not_document_fk()
+    {
+        var model = BuildModelWithScalarFkColumnBinding();
+
+        Action act = () => CompileLookup(model, SqlDialect.Pgsql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile document-reference lookup plan for 'edfi.StudentAddress': document-reference binding '$.addresses[*].schoolReference' FK column 'School_DocumentId' has kind 'Scalar'. Expected 'DocumentFk'."
+            );
+    }
+
+    [Test]
+    public void It_should_report_when_binding_owner_table_is_missing_from_dependency_order()
+    {
+        var model = BuildModelWithCollectionTableBinding();
+        var tablesByName = model.TablesInDependencyOrder.ToDictionary(
+            static table => table.Table,
+            static table => table
+        );
+        var modelWithoutOwnerTableInDependencyOrder = model with { TablesInDependencyOrder = [model.Root] };
+
+        Action act = () =>
+            CompileLookup(modelWithoutOwnerTableInDependencyOrder, SqlDialect.Pgsql, tablesByName);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile document-reference lookup plan for 'edfi.StudentAddress': owning table is not present in TablesInDependencyOrder."
+            );
+    }
+
     /// <summary>
     /// Invokes the lookup compiler directly, bypassing upstream <see cref="ReadPlanCompiler"/>
     /// stages (descriptor projection, reference-identity projection) that require
@@ -113,12 +178,22 @@ public class Given_DocumentReferenceLookupPlanCompiler
         SqlDialect dialect
     )
     {
-        var compiler = new DocumentReferenceLookupPlanCompiler(dialect);
-        var keysetTable = KeysetTableConventions.GetKeysetTableContract(dialect);
         var tablesByName = model.TablesInDependencyOrder.ToDictionary(
             static table => table.Table,
             static table => table
         );
+
+        return CompileLookup(model, dialect, tablesByName);
+    }
+
+    private static DocumentReferenceLookupPlan? CompileLookup(
+        RelationalResourceModel model,
+        SqlDialect dialect,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        var compiler = new DocumentReferenceLookupPlanCompiler(dialect);
+        var keysetTable = KeysetTableConventions.GetKeysetTableContract(dialect);
 
         return compiler.Compile(model, keysetTable, tablesByName);
     }
@@ -221,6 +296,46 @@ public class Given_DocumentReferenceLookupPlanCompiler
             ],
             DescriptorEdgeSources: []
         );
+    }
+
+    private static RelationalResourceModel BuildModelWithMissingFkColumnBinding()
+    {
+        var model = BuildModelWithCollectionTableBinding();
+
+        return model with
+        {
+            DocumentReferenceBindings =
+            [
+                model.DocumentReferenceBindings[0] with
+                {
+                    FkColumn = new DbColumnName("Missing_DocumentId"),
+                },
+            ],
+        };
+    }
+
+    private static RelationalResourceModel BuildModelWithScalarFkColumnBinding()
+    {
+        var model = BuildModelWithCollectionTableBinding();
+        var addressTable = model.TablesInDependencyOrder[1];
+        var scalarAddressTable = addressTable with
+        {
+            Columns = addressTable
+                .Columns.Select(column =>
+                    column.ColumnName.Value == "School_DocumentId"
+                        ? column with
+                        {
+                            Kind = ColumnKind.Scalar,
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            TablesInDependencyOrder = [model.Root, scalarAddressTable],
+        };
     }
 
     private static DbTableModel BuildStudentRootTable() =>

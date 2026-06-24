@@ -24,6 +24,10 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
         "Ed-Fi",
         "StudentAcademicRecord"
     );
+    private static readonly QualifiedResourceName _studentEducationOrganizationAssociationResource = new(
+        "Ed-Fi",
+        "StudentEducationOrganizationAssociation"
+    );
     private static readonly QualifiedResourceName _academicSubjectDescriptorResource = new(
         "Ed-Fi",
         "AcademicSubjectDescriptor"
@@ -31,6 +35,10 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
     private static readonly QualifiedResourceName _gradeLevelDescriptorResource = new(
         "Ed-Fi",
         "GradeLevelDescriptor"
+    );
+    private static readonly QualifiedResourceName _sampleAcademicSubjectDescriptorResource = new(
+        "Sample",
+        "AcademicSubjectDescriptor"
     );
 
     [Test]
@@ -391,6 +399,15 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
                         new DbColumnName("Student_DocumentId")
                     )
                 ),
+                DescriptorColumn(
+                    "Student_SampleAcademicSubjectDescriptorId",
+                    "$.studentReference.academicSubjectDescriptor",
+                    _sampleAcademicSubjectDescriptorResource,
+                    new ColumnStorage.UnifiedAlias(
+                        new DbColumnName("StudentDescriptorUnifiedId"),
+                        new DbColumnName("Student_DocumentId")
+                    )
+                ),
             ]
         );
         var binding = new DocumentReferenceBinding(
@@ -411,6 +428,11 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
                     ReferenceJsonPath: Path("$.studentReference.academicSubjectDescriptor"),
                     Column: new DbColumnName("Student_GradeLevelDescriptorId")
                 ),
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.studentReference.academicSubjectDescriptor"),
+                    ReferenceJsonPath: Path("$.studentReference.academicSubjectDescriptor"),
+                    Column: new DbColumnName("Student_SampleAcademicSubjectDescriptorId")
+                ),
             ]
         );
         var model = CreateModel(
@@ -430,6 +452,12 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
                     "Student_GradeLevelDescriptorId",
                     _gradeLevelDescriptorResource
                 ),
+                DescriptorEdge(
+                    "$.studentReference.academicSubjectDescriptor",
+                    rootTable.Table,
+                    "Student_SampleAcademicSubjectDescriptorId",
+                    _sampleAcademicSubjectDescriptorResource
+                ),
             ]
         );
         var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
@@ -439,7 +467,141 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*resolves descriptor candidates to multiple descriptor resources*");
+            .WithMessage(
+                "Cannot compile query capability: resource 'Ed-Fi.CourseTranscript' reference identity query candidate group '$.studentReference.academicSubjectDescriptor' on table 'edfi.StudentProgramAssociation' resolves descriptor candidates to multiple descriptor resources: 'Ed-Fi.AcademicSubjectDescriptor', 'Ed-Fi.GradeLevelDescriptor', 'Sample.AcademicSubjectDescriptor'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_resolving_an_empty_candidate_match()
+    {
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.studentReference.studentUniqueId"),
+            ]
+        );
+        var binding = CreateBinding(
+            referenceObjectPath: "$.studentReference",
+            table: rootTable.Table,
+            fkColumn: "Student_DocumentId",
+            targetResource: _studentResource,
+            identityPath: "$.studentReference.studentUniqueId",
+            referencePath: "$.studentReference.studentUniqueId",
+            column: "Student_StudentUniqueId"
+        );
+        var model = CreateModel(rootTable, [rootTable], [binding]);
+        var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
+        var match = new ReferenceIdentityQueryCandidateResolution.Match(
+            resolver.CandidateGroupsInOrder.Single(),
+            []
+        );
+
+        var act = () => resolver.ResolveTargetOrThrow(match);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile query capability: resource 'Ed-Fi.CourseTranscript' reference identity query candidate group '$.studentReference.studentUniqueId' on table 'edfi.CourseTranscript' cannot resolve a query target because no candidates matched."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_a_manually_resolved_candidate_references_a_missing_root_column()
+    {
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource)]
+        );
+        var model = CreateModel(rootTable, [rootTable], []);
+        var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
+        var missingColumn = new DbColumnName("MissingStudentUniqueId");
+        var group = new ReferenceIdentityQueryCandidateGroup(
+            rootTable.Table,
+            _studentResource,
+            Path("$.studentReference"),
+            new DbColumnName("Student_DocumentId"),
+            Path("$.studentReference.studentUniqueId"),
+            missingColumn,
+            [
+                new ReferenceIdentityQueryCandidate(
+                    Path("$.studentReference.studentUniqueId"),
+                    Path("$.studentReference.studentUniqueId"),
+                    missingColumn
+                ),
+            ]
+        );
+        var match = new ReferenceIdentityQueryCandidateResolution.Match(group, group.CandidatesInOrder);
+
+        var act = () => resolver.ResolveTargetOrThrow(match);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*references missing root column 'MissingStudentUniqueId'*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_a_non_representative_scalar_candidate_has_an_invalid_kind()
+    {
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("StudentUniqueIdCanonical", "$.studentReference.studentUniqueId"),
+                ScalarColumn(
+                    "Student_StudentUniqueId",
+                    "$.studentReference.studentUniqueId",
+                    new ColumnStorage.UnifiedAlias(
+                        new DbColumnName("StudentUniqueIdCanonical"),
+                        new DbColumnName("Student_DocumentId")
+                    )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Student_StudentUniqueIdInvalid"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.studentReference.studentUniqueId"),
+                    TargetResource: _studentResource,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        new DbColumnName("StudentUniqueIdCanonical"),
+                        new DbColumnName("Student_DocumentId")
+                    )
+                ),
+            ]
+        );
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: Path("$.studentReference"),
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("Student_DocumentId"),
+            TargetResource: _studentResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.studentReference.studentUniqueId"),
+                    ReferenceJsonPath: Path("$.studentReference.studentUniqueId"),
+                    Column: new DbColumnName("Student_StudentUniqueId")
+                ),
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.studentReference.studentUniqueId"),
+                    ReferenceJsonPath: Path("$.studentReference.studentUniqueId"),
+                    Column: new DbColumnName("Student_StudentUniqueIdInvalid")
+                ),
+            ]
+        );
+        var model = CreateModel(rootTable, [rootTable], [binding]);
+        var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
+        var match = ResolveExactMatch(resolver, "$.studentReference.studentUniqueId");
+
+        var act = () => resolver.ResolveTargetOrThrow(match);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*target column 'Student_StudentUniqueIdInvalid' has unsupported kind 'DocumentFk'*"
+            );
     }
 
     [Test]
@@ -469,6 +631,95 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
             .CandidateGroupsInOrder.Select(static group => group.ReferenceObjectPath.Canonical)
             .Should()
             .Equal("$.primaryStudentReference", "$.secondaryStudentReference");
+    }
+
+    [TestCase(
+        "studentEducationOrganizationAssociationReference",
+        "studentUniqueId",
+        "responsibleStudentReference",
+        "responsibleStudentUniqueId"
+    )]
+    [TestCase(
+        "staffEducationOrganizationEmploymentAssociationReference",
+        "staffUniqueId",
+        "responsibleStaffReference",
+        "responsibleStaffUniqueId"
+    )]
+    [TestCase(
+        "contactStudentSchoolAssociationReference",
+        "contactUniqueId",
+        "responsibleContactReference",
+        "responsibleContactUniqueId"
+    )]
+    public void It_should_resolve_role_named_person_reference_alias_paths(
+        string identityParentName,
+        string identityLeafName,
+        string aliasParentName,
+        string queryFieldName
+    )
+    {
+        var resolver = CreateRoleNamedPersonAliasResolver(identityParentName, identityLeafName);
+
+        var resolution = resolver.ResolveAliasPath(
+            queryFieldName,
+            Path($"$.{aliasParentName}.studentEducationOrganizationAssociationUniqueId"),
+            superclassResource: null
+        );
+
+        var match = resolution.Should().BeOfType<ReferenceIdentityQueryCandidateResolution.Match>().Subject;
+        match
+            .CandidateGroup.ReferenceObjectPath.Canonical.Should()
+            .Be("$.responsibleStudentEducationOrganizationAssociationReference");
+        match
+            .MatchedCandidatesInOrder.Should()
+            .ContainSingle()
+            .Which.IdentityJsonPath.Canonical.Should()
+            .Be($"$.{identityParentName}.{identityLeafName}");
+    }
+
+    [Test]
+    public void It_should_not_resolve_alias_when_candidate_identity_leaf_does_not_use_unique_id_suffix()
+    {
+        var resolver = CreateRoleNamedPersonAliasResolver("studentReference", "studentUSI");
+
+        var resolution = resolver.ResolveAliasPath(
+            "responsibleStudentUSI",
+            Path("$.responsibleStudentReference.studentEducationOrganizationAssociationUniqueId"),
+            superclassResource: null
+        );
+
+        resolution.Should().BeOfType<ReferenceIdentityQueryCandidateResolution.NoMatch>();
+    }
+
+    [Test]
+    public void It_should_not_treat_pascal_case_base_reference_name_as_a_role_named_reference()
+    {
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.StudentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.StudentReference.studentUniqueId"),
+            ]
+        );
+        var binding = CreateBinding(
+            referenceObjectPath: "$.StudentReference",
+            table: rootTable.Table,
+            fkColumn: "Student_DocumentId",
+            targetResource: _studentResource,
+            identityPath: "$.StudentReference.studentUniqueId",
+            referencePath: "$.StudentReference.studentUniqueId",
+            column: "Student_StudentUniqueId"
+        );
+        var model = CreateModel(rootTable, [rootTable], [binding]);
+        var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
+
+        var resolution = resolver.ResolveAliasPath(
+            "studentUniqueId",
+            Path("$.StudentReference.studentUniqueId"),
+            superclassResource: null
+        );
+
+        resolution.Should().BeOfType<ReferenceIdentityQueryCandidateResolution.NoMatch>();
     }
 
     [Test]
@@ -562,6 +813,39 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
         );
 
         return (CreateModel(rootTable, [rootTable], [primaryBinding, secondaryBinding]), rootTable);
+    }
+
+    private static ReferenceIdentityQueryTargetResolver CreateRoleNamedPersonAliasResolver(
+        string identityParentName,
+        string identityLeafName
+    )
+    {
+        const string referenceObjectName = "responsibleStudentEducationOrganizationAssociationReference";
+        var columnName =
+            $"ResponsibleStudentEducationOrganizationAssociation_{ToUpperCamelCase(identityLeafName)}";
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [
+                DocumentFkColumn(
+                    "ResponsibleStudentEducationOrganizationAssociation_DocumentId",
+                    $"$.{referenceObjectName}",
+                    _studentEducationOrganizationAssociationResource
+                ),
+                ScalarColumn(columnName, $"$.{referenceObjectName}.{identityLeafName}"),
+            ]
+        );
+        var binding = CreateBinding(
+            referenceObjectPath: $"$.{referenceObjectName}",
+            table: rootTable.Table,
+            fkColumn: "ResponsibleStudentEducationOrganizationAssociation_DocumentId",
+            targetResource: _studentEducationOrganizationAssociationResource,
+            identityPath: $"$.{identityParentName}.{identityLeafName}",
+            referencePath: $"$.{referenceObjectName}.{identityLeafName}",
+            column: columnName
+        );
+        var model = CreateModel(rootTable, [rootTable], [binding]);
+
+        return new ReferenceIdentityQueryTargetResolver(model, rootTable);
     }
 
     private static RelationalResourceModel CreateModel(
@@ -797,5 +1081,39 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
             .Subject;
     }
 
-    private static JsonPathExpression Path(string canonical) => new(canonical, []);
+    private static JsonPathExpression Path(string canonical)
+    {
+        if (canonical == "$")
+        {
+            return new JsonPathExpression(canonical, []);
+        }
+
+        if (!canonical.StartsWith("$.", StringComparison.Ordinal))
+        {
+            return new JsonPathExpression(canonical, []);
+        }
+
+        List<JsonPathSegment> segments = [];
+        foreach (var rawSegment in canonical[2..].Split('.'))
+        {
+            if (rawSegment.EndsWith("[*]", StringComparison.Ordinal))
+            {
+                var propertyName = rawSegment[..^3];
+                if (propertyName.Length > 0)
+                {
+                    segments.Add(new JsonPathSegment.Property(propertyName));
+                }
+
+                segments.Add(new JsonPathSegment.AnyArrayElement());
+                continue;
+            }
+
+            segments.Add(new JsonPathSegment.Property(rawSegment));
+        }
+
+        return new JsonPathExpression(canonical, segments);
+    }
+
+    private static string ToUpperCamelCase(string name) =>
+        name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name[1..];
 }

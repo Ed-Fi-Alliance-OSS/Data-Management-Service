@@ -122,6 +122,55 @@ public class Given_AuthorizationClaimEducationOrganizationIdParameterizationFact
         parameterization.ParameterNamesInOrder[^1].Should().Be("ClaimEducationOrganizationIds_1998");
     }
 
+    [Test]
+    public void It_rejects_invalid_base_parameter_names()
+    {
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                [42L],
+                "Claim-Education-Organization-Ids"
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Parameter name must match pattern*")
+            .WithParameterName("baseParameterName");
+    }
+
+    [Test]
+    public void It_rejects_empty_claim_id_lists()
+    {
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                [],
+                "ClaimEducationOrganizationIds"
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Authorization claim EdOrg parameterization requires at least one claim EdOrg id.*")
+            .WithParameterName("claimEducationOrganizationIds");
+    }
+
+    [Test]
+    public void It_rejects_unsupported_sql_dialects()
+    {
+        var unsupportedDialect = (SqlDialect)999;
+
+        var act = () =>
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                unsupportedDialect,
+                [42L],
+                "ClaimEducationOrganizationIds"
+            );
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("Authorization claim EdOrg parameterization does not support SQL dialect '999'.");
+    }
+
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)
     {
         long[] claimEducationOrganizationIds = new long[count];
@@ -133,4 +182,80 @@ public class Given_AuthorizationClaimEducationOrganizationIdParameterizationFact
 
         return claimEducationOrganizationIds;
     }
+}
+
+[TestFixture]
+public class Given_AuthorizationClaimEducationOrganizationIdParameterizationValidator
+{
+    private const string ParameterizationName = "claimEducationOrganizationIds";
+    private const string UnsupportedDialectMessagePrefix = "Token info authorization";
+
+    [Test]
+    public void It_rejects_invalid_base_parameter_names_with_parameterization_context()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "claim-education-organization-ids",
+            [42L],
+            ["claimEducationOrganizationIds_0"]
+        );
+
+        var act = () => Validate(parameterization, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName(
+                $"{ParameterizationName}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.BaseParameterName)}"
+            );
+    }
+
+    [Test]
+    public void It_rejects_invalid_parameter_names_with_parameterization_context()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "claimEducationOrganizationIds",
+            [42L],
+            ["claim-education-organization-ids-0"]
+        );
+
+        var act = () => Validate(parameterization, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName(
+                $"{ParameterizationName}.{nameof(AuthorizationClaimEducationOrganizationIdParameterization.ParameterNamesInOrder)}"
+            );
+    }
+
+    [Test]
+    public void It_rejects_parameterizations_that_do_not_match_the_sql_dialect()
+    {
+        var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "claimEducationOrganizationIds",
+            [42L],
+            ["claimEducationOrganizationIds_0"]
+        );
+
+        var act = () => Validate(parameterization);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Authorization claim EdOrg parameterization kind 'MssqlScalar' is not supported by SQL dialect 'Pgsql'.*"
+            )
+            .WithParameterName("kind");
+    }
+
+    private static void Validate(
+        AuthorizationClaimEducationOrganizationIdParameterization parameterization,
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        AuthorizationClaimEducationOrganizationIdParameterizationValidator.ValidateOrThrow(
+            parameterization,
+            dialect,
+            ParameterizationName,
+            UnsupportedDialectMessagePrefix
+        );
 }

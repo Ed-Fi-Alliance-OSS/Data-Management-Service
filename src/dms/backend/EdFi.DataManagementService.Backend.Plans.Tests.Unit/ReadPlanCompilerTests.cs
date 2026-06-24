@@ -229,6 +229,122 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_skip_projection_contract_validation_for_non_relational_storage()
+    {
+        var readPlan = CreateReadPlanWithoutProjectionPlans(
+            _pgsqlProjectionReadPlan with
+            {
+                Model = _pgsqlProjectionReadPlan.Model with
+                {
+                    StorageKind = ResourceStorageKind.SharedDescriptorTable,
+                },
+            }
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_missing_reference_identity_projection_plans_when_document_reference_bindings_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutReferenceIdentityProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_missing_descriptor_projection_plans_when_descriptor_edge_sources_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutDescriptorProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty");
+    }
+
+    [Test]
+    public void It_should_reject_missing_projection_plan_sets_when_reference_and_descriptor_metadata_are_present()
+    {
+        var readPlan = CreateReadPlanWithoutProjectionPlans(_pgsqlProjectionReadPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty, and DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_reference_identity_projection_plans_when_document_reference_bindings_are_absent()
+    {
+        var readPlan = CreateReadPlanWithUnexpectedReferenceIdentityProjectionPlans(
+            _pgsqlRootOnlyReadPlan,
+            _pgsqlProjectionReadPlan
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DocumentReferenceBindings are absent while ReferenceIdentityProjectionPlansInDependencyOrder is populated"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_plans_when_descriptor_edge_sources_are_absent()
+    {
+        var readPlan = CreateReadPlanWithUnexpectedDescriptorProjectionPlans(
+            _pgsqlRootOnlyReadPlan,
+            _pgsqlProjectionReadPlan
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "DescriptorEdgeSources are absent while DescriptorProjectionPlansInOrder is populated"
+            );
+    }
+
+    [Test]
     public void It_should_reject_reference_identity_projection_binding_duplicates_that_omit_another_modeled_binding()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -928,6 +1044,172 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_null_DocumentReferenceLookup_when_document_reference_bindings_are_present()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with { DocumentReferenceLookup = null };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DocumentReferenceBindings are present while DocumentReferenceLookup is null");
+    }
+
+    [Test]
+    public void It_should_reject_populated_DocumentReferenceLookup_when_document_reference_bindings_are_absent()
+    {
+        var mutatedReadPlan = _pgsqlRootOnlyReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup,
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("DocumentReferenceBindings are absent while DocumentReferenceLookup is populated");
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_result_shape_that_changes_fixed_ordinals()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                ResultShape = new DocumentReferenceLookupResultShape(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 2,
+                    ResourceKeyIdOrdinal: 1
+                ),
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was DocumentId='0', DocumentUuid='2', ResourceKeyId='1'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_populated_DocumentReferenceLookup_with_empty_sources()
+    {
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("document-reference lookup plan must contain at least one source when populated");
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_duplicate_table_and_FK_column()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [source, source],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '1' duplicates table 'edfi.StudentProjection' FK column 'School_DocumentId'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_reference_missing_hydration_tables()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder =
+                [
+                    source with
+                    {
+                        Table = new DbTableName(new DbSchemaName("edfi"), "MissingStudentProjection"),
+                    },
+                ],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '0' references table 'edfi.MissingStudentProjection' that is not present in compiled table plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_sources_that_reference_missing_FK_columns()
+    {
+        var source = _pgsqlProjectionReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = _pgsqlProjectionReadPlan with
+        {
+            DocumentReferenceLookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [source with { FkColumn = new DbColumnName("Missing_DocumentId") }],
+            },
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan source at index '0' on table 'edfi.StudentProjection' references FK column 'Missing_DocumentId' that does not exist in table columns"
+            );
+    }
+
+    [Test]
     public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
@@ -1261,12 +1543,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 reason => new InvalidOperationException(reason)
             );
 
-        var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception
-            .Message.Should()
-            .Contain("descriptor projection source at plan index '0', source index '0'");
-        exception.Message.Should().Contain("$.schoolYearTypeDescriptor");
-        exception.Message.Should().Contain("$.localSchoolYearTypeDescriptor");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source at plan index '0', source index '0' resolves to '$.schoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorPrimary', but authoritative DescriptorEdgeSources at index '0' requires '$.localSchoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorSecondary'"
+            );
     }
 
     [Test]
@@ -1300,6 +1581,97 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Message.Should()
             .Contain("descriptor projection plan at index '1' must contain at least one source");
         exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_reference_missing_hydration_tables()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceTable(
+            readPlan,
+            new DbTableName(new DbSchemaName("edfi"), "MissingStudent")
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection plan at index '0' source '$.localSchoolYearTypeDescriptor' references table 'edfi.MissingStudent' that is not present in compiled table plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_with_out_of_range_hydration_ordinals()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var outOfRangeOrdinal = readPlan.TablePlansInDependencyOrder.Single().TableModel.Columns.Count;
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceOrdinal(
+            readPlan,
+            outOfRangeOrdinal
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"ordinal '{outOfRangeOrdinal}' for descriptor projection plan at index '0' source ordinal '$.localSchoolYearTypeDescriptor' for table 'edfi.Student' is out of range for hydration select-list columns (count: {outOfRangeOrdinal})"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_exceed_authoritative_source_count()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var mutatedReadPlan = CreateReadPlanWithAppendedDescriptorProjectionSource(readPlan, sourceIndex: 0);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source at plan index '0', source index '2' resolves to '$.localSchoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorSecondary', but authoritative DescriptorEdgeSources count is only '2'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_omit_an_authoritative_source()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource()
+        );
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceCount(readPlan, sourceCount: 1);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source count '1' across plan count '1' does not match DescriptorEdgeSources count '3'; missing authoritative DescriptorEdgeSource(s): '$.schoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorPrimary', '$.programTypeDescriptor' on table 'edfi.Student' FK column 'ProgramTypeDescriptorId'"
+            );
     }
 
     [Test]

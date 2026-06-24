@@ -19,6 +19,84 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
 {
     [Test]
+    public void It_should_reject_negative_strategy_ordinals()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                -1,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("strategyOrdinal")
+            .WithMessage("AUTH1 strategy ordinal cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_negative_subject_ordinals()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                -1,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("subjectOrdinal")
+            .WithMessage("AUTH1 subject ordinal cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_allow_zero_ordinals_and_zero_emitted_auth1_index()
+    {
+        var subjectFailure = new RelationshipAuthorizationAuth1SubjectFailure(
+            0,
+            0,
+            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+        );
+        var payload = new RelationshipAuthorizationAuth1FailurePayload(0, [subjectFailure]);
+
+        payload.EmittedAuth1Index.Should().Be(0);
+        payload.SubjectFailures.Should().ContainSingle().Which.Should().Be(subjectFailure);
+    }
+
+    [Test]
+    public void It_should_reject_negative_emitted_auth1_indexes()
+    {
+        var act = () =>
+            new RelationshipAuthorizationAuth1FailurePayload(
+                -1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("emittedAuth1Index")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_empty_subject_failure_lists()
+    {
+        var act = () => new RelationshipAuthorizationAuth1FailurePayload(0, []);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("subjectFailures")
+            .WithMessage("AUTH1 relationship authorization payload requires at least one subject failure.*");
+    }
+
+    [Test]
     public void It_should_encode_and_parse_the_versioned_failure_set_payload()
     {
         var payload = new RelationshipAuthorizationAuth1FailurePayload(
@@ -80,6 +158,44 @@ public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
         sqlServerPayload.SubjectFailures.Should().HaveCount(2);
     }
 
+    [Test]
+    public void It_should_extract_sql_server_payloads_when_the_marker_starts_the_message_and_the_payload_ends_the_message()
+    {
+        const string payloadText = "1|9|1|0:0:n";
+        var parsed = RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+            SqlDialect.Mssql,
+            null,
+            $"AUTH1 - {payloadText}",
+            out var payload
+        );
+
+        parsed.Should().BeTrue();
+        payload!.EmittedAuth1Index.Should().Be(9);
+        payload.SubjectFailures.Should().ContainSingle();
+    }
+
+    [Test]
+    public void It_should_throw_for_unknown_failure_kinds_when_encoding()
+    {
+        var payload = new RelationshipAuthorizationAuth1FailurePayload(
+            0,
+            [
+                new RelationshipAuthorizationAuth1SubjectFailure(
+                    0,
+                    0,
+                    (RelationshipAuthorizationAuth1SubjectFailureKind)999
+                ),
+            ]
+        );
+
+        var act = () => RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(payload);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("failureKind")
+            .WithMessage("Unsupported AUTH1 relationship failure kind.*");
+    }
+
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "1|7|1|0:0:n", true)]
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, null, true)]
     [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "", true)]
@@ -126,6 +242,118 @@ public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
         result.Should().Be(expected);
     }
 
+    [Test]
+    public void It_should_not_identify_provider_failures_for_unsupported_sql_dialects()
+    {
+        var result = RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n"
+        );
+
+        result.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_the_provider_message_is_blank()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            " ",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_postgresql_error_code_does_not_match()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Pgsql,
+            "P0001",
+            "1|7|1|0:0:n",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_when_sql_server_message_lacks_the_marker()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "Conversion failed without an AUTH1 payload.",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_extracted_payload_empty_for_unsupported_sql_dialects()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_return_no_payload_when_provider_payload_extraction_fails()
+    {
+        var parsed = RelationshipAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+            (SqlDialect)999,
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "AUTH1 - 1|7|1|0:0:n",
+            out var payload
+        );
+
+        parsed.Should().BeFalse();
+        payload.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_fail_sql_server_payload_extraction_when_the_marker_has_no_payload()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "AUTH1 - ",
+            out var payloadText
+        );
+
+        extracted.Should().BeFalse();
+        payloadText.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_extract_sql_server_payloads_with_lowercase_boundary_characters()
+    {
+        var extracted = RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+            SqlDialect.Mssql,
+            null,
+            "AUTH1 - az.",
+            out var payloadText
+        );
+
+        extracted.Should().BeTrue();
+        payloadText.Should().Be("az");
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
     [TestCase("2|7|1|0:0:n")]
     [TestCase("1|7|2|0:0:n")]
     [TestCase("1|7|2|0:0:n,")]
@@ -232,6 +460,13 @@ public class Given_RelationshipAuthorizationFailureMapper
             .Equal(
                 RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                 RelationshipAuthorizationSubjectFailureKind.StoredValueNull
+            );
+        firstStrategy
+            .FailedSubjects.Select(static subject => subject.Hint)
+            .Should()
+            .Equal(
+                "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                "Stored relationship authorization subject value is null."
             );
         firstStrategy.FailedSubjects[0].RootBinding.ResourceName.Should().Be("Ed-Fi.School");
         firstStrategy.FailedSubjects[0].RootBinding.TableName.Should().Be("edfi.School");
@@ -369,6 +604,82 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_payload_contains_a_failure_for_an_unknown_strategy_ordinal()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        1,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_fail_closed_when_payload_repeats_a_strategy_subject_ordinal()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.StoredValueNull
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_closed_when_payload_omits_a_failed_or_strategy()
     {
         var checkSpecs = new[]
@@ -444,6 +755,179 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_auth1_check_specs_mix_value_sources()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        1,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_throw_when_auth1_person_subject_uses_an_unsupported_value_source()
+    {
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                46,
+                0,
+                authObject,
+                CreatePersonSubject(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student,
+                    AuthNames.StudentDocumentId,
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            ) with
+            {
+                ValueSource = (RelationshipAuthorizationValueSource)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("valueSource")
+            .WithMessage("Unsupported relationship authorization value source.*");
+    }
+
+    [Test]
+    public void It_should_throw_when_auth1_non_person_subject_uses_an_unsupported_value_source()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                47,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ) with
+            {
+                ValueSource = (RelationshipAuthorizationValueSource)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("valueSource")
+            .WithMessage("Unsupported relationship authorization value source.*");
+    }
+
+    [Test]
+    public void It_should_throw_when_auth1_edorg_strategy_uses_an_unsupported_direction()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                48,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ) with
+            {
+                Direction = (RelationshipAuthorizationHierarchyDirection)999,
+            },
+        };
+        var act = () =>
+            TryMapAuth1Failure(
+                new RelationshipAuthorizationAuth1FailurePayload(
+                    1,
+                    [
+                        new RelationshipAuthorizationAuth1SubjectFailure(
+                            0,
+                            0,
+                            RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                        ),
+                    ]
+                ),
+                checkSpecs,
+                [100L],
+                out _
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("direction")
+            .WithMessage("Unsupported relationship authorization direction.*");
+    }
+
+    [Test]
     public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_for_one_strategy()
     {
         var checkSpecs = new[]
@@ -498,6 +982,14 @@ public class Given_RelationshipAuthorizationFailureMapper
             .FailedSubjects.Select(static subject => subject.RootBinding.ColumnName)
             .Should()
             .Equal("SchoolId", "LocalEducationAgencyId");
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Select(static subject => subject.Hint)
+            .Should()
+            .Equal(
+                "Proposed relationship authorization subject value is missing.",
+                "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds."
+            );
     }
 
     [Test]
@@ -1125,6 +1617,219 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_no_claims_metadata_is_empty_or_incomplete()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var checkSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            32,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var validFailure = CreateNoClaimsFailure(
+            resource,
+            checkSpec,
+            checkSpec.Subjects[0].AuthObject,
+            "valid no claims"
+        );
+
+        AssertNoClaimsFailureDoesNotMap([], [validFailure]);
+
+        RelationshipAuthorizationFailureMetadata[][] incompleteFailureCases =
+        [
+            [],
+            [
+                validFailure,
+                validFailure with
+                {
+                    FailureKind = RelationshipAuthorizationFailureKind.NoExecutableSubjects,
+                },
+            ],
+            [validFailure, validFailure with { ConfiguredStrategy = null }],
+            [validFailure, validFailure with { RelationshipLocalOrder = null }],
+            [validFailure, validFailure with { ValueSource = null }],
+        ];
+
+        foreach (var failures in incompleteFailureCases)
+        {
+            AssertNoClaimsFailureDoesNotMap([checkSpec], failures);
+        }
+    }
+
+    [Test]
+    public void It_should_fail_closed_when_no_claims_metadata_references_an_unknown_strategy_identity()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var checkSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            34,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var unmatchedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            35,
+            0,
+            CreateSubject("LocalEducationAgencyId", "$.localEducationAgencyReference.localEducationAgencyId")
+        );
+
+        AssertNoClaimsFailureDoesNotMap(
+            [checkSpec],
+            [
+                CreateNoClaimsFailure(
+                    resource,
+                    unmatchedCheckSpec,
+                    unmatchedCheckSpec.Subjects[0].AuthObject,
+                    "unknown strategy hint"
+                ),
+            ]
+        );
+    }
+
+    [Test]
+    public void It_should_fail_closed_when_no_claims_value_sources_are_not_homogeneous()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var storedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            40,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var proposedCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            41,
+            1,
+            CreateSubject("LocalEducationAgencyId", "$.localEducationAgencyReference.localEducationAgencyId")
+        );
+        var storedFailure = CreateNoClaimsFailure(
+            resource,
+            storedCheckSpec,
+            storedCheckSpec.Subjects[0].AuthObject,
+            "stored no claims"
+        );
+
+        AssertNoClaimsFailureDoesNotMap([storedCheckSpec, proposedCheckSpec], [storedFailure]);
+        AssertNoClaimsFailureDoesNotMap(
+            [storedCheckSpec],
+            [
+                storedFailure,
+                storedFailure with
+                {
+                    ValueSource = RelationshipAuthorizationValueSource.Proposed,
+                },
+            ]
+        );
+    }
+
+    [Test]
+    public void It_should_order_no_claims_failures_by_strategy_identity_and_sort_claim_ids()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var finalCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            20,
+            0,
+            CreateSubject(
+                "EducationServiceCenterId",
+                "$.educationServiceCenterReference.educationServiceCenterId"
+            )
+        );
+        var laterLocalOrderCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            10,
+            1,
+            CreateSubject("LocalEducationAgencyId", "$.localEducationAgencyReference.localEducationAgencyId")
+        );
+        var earlierCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            10,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            [finalCheckSpec, laterLocalOrderCheckSpec, earlierCheckSpec],
+            [
+                CreateNoClaimsFailure(
+                    resource,
+                    finalCheckSpec,
+                    finalCheckSpec.Subjects[0].AuthObject,
+                    "final strategy hint"
+                ),
+                CreateNoClaimsFailure(
+                    resource,
+                    laterLocalOrderCheckSpec,
+                    laterLocalOrderCheckSpec.Subjects[0].AuthObject,
+                    "later local order hint"
+                ),
+                CreateNoClaimsFailure(
+                    resource,
+                    earlierCheckSpec,
+                    earlierCheckSpec.Subjects[0].AuthObject,
+                    null
+                ),
+                CreateNoClaimsFailure(
+                    resource,
+                    earlierCheckSpec,
+                    earlierCheckSpec.Subjects[0].AuthObject,
+                    "earlier strategy hint"
+                ),
+            ],
+            [300L, 100L, 300L],
+            12,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+        relationshipFailure!
+            .ClaimEducationOrganizationIds.Select(static id => id.Value)
+            .Should()
+            .Equal(100L, 300L);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.ConfiguredStrategyIndex)
+            .Should()
+            .Equal(10, 10, 20);
+        relationshipFailure
+            .FailedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1, 0);
+        relationshipFailure.FailedStrategies[0].Hint.Should().Be("earlier strategy hint");
+    }
+
+    [Test]
+    public void It_should_allow_no_claims_strategy_hint_to_be_null_when_no_failure_hint_exists()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var checkSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            33,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            [checkSpec],
+            [CreateNoClaimsFailure(resource, checkSpec, checkSpec.Subjects[0].AuthObject, null)],
+            [],
+            13,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+        relationshipFailure!.FailedStrategies.Should().ContainSingle();
+        relationshipFailure.FailedStrategies[0].Hint.Should().BeNull();
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Should()
+            .ContainSingle()
+            .Subject.Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+    }
+
+    [Test]
     public void It_should_map_mixed_auth_object_no_claims_failures_with_per_subject_auth_objects()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
@@ -1298,6 +2003,419 @@ public class Given_RelationshipAuthorizationFailureMapper
             .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
             .Should()
             .OnlyContain(static name => name == "auth.EducationOrganizationIdToStudentDocumentId");
+    }
+
+    [Test]
+    public void It_should_prefer_generic_people_no_claims_metadata_before_path_mismatch_or_auth_object_fallback()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var primaryStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var alternateStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            new DbColumnName("AlternateStudent_DocumentId"),
+            "$.alternateStudentReference.studentUniqueId",
+            "AlternateStudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                38,
+                0,
+                authObject,
+                primaryStudentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreateNoClaimsFailure(resource, checkSpecs[0], authObject, "auth object fallback hint"),
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    authObject,
+                    alternateStudentSubject,
+                    "path mismatch hint"
+                ),
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    authObject,
+                    primaryStudentSubject,
+                    "generic person hint"
+                ) with
+                {
+                    PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                        RelationshipAuthorizationPersonKind.Student,
+                        authObject
+                    ),
+                },
+            ],
+            [],
+            10,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("generic person hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
+    }
+
+    [Test]
+    public void It_should_use_people_path_mismatch_no_claims_metadata_when_no_exact_or_generic_metadata_exists()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var primaryStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var alternateStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            new DbColumnName("AlternateStudent_DocumentId"),
+            "$.alternateStudentReference.studentUniqueId",
+            "AlternateStudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                41,
+                0,
+                authObject,
+                primaryStudentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreateNoClaimsFailure(resource, checkSpecs[0], authObject, "auth object fallback hint"),
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    authObject,
+                    alternateStudentSubject,
+                    "path mismatch hint"
+                ),
+            ],
+            [],
+            14,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("path mismatch hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_use_default_no_claims_subject_hint_when_people_metadata_has_no_matching_auth_object()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var edOrgAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                43,
+                0,
+                studentAuthObject,
+                studentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [CreateNoClaimsFailure(resource, checkSpecs[0], edOrgAuthObject, "wrong auth object hint")],
+            [],
+            16,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_skip_mismatched_people_no_claims_metadata_before_generic_people_metadata()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var contactAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Contact
+        );
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var contactSubject = CreatePersonSubject(
+            SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Contact,
+            AuthNames.ContactDocumentId,
+            "$.contactReference.contactUniqueId",
+            "ContactUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                44,
+                0,
+                studentAuthObject,
+                studentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    contactAuthObject,
+                    contactSubject,
+                    "wrong contact hint"
+                ),
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    studentAuthObject,
+                    studentSubject,
+                    "generic student hint"
+                ) with
+                {
+                    PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                        RelationshipAuthorizationPersonKind.Student,
+                        studentAuthObject
+                    ),
+                },
+            ],
+            [],
+            17,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("generic student hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_should_use_default_no_claims_subject_hint_when_non_person_metadata_is_only_people_metadata()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var subject = CreateSubject("SchoolId", "$.schoolReference.schoolId");
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 45, 0, subject),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreatePeopleNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    studentAuthObject,
+                    studentSubject,
+                    "person-only metadata hint"
+                ),
+            ],
+            [],
+            18,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject
+            .Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToEducationOrganizationId");
+        failedSubject.PersonSubject.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_prefer_auth_object_specific_non_person_no_claims_metadata_before_generic_metadata()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var subject = CreateSubject("SchoolId", "$.schoolReference.schoolId");
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 39, 0, subject),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [
+                CreateNoClaimsFailure(resource, checkSpecs[0], authObject: null, "generic hint"),
+                CreateNoClaimsFailure(
+                    resource,
+                    checkSpecs[0],
+                    subject.AuthObject,
+                    "auth object specific hint"
+                ),
+            ],
+            [],
+            11,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("auth object specific hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToEducationOrganizationId");
+        failedSubject.PersonSubject.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_use_generic_non_person_no_claims_metadata_when_specific_auth_object_metadata_is_absent()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var subject = CreateSubject("SchoolId", "$.schoolReference.schoolId");
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 42, 0, subject),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            [CreateNoClaimsFailure(resource, checkSpecs[0], authObject: null, "generic hint")],
+            [],
+            15,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.Hint.Should().Be("generic hint");
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToEducationOrganizationId");
+        failedSubject.PersonSubject.Should().BeNull();
     }
 
     [Test]
@@ -1701,6 +2819,39 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         ];
 
+    private static void AssertNoClaimsFailureDoesNotMap(
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> noClaimsFailures
+    )
+    {
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            noClaimsFailures,
+            [],
+            1,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    private static RelationshipAuthorizationFailureMetadata CreateNoClaimsFailure(
+        QualifiedResourceName resource,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject? authObject,
+        string? hint
+    ) =>
+        new(
+            RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+            resource,
+            checkSpec.ConfiguredStrategy,
+            checkSpec.RelationshipLocalOrder,
+            ValueSource: checkSpec.ValueSource,
+            AuthObject: authObject,
+            Hint: hint
+        );
+
     private static RelationshipAuthorizationFailureMetadata CreatePeopleNoClaimsFailure(
         QualifiedResourceName resource,
         RelationshipAuthorizationCheckSpec checkSpec,
@@ -1787,6 +2938,123 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("CASE WHEN target.\"SchoolId\" IS NULL THEN 's' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain("NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0)");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_stored_target_cte_with_ordered_root_columns(SqlDialect dialect)
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+                        CreateSubject(
+                            "LocalEducationAgencyId",
+                            "$.localEducationAgencyReference.localEducationAgencyId"
+                        )
+                    ),
+                ],
+                parameterization,
+                5
+            )
+        );
+
+        var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var schoolTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var payload = QuoteIdentifier(dialect, "Payload");
+        var authorizationResult = QuoteIdentifier(dialect, "AuthorizationResult");
+        var contentVersion = QuoteIdentifier(dialect, "ContentVersion");
+        var schoolId = QuoteIdentifier(dialect, "SchoolId");
+        var localEducationAgencyId = QuoteIdentifier(dialect, "LocalEducationAgencyId");
+        var targetEdOrgId = QuoteIdentifier(dialect, AuthNames.TargetEdOrgId.Value);
+        var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var edOrgAuthRelation = QuoteRelation(dialect, AuthNames.EdOrgIdToEdOrgId);
+        var claimEdOrgFilter = ClaimEducationOrganizationIdFilterFragment(dialect);
+        var authorizationSuccessSql =
+            $"NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 0)";
+        var auth1AbortSql =
+            dialect is SqlDialect.Pgsql
+                ? $"{QuoteIdentifier(dialect, "dms")}.{QuoteIdentifier(dialect, "throw_error")}('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode}', (SELECT {payload} FROM failure_payload))"
+                : $"CAST(CONCAT('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode} - ', (SELECT {payload} FROM failure_payload)) AS INT)";
+        var expectedTargetCtePrefix = string.Join(
+            '\n',
+            "WITH target AS (",
+            "    SELECT",
+            $"        d.{contentVersion},",
+            $"        r.{QuoteIdentifier(dialect, "LocalEducationAgencyId")},",
+            $"        r.{QuoteIdentifier(dialect, "SchoolId")}",
+            $"    FROM {QuoteRelation(dialect, schoolTable)} r",
+            $"    INNER JOIN {QuoteRelation(dialect, documentTable)} d",
+            $"        ON d.{documentId} = r.{documentId}",
+            $"    WHERE r.{documentId} = @DocumentId",
+            "),",
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("
+        );
+        var expectedSubjectFailureSelects = string.Join(
+            '\n',
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+            "    SELECT",
+            "        0,",
+            "        0,",
+            $"        CASE WHEN target.{schoolId} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN target.{schoolId} IS NULL OR NOT (target.{schoolId}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_0 WHERE a0_0.{targetEdOrgId} = target.{schoolId} AND a0_0.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "    UNION ALL",
+            "    SELECT",
+            "        0,",
+            "        1,",
+            $"        CASE WHEN target.{localEducationAgencyId} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN target.{localEducationAgencyId} IS NULL OR NOT (target.{localEducationAgencyId}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_1 WHERE a0_1.{targetEdOrgId} = target.{localEducationAgencyId} AND a0_1.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "),"
+        );
+
+        plan.AuthorizationSql.Should().StartWith(expectedTargetCtePrefix);
+        plan.AuthorizationSql.Should().Contain(expectedSubjectFailureSelects);
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "    FROM target",
+                    "),",
+                    "failed_subjects AS (",
+                    "    SELECT * FROM subject_failures",
+                    $"    WHERE {QuoteIdentifier(dialect, "Failed")} = 1",
+                    "),",
+                    "failure_payload AS ("
+                )
+            );
+        plan.AuthorizationSql.Should().Contain(")\nSELECT CASE");
+        plan.AuthorizationSql.Should()
+            .EndWith(
+                string.Join(
+                    '\n',
+                    "SELECT CASE",
+                    $"    WHEN {authorizationSuccessSql} THEN 1",
+                    $"    ELSE {auth1AbortSql}",
+                    $"END AS {authorizationResult},",
+                    contentVersion,
+                    "FROM target;"
+                ) + "\n"
+            );
     }
 
     [Test]
@@ -1955,6 +3223,27 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
 
         var subjectColumn = QuoteIdentifier(dialect, personDocumentIdColumnName);
         var authObject = subject.AuthObject;
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var subjectValueColumn = QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value);
+        var claimEducationOrganizationIdColumn = QuoteIdentifier(
+            dialect,
+            authObject.ClaimEducationOrganizationIdColumn.Value
+        );
+        var expectedSubjectFailureSelect = string.Join(
+            '\n',
+            $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+            "    SELECT",
+            "        0,",
+            "        0,",
+            $"        CASE WHEN target.{subjectColumn} IS NULL THEN 's' ELSE 'n' END,",
+            $"        CASE WHEN NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{subjectValueColumn} = target.{subjectColumn} AND a0_0.{claimEducationOrganizationIdColumn}{ClaimEducationOrganizationIdFilterFragment(dialect)}) THEN 1 ELSE 0 END",
+            "",
+            "    FROM target",
+            "),"
+        );
 
         plan.AuthorizationSql.Should()
             .Contain($"CASE WHEN target.{subjectColumn} IS NULL THEN 's' ELSE 'n' END");
@@ -1962,6 +3251,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain(
                 $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value)} = target.{subjectColumn} AND a0_0.{QuoteIdentifier(dialect, authObject.ClaimEducationOrganizationIdColumn.Value)}{ClaimEducationOrganizationIdFilterFragment(dialect)})"
             );
+        plan.AuthorizationSql.Should().Contain(expectedSubjectFailureSelect);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
     }
@@ -2034,11 +3324,22 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
 
+        var authObject = subject.AuthObject;
+        var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var subjectValueColumn = QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value);
+        var claimEducationOrganizationIdColumn = QuoteIdentifier(
+            dialect,
+            authObject.ClaimEducationOrganizationIdColumn.Value
+        );
+        var authorizationSuccessSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{subjectValueColumn} = target.{documentId} AND a0_0.{claimEducationOrganizationIdColumn}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
+
         plan.AuthorizationSql.Should().Contain($"FROM {QuoteRelation(dialect, rootTable)} r");
         plan.AuthorizationSql.Should()
             .Contain(
                 $"CASE WHEN target.{QuoteIdentifier(dialect, "DocumentId")} IS NULL THEN 's' ELSE 'n' END"
             );
+        plan.AuthorizationSql.Should().Contain($"CASE WHEN NOT {authorizationSuccessSql} THEN 1 ELSE 0 END");
         plan.AuthorizationSql.Should()
             .Contain(
                 $"a0_0.{QuoteIdentifier(dialect, authViewPersonDocumentIdColumnName)} = target.{QuoteIdentifier(dialect, "DocumentId")}"
@@ -2102,17 +3403,159 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var firstHopColumn = QuoteIdentifier(dialect, "StudentAcademicRecord_DocumentId");
         var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var pathExistsSql =
+            $"SELECT 1 FROM {QuoteRelation(dialect, rootTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{firstHopColumn} WHERE p0_0_0.{documentId} = target.{documentId} AND p0_0_1.{studentDocumentId} IS NOT NULL";
+        var authorizationExistsSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
 
         plan.AuthorizationSql.Should()
-            .Contain(
-                $"CASE WHEN NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, rootTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{firstHopColumn} WHERE p0_0_0.{documentId} = target.{documentId} AND p0_0_1.{studentDocumentId} IS NOT NULL) THEN 's' ELSE 'n' END"
-            );
+            .Contain($"CASE WHEN NOT EXISTS ({pathExistsSql}) THEN 's' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain(
-                $"AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+                $"CASE WHEN NOT EXISTS ({pathExistsSql} AND {authorizationExistsSql}) THEN 1 ELSE 0 END"
             );
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [Test]
+    public void It_should_reject_people_subjects_whose_stored_anchor_does_not_match_the_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var mismatchedRootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateDirectPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthNames.StudentDocumentId,
+            rootTable
+        );
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new InvalidOperationException("Expected a person authorization subject.");
+        var mismatchedSubject = subject with
+        {
+            PersonMetadata = personMetadata with
+            {
+                StoredAnchor = new RelationshipAuthorizationPersonStoredAnchor(
+                    mismatchedRootTable,
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            mismatchedSubject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("checkSpecs")
+            .WithMessage("*does not match root table*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_self_people_subjects_whose_column_does_not_match_the_root_document_id()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateSelfPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            rootTable
+        ) with
+        {
+            Column = AuthNames.StudentDocumentId,
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            subject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile.Should().Throw<InvalidOperationException>().WithMessage("*root DocumentId column*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_direct_people_paths_whose_source_table_does_not_match_the_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var mismatchedRootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateDirectPersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthNames.StudentDocumentId,
+            rootTable
+        );
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new InvalidOperationException("Expected a person authorization subject.");
+        var mismatchedSubject = subject with
+        {
+            PersonMetadata = personMetadata with
+            {
+                Path = new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [
+                        new ColumnPathStep(
+                            mismatchedRootTable,
+                            AuthNames.StudentDocumentId,
+                            new DbTableName(new DbSchemaName("edfi"), "Student"),
+                            new DbColumnName("DocumentId")
+                        ),
+                    ]
+                ),
+            },
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            mismatchedSubject
+                        ),
+                    ],
+                    parameterization,
+                    16
+                )
+            );
+
+        compile.Should().Throw<InvalidOperationException>().WithMessage("*does not match root table*");
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -2285,8 +3728,13 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
         var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
         var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
         var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
         var firstHopColumn = new DbColumnName("StudentAcademicRecord_DocumentId");
+        var secondHopColumn = new DbColumnName("StudentSchoolAssociation_DocumentId");
         var subject = CreateTransitivePersonSubject(
             RelationshipAuthorizationPersonAuthViewKind.Student,
             RelationshipAuthorizationPersonKind.Student,
@@ -2300,6 +3748,12 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 ),
                 new ColumnPathStep(
                     studentAcademicRecordTable,
+                    secondHopColumn,
+                    studentSchoolAssociationTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentSchoolAssociationTable,
                     AuthNames.StudentDocumentId,
                     studentTable,
                     new DbColumnName("DocumentId")
@@ -2329,11 +3783,14 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var parameterName = plan.ProposedValueParametersInOrder.Should().ContainSingle().Which.ParameterName;
         var proposedValue = ProposedValueFragment(dialect, parameterName);
         var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var secondHopDocumentId = QuoteIdentifier(dialect, secondHopColumn.Value);
         var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
         var invalidDataColumn = QuoteIdentifier(dialect, "InvalidData");
         var invalidDataPathPredicate =
-            $"{proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL)";
+            $"{proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL)";
+        var authorizationExistsSql =
+            $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})";
 
         plan.AuthorizationSql.Should()
             .Contain($"SELECT CASE WHEN {invalidDataPathPredicate} THEN 1 ELSE 0 END AS {invalidDataColumn}");
@@ -2341,11 +3798,94 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain($"CASE WHEN invalid_data.{invalidDataColumn} = 1 THEN 'p' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain(
-                $"CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_0.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+                $"CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL AND {authorizationExistsSql}) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "    SELECT",
+                    "        0,",
+                    "        0,",
+                    $"        CASE WHEN invalid_data.{invalidDataColumn} = 1 THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentSchoolAssociationTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{secondHopDocumentId} WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_1.{studentDocumentId} IS NOT NULL AND {authorizationExistsSql}) THEN 1 ELSE 0 END",
+                    "",
+                    "    FROM (",
+                    $"        SELECT CASE WHEN {invalidDataPathPredicate} THEN 1 ELSE 0 END AS {invalidDataColumn}",
+                    "    ) invalid_data",
+                    "),",
+                    "failed_subjects AS ("
+                )
             );
         CountOccurrences(plan.AuthorizationSql, invalidDataPathPredicate).Should().Be(1);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_transitive_people_paths_with_disconnected_steps()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var firstHopColumn = new DbColumnName("StudentAcademicRecord_DocumentId");
+        var secondHopColumn = new DbColumnName("StudentSchoolAssociation_DocumentId");
+        var subject = CreateTransitivePersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            rootTable,
+            [
+                new ColumnPathStep(
+                    rootTable,
+                    firstHopColumn,
+                    studentAcademicRecordTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentSchoolAssociationTable,
+                    secondHopColumn,
+                    studentTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentTable,
+                    AuthNames.StudentDocumentId,
+                    studentTable,
+                    new DbColumnName("DocumentId")
+                ),
+            ]
+        );
+        var proposedBinding = CreateProposedBinding(rootTable, firstHopColumn);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateProposedPeopleCheckSpec(
+                            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                            0,
+                            0,
+                            rootTable,
+                            subject,
+                            RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+                            proposedBinding
+                        ),
+                    ],
+                    parameterization,
+                    20
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*path step 1 source table*does not match previous target table*");
     }
 
     [Test]
@@ -2520,6 +4060,200 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reserve_document_id_parameter_name_when_allocating_proposed_value_parameters()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(parameterization) with
+            {
+                DocumentIdParameterName = candidateParameterName,
+            }
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_reserve_claim_base_parameter_name_when_allocating_proposed_value_parameters()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [100L, 200L],
+            candidateParameterName
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(CreateSingleSubjectProposedSqlSpec(parameterization));
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_reserve_claim_concrete_parameter_names_when_allocating_proposed_value_parameters()
+    {
+        const string claimBaseParameterName = "relationshipAuthorization_0_0_schoolId";
+        const string candidateParameterName = $"{claimBaseParameterName}_0";
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [100L],
+            claimBaseParameterName
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(parameterization, parameterSeed: "schoolId_0")
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_2");
+    }
+
+    [Test]
+    public void It_should_advance_parameter_suffix_until_an_unused_name_is_found()
+    {
+        const string candidateParameterName = "relationshipAuthorization_0_0_schoolId";
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            CreateSingleSubjectProposedSqlSpec(
+                parameterization,
+                reservedParameterNames: [candidateParameterName, $"{candidateParameterName}_2"]
+            )
+        );
+
+        AssertSingleProposedValueParameterName(plan, $"{candidateParameterName}_3");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_proposed_auth1_sql_with_expected_ctes_payload_and_final_select(
+        SqlDialect dialect
+    )
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                    CreateProposedCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Inverted,
+                        1,
+                        1,
+                        CreateSubject(
+                            "LocalEducationAgencyId",
+                            "$.localEducationAgencyReference.localEducationAgencyId"
+                        )
+                    ),
+                ],
+                parameterization,
+                21
+            )
+        );
+
+        var strategyOrdinal = QuoteIdentifier(dialect, "StrategyOrdinal");
+        var subjectOrdinal = QuoteIdentifier(dialect, "SubjectOrdinal");
+        var failureKind = QuoteIdentifier(dialect, "FailureKind");
+        var failed = QuoteIdentifier(dialect, "Failed");
+        var payload = QuoteIdentifier(dialect, "Payload");
+        var authorizationResult = QuoteIdentifier(dialect, "AuthorizationResult");
+        var targetEdOrgId = QuoteIdentifier(dialect, AuthNames.TargetEdOrgId.Value);
+        var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var firstProposedValue = ProposedValueFragment(
+            dialect,
+            plan.ProposedValueParametersInOrder[0].ParameterName
+        );
+        var secondProposedValue = ProposedValueFragment(
+            dialect,
+            plan.ProposedValueParametersInOrder[1].ParameterName
+        );
+        var claimEdOrgFilter = ClaimEducationOrganizationIdFilterFragment(dialect);
+        var edOrgAuthRelation = QuoteRelation(dialect, AuthNames.EdOrgIdToEdOrgId);
+        var payloadSql =
+            dialect is SqlDialect.Pgsql
+                ? $"CONCAT('1|', '21|', COUNT(1)::text, '|', STRING_AGG(CONCAT({strategyOrdinal}, ':', {subjectOrdinal}, ':', {failureKind}), ',' ORDER BY {strategyOrdinal}, {subjectOrdinal}))"
+                : $"CONCAT('1|', '21|', COUNT(1), '|', STRING_AGG(CONCAT({strategyOrdinal}, ':', {subjectOrdinal}, ':', {failureKind}), ',') WITHIN GROUP (ORDER BY {strategyOrdinal}, {subjectOrdinal}))";
+        var authorizationSuccessSql =
+            $"NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {strategyOrdinal} = 1)";
+        var auth1AbortSql =
+            dialect is SqlDialect.Pgsql
+                ? $"{QuoteIdentifier(dialect, "dms")}.{QuoteIdentifier(dialect, "throw_error")}('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode}', (SELECT {payload} FROM failure_payload))"
+                : $"CAST(CONCAT('{RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode} - ', (SELECT {payload} FROM failure_payload)) AS INT)";
+
+        plan.AuthorizationSql.Should()
+            .StartWith(
+                string.Join(
+                    '\n',
+                    "WITH",
+                    $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS ("
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    $"subject_failures ({strategyOrdinal}, {subjectOrdinal}, {failureKind}, {failed}) AS (",
+                    "    SELECT",
+                    "        0,",
+                    "        0,",
+                    $"        CASE WHEN {firstProposedValue} IS NULL THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN {firstProposedValue} IS NULL OR NOT ({firstProposedValue}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a0_0 WHERE a0_0.{targetEdOrgId} = {firstProposedValue} AND a0_0.{sourceEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+                    "",
+                    "    UNION ALL",
+                    "    SELECT",
+                    "        1,",
+                    "        0,",
+                    $"        CASE WHEN {secondProposedValue} IS NULL THEN 'p' ELSE 'n' END,",
+                    $"        CASE WHEN {secondProposedValue} IS NULL OR NOT ({secondProposedValue}{claimEdOrgFilter} OR EXISTS (SELECT 1 FROM {edOrgAuthRelation} a1_0 WHERE a1_0.{sourceEdOrgId} = {secondProposedValue} AND a1_0.{targetEdOrgId}{claimEdOrgFilter})) THEN 1 ELSE 0 END",
+                    "",
+                    "),"
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                string.Join(
+                    '\n',
+                    "),",
+                    "failed_subjects AS (",
+                    "    SELECT * FROM subject_failures",
+                    $"    WHERE {failed} = 1",
+                    "),",
+                    "failure_payload AS (",
+                    $"    SELECT {payloadSql} AS {payload}",
+                    "    FROM failed_subjects",
+                    ")",
+                    "SELECT CASE"
+                )
+            );
+        plan.AuthorizationSql.Should()
+            .EndWith(
+                string.Join(
+                    '\n',
+                    "SELECT CASE",
+                    $"    WHEN {authorizationSuccessSql} THEN 1",
+                    $"    ELSE {auth1AbortSql}",
+                    $"END AS {authorizationResult}",
+                    ";"
+                ) + "\n"
+            );
+        plan.AuthorizationSql.Should().NotContain(QuoteIdentifier(dialect, "ContentVersion"));
+    }
+
+    [Test]
     public void It_should_reject_postgresql_proposed_auth1_sql_for_non_edorg_hierarchy_auth_object()
     {
         var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
@@ -2653,6 +4387,535 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_allow_zero_emitted_auth1_index()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                    ),
+                ],
+                parameterization,
+                0
+            )
+        );
+
+        plan.AuthorizationSql.Should().Contain("CONCAT('1|', '0|', COUNT(1)::text, '|'");
+    }
+
+    [Test]
+    public void It_should_reject_negative_emitted_auth1_indexes()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                        ),
+                    ],
+                    parameterization,
+                    -1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("spec")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [Test]
+    public void It_should_reject_invalid_document_id_parameter_names()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectStoredSqlSpec(parameterization) with
+                {
+                    DocumentIdParameterName = "Document-Id",
+                }
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("DocumentIdParameterName")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
+    public void It_should_reject_invalid_reserved_parameter_names_for_stored_specs()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectStoredSqlSpec(parameterization) with
+                {
+                    ReservedParameterNames = ["reserved-name"],
+                }
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("ReservedParameterNames")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
+    public void It_should_reject_empty_check_spec_batches()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(new SingleRecordRelationshipAuthorizationSqlSpec([], parameterization, 1));
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("Single-record relationship authorization requires at least one check spec.*");
+    }
+
+    [Test]
+    public void It_should_reject_batches_with_any_empty_subject_list()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+                        ),
+                        CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal, 1, 1),
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "Single-record relationship authorization check specs require at least one subject.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_subjects_outside_the_single_record_root_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        CreateStoredCheckSpec(
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            0,
+                            0,
+                            CreateSubject(
+                                "LocalEducationAgencyId",
+                                "$.localEducationAgencyReference.localEducationAgencyId",
+                                localEducationAgencyTable,
+                                "LocalEducationAgency"
+                            )
+                        ),
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("checkSpecs")
+            .WithMessage("*does not match root table*");
+    }
+
+    [Test]
+    public void It_should_reject_claim_parameter_names_that_collide_with_document_id()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "DocumentId"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () => compiler.Compile(CreateSingleSubjectStoredSqlSpec(parameterization));
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "DocumentId parameter name must not collide with claim EdOrg authorization parameter names.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_stored_value_source_mismatches_even_when_targets_are_stored()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var storedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        storedCheckSpec,
+                        storedCheckSpec with
+                        {
+                            ValueSource = RelationshipAuthorizationValueSource.Proposed,
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*must be all stored-value or all proposed-value*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_value_source_mismatches_even_when_targets_are_proposed()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var proposedCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        proposedCheckSpec,
+                        proposedCheckSpec with
+                        {
+                            ValueSource = RelationshipAuthorizationValueSource.Stored,
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*must be all stored-value or all proposed-value*");
+    }
+
+    [Test]
+    public void It_should_reject_stored_check_specs_that_do_not_share_one_root_target()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var storedCheckSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        storedCheckSpec,
+                        storedCheckSpec with
+                        {
+                            CheckTarget = new RelationshipAuthorizationCheckTarget.Stored(
+                                new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
+                                new DbColumnName("DocumentId")
+                            ),
+                        },
+                    ],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Single-record relationship authorization stored check specs must share one root target.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_proposed_check_specs_that_do_not_share_one_root_target()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var schoolCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        );
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var localEducationAgencyId = new DbColumnName("LocalEducationAgencyId");
+        var localEducationAgencyCheckSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            1,
+            1,
+            CreateSubject(
+                localEducationAgencyId.Value,
+                "$.localEducationAgencyReference.localEducationAgencyId",
+                localEducationAgencyTable,
+                "LocalEducationAgency"
+            )
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                localEducationAgencyTable,
+                [CreateProposedBinding(localEducationAgencyTable, localEducationAgencyId)]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [schoolCheckSpec, localEducationAgencyCheckSpec],
+                    parameterization,
+                    1
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage(
+                "Single-record relationship authorization proposed check specs must share one root target.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_proposed_check_specs_when_binding_count_does_not_match_subject_count()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, []),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*has 1 subjects but 0 root bindings*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_target_a_different_table_than_the_root()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(localEducationAgencyTable, new DbColumnName("SchoolId"))]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*targets table*root target*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_do_not_match_the_subject_table()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var localEducationAgencyTable = new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency");
+        var localEducationAgencyId = new DbColumnName("LocalEducationAgencyId");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject(
+                localEducationAgencyId.Value,
+                "$.localEducationAgencyReference.localEducationAgencyId",
+                localEducationAgencyTable,
+                "LocalEducationAgency"
+            )
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(rootTable, localEducationAgencyId)]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*subject proposed anchor targets table*");
+    }
+
+    [Test]
+    public void It_should_reject_proposed_bindings_that_do_not_match_the_subject_column()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(
+                rootTable,
+                [CreateProposedBinding(rootTable, new DbColumnName("LocalEducationAgencyId"))]
+            ),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("spec")
+            .WithMessage("*subject proposed anchor targets column*");
+    }
+
+    [Test]
+    public void It_should_reject_blank_proposed_binding_parameter_seeds()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var binding = CreateProposedBinding(rootTable, new DbColumnName("SchoolId")) with
+        {
+            ParameterSeed = " ",
+        };
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [binding]),
+        };
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec([checkSpec], parameterization, 1)
+            );
+
+        compile.Should().Throw<ArgumentException>().WithParameterName("binding.ParameterSeed");
+    }
+
+    [Test]
+    public void It_should_reject_invalid_proposed_binding_parameter_seeds()
+    {
+        var parameterization = CreateSingleClaimParameterization();
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var compile = () =>
+            compiler.Compile(
+                CreateSingleSubjectProposedSqlSpec(parameterization, parameterSeed: "school-id")
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("parameterName")
+            .WithMessage("Parameter name must match pattern*");
+    }
+
+    [Test]
     public void It_should_reject_postgresql_array_claim_parameterization_without_exactly_the_base_parameter()
     {
         var parameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
@@ -2752,6 +5015,56 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             ],
             parameterization,
             10
+        );
+
+    private static SingleRecordRelationshipAuthorizationSqlSpec CreateSingleSubjectProposedSqlSpec(
+        AuthorizationClaimEducationOrganizationIdParameterization parameterization,
+        string parameterSeed = "schoolId",
+        IReadOnlyList<string>? reservedParameterNames = null
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var binding = CreateProposedBinding(rootTable, schoolIdColumn) with { ParameterSeed = parameterSeed };
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId")
+        ) with
+        {
+            CheckTarget = new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [binding]),
+        };
+
+        return new SingleRecordRelationshipAuthorizationSqlSpec(
+            [checkSpec],
+            parameterization,
+            10,
+            ReservedParameterNames: reservedParameterNames
+        );
+    }
+
+    private static void AssertSingleProposedValueParameterName(
+        SingleRecordRelationshipAuthorizationSqlPlan plan,
+        string expectedParameterName
+    )
+    {
+        plan.ProposedValueParametersInOrder.Should()
+            .ContainSingle()
+            .Which.ParameterName.Should()
+            .Be(expectedParameterName);
+        plan.ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .StartWith(expectedParameterName);
+    }
+
+    private static AuthorizationClaimEducationOrganizationIdParameterization CreateSingleClaimParameterization(
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
         );
 
     private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count)

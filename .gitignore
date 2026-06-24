@@ -149,6 +149,9 @@ coverage*.json
 coverage*.xml
 coverage*.info
 
+# Stryker.NET mutation test output
+StrykerOutput/
+
 # Visual Studio code coverage results
 *.coverage
 *.coveragexml

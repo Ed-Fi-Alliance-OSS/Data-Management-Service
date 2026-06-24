@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -16,6 +17,16 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_MappingSetProvider
 {
     private static readonly MappingSetKey _testKey = new(new string('a', 64), SqlDialect.Pgsql, "v1");
+
+    private static string ExpectedKeyForMessage(MappingSetKey key) =>
+        $"EffectiveSchemaHash '{key.EffectiveSchemaHash}', Dialect '{key.Dialect}', RelationalMappingVersion '{key.RelationalMappingVersion}'";
+
+    private static string[] ExpectedKeyDiagnostics(MappingSetKey key) =>
+        [
+            $"EffectiveSchemaHash: {key.EffectiveSchemaHash}",
+            $"Dialect: {key.Dialect}",
+            $"RelationalMappingVersion: {key.RelationalMappingVersion}",
+        ];
 
     private static MappingSet CreateTestMappingSet(MappingSetKey key)
     {
@@ -71,14 +82,15 @@ public class Given_MappingSetProvider
     private static MappingSetProvider CreateProvider(
         MappingSetProviderOptions? options = null,
         IMappingPackStore? packStore = null,
-        IRuntimeMappingSetCompiler? compiler = null
+        IRuntimeMappingSetCompiler? compiler = null,
+        ILogger<MappingSetProvider>? logger = null
     )
     {
         return new MappingSetProvider(
             packStore ?? new NoOpMappingPackStore(),
             compiler is not null ? [compiler] : [],
             Options.Create(options ?? new MappingSetProviderOptions()),
-            NullLogger<MappingSetProvider>.Instance
+            logger ?? NullLogger<MappingSetProvider>.Instance
         );
     }
 
@@ -100,11 +112,13 @@ public class Given_MappingSetProvider
             // FromPayload is not yet implemented (deferred to DMS-968), so it throws
             // NotSupportedException internally. MappingSetProvider wraps decode failures
             // in MappingSetUnavailableException so the middleware can give actionable guidance.
-            var ex = await act.Should()
-                .ThrowAsync<MappingSetUnavailableException>()
-                .WithMessage("*Failed to decode mapping pack*");
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
 
-            ex.And.InnerException.Should().BeOfType<NotSupportedException>();
+            ex.Message.Should()
+                .Be(
+                    $"Failed to decode mapping pack for {ExpectedKeyForMessage(_testKey)}. The pack file may be corrupt or incompatible with the current version."
+                );
+            ex.InnerException.Should().BeOfType<NotSupportedException>();
         }
 
         [Test]
@@ -119,10 +133,38 @@ public class Given_MappingSetProvider
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
             var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+            string[] expectedDiagnostics =
+            [
+                .. ExpectedKeyDiagnostics(_testKey),
+                "Pack status: found but failed to decode",
+                "Suggested action: Rebuild the .mpack file or enable AllowRuntimeCompileFallback.",
+            ];
 
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
+            ex.Diagnostics.Should().Equal(expectedDiagnostics);
+        }
+
+        [Test]
+        public async Task It_logs_loaded_pack_before_decode_failure()
+        {
+            var packStore = new TestPackStore(new MappingPackPayload());
+            var logger = new CapturingLogger<MappingSetProvider>();
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true },
+                packStore: packStore,
+                logger: logger
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            await act.Should().ThrowAsync<MappingSetUnavailableException>();
+
+            logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Level == LogLevel.Information
+                    && record.Message
+                        == $"Loaded mapping pack for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
+                );
         }
     }
 
@@ -134,6 +176,7 @@ public class Given_MappingSetProvider
         {
             var expectedMappingSet = CreateTestMappingSet(_testKey);
             var compileCount = 0;
+            var logger = new CapturingLogger<MappingSetProvider>();
             var compiler = new TestRuntimeCompiler(
                 _testKey,
                 () =>
@@ -145,13 +188,29 @@ public class Given_MappingSetProvider
 
             var provider = CreateProvider(
                 options: new MappingSetProviderOptions { Enabled = false },
-                compiler: compiler
+                compiler: compiler,
+                logger: logger
             );
 
             var result = await provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
             result.Should().BeSameAs(expectedMappingSet);
             compileCount.Should().Be(1);
+            LogRecord[] expectedLogs =
+            [
+                new(
+                    LogLevel.Information,
+                    $"Compiling runtime mapping set for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    null
+                ),
+                new(
+                    LogLevel.Information,
+                    $"Runtime mapping set compiled successfully for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    null
+                ),
+            ];
+
+            logger.Records.Should().Equal(expectedLogs);
         }
     }
 
@@ -162,17 +221,39 @@ public class Given_MappingSetProvider
         public async Task It_falls_back_to_runtime_compilation()
         {
             var expectedMappingSet = CreateTestMappingSet(_testKey);
+            var logger = new CapturingLogger<MappingSetProvider>();
             var compiler = new TestRuntimeCompiler(_testKey, () => Task.FromResult(expectedMappingSet));
 
             var provider = CreateProvider(
                 options: new MappingSetProviderOptions { Enabled = true, AllowRuntimeCompileFallback = true },
                 packStore: new NoOpMappingPackStore(),
-                compiler: compiler
+                compiler: compiler,
+                logger: logger
             );
 
             var result = await provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
             result.Should().BeSameAs(expectedMappingSet);
+            LogRecord[] expectedLogs =
+            [
+                new(
+                    LogLevel.Information,
+                    $"Mapping pack not found for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}; falling back to runtime compilation",
+                    null
+                ),
+                new(
+                    LogLevel.Information,
+                    $"Compiling runtime mapping set for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    null
+                ),
+                new(
+                    LogLevel.Information,
+                    $"Runtime mapping set compiled successfully for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    null
+                ),
+            ];
+
+            logger.Records.Should().Equal(expectedLogs);
         }
     }
 
@@ -182,16 +263,26 @@ public class Given_MappingSetProvider
         [Test]
         public async Task It_throws_MappingSetUnavailableException()
         {
+            var logger = new CapturingLogger<MappingSetProvider>();
             var provider = CreateProvider(
                 options: new MappingSetProviderOptions { Enabled = true, Required = true },
-                packStore: new NoOpMappingPackStore()
+                packStore: new NoOpMappingPackStore(),
+                logger: logger
             );
 
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
-            await act.Should()
-                .ThrowAsync<MappingSetUnavailableException>()
-                .WithMessage("*required but not found*");
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Message.Should()
+                .Be($"Mapping pack is required but not found for {ExpectedKeyForMessage(_testKey)}.");
+            logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Level == LogLevel.Warning
+                    && record.Message
+                        == $"Mapping pack required but not found for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
+                );
         }
 
         [Test]
@@ -205,11 +296,14 @@ public class Given_MappingSetProvider
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
             var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+            string[] expectedDiagnostics =
+            [
+                .. ExpectedKeyDiagnostics(_testKey),
+                "Pack status: required but not found",
+                "Suggested action: Provide a matching .mpack file or set Required=false.",
+            ];
 
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
-            ex.Diagnostics.Should().Contain(d => d.Contains("required but not found"));
+            ex.Diagnostics.Should().Equal(expectedDiagnostics);
         }
     }
 
@@ -219,6 +313,7 @@ public class Given_MappingSetProvider
         [Test]
         public async Task It_throws_MappingSetUnavailableException()
         {
+            var logger = new CapturingLogger<MappingSetProvider>();
             var provider = CreateProvider(
                 options: new MappingSetProviderOptions
                 {
@@ -226,14 +321,33 @@ public class Given_MappingSetProvider
                     Required = false,
                     AllowRuntimeCompileFallback = false,
                 },
-                packStore: new NoOpMappingPackStore()
+                packStore: new NoOpMappingPackStore(),
+                logger: logger
             );
 
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
-            await act.Should()
-                .ThrowAsync<MappingSetUnavailableException>()
-                .WithMessage("*runtime compilation fallback is disabled*");
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Message.Should()
+                .Be(
+                    $"Mapping pack not found for {ExpectedKeyForMessage(_testKey)}, and runtime compilation fallback is disabled."
+                );
+            string[] expectedDiagnostics =
+            [
+                .. ExpectedKeyDiagnostics(_testKey),
+                "Pack status: not found, fallback disabled",
+                "Suggested action: Provide a matching .mpack file or enable AllowRuntimeCompileFallback.",
+            ];
+
+            ex.Diagnostics.Should().Equal(expectedDiagnostics);
+            logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Level == LogLevel.Warning
+                    && record.Message
+                        == $"Mapping pack not found and runtime compilation fallback is disabled for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}"
+                );
         }
     }
 
@@ -293,9 +407,16 @@ public class Given_MappingSetProvider
 
             var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
 
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains("no compiler registered"));
+            ex.Message.Should()
+                .Be($"No runtime mapping set compiler is registered for dialect '{_testKey.Dialect}'.");
+            string[] expectedDiagnostics =
+            [
+                .. ExpectedKeyDiagnostics(_testKey),
+                "Compiler status: no compiler registered for dialect",
+                "Suggested action: Ensure the backend for the target dialect is configured.",
+            ];
+
+            ex.Diagnostics.Should().Equal(expectedDiagnostics);
         }
     }
 
@@ -315,9 +436,40 @@ public class Given_MappingSetProvider
 
             var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
 
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains("see server logs for details"));
+            ex.Message.Should()
+                .Be(
+                    $"Runtime compilation failed for {ExpectedKeyForMessage(_testKey)}: simulated compile error"
+                );
+            ex.InnerException.Should().BeOfType<InvalidOperationException>();
+            string[] expectedDiagnostics =
+            [
+                .. ExpectedKeyDiagnostics(_testKey),
+                "Compilation error: see server logs for details.",
+                "Suggested action: Check server logs for the full stack trace.",
+            ];
+
+            ex.Diagnostics.Should().Equal(expectedDiagnostics);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Runtime_Compiler_Raises_MappingSetUnavailableException : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_preserves_the_original_exception()
+        {
+            var expected = new MappingSetUnavailableException(
+                "compiler classified failure",
+                ["compiler diagnostic"]
+            );
+            var compiler = new TestRuntimeCompiler(_testKey, () => throw expected);
+            var provider = CreateProvider(compiler: compiler);
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Should().BeSameAs(expected);
         }
     }
 
@@ -445,4 +597,31 @@ public class Given_MappingSetProvider
             return compileFunc();
         }
     }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogRecord> _records = [];
+
+        public IReadOnlyList<LogRecord> Records => _records;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+
+            _records.Add(new LogRecord(logLevel, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed record LogRecord(LogLevel Level, string Message, Exception? Exception);
 }

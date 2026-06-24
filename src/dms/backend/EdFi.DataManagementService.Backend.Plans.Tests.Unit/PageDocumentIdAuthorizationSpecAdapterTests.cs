@@ -211,6 +211,110 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             );
     }
 
+    [Test]
+    public void It_should_reject_authorized_results_without_claim_education_organization_parameterization()
+    {
+        var authorizationResult = new RelationshipAuthorizationResult.Authorized([
+            CreateCheckSpec(
+                4,
+                0,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                CreateSubject("SchoolId")
+            ),
+        ]);
+
+        var adapt = () => PageDocumentIdAuthorizationSpecAdapter.Adapt(authorizationResult);
+
+        adapt
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "PageDocumentId authorization requires claim EducationOrganization parameterization."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_edorg_subjects_that_do_not_match_the_query_root_table()
+    {
+        var alternateTable = new DbTableName(_schema, "LocalEducationAgency");
+        var authorizationResult = new RelationshipAuthorizationResult.Authorized(
+            [
+                CreateCheckSpec(
+                    4,
+                    0,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    CreateSubject("LocalEducationAgencyId") with
+                    {
+                        Table = alternateTable,
+                    }
+                ),
+            ],
+            new AuthorizationClaimEducationOrganizationIdParameterization(
+                AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+                "ClaimEducationOrganizationIds",
+                [100L],
+                ["ClaimEducationOrganizationIds"]
+            )
+        );
+
+        var adapt = () => PageDocumentIdAuthorizationSpecAdapter.Adapt(authorizationResult);
+
+        adapt
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Authorization subject table '{alternateTable}' does not match query root table '{_rootTable}'. PageDocumentId authorization supports only concrete root-table subjects."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_people_subjects_that_do_not_match_the_query_root_table()
+    {
+        var alternateTable = new DbTableName(_schema, "Student");
+        var personSubject = CreatePersonSubject();
+        var authorizationResult = new RelationshipAuthorizationResult.Authorized(
+            [
+                new RelationshipAuthorizationCheckSpec(
+                    new ConfiguredAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                        RawConfiguredIndex: 0
+                    ),
+                    RelationshipLocalOrder: 0,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    RelationshipAuthorizationValueSource.Stored,
+                    [
+                        personSubject with
+                        {
+                            PersonMetadata = personSubject.PersonMetadata! with
+                            {
+                                StoredAnchor = new RelationshipAuthorizationPersonStoredAnchor(
+                                    alternateTable,
+                                    _documentIdColumn
+                                ),
+                            },
+                        },
+                    ],
+                    new RelationshipAuthorizationCheckTarget.Stored(_rootTable, _documentIdColumn)
+                ),
+            ],
+            new AuthorizationClaimEducationOrganizationIdParameterization(
+                AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+                "ClaimEducationOrganizationIds",
+                [100L],
+                ["ClaimEducationOrganizationIds"]
+            )
+        );
+
+        var adapt = () => PageDocumentIdAuthorizationSpecAdapter.Adapt(authorizationResult);
+
+        adapt
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"People authorization subject root table '{alternateTable}' does not match query root table '{_rootTable}'."
+            );
+    }
+
     [TestCaseSource(nameof(PeopleRelationshipStrategyCases))]
     public void It_should_adapt_stored_people_relationship_specs_for_get_many(
         string strategyName,

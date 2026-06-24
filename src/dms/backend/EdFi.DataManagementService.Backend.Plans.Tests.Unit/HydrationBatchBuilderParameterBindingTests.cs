@@ -18,6 +18,19 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_HydrationBatchBuilder_Query_Parameter_Binding
 {
     [Test]
+    public void It_should_bind_single_keyset_document_id_as_a_scalar_parameter()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Single(42L);
+
+        HydrationBatchBuilder.AddParameters(command, keyset);
+
+        command.Parameters.Count.Should().Be(1);
+        command.Parameters.Contains("@DocumentId").Should().BeTrue();
+        command.Parameters["@DocumentId"].Value.Should().Be(42L);
+    }
+
+    [Test]
     public void It_should_bind_scalar_parameters_once_when_shared_by_page_and_total_count_sql()
     {
         var command = new RecordingDbCommand(new DataTable().CreateDataReader());
@@ -49,6 +62,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         command.Parameters.Contains("@offset").Should().BeTrue();
         command.Parameters.Contains("@limit").Should().BeTrue();
         command.Parameters["@schoolYear"].Value.Should().Be(DBNull.Value);
+        command.Parameters["@offset"].Value.Should().Be(0L);
+        command.Parameters["@limit"].Value.Should().Be(25L);
     }
 
     [Test]
@@ -180,6 +195,112 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
     }
 
     [Test]
+    public void It_should_throw_when_page_and_total_count_parameters_have_conflicting_metadata()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Filter, "authorizationIds"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder:
+                [
+                    new QuerySqlParameter(
+                        QuerySqlParameterRole.Filter,
+                        "authorizationIds",
+                        QuerySqlParameterBinding.PgsqlArray
+                    ),
+                ]
+            ),
+            new Dictionary<string, object?>
+            {
+                ["authorizationIds"] = new long[] { 10L, 20L },
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Hydration query keyset cannot bind parameter 'authorizationIds' with conflicting binding metadata."
+            );
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_report_all_missing_required_parameter_values()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Filter, "localEducationAgencyId"),
+                ]
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Hydration query keyset is missing required parameter values for ['schoolYear', 'limit', 'localEducationAgencyId']."
+            );
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_throw_when_the_binding_kind_is_not_supported()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(
+                        QuerySqlParameterRole.Filter,
+                        "unsupported",
+                        new QuerySqlParameterBinding((QuerySqlParameterBindingKind)999)
+                    ),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["unsupported"] = 10L,
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            HydrationBatchBuilder.AddParameters(command, keyset)
+        );
+
+        exception.Should().NotBeNull();
+        exception!.ParamName.Should().Be("parameter");
+        exception.Message.Should().Contain("Unsupported query-parameter binding kind.");
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
     public void It_should_throw_when_a_non_list_value_is_supplied_for_a_postgresql_array_parameter()
     {
         using var command = new NpgsqlCommand();
@@ -212,6 +333,42 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
             .WithMessage(
                 "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
             );
+    }
+
+    [Test]
+    public void It_should_throw_when_a_non_list_value_is_supplied_for_a_mssql_structured_parameter()
+    {
+        using var command = new SqlCommand();
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(
+                        QuerySqlParameterRole.Filter,
+                        "ClaimEducationOrganizationIds",
+                        QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id")
+                    ),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["ClaimEducationOrganizationIds"] = 10L,
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long> runtime value."
+            );
+        command.Parameters.Count.Should().Be(0);
     }
 
     private static PageDocumentIdSqlPlan CreateQueryPlan(

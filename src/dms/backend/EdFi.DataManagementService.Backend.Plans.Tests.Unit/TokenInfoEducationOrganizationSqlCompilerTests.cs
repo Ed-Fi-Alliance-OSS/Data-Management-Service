@@ -106,6 +106,70 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
     }
 
     [Test]
+    public void It_should_emit_the_cte_chain_for_concrete_claimed_accessible_and_ancestor_rows()
+    {
+        var plan = Compile(SqlDialect.Pgsql);
+
+        plan.EducationOrganizationSql.Should()
+            .Contain(
+                """
+                WITH concrete_edorg AS (
+                    SELECT
+                        r."SchoolId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Ed-Fi:School' AS "Discriminator"
+                    FROM "edfi"."School" r
+                    UNION ALL
+                    SELECT
+                        r."LocalEducationAgencyId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Ed-Fi:LocalEducationAgency' AS "Discriminator"
+                    FROM "edfi"."LocalEducationAgency" r
+                    UNION ALL
+                    SELECT
+                        r."CustomEducationOrganizationId" AS "EducationOrganizationId",
+                        r."NameOfInstitution" AS "NameOfInstitution",
+                        'Sample:CustomEducationOrganization' AS "Discriminator"
+                    FROM "sample"."CustomEducationOrganization" r
+                ),
+                claimed_edorg AS (
+                    SELECT
+                        c."EducationOrganizationId",
+                        c."NameOfInstitution",
+                        c."Discriminator"
+                    FROM concrete_edorg c
+                    WHERE c."EducationOrganizationId" = ANY(@ClaimEducationOrganizationIds)
+                ),
+                accessible_targets AS (
+                    SELECT DISTINCT
+                        h."TargetEducationOrganizationId" AS "EducationOrganizationId"
+                    FROM "auth"."EducationOrganizationIdToEducationOrganizationId" h
+                    INNER JOIN claimed_edorg c
+                        ON h."SourceEducationOrganizationId" = c."EducationOrganizationId"
+                    UNION
+                    SELECT
+                        c."EducationOrganizationId"
+                    FROM claimed_edorg c
+                ),
+                ancestor_links AS (
+                    SELECT
+                        h."TargetEducationOrganizationId",
+                        h."SourceEducationOrganizationId"
+                    FROM "auth"."EducationOrganizationIdToEducationOrganizationId" h
+                    INNER JOIN accessible_targets a
+                        ON h."TargetEducationOrganizationId" = a."EducationOrganizationId"
+                    UNION
+                    SELECT
+                        a."EducationOrganizationId" AS "TargetEducationOrganizationId",
+                        a."EducationOrganizationId" AS "SourceEducationOrganizationId"
+                    FROM accessible_targets a
+                )
+                SELECT
+                """
+            );
+    }
+
+    [Test]
     public void It_should_emit_sql_server_scalar_claim_filters_and_bracket_quoted_relations()
     {
         var plan = Compile(SqlDialect.Mssql, [222L, 111L]);
@@ -141,6 +205,36 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                     "ClaimEducationOrganizationIds",
                     QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id")
                 )
+            );
+    }
+
+    [Test]
+    public void It_should_emit_the_final_result_select_with_target_and_ancestor_relationships()
+    {
+        var plan = Compile(SqlDialect.Pgsql);
+
+        plan.EducationOrganizationSql.Should()
+            .Contain(
+                """
+                SELECT
+                    target."EducationOrganizationId" AS "EducationOrganizationId",
+                    target."NameOfInstitution" AS "NameOfInstitution",
+                    target."Discriminator" AS "Discriminator",
+                    ancestor."Discriminator" AS "AncestorDiscriminator",
+                    ancestor."EducationOrganizationId" AS "AncestorEducationOrganizationId"
+                FROM accessible_targets a
+                INNER JOIN concrete_edorg target
+                    ON target."EducationOrganizationId" = a."EducationOrganizationId"
+                INNER JOIN ancestor_links link
+                    ON link."TargetEducationOrganizationId" = a."EducationOrganizationId"
+                INNER JOIN concrete_edorg ancestor
+                    ON ancestor."EducationOrganizationId" = link."SourceEducationOrganizationId"
+                ORDER BY
+                    target."EducationOrganizationId" ASC,
+                    ancestor."EducationOrganizationId" ASC,
+                    target."Discriminator" ASC,
+                    ancestor."Discriminator" ASC;
+                """
             );
     }
 
@@ -185,6 +279,358 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
             );
     }
 
+    [Test]
+    public void It_should_fail_fast_when_mapping_set_model_dialect_differs_from_the_compiler()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                mappingSet with
+                {
+                    Model = mappingSet.Model with { Dialect = SqlDialect.Mssql },
+                }
+        );
+
+        AssertCompileThrows<ArgumentException>(
+            spec,
+            "*model dialect 'Mssql' does not match compiler dialect 'Pgsql'*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_mapping_set_key_dialect_differs_from_the_compiler()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet => mappingSet with { Key = mappingSet.Key with { Dialect = SqlDialect.Mssql } }
+        );
+
+        AssertCompileThrows<ArgumentException>(
+            spec,
+            "*key dialect 'Mssql' does not match compiler dialect 'Pgsql'*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_mapping_set_has_duplicate_education_organization_union_views()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                mappingSet with
+                {
+                    Model = mappingSet.Model with
+                    {
+                        AbstractUnionViewsInNameOrder =
+                        [
+                            .. mappingSet.Model.AbstractUnionViewsInNameOrder,
+                            mappingSet.Model.AbstractUnionViewsInNameOrder.Single(),
+                        ],
+                    },
+                }
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*contains 2 abstract 'EducationOrganization' union views*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_member_is_missing_from_concrete_resources()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                mappingSet with
+                {
+                    Model = mappingSet.Model with
+                    {
+                        ConcreteResourcesInNameOrder = mappingSet
+                            .Model.ConcreteResourcesInNameOrder.Where(static concrete =>
+                                concrete.ResourceKey.Resource != _schoolResource
+                            )
+                            .ToArray(),
+                    },
+                }
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*references concrete member 'Ed-Fi.School'*does not contain that concrete resource*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_member_uses_non_relational_storage()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithConcreteResource(
+                    mappingSet,
+                    _schoolResource,
+                    static concrete =>
+                        concrete with
+                        {
+                            StorageKind = ResourceStorageKind.SharedDescriptorTable,
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*member 'Ed-Fi.School' uses storage kind 'SharedDescriptorTable'*token_info requires relational-table storage*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_the_edorg_union_view_lacks_a_discriminator_output()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithEducationOrganizationUnionView(
+                    mappingSet,
+                    static view =>
+                        view with
+                        {
+                            OutputColumnsInSelectOrder = view
+                                .OutputColumnsInSelectOrder.Where(static column =>
+                                    column.ColumnName.Value != "Discriminator"
+                                )
+                                .ToArray(),
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*does not expose output column 'Discriminator'*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_the_edorg_union_view_has_duplicate_discriminator_outputs()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithEducationOrganizationUnionView(
+                    mappingSet,
+                    static view =>
+                        view with
+                        {
+                            OutputColumnsInSelectOrder =
+                            [
+                                .. view.OutputColumnsInSelectOrder,
+                                view.OutputColumnsInSelectOrder.Single(static column =>
+                                    column.ColumnName.Value == "Discriminator"
+                                ),
+                            ],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*exposes duplicate output column 'Discriminator'*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_the_edorg_union_view_lacks_an_identity_output()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithEducationOrganizationUnionView(
+                    mappingSet,
+                    static view =>
+                        view with
+                        {
+                            OutputColumnsInSelectOrder = view
+                                .OutputColumnsInSelectOrder.Where(static column =>
+                                    column.ColumnName.Value != "EducationOrganizationId"
+                                )
+                                .ToArray(),
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(spec, "*does not expose an identity output column*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_the_edorg_union_view_has_duplicate_identity_outputs()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithEducationOrganizationUnionView(
+                    mappingSet,
+                    static view =>
+                        view with
+                        {
+                            OutputColumnsInSelectOrder =
+                            [
+                                .. view.OutputColumnsInSelectOrder,
+                                new AbstractUnionViewOutputColumn(
+                                    new DbColumnName("OtherEducationOrganizationId"),
+                                    new RelationalScalarType(ScalarKind.Int64),
+                                    Path("$.otherEducationOrganizationId"),
+                                    null
+                                ),
+                            ],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(spec, "*exposes 2 identity output columns*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_arm_has_too_few_identity_projections()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithFirstUnionArm(
+                    mappingSet,
+                    static arm =>
+                        arm with
+                        {
+                            ProjectionExpressionsInSelectOrder = [arm.ProjectionExpressionsInSelectOrder[0]],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*has too few projection expressions for output 'EducationOrganizationIdColumn'*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_arm_identity_output_is_not_a_source_column()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithFirstUnionArm(
+                    mappingSet,
+                    static arm =>
+                        arm with
+                        {
+                            ProjectionExpressionsInSelectOrder =
+                            [
+                                arm.ProjectionExpressionsInSelectOrder[0],
+                                new AbstractUnionViewProjectionExpression.StringLiteral("not-a-column"),
+                                arm.ProjectionExpressionsInSelectOrder[2],
+                            ],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*must project output 'EducationOrganizationIdColumn' from a source column*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_arm_has_too_few_discriminator_projections()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithFirstUnionArm(
+                    mappingSet,
+                    static arm =>
+                        arm with
+                        {
+                            ProjectionExpressionsInSelectOrder =
+                            [
+                                arm.ProjectionExpressionsInSelectOrder[0],
+                                arm.ProjectionExpressionsInSelectOrder[1],
+                            ],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*has too few projection expressions for discriminator output*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_union_arm_discriminator_output_is_not_a_literal()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithFirstUnionArm(
+                    mappingSet,
+                    static arm =>
+                        arm with
+                        {
+                            ProjectionExpressionsInSelectOrder =
+                            [
+                                arm.ProjectionExpressionsInSelectOrder[0],
+                                arm.ProjectionExpressionsInSelectOrder[1],
+                                new AbstractUnionViewProjectionExpression.SourceColumn(
+                                    new DbColumnName("Discriminator")
+                                ),
+                            ],
+                        }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*must project discriminator from a string literal*"
+        );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_an_edorg_resource_has_duplicate_name_of_institution_columns()
+    {
+        var spec = CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                WithConcreteResource(
+                    mappingSet,
+                    _schoolResource,
+                    static concrete =>
+                    {
+                        var root = concrete.RelationalModel.Root with
+                        {
+                            Columns =
+                            [
+                                .. concrete.RelationalModel.Root.Columns,
+                                ScalarColumn("AlternateNameOfInstitution", "$.nameOfInstitution"),
+                            ],
+                        };
+
+                        return concrete with
+                        {
+                            RelationalModel = concrete.RelationalModel with
+                            {
+                                Root = root,
+                                TablesInDependencyOrder = [root],
+                            },
+                        };
+                    }
+                )
+        );
+
+        AssertCompileThrows<InvalidOperationException>(
+            spec,
+            "*exposes duplicate root scalar columns for '$.nameOfInstitution'*"
+        );
+    }
+
     private static TokenInfoEducationOrganizationSqlPlan Compile(
         SqlDialect dialect,
         IReadOnlyList<long>? claimEducationOrganizationIds = null
@@ -193,6 +639,33 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
         var compiler = new TokenInfoEducationOrganizationSqlCompiler(dialect);
 
         return compiler.Compile(CreateSpec(dialect, claimEducationOrganizationIds ?? [222L, 111L]));
+    }
+
+    private static void AssertCompileThrows<TException>(
+        TokenInfoEducationOrganizationSqlSpec spec,
+        string expectedMessage
+    )
+        where TException : Exception
+    {
+        var compiler = new TokenInfoEducationOrganizationSqlCompiler(SqlDialect.Pgsql);
+        var act = () => compiler.Compile(spec);
+
+        act.Should().Throw<TException>().WithMessage(expectedMessage);
+    }
+
+    private static TokenInfoEducationOrganizationSqlSpec CreateSpec(
+        SqlDialect dialect,
+        Func<MappingSet, MappingSet> configureMappingSet
+    )
+    {
+        return new TokenInfoEducationOrganizationSqlSpec(
+            configureMappingSet(CreateMappingSet(dialect)),
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                dialect,
+                [111L],
+                "ClaimEducationOrganizationIds"
+            )
+        );
     }
 
     private static TokenInfoEducationOrganizationSqlSpec CreateSpec(
@@ -216,6 +689,67 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                 "ClaimEducationOrganizationIds"
             )
         );
+    }
+
+    private static MappingSet WithEducationOrganizationUnionView(
+        MappingSet mappingSet,
+        Func<AbstractUnionViewInfo, AbstractUnionViewInfo> configureUnionView
+    )
+    {
+        return mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                AbstractUnionViewsInNameOrder = mappingSet
+                    .Model.AbstractUnionViewsInNameOrder.Select(view =>
+                        view.AbstractResourceKey.Resource == _educationOrganizationResource
+                            ? configureUnionView(view)
+                            : view
+                    )
+                    .ToArray(),
+            },
+        };
+    }
+
+    private static MappingSet WithFirstUnionArm(
+        MappingSet mappingSet,
+        Func<AbstractUnionViewArm, AbstractUnionViewArm> configureArm
+    )
+    {
+        return WithEducationOrganizationUnionView(
+            mappingSet,
+            view =>
+            {
+                var arms = view.UnionArmsInOrder.ToArray();
+                arms[0] = configureArm(arms[0]);
+
+                return view with
+                {
+                    UnionArmsInOrder = arms,
+                };
+            }
+        );
+    }
+
+    private static MappingSet WithConcreteResource(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        Func<ConcreteResourceModel, ConcreteResourceModel> configureConcreteResource
+    )
+    {
+        return mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder = mappingSet
+                    .Model.ConcreteResourcesInNameOrder.Select(concrete =>
+                        concrete.ResourceKey.Resource == resource
+                            ? configureConcreteResource(concrete)
+                            : concrete
+                    )
+                    .ToArray(),
+            },
+        };
     }
 
     private static MappingSet CreateMappingSet(

@@ -1,0 +1,20 @@
+{
+  "stryker-config": {
+    "solution": "../../EdFi.DataManagementService.sln",
+    "project": "EdFi.DataManagementService.Backend.RelationalModel.csproj",
+    "configuration": "Release",
+    "target-framework": "net10.0",
+    "reporters": ["html", "json", "progress"],
+    "thresholds": {
+      "high": 0,
+      "low": 0,
+      "break": 0
+    },
+    "mutate": [
+      "**/*.cs",
+      "!**/Properties/AssemblyInfo.cs",
+      "!**/bin/**",
+      "!**/obj/**"
+    ]
+  }
+}

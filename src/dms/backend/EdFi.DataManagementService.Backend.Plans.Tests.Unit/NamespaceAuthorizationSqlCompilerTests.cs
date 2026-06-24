@@ -25,6 +25,8 @@ public class Given_NamespaceAuthorizationSqlCompiler
     private static NamespaceAuthorizationCheckSpec ProposedCheck(int index = 0) =>
         new(index, NamespaceAuthorizationCheckValueSource.Proposed, _rootTable, _namespaceColumn);
 
+    private static string Sql(params string[] lines) => string.Join("\n", lines) + "\n";
+
     [Test]
     public void It_compiles_a_pgsql_stored_check_with_null_guarded_LIKE_ANY_and_AUTH1_throw_paths()
     {
@@ -43,6 +45,17 @@ public class Given_NamespaceAuthorizationSqlCompiler
             )
         );
 
+        plan.AuthorizationSql.Should()
+            .Be(
+                Sql(
+                    "SELECT CASE",
+                    "    WHEN EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId AND r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes)) THEN 1",
+                    "    WHEN EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId AND (r.\"Namespace\" IS NULL OR r.\"Namespace\" = '')) THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|u')",
+                    "    WHEN NOT EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId) THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|s')",
+                    "    ELSE \"dms\".\"throw_error\"('AUTH1', 'ns1|0|m')",
+                    "END;"
+                )
+            );
         plan.AuthorizationSql.Should()
             .Contain(
                 "WHEN EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId AND r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes)) THEN 1"
@@ -116,6 +129,16 @@ public class Given_NamespaceAuthorizationSqlCompiler
             )
         );
 
+        plan.AuthorizationSql.Should()
+            .Be(
+                Sql(
+                    "SELECT CASE",
+                    "    WHEN (@proposedNamespace IS NULL OR @proposedNamespace = '') THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|r')",
+                    "    WHEN @proposedNamespace LIKE ANY(@namespacePrefixes) THEN 1",
+                    "    ELSE \"dms\".\"throw_error\"('AUTH1', 'ns1|0|m')",
+                    "END;"
+                )
+            );
         plan.AuthorizationSql.Should()
             .Contain(
                 "WHEN (@proposedNamespace IS NULL OR @proposedNamespace = '') THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|r')"
@@ -290,6 +313,73 @@ public class Given_NamespaceAuthorizationSqlCompiler
         var act = () => compiler.Compile(spec);
 
         act.Should().Throw<ArgumentException>().WithMessage("*at least one check*");
+    }
+
+    [TestCase(
+        "document-id",
+        "proposedNamespace",
+        nameof(NamespaceAuthorizationSqlSpec.DocumentIdParameterName)
+    )]
+    [TestCase(
+        "documentId",
+        "proposed-namespace",
+        nameof(NamespaceAuthorizationSqlSpec.ProposedNamespaceParameterName)
+    )]
+    public void It_rejects_invalid_single_record_namespace_authorization_parameter_names(
+        string documentIdParameterName,
+        string proposedNamespaceParameterName,
+        string expectedParameterName
+    )
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var spec = new NamespaceAuthorizationSqlSpec(
+            [StoredCheck(0)],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            ),
+            documentIdParameterName,
+            proposedNamespaceParameterName
+        );
+
+        var act = () => compiler.Compile(spec);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("Parameter name must match pattern*")
+            .WithParameterName(expectedParameterName);
+    }
+
+    [Test]
+    public void It_throws_when_a_namespace_check_uses_an_unsupported_value_source()
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var spec = new NamespaceAuthorizationSqlSpec(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    (NamespaceAuthorizationCheckValueSource)99,
+                    _rootTable,
+                    _namespaceColumn
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            ),
+            DocumentIdParameterName: "documentId",
+            ProposedNamespaceParameterName: "proposedNamespace"
+        );
+
+        var act = () => compiler.Compile(spec);
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*Unsupported namespace authorization value source*");
     }
 
     [Test]

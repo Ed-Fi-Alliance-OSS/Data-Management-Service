@@ -53,7 +53,11 @@ public class Given_MappingSetProviderOptionsValidator
             );
 
             result.Failed.Should().BeTrue();
-            result.FailureMessage.Should().Contain("Required is true").And.Contain("Enabled is false");
+            result
+                .FailureMessage.Should()
+                .Be(
+                    "MappingPacks:Required is true but MappingPacks:Enabled is false. Packs cannot be required when pack loading is disabled."
+                );
         }
     }
 

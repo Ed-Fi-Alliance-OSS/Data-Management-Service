@@ -155,6 +155,22 @@ public class Given_SimpleInsertSqlEmitter
     }
 
     [Test]
+    public void It_should_reject_empty_columns()
+    {
+        var act = () =>
+            new SimpleInsertSqlEmitter(SqlDialect.Pgsql).Emit(
+                table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+                orderedColumns: [],
+                orderedParameterNames: ["schoolId"]
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("At least one column must be supplied. (Parameter 'orderedColumns')")
+            .WithParameterName("orderedColumns");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_column_and_parameter_counts_do_not_match()
     {
         var act = () =>
