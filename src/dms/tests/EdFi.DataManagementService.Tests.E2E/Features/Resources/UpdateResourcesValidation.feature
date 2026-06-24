@@ -292,9 +292,6 @@ Feature: Resources "Update" Operation validations
 
         @API-194 @PUT @relational-backend
         @relational-ci-shard-1
-        # DMS-1235: Quarantined until relational response materialization canonicalizes
-        # decimals instead of preserving fixed database scale.
-        @ignore
         Scenario: 11 Put an existing document with string coercion to a numeric value (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
