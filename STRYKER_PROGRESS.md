@@ -1086,3 +1086,27 @@
   - Focused survivors/no-coverage ids `3045`, `3056`, `3058`, `3265`, and `3268` are null/null-formatting or null-ToString formatting paths and are skipped by the loop prompt.
   - Focused no-coverage ids `3220` and `3221` are the defensive `ImmediateParentTable` null-coalescing diagnostic inside a method called only after `ImmediateParentTable is not null`; they appear unreachable through public `Build` behavior.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans HydrationBatchBuilder Batch Boundaries And Zero-Limit Detection
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs`
+- Mutants selected:
+  - Batch statement-boundary mutants ids `1057`, `1059`, `1063`, `1065`, `1068`, `1073`, and `1079`, lines `72`, `76`, `82`, `87`, `93`, `102`, and `114`.
+  - Single/query keyset SQL-shape mutants ids `1094`, `1110`, `1111`, and `1112`, lines `163`, `200`, `202`, and `203`.
+  - Zero-limit detection mutants ids `1132`, `1134`, `1135`, `1136`, `1137`, `1138`, `1139`, `1141`, and `1142`, lines `238` and `245`-`253`.
+  - Semicolon normalization mutants ids `1214`, `1215`, `1216`, `1217`, `1218`, `1219`, `1222`, and `1225`, lines `478` and `490`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/HydrationBatchBuilderTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:55`; `Killed: 62`, `Survived: 27`, `NoCoverage: 18`; report `StrykerOutput/2026-06-24.03-14-24/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/HydrationBatchBuilderTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_HydrationBatchBuilder"`: passed; final run `58` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs" --concurrency 8` from the test project directory: final focused run completed in `00:01:52`; `Killed: 88`, `Survived: 10`, `NoCoverage: 9`; report `StrykerOutput/2026-06-24.03-21-27/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `1057`, `1059`, `1063`, `1065`, `1068`, `1073`, `1079`, `1094`, `1110`, `1111`, `1112`, `1132`, `1134`, `1135`, `1136`, `1137`, `1138`, `1139`, `1141`, `1142`, `1214`, `1215`, `1216`, `1217`, `1219`, and `1222` are `Killed` in the final focused JSON report.
+  - Mutant ids `1218` and `1225` survive but are not actionable for this loop: changing `trimmed.Length > 0` to `trimmed.Length >= 0` only changes behavior for empty SQL strings passed into private semicolon helpers, while the public HydrationBatchBuilder behavior consumes generated non-empty SQL statements.
+- Remaining notes:
+  - Focused survivors/no-coverage remain outside this selected batch-boundary and zero-limit cluster, including null guards, argument validation messages, missing/conflicting parameter diagnostics, scalar null binding, and invalid structured-parameter diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
