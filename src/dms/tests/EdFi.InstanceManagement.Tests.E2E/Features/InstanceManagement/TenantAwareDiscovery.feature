@@ -55,3 +55,8 @@ Feature: Tenant-Aware Discovery API
     Scenario: XSD metadata endpoint with invalid tenant returns 404
          When a GET request is made to XSD metadata endpoint with tenant "NonExistentTenant"
          Then it should respond with 404
+
+    Scenario: XSD metadata file content with valid tenant returns OK
+         When a GET request is made to XSD file "Ed-Fi-Core" in section "ed-fi" with tenant "Tenant_Discovery_255901"
+         Then it should respond with 200
+          And the response content type should be "application/xml"
