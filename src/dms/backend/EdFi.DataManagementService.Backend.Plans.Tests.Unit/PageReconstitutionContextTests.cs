@@ -109,6 +109,73 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
 }
 
 [TestFixture]
+public class Given_PageReconstitutionContext_With_Duplicate_Document_Link_Lookup_Rows
+{
+    private const long LookupDocumentId = 901L;
+    private const short ResourceKeyId = 7;
+    private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+
+    private PageReconstitutionContext _context = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+        ]);
+
+        _context = PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage);
+    }
+
+    [Test]
+    public void It_should_deduplicate_identical_lookup_rows()
+    {
+        _context.DocumentLinkLookupById.Should().ContainSingle();
+        _context
+            .DocumentLinkLookupById[LookupDocumentId]
+            .Should()
+            .Be(new DocumentLinkLookupEntry(_documentUuid, ResourceKeyId));
+    }
+}
+
+[TestFixture]
+public class Given_PageReconstitutionContext_With_Conflicting_Document_Link_Lookup_Rows
+{
+    private const long LookupDocumentId = 901L;
+    private const short ResourceKeyId = 7;
+    private static readonly Guid _documentUuid = Guid.Parse("11112222-3333-4444-5555-666677778888");
+    private static readonly Guid _conflictingDocumentUuid = Guid.Parse(
+        "99998888-7777-6666-5555-444433332222"
+    );
+
+    [TestCase(true, false, TestName = "different_DocumentUuid")]
+    [TestCase(false, true, TestName = "different_ResourceKeyId")]
+    public void It_should_fail_fast_when_duplicate_DocumentId_resolves_to_different_link_target(
+        bool changeDocumentUuid,
+        bool changeResourceKeyId
+    )
+    {
+        var pageData = PageReconstitutionContextTestData.CreatePageWithDocumentLinkLookup([
+            new DocumentReferenceLookupRow(LookupDocumentId, _documentUuid, ResourceKeyId),
+            new DocumentReferenceLookupRow(
+                LookupDocumentId,
+                changeDocumentUuid ? _conflictingDocumentUuid : _documentUuid,
+                changeResourceKeyId ? (short)(ResourceKeyId + 1) : ResourceKeyId
+            ),
+        ]);
+
+        Action act = () => PageReconstitutionContext.Build(pageData.ReadPlan, pageData.HydratedPage);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot build page reconstitution context: document-reference lookup returned conflicting rows for DocumentId 901."
+            );
+    }
+}
+
+[TestFixture]
 public class Given_PageReconstitutionContext_With_Duplicate_Root_Rows
 {
     private Exception _exception = null!;
@@ -228,6 +295,21 @@ file static class PageReconstitutionContextTestData
 {
     private static readonly DbSchemaName _schema = new("edfi");
     private static readonly QualifiedResourceName _resource = new("Ed-Fi", "School");
+
+    public static PageData CreatePageWithDocumentLinkLookup(
+        IReadOnlyList<DocumentReferenceLookupRow> lookupRows
+    )
+    {
+        var pageData = CreateHappyPathPage();
+
+        return pageData with
+        {
+            HydratedPage = pageData.HydratedPage with
+            {
+                DocumentReferenceLookup = new HydratedDocumentReferenceLookup(lookupRows),
+            },
+        };
+    }
 
     public static PageData CreateHappyPathPage()
     {

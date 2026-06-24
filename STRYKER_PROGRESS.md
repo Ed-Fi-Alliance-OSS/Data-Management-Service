@@ -991,3 +991,27 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain in `ReadPlanProjectionContractValidator.cs` outside this selected descriptor source contract cluster, including null guards, reference projection diagnostics, formatting helpers, descriptor-source matching logic reported with no covered tests, and document-reference lookup diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans PageReconstitutionContext Document Link Lookup Conflicts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs`
+- Mutants selected:
+  - `Logical mutation`, id `3174`, lines `487`-`488`: changed conflicting lookup-row detection from `DocumentUuid`-or-`ResourceKeyId` mismatch to requiring both mismatches.
+  - `Negate expression`, id `3175`, lines `487`-`488`: negated the conflicting lookup-row detection.
+  - `Equality mutation`, id `3176`, line `487`: changed `DocumentUuid` mismatch detection to equality.
+  - `Equality mutation`, id `3177`, line `488`: changed `ResourceKeyId` mismatch detection to equality.
+  - `Statement mutation`, id `3179`, lines `491`-`494`: removed the conflicting lookup-row exception.
+  - `String mutation`, ids `3180` and `3181`, lines `492`-`493`: replaced the conflicting lookup-row diagnostic text.
+  - `Statement mutation`, id `3182`, line `497`: removed the `continue` for duplicate identical lookup rows.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_PageReconstitutionContext"`: passed; `14` tests.
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageReconstitutionContext.cs" --concurrency 8` from the test project directory: completed in `00:01:58`; `Killed: 76`, `Survived: 40`, `NoCoverage: 54`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-47-31/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3174`, `3175`, `3176`, `3177`, `3179`, `3180`, `3181`, and `3182` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain in `PageReconstitutionContext.cs` outside this selected document-link lookup conflict cluster, including null guards, row-node ordinal conversion diagnostics, page-shape validation diagnostics, and scope-key formatting diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
