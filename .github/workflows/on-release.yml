@@ -79,7 +79,7 @@ jobs:
             ViewId        = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "EdFi.DataManagementService"
+            PackageName = "EdFi.Api"
           }
 
           Import-Module ./package-helpers.psm1
@@ -94,7 +94,7 @@ jobs:
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "EdFi.DmsConfigurationService"
+            PackageName = "EdFi.Api.ConfigurationService"
           }
 
           Import-Module ./package-helpers.psm1

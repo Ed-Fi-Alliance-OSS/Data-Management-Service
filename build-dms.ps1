@@ -129,7 +129,7 @@ $clisRoot = "$solutionRoot/clis"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
 $installerProjectName = "EdFi.DataManagementService.Backend.Installer"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
-$packageName = "EdFi.DataManagementService"
+$packageName = "EdFi.Api"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58

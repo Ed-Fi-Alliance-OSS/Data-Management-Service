@@ -14,8 +14,8 @@ env:
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
-  DMS_PACKAGE_NAME: "EdFi.DataManagementService"
-  CS_PACKAGE_NAME: "EdFi.DmsConfigurationService"
+  DMS_PACKAGE_NAME: "EdFi.Api"
+  CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}

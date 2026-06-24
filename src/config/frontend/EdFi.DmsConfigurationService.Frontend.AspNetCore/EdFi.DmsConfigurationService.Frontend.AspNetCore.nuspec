@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>EdFi.DmsConfigurationService</id>
+    <id>EdFi.Api.ConfigurationService</id>
     <version>$version$</version>
     <title>Ed-Fi API Configuration Service</title>
     <authors>Ed-Fi Alliance</authors>

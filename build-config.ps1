@@ -101,7 +101,7 @@ $solutionRoot = "$PSScriptRoot/src/config"
 $defaultSolution = "$solutionRoot/EdFi.DmsConfigurationService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $projectName = "EdFi.DmsConfigurationService.Frontend.AspNetCore"
-$packageName = "EdFi.DmsConfigurationService"
+$packageName = "EdFi.Api.ConfigurationService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
