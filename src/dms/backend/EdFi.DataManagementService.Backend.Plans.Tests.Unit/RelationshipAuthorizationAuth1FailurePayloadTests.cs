@@ -461,6 +461,13 @@ public class Given_RelationshipAuthorizationFailureMapper
                 RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                 RelationshipAuthorizationSubjectFailureKind.StoredValueNull
             );
+        firstStrategy
+            .FailedSubjects.Select(static subject => subject.Hint)
+            .Should()
+            .Equal(
+                "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                "Stored relationship authorization subject value is null."
+            );
         firstStrategy.FailedSubjects[0].RootBinding.ResourceName.Should().Be("Ed-Fi.School");
         firstStrategy.FailedSubjects[0].RootBinding.TableName.Should().Be("edfi.School");
         firstStrategy.FailedSubjects[0].RootBinding.ColumnName.Should().Be("SchoolId");
@@ -635,6 +642,44 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_payload_repeats_a_strategy_subject_ordinal()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.StoredValueNull
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_closed_when_payload_omits_a_failed_or_strategy()
     {
         var checkSpecs = new[]
@@ -710,6 +755,53 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_auth1_check_specs_mix_value_sources()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        1,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_map_mixed_proposed_missing_and_no_relationship_failures_for_one_strategy()
     {
         var checkSpecs = new[]
@@ -764,6 +856,14 @@ public class Given_RelationshipAuthorizationFailureMapper
             .FailedSubjects.Select(static subject => subject.RootBinding.ColumnName)
             .Should()
             .Equal("SchoolId", "LocalEducationAgencyId");
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Select(static subject => subject.Hint)
+            .Should()
+            .Equal(
+                "Proposed relationship authorization subject value is missing.",
+                "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds."
+            );
     }
 
     [Test]
@@ -1565,6 +1665,12 @@ public class Given_RelationshipAuthorizationFailureMapper
         relationshipFailure.Should().NotBeNull();
         relationshipFailure!.FailedStrategies.Should().ContainSingle();
         relationshipFailure.FailedStrategies[0].Hint.Should().BeNull();
+        relationshipFailure
+            .FailedStrategies[0]
+            .FailedSubjects.Should()
+            .ContainSingle()
+            .Subject.Hint.Should()
+            .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
     }
 
     [Test]
