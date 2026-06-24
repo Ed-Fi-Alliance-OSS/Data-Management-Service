@@ -1847,3 +1847,23 @@
   - Focused no-coverage ids `4324`, `4325`, `4337`, and `4338` are empty-member/zero-logical-field defensive branches that appear unreachable through `DocumentReferenceBinding.GetLogicalFieldGroups()`.
   - Focused no-coverage id `4346`, line `161`, is the null-source-path message literal and is skipped by the loop prompt.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans NamespacePrefixSqlHelper Unsupported Kind Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespacePrefixSqlHelper.cs`
+- Mutants selected:
+  - Unsupported filter-parameter diagnostic `String mutation`, id `2399`, line `50`: replaced the unsupported namespace prefix parameterization kind message with `""`.
+  - Unsupported LIKE-emission diagnostic `String mutation`, id `2438`, line `141`: replaced the unsupported namespace prefix parameterization kind message with `""`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespacePrefixSqlHelperTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespacePrefixSqlHelper.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:01:51`; `Killed: 39`, `NoCoverage: 2`, `Survived: 0`; report `StrykerOutput/2026-06-24.08-13-12/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NamespacePrefixSqlHelperTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_NamespacePrefixSqlHelper"`: passed; `2` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/NamespacePrefixSqlHelper.cs" --concurrency 8` from the test project directory: focused verification completed in `00:01:56`; `Killed: 41`, `Survived: 0`, `Timeout: 0`; report `StrykerOutput/2026-06-24.08-15-58/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `2399` and `2438` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused `NamespacePrefixSqlHelper.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
