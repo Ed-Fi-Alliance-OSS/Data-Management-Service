@@ -1812,3 +1812,38 @@
   - Focused `KeyUnificationPresenceConventions.cs` has no remaining actionable survived, no-coverage, or timeout mutants.
   - `MappingSetLookupExtensions.cs` was not selected for edits because its fresh focused survivor is a null-guard statement mutant skipped by the loop prompt.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans ReferenceIdentityProjectionLogicalFieldResolver Diagnostics
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs`
+- Mutants selected:
+  - Storage-column conflict diagnostics `Statement mutation`, id `4310`, line `86`, and `String mutation` ids `4311`, `4312`, and `4313`, lines `87`-`89`.
+  - Alias aggregation `OrAssignmentExpression to AndAssignmentExpression mutation`, id `4320`, line `104`.
+  - Source-path mismatch diagnostic `String mutation`, id `4344`, line `161`.
+  - Unsupported binding storage diagnostic `String mutation`, id `4352`, line `196`.
+  - Missing canonical storage column diagnostic `String mutation`, id `4354`, line `214`.
+  - Canonical column not stored diagnostics `Statement mutation`, id `4362`, line `231`, and `String mutation`, id `4363`, line `232`.
+  - Presence-column formatting `String mutation`, id `4365`, line `237`.
+- Additional mutants killed by the same assertions:
+  - Presence conflict diagnostics ids `4316`, `4317`, `4318`, and `4319`.
+  - Alias presence ownership diagnostics ids `4330`, `4331`, and `4332`.
+  - Source-path null-coalescing mutant id `4345` was killed by a non-null source-path mismatch assertion.
+  - Transitive canonical alias diagnostics ids `4359`, `4360`, and `4361`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReferenceIdentityProjectionLogicalFieldResolverTests.cs`
+- Commands run and results:
+  - `dotnet tool restore && dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs" --concurrency 8` from the test project directory: baseline focused run completed in `00:02:41`; `Killed: 36`, `Survived: 8`, `Timeout: 0`; report `StrykerOutput/2026-06-24.07-57-37/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReferenceIdentityProjectionLogicalFieldResolverTests.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReferenceIdentityProjectionLogicalFieldResolver"`: first run passed `9` tests; after adding stored-only and canonical-not-stored cases, passed `11` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs" --concurrency 8` from the test project directory: focused verification completed in `00:02:38`; `Killed: 48`, `Survived: 5`, `Timeout: 0`; report `StrykerOutput/2026-06-24.08-06-56/reports/mutation-report.json`.
+  - `git diff --check`: succeeded.
+- Verification:
+  - Confirmed selected mutant ids `4310`, `4311`, `4312`, `4313`, `4320`, `4344`, `4352`, `4354`, `4362`, `4363`, and `4365` are `Killed` in the focused JSON report.
+- Remaining notes:
+  - Focused survivor ids `4290`, `4291`, and `4292`, lines `22`-`24`, are null-guard statement mutants and are skipped by the loop prompt.
+  - Focused survivor id `4299`, line `41`, changes the initial `containsUnifiedAlias` value before the first member overwrites it; it appears equivalent for every public non-empty logical field group.
+  - Focused survivor id `4307`, line `78`, removes a first-member `continue`, but the subsequent checks compare the first member with itself before later members are processed; this appears equivalent for externally visible resolver behavior.
+  - Focused no-coverage ids `4324`, `4325`, `4337`, and `4338` are empty-member/zero-logical-field defensive branches that appear unreachable through `DocumentReferenceBinding.GetLogicalFieldGroups()`.
+  - Focused no-coverage id `4346`, line `161`, is the null-source-path message literal and is skipped by the loop prompt.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes and a broad refresh in this loop projected roughly `2.5` hours. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
