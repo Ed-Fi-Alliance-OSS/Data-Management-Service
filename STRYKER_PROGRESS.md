@@ -964,3 +964,30 @@
 - Remaining notes:
   - Focused survivors/no-coverage remain in `ReadPlanProjectionContractValidator.cs` outside this selected DocumentReferenceLookup contract cluster, including null guards, reference projection diagnostics, descriptor projection diagnostics, formatting helpers, and document-reference lookup coverage/order count diagnostics.
   - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.
+
+## 2026-06-24 - Backend Plans ReadPlanProjectionContractValidator Descriptor Source Contracts
+
+- Target project: `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`
+- Selected production file: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs`
+- Mutants selected:
+  - Descriptor source missing hydration table diagnostic mutant id `3956`, line `375`.
+  - Descriptor source ordinal validation mutants ids `3957`, `3959`, `3990`, `3994`, and `3995`, lines `379`-`448`.
+  - Descriptor source extra-count diagnostics ids `3966`, `3967`, and `3968`, lines `405`-`407`.
+  - Descriptor source mismatch diagnostic index mutant id `3976`, line `417`.
+  - Descriptor missing-source count diagnostics ids `3982`, `3983`, `3985`, `3986`, and `3987`, lines `429`-`431`.
+- Test files changed:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanProjectionMutationHelper.cs`
+- Commands run and results:
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanProjectionMutationHelper.cs`: succeeded.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReadPlanCompiler"`: passed; final run `103` tests.
+  - `dotnet tool restore` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: succeeded.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs" --concurrency 8` from the test project directory: first focused run completed in `00:05:07`; `Killed: 274`, `Survived: 23`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-32-36/reports/mutation-report.json`.
+  - `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanProjectionMutationHelper.cs`: succeeded after strengthening the missing-source separator assertion.
+  - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --configuration Release --filter "FullyQualifiedName~Given_ReadPlanCompiler"`: passed; `103` tests.
+  - `dotnet stryker --config-file stryker-config.json --mutate "/home/brad/work/dms-root/Data-Management-Service/src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanProjectionContractValidator.cs" --concurrency 8` from the test project directory: final focused run completed in `00:05:03`; `Killed: 276`, `Survived: 21`, `Timeout: 0`; report `StrykerOutput/2026-06-24.02-39-07/reports/mutation-report.json`.
+- Verification:
+  - Confirmed selected mutant ids `3956`, `3957`, `3959`, `3966`, `3967`, `3968`, `3976`, `3982`, `3983`, `3985`, `3986`, `3987`, `3990`, `3994`, and `3995` are `Killed` in the final focused JSON report.
+- Remaining notes:
+  - Focused survivors/no-coverage remain in `ReadPlanProjectionContractValidator.cs` outside this selected descriptor source contract cluster, including null guards, reference projection diagnostics, formatting helpers, descriptor-source matching logic reported with no covered tests, and document-reference lookup diagnostics.
+  - Broad target re-run was skipped because recent broad Backend Plans runs take about `30` minutes. Next broad command to run from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`: `dotnet stryker --config-file stryker-config.json`.

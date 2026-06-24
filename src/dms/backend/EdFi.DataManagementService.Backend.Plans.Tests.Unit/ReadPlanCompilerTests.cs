@@ -1543,12 +1543,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 reason => new InvalidOperationException(reason)
             );
 
-        var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception
-            .Message.Should()
-            .Contain("descriptor projection source at plan index '0', source index '0'");
-        exception.Message.Should().Contain("$.schoolYearTypeDescriptor");
-        exception.Message.Should().Contain("$.localSchoolYearTypeDescriptor");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source at plan index '0', source index '0' resolves to '$.schoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorPrimary', but authoritative DescriptorEdgeSources at index '0' requires '$.localSchoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorSecondary'"
+            );
     }
 
     [Test]
@@ -1582,6 +1581,97 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Message.Should()
             .Contain("descriptor projection plan at index '1' must contain at least one source");
         exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_reference_missing_hydration_tables()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceTable(
+            readPlan,
+            new DbTableName(new DbSchemaName("edfi"), "MissingStudent")
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection plan at index '0' source '$.localSchoolYearTypeDescriptor' references table 'edfi.MissingStudent' that is not present in compiled table plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_with_out_of_range_hydration_ordinals()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var outOfRangeOrdinal = readPlan.TablePlansInDependencyOrder.Single().TableModel.Columns.Count;
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceOrdinal(
+            readPlan,
+            outOfRangeOrdinal
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"ordinal '{outOfRangeOrdinal}' for descriptor projection plan at index '0' source ordinal '$.localSchoolYearTypeDescriptor' for table 'edfi.Student' is out of range for hydration select-list columns (count: {outOfRangeOrdinal})"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_exceed_authoritative_source_count()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var mutatedReadPlan = CreateReadPlanWithAppendedDescriptorProjectionSource(readPlan, sourceIndex: 0);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source at plan index '0', source index '2' resolves to '$.localSchoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorSecondary', but authoritative DescriptorEdgeSources count is only '2'"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_sources_that_omit_an_authoritative_source()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource()
+        );
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceCount(readPlan, sourceCount: 1);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection source count '1' across plan count '1' does not match DescriptorEdgeSources count '3'; missing authoritative DescriptorEdgeSource(s): '$.schoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorPrimary', '$.programTypeDescriptor' on table 'edfi.Student' FK column 'ProgramTypeDescriptorId'"
+            );
     }
 
     [Test]
