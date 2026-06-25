@@ -108,8 +108,8 @@ jobs:
             if ($publishPackage) {
               throw "environment_file './.env.smoke.relational' is smoke-only and must not be published; set publish_package to false."
             }
-            if ($packageName -notlike 'EdFi.Dms.Smoke.Template.PostgreSQL*') {
-              throw "environment_file './.env.smoke.relational' requires a smoke package_name (prefix 'EdFi.Dms.Smoke.Template.PostgreSQL'); got '$packageName'."
+            if ($packageName -notlike 'EdFi.Api.Smoke.Template.PostgreSql*') {
+              throw "environment_file './.env.smoke.relational' requires a smoke package_name (prefix 'EdFi.Api.Smoke.Template.PostgreSql'); got '$packageName'."
             }
           }
 
