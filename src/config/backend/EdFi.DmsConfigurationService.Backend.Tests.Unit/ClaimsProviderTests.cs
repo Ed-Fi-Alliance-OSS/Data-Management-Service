@@ -78,6 +78,17 @@ public class ClaimsProviderTests
         }
 
         [Test]
+        public void It_loads_embedded_ds61_claims_when_version_is_6_1()
+        {
+            ClaimsProvider provider = CreateProvider("6.1");
+
+            ClaimsLoadResult result = provider.LoadClaimsFromSource();
+
+            Assert.That(result.Failures, Is.Empty);
+            Assert.That(result.Nodes, Is.Not.Null);
+        }
+
+        [Test]
         public void It_fails_fast_when_no_embedded_claims_exist_for_the_version()
         {
             ClaimsProvider provider = CreateProvider("9.9");

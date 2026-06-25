@@ -108,6 +108,42 @@ public class Given_Embedded_Claims_Json
     }
 
     [Test]
+    public void It_defines_ds61_claims_with_dms_operational_claim_sets_and_normalized_claim_names()
+    {
+        JsonObject claims = LoadEmbeddedClaims("ds61");
+        JsonArray claimSets = claims["claimSets"]!.AsArray();
+
+        claimSets
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>())
+            .Should()
+            .Contain([
+                "E2E-NameSpaceBasedClaimSet",
+                "E2E-NoFurtherAuthRequiredClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+                "SeedLoader",
+                "EdFiODSAdminApp",
+            ]);
+
+        ClaimNames(claims["claimsHierarchy"]!)
+            .Should()
+            .NotContain(claimName => claimName.Contains("/ods/identity/claims", StringComparison.Ordinal));
+
+        SeedLoaderGrant? epdmGrant = FindSeedLoaderGrant(
+            claims["claimsHierarchy"]!,
+            "http://ed-fi.org/identity/claims/domains/epdm",
+            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+        );
+
+        epdmGrant.Should().NotBeNull();
+        epdmGrant!.HasCreate.Should().BeTrue();
+        epdmGrant.HasOverride.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_projects_ODS_effective_people_CRUD_claim_metadata()
     {
         const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
@@ -211,6 +247,56 @@ public class Given_Embedded_Claims_Json
     }
 
     private sealed record SeedLoaderGrant(bool HasCreate, bool HasOverride);
+
+    private static IEnumerable<string> ClaimNames(JsonNode node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                if (item is null)
+                {
+                    continue;
+                }
+
+                foreach (string itemClaimName in ClaimNames(item))
+                {
+                    yield return itemClaimName;
+                }
+            }
+
+            yield break;
+        }
+
+        if (node is not JsonObject obj)
+        {
+            yield break;
+        }
+
+        if (
+            obj.TryGetPropertyValue("name", out JsonNode? nameNode)
+            && nameNode?.GetValue<string>() is string claimName
+        )
+        {
+            yield return claimName;
+        }
+
+        if (obj.TryGetPropertyValue("claims", out JsonNode? claimsNode) && claimsNode is JsonArray claims)
+        {
+            foreach (JsonNode? child in claims)
+            {
+                if (child is null)
+                {
+                    continue;
+                }
+
+                foreach (string childClaimName in ClaimNames(child))
+                {
+                    yield return childClaimName;
+                }
+            }
+        }
+    }
 
     private static SeedLoaderGrant? FindSeedLoaderGrant(
         JsonNode node,
@@ -386,10 +472,10 @@ public class Given_Embedded_Claims_Json
     private static string EdFiClaim(string claimName) =>
         $"http://ed-fi.org/identity/claims/ed-fi/{claimName}";
 
-    private static JsonObject LoadEmbeddedClaims()
+    private static JsonObject LoadEmbeddedClaims(string standardFolder = "ds52")
     {
         Assembly assembly = typeof(ClaimsProvider).Assembly;
-        string resourceName = $"{assembly.GetName().Name}.Claims.Standards.ds52.Claims.json";
+        string resourceName = $"{assembly.GetName().Name}.Claims.Standards.{standardFolder}.Claims.json";
 
         using Stream stream =
             assembly.GetManifestResourceStream(resourceName)
