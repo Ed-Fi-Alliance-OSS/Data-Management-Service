@@ -9,9 +9,9 @@ After this work, the relational backend is the only DMS runtime backend path. Th
 ## Assumptions
 
 - PostgreSQL and MSSQL remain supported datastore engines for the relational backend.
-- `AppSettings:Datastore` may still be needed to select the database engine (`postgresql` or `mssql`). Do not remove it unless the product is also dropping multi-engine support.
+- `AppSettings:Datastore` will still be needed to select the database engine (`postgresql` or `mssql`).
 - `AppSettings:UseRelationalBackend`, `USE_RELATIONAL_BACKEND`, `AppSettings__UseRelationalBackend`, and the `relational-backend` E2E category/filter lane exist only because the relational backend was optional. These should be removed everywhere.
-- Existing databases provisioned with the legacy document schema are not compatible with the relational backend. Document the upgrade impact as "reprovision with generated relational DDL" unless a separate migration story is created.
+- There are no migration concerns.
 
 ## Phase 1: Inventory And Guardrails
 
@@ -30,7 +30,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
    - CI job "Run Old PostgreSQL Integration Tests"
    - Docker image copies/publishes of old backend or installer artifacts that only exist for legacy schema setup
 
-3. Decide whether historical design notes under `reference/` should be left untouched. Runtime code, tests, CI, Docker, docs, and developer instructions should not keep active legacy-backend guidance.
+3. Historical design notes should be left untouched but runtime code, tests, CI, Docker, docs, and developer instructions should not keep active legacy-backend guidance.
 
 ## Phase 2: Move Required PostgreSQL Infrastructure Out Of Old.Postgresql
 
@@ -58,7 +58,7 @@ The new PostgreSQL relational backend still consumes a few useful classes from t
    - old startup validator/cache/initializer classes under `Old.Postgresql/Startup`
    - embedded SQL scripts under `Old.Postgresql/Deploy/Scripts`
 
-4. Delete `AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter` unless a non-legacy caller remains. The relational path should use the relational token-info lookup registrations:
+4. Delete `AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter`. The relational path should use the relational token-info lookup registrations:
 
    - PostgreSQL: `AddPostgresqlRelationalTokenInfoEducationOrganizationLookup`
    - MSSQL: `AddMssqlRelationalTokenInfoEducationOrganizationLookup`
