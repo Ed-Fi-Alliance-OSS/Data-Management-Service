@@ -256,7 +256,8 @@ internal static class ProfileWritePipeline
             profileName,
             resourceName,
             method,
-            operation
+            operation,
+            resourceIdentityJsonPaths
         );
 
         CreatabilityResult creatabilityResult = creatabilityAnalyzer.Analyze(

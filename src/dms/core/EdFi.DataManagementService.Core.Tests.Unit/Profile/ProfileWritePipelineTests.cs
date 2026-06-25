@@ -942,4 +942,121 @@ public abstract class ProfileWritePipelineTests
             _result.IsSuccess.Should().BeTrue();
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  Create with a profile hiding a resource identity reference — the
+    //  identity reference is implicitly creatable, so the POST is not rejected
+    //  (DMS-1229 Calendar case, modeled on the StudentSchoolAssociation fixture).
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Hidden_Identity_Reference : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing studentReference and entryDate but NOT schoolReference.
+        private static ContentTypeDefinition BuildProfileHidingSchoolReference() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfileHidingSchoolReference(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                resourceIdentityJsonPaths:
+                [
+                    "$.studentReference.studentUniqueId",
+                    "$.schoolReference.schoolId",
+                    "$.entryDate",
+                ]
+            );
+        }
+
+        [Test]
+        public void It_should_not_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Create with a profile hiding a NON-identity required member — identity
+    //  preservation must not leak; the POST is still rejected for creatability.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Hidden_NonIdentity_Required_Member_And_Identity_Paths
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing studentReference and schoolReference but NOT entryDate.
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // entryDate is required and hidden, and is NOT among the supplied identity paths,
+            // so the identity exemption must not apply to it.
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                resourceIdentityJsonPaths:
+                [
+                    "$.studentReference.studentUniqueId",
+                    "$.schoolReference.schoolId",
+                ]
+            );
+        }
+
+        [Test]
+        public void It_should_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .NotBeEmpty();
+        }
+    }
 }
