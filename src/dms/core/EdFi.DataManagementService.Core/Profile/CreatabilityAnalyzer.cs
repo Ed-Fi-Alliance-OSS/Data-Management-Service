@@ -76,6 +76,25 @@ public sealed class CreatabilityAnalyzer(
     }
 
     /// <summary>
+    /// Builds the set of members treated as implicitly visible for creatability at the given
+    /// scope: members included via a collection/object/extension rule (which the scalar member
+    /// filter does not know about), plus the root resource identity members for the root scope.
+    /// </summary>
+    private IReadOnlySet<string> BuildImplicitlyVisibleMembers(string jsonScope)
+    {
+        IReadOnlySet<string> childMembers = classifier.GetExplicitChildMemberNames(jsonScope);
+
+        if (jsonScope != "$" || _rootImplicitlyVisibleIdentityMembers.Count == 0)
+        {
+            return childMembers;
+        }
+
+        var merged = new HashSet<string>(childMembers);
+        merged.UnionWith(_rootImplicitlyVisibleIdentityMembers);
+        return merged;
+    }
+
+    /// <summary>
     /// Analyzes creatability for all scope states and collection items, enriching
     /// them with Creatable flags and emitting category-4 failures as needed.
     /// </summary>
@@ -814,7 +833,8 @@ public sealed class CreatabilityAnalyzer(
             var crResult = CreationRequiredMemberResolver.Resolve(
                 _scopesByJsonScope[collectionJsonScope],
                 effectiveRequired,
-                memberFilter
+                memberFilter,
+                BuildImplicitlyVisibleMembers(collectionJsonScope)
             );
 
             bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;
@@ -892,7 +912,7 @@ public sealed class CreatabilityAnalyzer(
             _scopesByJsonScope[jsonScope],
             effectiveRequired,
             memberFilter,
-            jsonScope == "$" ? _rootImplicitlyVisibleIdentityMembers : null
+            BuildImplicitlyVisibleMembers(jsonScope)
         );
 
         bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;
@@ -940,7 +960,8 @@ public sealed class CreatabilityAnalyzer(
         var crResult = CreationRequiredMemberResolver.Resolve(
             _scopesByJsonScope[jsonScope],
             effectiveRequired,
-            memberFilter
+            memberFilter,
+            BuildImplicitlyVisibleMembers(jsonScope)
         );
 
         bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;

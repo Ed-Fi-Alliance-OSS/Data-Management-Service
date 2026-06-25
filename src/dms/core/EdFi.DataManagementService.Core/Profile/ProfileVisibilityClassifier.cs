@@ -195,6 +195,40 @@ public sealed class ProfileVisibilityClassifier
     public CollectionItemFilter? GetCollectionItemFilter(string jsonScope) => _cache[jsonScope].ItemFilter;
 
     /// <summary>
+    /// Returns the member names explicitly included at the specified scope as
+    /// <c>&lt;Collection&gt;</c>, <c>&lt;Object&gt;</c>, or <c>&lt;Extension&gt;</c> rules
+    /// (as opposed to scalar <c>&lt;Property&gt;</c> rules, which appear in the
+    /// <see cref="ScopeMemberFilter.ExplicitNames"/> set). Empty when the scope is hidden.
+    /// </summary>
+    /// <remarks>
+    /// Creatability uses this so that required members included via a collection/object/extension
+    /// rule are treated as visible. The scalar member filter only knows property names, so without
+    /// this a required collection or embedded object included via its own rule would be
+    /// misclassified as hidden.
+    /// </remarks>
+    /// <param name="jsonScope">The compiled scope identifier.</param>
+    public IReadOnlySet<string> GetExplicitChildMemberNames(string jsonScope)
+    {
+        CachedScopeEntry entry = _cache[jsonScope];
+
+        if (entry.IsHidden || entry.Node is null)
+        {
+            return _emptyChildMemberNames;
+        }
+
+        ProfileTreeNode node = entry.Node.Value;
+        var names = new HashSet<string>(node.CollectionsByName.Keys);
+        names.UnionWith(node.ObjectsByName.Keys);
+        if (node.ExtensionsByName is not null)
+        {
+            names.UnionWith(node.ExtensionsByName.Keys);
+        }
+        return names;
+    }
+
+    private static readonly IReadOnlySet<string> _emptyChildMemberNames = new HashSet<string>();
+
+    /// <summary>
     /// Returns the member filter for the specified scope, describing which properties
     /// are explicitly named and whether the mode is include-only, exclude-only, or
     /// include-all.

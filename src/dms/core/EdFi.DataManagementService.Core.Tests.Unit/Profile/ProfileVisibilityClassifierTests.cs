@@ -715,4 +715,70 @@ public abstract class ProfileVisibilityClassifierTests
             _result.ExplicitNames.Should().Contain("entryTypeDescriptor");
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  GetExplicitChildMemberNames: collection/object/extension member names
+    //  defined in the profile node (used by creatability so members included
+    //  via <Collection>/<Object>/<Extension> are treated as visible)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_IncludeOnly_Profile_With_Object_And_Collection : ProfileVisibilityClassifierTests
+    {
+        private IReadOnlySet<string> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var classifier = new ProfileVisibilityClassifier(BuildIncludeOnlyProfile(), SharedFixtureScopes);
+            _result = classifier.GetExplicitChildMemberNames("$");
+        }
+
+        [Test]
+        public void It_should_include_the_object_member_name()
+        {
+            _result.Should().Contain("calendarReference");
+        }
+
+        [Test]
+        public void It_should_include_the_collection_member_name()
+        {
+            _result.Should().Contain("classPeriods");
+        }
+
+        [Test]
+        public void It_should_not_include_scalar_property_names()
+        {
+            // Scalar properties are covered by the member filter, not by the child-member set.
+            _result.Should().NotContain("studentReference");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Hidden_Scope_For_Explicit_Child_Members : ProfileVisibilityClassifierTests
+    {
+        private IReadOnlySet<string> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile listing only studentReference → calendarReference is hidden.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+            var classifier = new ProfileVisibilityClassifier(profile, SharedFixtureScopes);
+            _result = classifier.GetExplicitChildMemberNames("$.calendarReference");
+        }
+
+        [Test]
+        public void It_should_return_an_empty_set()
+        {
+            // A hidden scope has no navigable node, so no explicit child members.
+            _result.Should().BeEmpty();
+        }
+    }
 }
