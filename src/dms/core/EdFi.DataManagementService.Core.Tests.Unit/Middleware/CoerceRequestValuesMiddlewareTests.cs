@@ -19,7 +19,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
-    public class CoerceFromStringsMiddlewareTests
+    public class CoerceRequestValuesMiddlewareTests
     {
         public static Func<Task> Next()
         {
@@ -75,7 +75,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal static IPipelineStep Middleware()
         {
-            return new CoerceFromStringsMiddleware(NullLogger.Instance);
+            return new CoerceRequestValuesMiddleware(NullLogger.Instance);
         }
 
         internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -112,7 +112,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [TestFixture]
         [Parallelizable]
         public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String
-            : CoerceFromStringsMiddlewareTests
+            : CoerceRequestValuesMiddlewareTests
         {
             private RequestInfo _requestInfo = No.RequestInfo();
 
@@ -183,6 +183,136 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                         .Should()
                         .BeOneOf(JsonValueKind.True, JsonValueKind.False);
                 }
+            }
+        }
+
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Request_With_Numeric_Boolean_Aliases : CoerceRequestValuesMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                string jsonData = """
+                    {
+                        "schoolId": "1",
+                        "yearsOld": "1",
+                        "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "grade1",
+                                "isSecondary": 0
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade2",
+                                "isSecondary": 1
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade3",
+                                "isSecondary": "0"
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade4",
+                                "isSecondary": "1"
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade5",
+                                "isSecondary": " 0 "
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade6",
+                                "isSecondary": " 1 "
+                            }
+                        ],
+                        "nameOfInstitution": "school12",
+                        "webSite": "1"
+                    }
+                    """;
+
+                var frontEndRequest = new FrontendRequest(
+                    Path: "ed-fi/schools",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                await Middleware().Execute(_requestInfo, Next());
+            }
+
+            [Test]
+            public void It_coerces_numeric_boolean_aliases()
+            {
+                JsonArray gradeLevels = _requestInfo.ParsedBody["gradeLevels"]!.AsArray();
+
+                var booleanValues = gradeLevels
+                    .Select(gradeLevel => gradeLevel!["isSecondary"]!.AsValue().GetValue<bool>())
+                    .ToList();
+
+                booleanValues.Should().Equal(false, true, false, true, false, true);
+            }
+
+            [Test]
+            public void It_only_coerces_schema_boolean_paths()
+            {
+                _requestInfo.ParsedBody["webSite"]!
+                    .AsValue()
+                    .GetValueKind()
+                    .Should()
+                    .Be(JsonValueKind.String);
+            }
+        }
+
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Request_With_Invalid_Numeric_Boolean_Aliases : CoerceRequestValuesMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                string jsonData = """
+                    {
+                        "schoolId": "1",
+                        "yearsOld": "1",
+                        "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "grade1",
+                                "isSecondary": 2
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade2",
+                                "isSecondary": "2"
+                            }
+                        ],
+                        "nameOfInstitution": "school12"
+                    }
+                    """;
+
+                var frontEndRequest = new FrontendRequest(
+                    Path: "ed-fi/schools",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                await Middleware().Execute(_requestInfo, Next());
+            }
+
+            [Test]
+            public void It_leaves_invalid_aliases_for_document_validation()
+            {
+                JsonArray gradeLevels = _requestInfo.ParsedBody["gradeLevels"]!.AsArray();
+
+                gradeLevels[0]!["isSecondary"]!.AsValue().GetValueKind().Should().Be(JsonValueKind.Number);
+                gradeLevels[1]!["isSecondary"]!.AsValue().GetValueKind().Should().Be(JsonValueKind.String);
             }
         }
     }

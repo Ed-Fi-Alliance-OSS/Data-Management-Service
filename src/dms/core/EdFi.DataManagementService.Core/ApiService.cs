@@ -201,14 +201,14 @@ internal class ApiService : IApiService
             new CoerceDateTimesMiddleware(_logger),
         ]);
 
-        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-        if (_appSettings.Value.BypassStringTypeCoercion)
+        // CoerceRequestValuesMiddleware should be immediately before ValidateDocumentMiddleware
+        if (_appSettings.Value.BypassTypeCoercion)
         {
-            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
+            _logger.LogDebug("Bypassing CoerceRequestValuesMiddleware");
         }
         else
         {
-            steps.Add(new CoerceFromStringsMiddleware(_logger));
+            steps.Add(new CoerceRequestValuesMiddleware(_logger));
         }
 
         steps.AddRange([
@@ -310,14 +310,14 @@ internal class ApiService : IApiService
             new CoerceDateTimesMiddleware(_logger),
         ]);
 
-        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-        if (_appSettings.Value.BypassStringTypeCoercion)
+        // CoerceRequestValuesMiddleware should be immediately before ValidateDocumentMiddleware
+        if (_appSettings.Value.BypassTypeCoercion)
         {
-            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
+            _logger.LogDebug("Bypassing CoerceRequestValuesMiddleware");
         }
         else
         {
-            steps.Add(new CoerceFromStringsMiddleware(_logger));
+            steps.Add(new CoerceRequestValuesMiddleware(_logger));
         }
 
         steps.AddRange([

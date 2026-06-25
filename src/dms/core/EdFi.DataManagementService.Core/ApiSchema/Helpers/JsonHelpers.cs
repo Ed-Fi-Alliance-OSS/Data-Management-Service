@@ -281,21 +281,57 @@ internal static class JsonHelpers
     }
 
     /// <summary>
-    /// Helper to replace a boolean data type that was submitted as a string with its actual
-    /// boolean value. Does not handle parsing failures as these will be dealt with in validation.
+    /// Helper to replace a boolean data type alias with its actual boolean value.
+    /// Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
-    public static void TryCoerceStringToBoolean(this JsonNode jsonNode)
+    public static void TryCoerceToBoolean(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
+
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
-            // Boolean value was submitted as string, must fix.
-            string stringValue = jsonValue.GetValue<string>();
-            if (Boolean.TryParse(stringValue, out bool booleanValue))
+            string stringValue = jsonValue.GetValue<string>().Trim();
+            if (bool.TryParse(stringValue, out bool booleanValue))
             {
                 jsonNode.ReplaceWith(booleanValue);
             }
+            else if (TryGetNumericBooleanAlias(stringValue, out bool numericBooleanValue))
+            {
+                jsonNode.ReplaceWith(numericBooleanValue);
+            }
         }
+        else if (
+            jsonValue.GetValueKind() == JsonValueKind.Number
+            && jsonValue.TryGetValue(out int numericValue)
+            && TryGetNumericBooleanAlias(numericValue, out bool booleanValue)
+        )
+        {
+            jsonNode.ReplaceWith(booleanValue);
+        }
+    }
+
+    private static bool TryGetNumericBooleanAlias(string value, out bool booleanValue)
+    {
+        if (value is "0" or "1")
+        {
+            booleanValue = value is "1";
+            return true;
+        }
+
+        booleanValue = false;
+        return false;
+    }
+
+    private static bool TryGetNumericBooleanAlias(int value, out bool booleanValue)
+    {
+        if (value is 0 or 1)
+        {
+            booleanValue = value is 1;
+            return true;
+        }
+
+        booleanValue = false;
+        return false;
     }
 
     /// <summary>

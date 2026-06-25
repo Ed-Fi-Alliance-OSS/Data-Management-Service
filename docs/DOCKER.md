@@ -37,7 +37,7 @@ POSTGRES_HOST=<DNS or IP address of the PostgreSQL Server, i.e. sql.somedns.org 
 LOG_LEVEL=<serilog log level i.e. Information>
 MASK_REQUEST_BODY_IN_LOGS:<Mask incoming HTTP POST and PUT request body structures in DEBUG logging, default value is true>
 OAUTH_TOKEN_ENDPOINT=<Authentication service url>
-BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeric values represented as strings to their natural type. Eg. "true" = true>
+BYPASS_TYPE_COERCION=<Boolean whether to bypass all schema-guided request value type coercion. This includes boolean strings, numeric strings, and boolean numeric aliases. Eg. "true" = true and 1 = true for schema boolean fields>
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
 ALLOW_IDENTITY_UPDATE_OVERRIDES=<Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates. Eg "accountabilityRatings,bellSchedules">
 DATABASE_CONNECTION_STRING=<The non-admin database connection string>
@@ -58,7 +58,7 @@ POSTGRES_HOST=localhost
 LOG_LEVEL=Information
 MASK_REQUEST_BODY_IN_LOGS=true
 OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
-BYPASS_STRING_COERCION=false
+BYPASS_TYPE_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
 ALLOW_IDENTITY_UPDATE_OVERRIDES=""
 DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;

@@ -7,7 +7,10 @@ namespace EdFi.DataManagementService.Core.Configuration;
 
 public class AppSettings
 {
-    public bool BypassStringTypeCoercion { get; set; }
+    /// <summary>
+    /// Bypasses schema-guided request value type coercion.
+    /// </summary>
+    public bool BypassTypeCoercion { get; set; }
 
     /// <summary>
     /// Comma separated list of resource names that allow identity updates,

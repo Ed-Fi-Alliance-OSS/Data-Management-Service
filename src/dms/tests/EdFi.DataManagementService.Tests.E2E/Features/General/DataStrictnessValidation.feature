@@ -13,9 +13,6 @@ Feature: Data strictness
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
-        # for schema boolean fields (0/1 and "0"/"1").
-        @ignore
         @API-236
         @relational-backend
         @relational-ci-shard-4
@@ -43,9 +40,6 @@ Feature: Data strictness
                        }
                   """
 
-        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
-        # for schema boolean fields (0/1 and "0"/"1").
-        @ignore
         @API-237
         @relational-backend
         @relational-ci-shard-4
@@ -256,9 +250,6 @@ Feature: Data strictness
                        }
                   """
 
-        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
-        # for schema boolean fields (0/1 and "0"/"1").
-        @ignore
         @API-244
         @relational-backend
         @relational-ci-shard-4
@@ -286,9 +277,6 @@ Feature: Data strictness
                        }
                   """
 
-        # DMS-1225: Quarantined until DMS matches ODS numeric boolean alias coercion
-        # for schema boolean fields (0/1 and "0"/"1").
-        @ignore
         @API-245
         @relational-backend
         @relational-ci-shard-4

@@ -138,26 +138,28 @@ How leading and trailing whitespace is handled depends on the property:
   or trailing whitespace preserved. Whether the property is required or optional
   does not change this — only the property's pattern does.
 
-### Type coercion from strings
+### Type coercion
 
-Values submitted as JSON strings are coerced to the type defined by the resource
-when the conversion is unambiguous:
+Values are coerced to the type defined by the resource when the conversion is
+schema-guided and unambiguous:
 
 - **Booleans.** The strings `"true"` and `"false"` (any letter casing) are
-  accepted and stored as booleans. Numeric strings such as `"1"` and `"0"` are
-  **not** interpreted as booleans.
+  accepted and stored as booleans. Numeric aliases `1`, `0`, `"1"`, and `"0"`
+  are accepted for schema boolean fields and stored as booleans. Other numeric
+  boolean aliases, such as `2` and `"2"`, are rejected.
 - **Numbers and decimals.** Numeric strings such as `"100"` or `"3.14"` are
   accepted and stored as numbers.
 
-If a string cannot be converted to the expected type, the request fails
+If a value cannot be converted to the expected type, the request fails
 validation with **HTTP 400**.
 
 > [!NOTE]
-> String type coercion is enabled by default but can be disabled by the
-> `BypassStringTypeCoercion` configuration setting (see
-> [Configuration](./CONFIGURATION.md)). When it is disabled, string values are
-> not coerced, so a string such as `"true"` or `"100"` submitted for a boolean or
-> numeric field is rejected with **HTTP 400** rather than being converted.
+> Type coercion is enabled by default but can be disabled by the
+> `BypassTypeCoercion` configuration setting (see
+> [Configuration](./CONFIGURATION.md)). When it is disabled, request values must
+> already match the JSON Schema type. For example, `"true"` submitted for a
+> boolean field, `"100"` submitted for a numeric field, or `1` submitted for a
+> boolean field is rejected with **HTTP 400** rather than being converted.
 
 ### Date and date-time normalization
 
