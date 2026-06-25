@@ -19,7 +19,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
-    public class CoerceFromStringsMiddlewareTests
+    public class CoerceRequestValuesMiddlewareTests
     {
         public static Func<Task> Next()
         {
@@ -75,7 +75,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal static IPipelineStep Middleware()
         {
-            return new CoerceFromStringsMiddleware(NullLogger.Instance);
+            return new CoerceRequestValuesMiddleware(NullLogger.Instance);
         }
 
         internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -112,7 +112,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [TestFixture]
         [Parallelizable]
         public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String
-            : CoerceFromStringsMiddlewareTests
+            : CoerceRequestValuesMiddlewareTests
         {
             private RequestInfo _requestInfo = No.RequestInfo();
 
@@ -188,7 +188,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         [TestFixture]
         [Parallelizable]
-        public class Given_A_Request_With_Numeric_Boolean_Aliases : CoerceFromStringsMiddlewareTests
+        public class Given_A_Request_With_Numeric_Boolean_Aliases : CoerceRequestValuesMiddlewareTests
         {
             private RequestInfo _requestInfo = No.RequestInfo();
 
@@ -215,6 +215,14 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                             {
                                 "gradeLevelDescriptor": "grade4",
                                 "isSecondary": "1"
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade5",
+                                "isSecondary": " 0 "
+                            },
+                            {
+                                "gradeLevelDescriptor": "grade6",
+                                "isSecondary": " 1 "
                             }
                         ],
                         "nameOfInstitution": "school12",
@@ -244,7 +252,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     .Select(gradeLevel => gradeLevel!["isSecondary"]!.AsValue().GetValue<bool>())
                     .ToList();
 
-                booleanValues.Should().Equal(false, true, false, true);
+                booleanValues.Should().Equal(false, true, false, true, false, true);
             }
 
             [Test]
@@ -260,7 +268,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         [TestFixture]
         [Parallelizable]
-        public class Given_A_Request_With_Invalid_Numeric_Boolean_Aliases : CoerceFromStringsMiddlewareTests
+        public class Given_A_Request_With_Invalid_Numeric_Boolean_Aliases : CoerceRequestValuesMiddlewareTests
         {
             private RequestInfo _requestInfo = No.RequestInfo();
 

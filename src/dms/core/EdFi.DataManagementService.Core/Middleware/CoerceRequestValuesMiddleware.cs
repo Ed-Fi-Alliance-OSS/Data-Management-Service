@@ -14,12 +14,12 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// For schema-guided type aliases such as numeric boolean aliases and numeric strings,
 /// this middleware tries to coerce values back to their proper type before validation.
 /// </summary>
-internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
+internal class CoerceRequestValuesMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
-            "Entering CoerceFromStringsMiddleware - {TraceId}",
+            "Entering CoerceRequestValuesMiddleware - {TraceId}",
             requestInfo.FrontendRequest.TraceId.Value
         );
 

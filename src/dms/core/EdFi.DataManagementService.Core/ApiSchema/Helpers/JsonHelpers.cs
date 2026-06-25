@@ -290,7 +290,7 @@ internal static class JsonHelpers
 
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
-            string stringValue = jsonValue.GetValue<string>();
+            string stringValue = jsonValue.GetValue<string>().Trim();
             if (bool.TryParse(stringValue, out bool booleanValue))
             {
                 jsonNode.ReplaceWith(booleanValue);
