@@ -713,6 +713,15 @@ public sealed record ReferenceIdentityBinding
     public JsonPathExpression ReferenceJsonPath { get; init; }
 
     public DbColumnName Column { get; init; }
+
+    /// <summary>
+    /// The override-free convention column name computed by <c>ReferenceBindingPass</c> before any
+    /// <c>relational.nameOverrides</c> are applied. Used by
+    /// <c>AbstractIdentityTableAndUnionViewDerivationPass</c> to name abstract identity columns
+    /// so they match the concrete reference binding's override-free name by construction.
+    /// Intentionally not serialized — it is a derivation-time scratch value only.
+    /// </summary>
+    public DbColumnName? ConventionColumn { get; init; }
 }
 
 /// <summary>

@@ -384,19 +384,13 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         IReadOnlyList<ConcreteResourceMetadata> members
     )
     {
-        // Resolve, for each identity path, the reference-object boundary, the target-side identity path,
-        // and the duplicate-field occurrence counts. Counts come from the owning reference mapping's
-        // bindings (mirroring concrete BuildReferenceIdentityFieldBaseNameCounts over
-        // mapping.ReferenceJsonPaths), NOT from the abstract resource's identityJsonPaths — so the
-        // duplicate-field fallback in BuildAbstractIdentityColumnName matches concrete naming exactly even
-        // when the abstract identity covers only a subset of the reference's identity fields.
+        // Resolve, for each identity path, the convention column name carried from the concrete
+        // reference binding (the override-free name set by ReferenceBindingPass). This ensures
+        // abstract identity column names are identical by construction to the concrete binding's
+        // override-free name, eliminating any re-derivation divergence.
         var referenceResolutionByIdentityPath = identityJsonPaths.ToDictionary(
             identityPath => identityPath.Canonical,
-            identityPath => ResolveReferenceObjectPath(identityPath, abstractResource, members),
-            StringComparer.Ordinal
-        );
-
-        IReadOnlyDictionary<string, int> emptyBaseNameCounts = new Dictionary<string, int>(
+            identityPath => ResolveReferenceConventionColumn(identityPath, abstractResource, members),
             StringComparer.Ordinal
         );
 
@@ -440,19 +434,25 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             }
 
             var referenceResolution = referenceResolutionByIdentityPath[identityPath.Canonical];
-            var referenceFieldBaseNameCounts =
-                referenceResolution?.ReferenceFieldBaseNameCounts ?? emptyBaseNameCounts;
+
+            string columnNameValue;
+
+            if (referenceResolution is not null)
+            {
+                // Reference-backed: reuse the convention column name carried from the concrete binding.
+                columnNameValue = referenceResolution.ConventionColumn.Value;
+            }
+            else
+            {
+                // Plain scalar (no reference): derive from the identity path directly.
+                columnNameValue = BuildAbstractIdentityColumnName(
+                    identityPath,
+                    signature.Kind == ColumnKind.DescriptorFk
+                );
+            }
 
             var identityColumn = new DbColumnModel(
-                new DbColumnName(
-                    BuildAbstractIdentityColumnName(
-                        identityPath,
-                        referenceResolution?.ReferenceObjectPath,
-                        referenceResolution?.TargetIdentityPath,
-                        signature.Kind == ColumnKind.DescriptorFk,
-                        referenceFieldBaseNameCounts
-                    )
-                ),
+                new DbColumnName(columnNameValue),
                 signature.Kind,
                 signature.ScalarType,
                 IsNullable: false,
@@ -467,11 +467,15 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
-    /// Resolves the reference-object boundary for an abstract identity path by scanning the concrete
-    /// members' document reference bindings. Returns <see langword="null"/> for plain scalar paths.
-    /// Throws <see cref="InvalidOperationException"/> when members disagree on the reference boundary.
+    /// Resolves the override-free convention column name for an abstract identity path by scanning the
+    /// concrete members' document reference bindings for a matching <see cref="ReferenceIdentityBinding"/>.
+    /// Returns <see langword="null"/> for plain scalar paths (no reference binding found).
+    /// Throws <see cref="InvalidOperationException"/> when members yield different convention column names
+    /// for the same abstract identity path (ambiguous abstract identity naming), or when a matched binding
+    /// has a null <see cref="ReferenceIdentityBinding.ConventionColumn"/> (it must be set by
+    /// <c>ReferenceBindingPass</c>).
     /// </summary>
-    private static ReferenceResolution? ResolveReferenceObjectPath(
+    private static ReferenceResolution? ResolveReferenceConventionColumn(
         JsonPathExpression identityPath,
         QualifiedResourceName abstractResource,
         IReadOnlyList<ConcreteResourceMetadata> members
@@ -501,34 +505,32 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         continue;
                     }
 
-                    var candidate = refBinding.ReferenceObjectPath;
+                    if (identityBinding.ConventionColumn is not { } conventionColumn)
+                    {
+                        throw new InvalidOperationException(
+                            $"Abstract identity path '{identityPath.Canonical}' for resource "
+                                + $"'{FormatResource(abstractResource)}' matched a reference identity binding "
+                                + $"on member '{FormatResource(member.Resource)}' with a null ConventionColumn. "
+                                + "ConventionColumn must be set by ReferenceBindingPass."
+                        );
+                    }
 
                     if (resolved is null)
                     {
-                        // Capture the target-side identity path (binding.IdentityJsonPath) and the
-                        // duplicate-field occurrence counts from this reference mapping's bindings so the
-                        // fallback in BuildAbstractIdentityColumnName matches concrete naming exactly.
-                        resolved = new ReferenceResolution(
-                            candidate,
-                            identityBinding.IdentityJsonPath,
-                            BuildReferenceIdentityFieldBaseNameCounts(
-                                refBinding.ReferenceObjectPath,
-                                refBinding.IdentityBindings.Select(ib => ib.ReferenceJsonPath)
-                            )
-                        );
+                        resolved = new ReferenceResolution(conventionColumn);
                     }
                     else if (
                         !string.Equals(
-                            resolved.ReferenceObjectPath.Canonical,
-                            candidate.Canonical,
+                            resolved.ConventionColumn.Value,
+                            conventionColumn.Value,
                             StringComparison.Ordinal
                         )
                     )
                     {
                         throw new InvalidOperationException(
                             $"Abstract identity path '{identityPath.Canonical}' for resource "
-                                + $"'{FormatResource(abstractResource)}' has ambiguous reference-object "
-                                + $"boundaries: '{resolved.ReferenceObjectPath.Canonical}' vs '{candidate.Canonical}'."
+                                + $"'{FormatResource(abstractResource)}' has ambiguous abstract identity naming: "
+                                + $"convention column '{resolved.ConventionColumn.Value}' vs '{conventionColumn.Value}'."
                         );
                     }
 
@@ -541,15 +543,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
-    /// The resolved reference-object boundary for an abstract identity path plus the target-side identity
-    /// path on the referenced resource and the duplicate-field occurrence counts for the owning reference
-    /// mapping (both used by the duplicate-field naming fallback).
+    /// The resolved override-free convention column name for a reference-backed abstract identity path,
+    /// carried directly from the concrete reference binding set by <c>ReferenceBindingPass</c>.
     /// </summary>
-    private sealed record ReferenceResolution(
-        JsonPathExpression ReferenceObjectPath,
-        JsonPathExpression TargetIdentityPath,
-        IReadOnlyDictionary<string, int> ReferenceFieldBaseNameCounts
-    );
+    private sealed record ReferenceResolution(DbColumnName ConventionColumn);
 
     /// <summary>
     /// Resolves a canonical column signature that can safely represent all participating member signatures.

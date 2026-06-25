@@ -1784,10 +1784,11 @@ public class Given_Abstract_Identity_Column_Naming_With_Composite_Reference
 }
 
 /// <summary>
-/// Test fixture for abstract identity column naming: relational.nameOverrides is not propagated.
-/// A concrete member carries a relational.nameOverrides entry that renames the physical reference
-/// identity column. The abstract identity column must use the convention name, not the override.
-/// Convention: School_SchoolId. Override (on concrete): School_CampusId.
+/// Test fixture for abstract identity column naming: relational.nameOverrides is not propagated, and the
+/// reference base name comes from the schema MappingKey ("SchoolBase"), not the JSON path segment
+/// ("schoolReference" -> "School"). The concrete member carries a nameOverrides entry renaming its
+/// physical reference identity column; the abstract identity column must use the MappingKey-derived
+/// convention name (SchoolBase_SchoolId), matching concrete naming exactly.
 /// </summary>
 [TestFixture]
 public class Given_Abstract_Identity_Column_Naming_With_Name_Override
@@ -1826,8 +1827,9 @@ public class Given_Abstract_Identity_Column_Naming_With_Name_Override
     }
 
     /// <summary>
-    /// The abstract identity column keeps the convention name (School_SchoolId), not the overridden
-    /// physical name (School_CampusId) that the concrete member applies via relational.nameOverrides.
+    /// The abstract identity column uses the MappingKey-derived convention name (SchoolBase_SchoolId),
+    /// matching concrete naming — not the "schoolReference" path-segment form (School_SchoolId) and not
+    /// the concrete relational.nameOverrides physical name.
     /// </summary>
     [Test]
     public void It_should_name_abstract_identity_column_by_convention_ignoring_concrete_name_override()
@@ -1836,8 +1838,11 @@ public class Given_Abstract_Identity_Column_Naming_With_Name_Override
             .TableModel.Columns.Select(column => column.ColumnName.Value)
             .ToArray();
 
-        columnNames.Should().Contain("School_SchoolId");
-        columnNames.Should().NotContain("School_CampusId");
+        // MappingKey ("SchoolBase") derived, matching concrete — not the path segment ("School").
+        columnNames.Should().Contain("SchoolBase_SchoolId");
+        columnNames.Should().NotContain("School_SchoolId");
+        // The concrete relational.nameOverrides ("campusId") is not propagated to the abstract column.
+        columnNames.Should().NotContain(name => name.Contains("ampus", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

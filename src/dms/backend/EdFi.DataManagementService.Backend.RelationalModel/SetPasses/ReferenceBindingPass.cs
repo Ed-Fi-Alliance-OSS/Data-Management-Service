@@ -161,11 +161,15 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
             foreach (var identityBinding in mapping.ReferenceJsonPaths)
             {
-                var identityPartBaseName = ResolveReferenceIdentityPartBaseName(
+                var conventionIdentityPartBaseName = ResolveReferenceIdentityPartBaseName(
                     mapping.ReferenceObjectPath,
                     identityBinding,
                     referenceIdentityFieldBaseNameCounts
                 );
+
+                // identityPartBaseName starts at the override-free convention name; may be replaced
+                // by a nameOverride. The convention name is preserved separately for ConventionColumn.
+                var identityPartBaseName = conventionIdentityPartBaseName;
 
                 if (
                     builderContext.TryGetNameOverride(
@@ -192,6 +196,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     );
                     var originalDescriptorColumnName = RelationalNameConventions.DescriptorIdColumnName(
                         $"{originalReferenceBaseName}_{identityPartBaseName}"
+                    );
+                    // Override-free, MappingKey-derived convention name (matches concrete's override-free
+                    // naming exactly, including role-named references where MappingKey != path segment).
+                    var conventionDescriptorColumnName = RelationalNameConventions.DescriptorIdColumnName(
+                        $"{originalReferenceBaseName}_{conventionIdentityPartBaseName}"
                     );
                     var descriptorColumn = new DbColumnModel(
                         descriptorColumnName,
@@ -223,6 +232,9 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                             identityBinding.ReferenceJsonPath,
                             descriptorColumnName
                         )
+                        {
+                            ConventionColumn = conventionDescriptorColumnName,
+                        }
                     );
 
                     continue;
@@ -257,6 +269,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                 var originalColumnName = new DbColumnName(
                     $"{originalReferenceBaseName}_{identityPartBaseName}"
                 );
+                // Override-free, MappingKey-derived convention name (matches concrete's override-free
+                // naming exactly, including role-named references where MappingKey != path segment).
+                var conventionColumnName = new DbColumnName(
+                    $"{originalReferenceBaseName}_{conventionIdentityPartBaseName}"
+                );
                 var scalarColumn = new DbColumnModel(
                     columnName,
                     ColumnKind.Scalar,
@@ -273,6 +290,9 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                         identityBinding.ReferenceJsonPath,
                         columnName
                     )
+                    {
+                        ConventionColumn = conventionColumnName,
+                    }
                 );
             }
 
