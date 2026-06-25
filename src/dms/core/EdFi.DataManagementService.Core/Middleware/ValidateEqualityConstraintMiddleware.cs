@@ -29,8 +29,13 @@ internal class ValidateEqualityConstraintMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        // DMS-1229: validate against the profile-shaped body when a writable profile applied, so a
+        // submitted member the profile hides (e.g. a collection stripped by the shaper) cannot
+        // trigger a false equality-constraint failure. This mirrors the array-uniqueness validators
+        // and the "extract raw, restrict to the shaped surface at the point of use" backend pattern.
+        // Non-profile writes keep validating the raw parsed body.
         Dictionary<string, string[]> validationErrors = _equalityConstraintValidator.Validate(
-            requestInfo.ParsedBody,
+            ProfileWriteValidationBody.Effective(requestInfo),
             requestInfo.ResourceSchema.EqualityConstraints
         );
 
