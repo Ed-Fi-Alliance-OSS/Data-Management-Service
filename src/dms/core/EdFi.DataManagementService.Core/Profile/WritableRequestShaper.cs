@@ -218,22 +218,9 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
-            else
-            {
-                // Client submitted a hidden scalar member — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: classifier.GetScopeKind(jsonScope),
-                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
-                        forbiddenCanonicalMemberPaths: [memberName]
-                    )
-                );
-            }
+            // DMS-1229: a hidden submitted scalar member is accepted and stripped
+            // (omitted from the shaped body), not a ForbiddenSubmittedData failure.
+            // Existing stored values are preserved on PUT via stored-side metadata.
         }
 
         // Emit states for child non-collection scopes not encountered during the walk
@@ -281,22 +268,9 @@ public sealed class WritableRequestShaper(
         }
         else
         {
-            if (visibility == ProfileVisibilityKind.Hidden)
-            {
-                // Client submitted data for a hidden scope — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: ScopeKind.NonCollection,
-                        requestJsonPaths: [$"{requestJsonPath}"],
-                        forbiddenCanonicalMemberPaths: []
-                    )
-                );
-            }
+            // DMS-1229: a hidden submitted non-collection scope is accepted and
+            // stripped (not written, no ForbiddenSubmittedData failure). The Hidden
+            // RequestScopeState emitted above lets the backend preserve stored values.
             // Scope is absent or hidden — recursively emit states for descendant
             // non-collection scopes that cannot be encountered during the walk.
             EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
@@ -331,27 +305,14 @@ public sealed class WritableRequestShaper(
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
-            if (visibility == ProfileVisibilityKind.Hidden)
-            {
-                // Client submitted data for a hidden collection — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: ScopeKind.Collection,
-                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
-                        forbiddenCanonicalMemberPaths: []
-                    )
-                );
-            }
-            else if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            if (visibility == ProfileVisibilityKind.VisibleAbsent)
             {
                 // If VisibleAbsent, emit the array key with empty array to match expectations
                 output[memberName] = new JsonArray();
             }
+            // DMS-1229: a hidden submitted collection is accepted and stripped (not
+            // written, no ForbiddenSubmittedData failure). Stored rows are preserved
+            // on PUT via stored-side metadata.
             return;
         }
 
@@ -365,17 +326,23 @@ public sealed class WritableRequestShaper(
 
             if (!classifier.PassesCollectionItemFilter(jsonScope, item))
             {
-                // Item fails value filter — create ForbiddenSubmittedData failure
+                // DMS-1229: a submitted collection item that fails the profile value
+                // filter remains an immediate validation failure, but is typed so the
+                // API layer maps it to data-validation-failed (not data-policy-enforced).
+                // PassesCollectionItemFilter only returns false when a filter exists,
+                // so GetCollectionItemFilter is non-null here.
+                CollectionItemFilter itemFilter = classifier.GetCollectionItemFilter(jsonScope)!;
                 validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
+                    ProfileFailures.CollectionValueFilterViolation(
                         profileName: profileName,
                         resourceName: resourceName,
                         method: method,
                         operation: operation,
                         jsonScope: jsonScope,
-                        scopeKind: ScopeKind.Collection,
                         requestJsonPaths: [$"{requestJsonPath}.{memberName}[{i}]"],
-                        forbiddenCanonicalMemberPaths: []
+                        filterPropertyName: itemFilter.PropertyName,
+                        filterMode: itemFilter.FilterMode,
+                        filterValues: itemFilter.Values
                     )
                 );
                 continue;
@@ -478,21 +445,8 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
-                else
-                {
-                    validationFailures.Add(
-                        ProfileFailures.ForbiddenSubmittedData(
-                            profileName: profileName,
-                            resourceName: resourceName,
-                            method: method,
-                            operation: operation,
-                            jsonScope: jsonScope,
-                            scopeKind: ScopeKind.Collection,
-                            requestJsonPaths: [$"{itemRequestJsonPath}.{itemMemberName}"],
-                            forbiddenCanonicalMemberPaths: [itemMemberName]
-                        )
-                    );
-                }
+                // DMS-1229: a hidden submitted member inside a visible collection item
+                // is accepted and stripped, not a ForbiddenSubmittedData failure.
             }
 
             // Emit states for child non-collection scopes absent from this item
@@ -571,21 +525,12 @@ public sealed class WritableRequestShaper(
             }
             else
             {
-                if (visibility == ProfileVisibilityKind.Hidden)
-                {
-                    validationFailures.Add(
-                        ProfileFailures.ForbiddenSubmittedData(
-                            profileName: profileName,
-                            resourceName: resourceName,
-                            method: method,
-                            operation: operation,
-                            jsonScope: extScope,
-                            scopeKind: ScopeKind.NonCollection,
-                            requestJsonPaths: [$"{requestJsonPath}._ext.{extName}"],
-                            forbiddenCanonicalMemberPaths: []
-                        )
-                    );
-                }
+                // DMS-1229: a hidden submitted extension scope is accepted and
+                // stripped (omitted from the shaped body, no ForbiddenSubmittedData
+                // failure). The Hidden RequestScopeState emitted above lets the backend
+                // preserve stored extension data on PUT. This does not change invalid
+                // extension names, unsupported extension profile usage, or extension
+                // collection value-filter failures.
                 // Extension scope is absent or hidden — emit descendant states
                 EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }

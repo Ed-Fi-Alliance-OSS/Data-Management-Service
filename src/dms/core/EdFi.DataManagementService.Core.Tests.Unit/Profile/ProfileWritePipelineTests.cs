@@ -526,8 +526,10 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  5. Given_Create_With_Hidden_Required_Root_Member — C3 forbidden data
-    //     short-circuits before C4 creatability
+    //  5. Given_Create_With_Hidden_Required_Root_Member — DMS-1229: the submitted
+    //     hidden member is ignored (not a C3 failure) and the request flows to the
+    //     C4 creatability check, which rejects the create because the required
+    //     member is hidden by the profile.
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -564,7 +566,9 @@ public abstract class ProfileWritePipelineTests
         public void Setup()
         {
             // Request body includes entryDate, which is hidden by the profile.
-            // The pipeline short-circuits at C3 because forbidden data is submitted.
+            // DMS-1229: the submitted hidden value is ignored (stripped, no C3 failure),
+            // and the request flows to C4 creatability, which rejects the create because
+            // entryDate is required but hidden by the profile.
             _result = ProfileWritePipeline.Execute(
                 canonicalizedRequestBody: BuildStandardRequestBody(),
                 writeContentType: BuildProfileHidingEntryDate(),
@@ -593,24 +597,35 @@ public abstract class ProfileWritePipelineTests
         }
 
         [Test]
-        public void It_should_contain_forbidden_submitted_data_failures()
+        public void It_should_not_contain_forbidden_submitted_data_failures()
         {
-            // The pipeline short-circuits at C3 with ForbiddenSubmittedData failures
-            // because entryDate and entryTypeDescriptor are submitted but hidden by the profile.
+            // DMS-1229: the submitted hidden member is ignored, not reported as a
+            // ForbiddenSubmittedData failure.
             _result
                 .Failures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_should_contain_creatability_violation_failure()
+        {
+            // A hidden submitted value cannot satisfy create-time required members, so
+            // creatability rejects the root create just as it would when the member is
+            // omitted entirely.
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
                 .Should()
                 .NotBeEmpty();
         }
 
         [Test]
-        public void It_should_be_category_3_writable_profile_validation_failures()
+        public void It_should_be_category_4_creatability_violation()
         {
             _result
-                .Failures.Should()
-                .AllSatisfy(f =>
-                    f.Category.Should().Be(ProfileFailureCategory.WritableProfileValidationFailure)
-                );
+                .Failures.OfType<CreatabilityViolationFailure>()
+                .Should()
+                .AllSatisfy(f => f.Category.Should().Be(ProfileFailureCategory.CreatabilityViolation));
         }
     }
 

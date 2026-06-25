@@ -232,21 +232,12 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_scalar()
+        public void It_should_not_emit_validation_failures_for_hidden_submitted_members()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
-        }
-
-        [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_collection_item_scalar()
-        {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.classPeriods[0].officialAttendancePeriod"));
+            // DMS-1229: hidden submitted scalar (entryTypeDescriptor) and hidden
+            // collection-item scalar (officialAttendancePeriod) are accepted and
+            // stripped, not reported as ForbiddenSubmittedData failures.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
@@ -344,21 +335,24 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_have_failure_for_addresses_scope()
+        public void It_should_have_value_filter_failure_for_addresses_scope()
         {
             _result
                 .ValidationFailures[0]
                 .Should()
-                .BeOfType<ForbiddenSubmittedDataWritableProfileValidationFailure>();
-            var failure = (ForbiddenSubmittedDataWritableProfileValidationFailure)
+                .BeOfType<CollectionValueFilterViolationWritableProfileValidationFailure>();
+            var failure = (CollectionValueFilterViolationWritableProfileValidationFailure)
                 _result.ValidationFailures[0];
             failure.JsonScope.Should().Be("$.addresses[*]");
+            failure.FilterPropertyName.Should().Be("addressTypeDescriptor");
+            failure.FilterMode.Should().Be(FilterMode.IncludeOnly);
+            failure.FilterValues.Should().Equal("uri://ed-fi.org/AddressType#Physical");
         }
 
         [Test]
         public void It_should_have_rooted_request_json_path_in_failure()
         {
-            var failure = (ForbiddenSubmittedDataWritableProfileValidationFailure)
+            var failure = (CollectionValueFilterViolationWritableProfileValidationFailure)
                 _result.ValidationFailures[0];
             failure.RequestJsonPaths.Should().ContainSingle().Which.Should().Be("$.addresses[0]");
         }
@@ -420,6 +414,9 @@ public abstract class WritableRequestShaperTests
         public void It_should_collect_two_validation_failures()
         {
             _result.ValidationFailures.Should().HaveCount(2);
+            _result
+                .ValidationFailures.Should()
+                .AllBeOfType<CollectionValueFilterViolationWritableProfileValidationFailure>();
         }
 
         [Test]
@@ -860,12 +857,12 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_scope()
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_scope()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.calendarReference"));
+            // DMS-1229: a hidden submitted non-collection scope is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure. The
+            // Hidden scope state above lets the backend preserve stored values.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
@@ -1238,17 +1235,16 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_excluded_submitted_scalar()
+        public void It_should_not_emit_validation_failure_for_excluded_submitted_scalar()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
+            // DMS-1229: an ExcludeOnly-hidden submitted scalar is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  16. Hidden collection submitted — ForbiddenSubmittedData failure expected
+    //  16. Hidden collection submitted — accepted and stripped, no failure
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1311,12 +1307,11 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_collection()
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_collection()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+            // DMS-1229: a hidden submitted collection is accepted and stripped,
+            // not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
 
         [Test]
@@ -1374,7 +1369,7 @@ public abstract class WritableRequestShaperTests
     }
 
     // -----------------------------------------------------------------------
-    //  18. Hidden scalar member submitted with null value — ForbiddenSubmittedData expected
+    //  18. Hidden scalar member submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1410,17 +1405,17 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_scalar_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_scalar_submitted_with_null()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
+            // DMS-1229: a hidden scalar submitted with a null value is accepted
+            // and stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
+            _result.WritableRequestBody.AsObject().ContainsKey("entryTypeDescriptor").Should().BeFalse();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  19. Hidden non-collection scope submitted with null value — ForbiddenSubmittedData expected
+    //  19. Hidden non-collection scope submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1477,17 +1472,16 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_scope_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_scope_submitted_with_null()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.calendarReference"));
+            // DMS-1229: a hidden non-collection scope submitted with a null value
+            // is accepted and stripped, not reported as a failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  20. Hidden collection submitted with null value — ForbiddenSubmittedData expected
+    //  20. Hidden collection submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1548,12 +1542,93 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_collection_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_collection_submitted_with_null()
         {
+            // DMS-1229: a hidden collection submitted with a null value is
+            // accepted and stripped, not reported as a failure.
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  21. Hidden extension scope submitted — accepted and stripped, no failure
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Extension_Scope_Submitted : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include the "sample" extension →
+            // $._ext.sample is Hidden even though it is a known scope.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, ProfileTestFixtures.ExtensionFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": { "sampleField": "should be stripped" }
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_extension_scope()
+        {
+            // DMS-1229: a hidden submitted extension scope is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_not_include_hidden_extension_scope_in_shaped_body()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("_ext").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_hidden_scope_state_for_extension_scope()
+        {
+            // The Hidden scope state lets the backend preserve stored extension
+            // data during PUT merge.
             _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$._ext.sample" && s.Visibility == ProfileVisibilityKind.Hidden
+                );
         }
     }
 }

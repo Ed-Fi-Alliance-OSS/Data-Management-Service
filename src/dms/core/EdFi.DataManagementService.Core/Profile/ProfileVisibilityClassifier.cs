@@ -187,6 +187,14 @@ public sealed class ProfileVisibilityClassifier
     }
 
     /// <summary>
+    /// Returns the collection item value filter for the specified collection scope,
+    /// or null when the scope has no item filter (or is hidden). Used to attach
+    /// filter metadata to value-filter validation failures.
+    /// </summary>
+    /// <param name="jsonScope">The compiled scope identifier for the collection.</param>
+    public CollectionItemFilter? GetCollectionItemFilter(string jsonScope) => _cache[jsonScope].ItemFilter;
+
+    /// <summary>
     /// Returns the member filter for the specified scope, describing which properties
     /// are explicitly named and whether the mode is include-only, exclude-only, or
     /// include-all.
