@@ -1527,7 +1527,7 @@ public class Given_Abstract_Identity_Table_With_Superclass_Identity_Path_And_Mul
 
 /// <summary>
 /// Test fixture for abstract identity column naming: composite reference scalar and reference-backed
-/// descriptor (matrix rows 3 and 4).
+/// descriptor.
 /// The abstract resource ProgramCarrier has two identity paths under $.programReference:
 ///   - $.programReference.educationOrganizationId → Program_EducationOrganizationId
 ///   - $.programReference.programTypeDescriptor   → Program_ProgramTypeDescriptor_DescriptorId
@@ -1784,7 +1784,7 @@ public class Given_Abstract_Identity_Column_Naming_With_Composite_Reference
 }
 
 /// <summary>
-/// Test fixture for abstract identity column naming: D4 override (matrix row 6).
+/// Test fixture for abstract identity column naming: relational.nameOverrides is not propagated.
 /// A concrete member carries a relational.nameOverrides entry that renames the physical reference
 /// identity column. The abstract identity column must use the convention name, not the override.
 /// Convention: School_SchoolId. Override (on concrete): School_CampusId.
@@ -1826,7 +1826,7 @@ public class Given_Abstract_Identity_Column_Naming_With_Name_Override
     }
 
     /// <summary>
-    /// D4: the abstract identity column keeps the convention name (School_SchoolId), not the overridden
+    /// The abstract identity column keeps the convention name (School_SchoolId), not the overridden
     /// physical name (School_CampusId) that the concrete member applies via relational.nameOverrides.
     /// </summary>
     [Test]
@@ -1968,7 +1968,7 @@ public class Given_Abstract_Identity_Column_Naming_With_Name_Override
 }
 
 /// <summary>
-/// Test fixture for abstract identity column naming: subclass rename via superclassIdentityJsonPath (matrix row 5).
+/// Test fixture for abstract identity column naming: subclass rename via superclassIdentityJsonPath.
 /// When a concrete member declares superclassIdentityJsonPath, its own identity path is different from the
 /// abstract identity path. The abstract identity column must be named from the abstract path, not the member path.
 /// Abstract: $.educationOrganizationId → EducationOrganizationId (plain scalar, unchanged).

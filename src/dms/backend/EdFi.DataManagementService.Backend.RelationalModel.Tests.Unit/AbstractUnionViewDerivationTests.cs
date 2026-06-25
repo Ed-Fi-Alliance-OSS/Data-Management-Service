@@ -847,7 +847,7 @@ public class Given_Concrete_Resource_Without_IsSubclass_Property
 }
 
 /// <summary>
-/// Test fixture for abstract union view output column naming: reference-backed scalar (matrix row 2).
+/// Test fixture for abstract union view output column naming: reference-backed scalar.
 /// The abstract resource EnrollmentCarrier has identity $.schoolReference.schoolId.
 /// The union view output column must be named School_SchoolId (convention: {RefBase}_{Field}).
 /// </summary>
@@ -904,7 +904,7 @@ public class Given_Abstract_Union_View_With_Reference_Backed_Scalar_Identity
 
 /// <summary>
 /// Test fixture for abstract union view output column naming: composite reference scalar and
-/// reference-backed descriptor (matrix rows 3 and 4).
+/// reference-backed descriptor.
 /// Abstract resource ProgramCarrier with identity paths under $.programReference.
 /// </summary>
 [TestFixture]

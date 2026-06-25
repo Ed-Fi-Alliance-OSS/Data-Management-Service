@@ -322,8 +322,10 @@ internal static class RelationalModelSetSchemaHelpers
     /// <summary>
     /// Builds the physical column name for an abstract identity column, reproducing the same
     /// reference/descriptor naming conventions used for concrete identity columns. Naming is purely
-    /// convention-driven — <c>relational.nameOverrides</c> are intentionally not consulted (design
-    /// decision D4: abstract identity columns use convention only).
+    /// convention-driven — <c>relational.nameOverrides</c> are intentionally not consulted, because an
+    /// abstract resource can have multiple concrete members with differing overrides; the shared abstract
+    /// contract therefore uses the convention name only, and each union arm bridges its member's actual
+    /// (possibly overridden) column via an <c>AS</c> projection.
     /// <para>
     /// For a plain scalar identity path (<paramref name="referenceObjectPath"/> is <see langword="null"/>),
     /// the column name is <c>BuildIdentityPartBaseName(identityPath)</c> unchanged.
