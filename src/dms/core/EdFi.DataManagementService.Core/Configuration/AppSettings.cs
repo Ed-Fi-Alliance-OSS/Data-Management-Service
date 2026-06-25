@@ -8,9 +8,9 @@ namespace EdFi.DataManagementService.Core.Configuration;
 public class AppSettings
 {
     /// <summary>
-    /// Legacy configuration key that bypasses schema-guided request value coercion.
+    /// Bypasses schema-guided request value type coercion.
     /// </summary>
-    public bool BypassStringTypeCoercion { get; set; }
+    public bool BypassTypeCoercion { get; set; }
 
     /// <summary>
     /// Comma separated list of resource names that allow identity updates,

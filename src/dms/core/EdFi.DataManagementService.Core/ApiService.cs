@@ -202,7 +202,7 @@ internal class ApiService : IApiService
         ]);
 
         // CoerceRequestValuesMiddleware should be immediately before ValidateDocumentMiddleware
-        if (_appSettings.Value.BypassStringTypeCoercion)
+        if (_appSettings.Value.BypassTypeCoercion)
         {
             _logger.LogDebug("Bypassing CoerceRequestValuesMiddleware");
         }
@@ -311,7 +311,7 @@ internal class ApiService : IApiService
         ]);
 
         // CoerceRequestValuesMiddleware should be immediately before ValidateDocumentMiddleware
-        if (_appSettings.Value.BypassStringTypeCoercion)
+        if (_appSettings.Value.BypassTypeCoercion)
         {
             _logger.LogDebug("Bypassing CoerceRequestValuesMiddleware");
         }

@@ -581,7 +581,7 @@ For each operation `op` at `index`:
      - Date/time coercion:
        - `CoerceDateFormatMiddleware` logic.
        - `CoerceDateTimesMiddleware`.
-       - `CoerceFromStringsMiddleware` conditional on `AppSettings.BypassStringTypeCoercion`.
+       - `CoerceRequestValuesMiddleware` conditional on `AppSettings.BypassTypeCoercion`.
      - JSON schema validation:
        - `IDocumentValidator.Validate(opRequest)` and map errors consistently with `ValidateDocumentMiddleware`.
      - Decimal validation:
@@ -1037,4 +1037,3 @@ Future refinement:
 This design gives DMS a high-throughput, transactional bulk endpoint that is
 consistent with the existing architecture and behavior, and is focused on
 solving the WAL write wait bottleneck for PostgreSQL-backed deployments.
-

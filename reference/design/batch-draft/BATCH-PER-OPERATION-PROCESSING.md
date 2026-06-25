@@ -191,10 +191,10 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
           new CoerceDateTimesMiddleware(_logger),
       };
 
-      // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-      if (!_appSettings.Value.BypassStringTypeCoercion)
+      // CoerceRequestValuesMiddleware should be immediately before ValidateDocumentMiddleware
+      if (!_appSettings.Value.BypassTypeCoercion)
       {
-          steps.Add(new CoerceFromStringsMiddleware(_logger));
+          steps.Add(new CoerceRequestValuesMiddleware(_logger));
       }
 
       steps.AddRange(
@@ -234,9 +234,9 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
           new CoerceDateTimesMiddleware(_logger),
       };
 
-      if (!_appSettings.Value.BypassStringTypeCoercion)
+      if (!_appSettings.Value.BypassTypeCoercion)
       {
-          steps.Add(new CoerceFromStringsMiddleware(_logger));
+          steps.Add(new CoerceRequestValuesMiddleware(_logger));
       }
 
       steps.AddRange(
