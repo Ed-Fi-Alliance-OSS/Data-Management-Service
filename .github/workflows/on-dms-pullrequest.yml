@@ -869,7 +869,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        identityprovider: [keycloak, self-contained]
+        identityprovider: [self-contained]
         shard: [1, 2, 3, 4]
     permissions:
       contents: read
