@@ -10,7 +10,7 @@
     This script reverses the process of setup-local-dms.ps1 by:
     - Stopping all containers in the dms-local stack
     - Removing all associated volumes
-    - Removing locally-built images (dms-local-dms and dms-local-config)
+    - Removing locally-built images (ed-fi-api-local and ed-fi-api-config-local)
     - Removing the dms network
 
     The script dynamically reads docker-compose YAML files to determine what to tear down.
@@ -171,7 +171,7 @@ try {
 
     # Force stop any remaining containers with dms or kafka in the name
     Write-Host "`nForce stopping any remaining containers..." -ForegroundColor Yellow
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka|ed-fi-api)" }
     if ($remainingContainers) {
         foreach ($container in $remainingContainers) {
             Write-Host "- Force removing container: $container" -ForegroundColor Gray
@@ -287,8 +287,16 @@ try {
     if ($builtImages.Count -gt 0) {
         Write-Host "`nRemoving locally-built images..." -ForegroundColor Yellow
         foreach ($imageName in $builtImages) {
-            # Try both naming conventions (hyphen and underscore)
-            $imageVariants = @(
+            # Explicit image names pinned on the build services in local-dms.yml / local-config.yml,
+            # plus the legacy project-derived names so stale pre-rename images are still cleaned up.
+            $explicitImage = switch ($imageName) {
+                "dms" { "ed-fi-api-local" }
+                "config" { "ed-fi-api-config-local" }
+                default { $null }
+            }
+            $imageVariants = @()
+            if ($explicitImage) { $imageVariants += $explicitImage }
+            $imageVariants += @(
                 "dms-local-$imageName",
                 "dms-local_$imageName",
                 "dms-local-${imageName}-1",
@@ -336,7 +344,7 @@ try {
     $verificationFailed = $false
 
     # Check for any remaining containers
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka|ed-fi-api)" }
     if ($remainingContainers) {
         Write-Warning "Found remaining containers that were not removed:"
         foreach ($container in $remainingContainers) {
@@ -363,15 +371,9 @@ try {
 
     # Check for any remaining images
     $remainingImages = @()
-    foreach ($imageName in @("dms", "config")) {
-        $imageVariants = @(
-            "dms-local-$imageName",
-            "dms-local_$imageName"
-        )
-        foreach ($imageVariant in $imageVariants) {
-            if (docker images -q $imageVariant 2>$null) {
-                $remainingImages += $imageVariant
-            }
+    foreach ($imageVariant in @("ed-fi-api-local", "ed-fi-api-config-local", "dms-local-dms", "dms-local-config")) {
+        if (docker images -q $imageVariant 2>$null) {
+            $remainingImages += $imageVariant
         }
     }
 

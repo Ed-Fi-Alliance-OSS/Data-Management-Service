@@ -53,7 +53,7 @@ param (
 
     [string]$ContainerName = "dms-postgresql",
 
-    [string]$DmsContainerName = "dms-local-dms-1",
+    [string]$DmsContainerName = "ed-fi-api",
 
     [string]$DmsUrl = "http://localhost:8080",
 

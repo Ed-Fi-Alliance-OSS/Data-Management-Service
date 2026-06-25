@@ -5,7 +5,7 @@
 #
 # Prereqs:
 #   /e2e start --relational          # dedicated edfi schema in edfi_datamanagementservice_relational
-#   /e2e status                      # confirm dms-local-dms-1 is healthy
+#   /e2e status                      # confirm ed-fi-api is healthy
 #
 # End-to-end self-contained: section 1 mints the Config-Service + DMS tokens so no manual
 # token paste is needed. Execute from top to bottom with the VS Code REST Client extension.

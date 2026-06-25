@@ -202,9 +202,9 @@ try {
 
     # Resolve the locally-built DMS image from the running service container so the installer
     # runs the exact binaries (including /app/Installer) that the DMS container ships.
-    $dmsImage = docker ps -a --filter "name=dms-local-dms-1" --format "{{.Image}}" | Select-Object -First 1
+    $dmsImage = docker inspect --format "{{.Config.Image}}" ed-fi-api 2>$null | Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($dmsImage)) {
-        throw "Unable to resolve the DMS image from container 'dms-local-dms-1'. Ensure the DMS stack started successfully."
+        throw "Unable to resolve the DMS image from container 'ed-fi-api'. Ensure the DMS stack started successfully."
     }
 
     docker run --rm --network dms --entrypoint dotnet $dmsImage `

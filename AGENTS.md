@@ -63,7 +63,7 @@ If you only need to inspect the relational Docker environment manually, you can 
 2. Run: `pwsh ./teardown-local-dms.ps1`
 3. Run: `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational`
 4. Verify the DMS container is using the relational backend:
-   - `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore'`
+   - `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore'`
    - Expected values include `AppSettings__UseRelationalBackend=true` and `AppSettings__Datastore=postgresql`.
 
 The default `pwsh ./setup-local-dms.ps1` command uses `.env.e2e`, which starts DMS with `AppSettings__UseRelationalBackend=false`. A run with `Category=relational-backend` against that default stack is not a valid relational-backend signal.
@@ -75,7 +75,7 @@ The default `pwsh ./setup-local-dms.ps1` command uses `.env.e2e`, which starts D
 3. This will:
    - Stop all containers in the dms-local stack
    - Remove all associated volumes
-   - Remove locally-built images (dms-local-dms and dms-local-config)
+   - Remove locally-built images (ed-fi-api-local and ed-fi-api-config-local)
 
 Use `src/dms/tests/EdFi.InstanceManagement.Tests.E2E` only for the Instance Management E2E suite; it uses route-context settings and a different instance setup.
 

@@ -2349,7 +2349,7 @@ This section documents how developers run or debug DMS locally in an IDE (Visual
 The IDE debugging pattern follows the standard "Docker for infrastructure, local process for the application under development" model:
 
 - **Docker manages**: PostgreSQL (exposed on `localhost:5435`), Kafka (bootstrap server `localhost:9092`), the Configuration Service / identity provider (exposed on `localhost:8081`), and any optional supporting services (Kafka UI, OpenSearch).
-- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects outward to Docker services using `localhost` addresses rather than Docker-internal hostnames such as `dms-postgresql` or `dms-config-service`.
+- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects outward to Docker services using `localhost` addresses rather than Docker-internal hostnames such as `dms-postgresql` or `ed-fi-api-config`.
 
 This separation means the DMS binary under the debugger is the live code being edited, while all persistence
 and auth services are stable and shared across debug sessions. The staged schema workspace is part of that
@@ -2364,7 +2364,7 @@ define a second non-Docker bootstrap path.
 | Docker network (dms)                                      |
 |                                                           |
 |  dms-postgresql :5432      -> localhost:5435              |
-|  dms-config-service :8081  -> localhost:8081              |
+|  ed-fi-api-config :8081  -> localhost:8081              |
 |  kafka :9092               -> localhost:9092              |
 +-----------------------------------------------------------+
 
@@ -2388,7 +2388,7 @@ define a second non-Docker bootstrap path.
 +-----------------------------------------------------------+
 ```
 
-The local DMS process must resolve all service addresses using `localhost` and the externally exposed Docker ports. The Docker-internal hostnames (`dms-postgresql`, `dms-config-service`) are not reachable from the host.
+The local DMS process must resolve all service addresses using `localhost` and the externally exposed Docker ports. The Docker-internal hostnames (`dms-postgresql`, `ed-fi-api-config`) are not reachable from the host.
 
 ### 12.2 Starting Infrastructure Without DMS
 
@@ -2449,7 +2449,7 @@ creates admin-scoped clients.
 | Variable (appsettings key) | Local value | Description |
 |---|---|---|
 | `ConnectionStrings__DatabaseConnection` | `host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;` | PostgreSQL connection. Uses `localhost:5435` (Docker-exposed port) instead of Docker-internal `dms-postgresql:5432`. |
-| `ConfigurationServiceSettings__BaseUrl` | `http://localhost:8081` | Config Service URL. Uses `localhost:8081` instead of Docker-internal `http://dms-config-service:8081`. |
+| `ConfigurationServiceSettings__BaseUrl` | `http://localhost:8081` | Config Service URL. Uses `localhost:8081` instead of Docker-internal `http://ed-fi-api-config:8081`. |
 | `ConfigurationServiceSettings__ClientId` | `CMSReadOnlyAccess` | Local identity setup read-only OAuth client ID that DMS uses to authenticate against the Config Service during local development. |
 | `ConfigurationServiceSettings__ClientSecret` | `<local-cms-readonly-secret>` | Local-development secret for `CMSReadOnlyAccess`, taken from the identity setup output or IDE guidance. **DEV-ONLY**: This localhost credential must not be reused in shared, remote, or production environments. |
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |

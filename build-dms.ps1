@@ -211,7 +211,7 @@ function SetAuthenticationServiceURL {
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
     if ($IdentityProvider -eq  "self-contained") {
-        $json.AuthenticationService ="http://dms-config-service:8081/connect/token"
+        $json.AuthenticationService ="http://ed-fi-api-config:8081/connect/token"
     }
     else {
         $json.AuthenticationService = "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token"
@@ -1000,7 +1000,7 @@ function Initialize-RelationalE2EDatabase {
             "dms-published-dms-1"
         }
         else {
-            "dms-local-dms-1"
+            "ed-fi-api"
         }
 
     $provisionedEffectiveSchemaHash = Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
@@ -1095,7 +1095,7 @@ function Wait-ForConfigServiceAndClientRegistration {
 function Restart-DmsContainer {
     param(
         [string]
-        $ContainerName = "dms-local-dms-1",
+        $ContainerName = "ed-fi-api",
 
         [string]
         $Reason = "refresh runtime state"

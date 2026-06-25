@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// <summary>
         /// The issuer (iss) claim for the JWT, representing the authority that issued the token.
         /// Should match the expected issuer in token validation.
-        /// Example: "http://dms-config-service:8081"
+        /// Example: "http://ed-fi-api-config:8081"
         /// </summary>
         public string Issuer { get; set; } = string.Empty;
 

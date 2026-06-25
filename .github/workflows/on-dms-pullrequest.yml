@@ -900,7 +900,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -913,7 +913,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: cs-local-config:latest
+          tags: ed-fi-api-config-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -1062,7 +1062,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -1075,7 +1075,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: cs-local-config:latest
+          tags: ed-fi-api-config-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -1128,7 +1128,7 @@ jobs:
               }
 
               # Also display DMS logs in the workflow output for easier debugging
-              if ($container -eq "dms-local-dms") {
+              if ($container -eq "ed-fi-api") {
                   Write-Host "`n========== DMS Container Logs ==========" -ForegroundColor Cyan
                   docker logs $container 2>&1
                   Write-Host "`n========================================`n" -ForegroundColor Cyan
@@ -1220,7 +1220,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -1233,7 +1233,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: cs-local-config:latest
+          tags: ed-fi-api-config-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -1325,7 +1325,7 @@ jobs:
           New-Item -ItemType Directory -Path $diagnosticsDir -Force | Out-Null
 
           $containers = docker ps -a --format "{{.Names}}" | Where-Object {
-            $_ -like "dms-local-*" -or $_ -eq "dms-postgresql"
+            $_ -eq "ed-fi-api" -or $_ -eq "dms-postgresql"
           } | Sort-Object
 
           if (@($containers).Count -eq 0) {
@@ -1334,7 +1334,7 @@ jobs:
           }
 
           $dmsContainer = @($containers) | Where-Object {
-            $_ -eq "dms-local-dms" -or $_ -like "dms-local-dms*"
+            $_ -eq "ed-fi-api"
           } | Select-Object -First 1
 
           if ($null -ne $dmsContainer) {

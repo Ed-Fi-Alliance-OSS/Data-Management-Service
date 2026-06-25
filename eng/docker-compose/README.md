@@ -111,7 +111,7 @@ provisions inside the running `dms-postgresql` container, the sequence is:
 3. Restart DMS so cached startup-validation state is discarded:
 
    ```pwsh
-   docker restart dms-local-dms-1
+   docker restart ed-fi-api
    ```
 
 This is the same sequence used by the `E2ETests` build target
@@ -574,7 +574,7 @@ docker logs docker-compose-dms-1 --follow
 **Check Config Service logs:**
 
 ```powershell
-docker logs dms-config-service --follow
+docker logs ed-fi-api-config --follow
 ```
 
 ### Cleanup

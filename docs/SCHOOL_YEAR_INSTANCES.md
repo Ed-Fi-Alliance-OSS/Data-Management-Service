@@ -156,7 +156,7 @@ After creating instances with route contexts, the DMS may take a moment to refre
 2. Restart the DMS container if needed:
 
    ```powershell
-   docker restart dms-local-dms-1
+   docker restart ed-fi-api
    ```
 
 ### Invalid year range format

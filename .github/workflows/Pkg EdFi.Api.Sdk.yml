@@ -63,7 +63,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 

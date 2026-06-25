@@ -214,7 +214,7 @@ For topic-per-instance architecture, each DMS instance needs its own Debezium co
 **Setup issues:**
 
 - Re-run the build script - it handles full setup
-- Check Configuration Service logs: `docker logs dms-config-service`
+- Check Configuration Service logs: `docker logs ed-fi-api-config`
 - Check DMS logs: `docker logs dms-dms-1`
 
 **Instance creation fails:**

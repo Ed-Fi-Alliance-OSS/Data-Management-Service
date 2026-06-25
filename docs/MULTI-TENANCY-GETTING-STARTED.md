@@ -127,8 +127,8 @@ docker ps
 
 You should see containers running for:
 
-- `dms-local-dms-1` (DMS API on port 8080)
-- `dms-config-service` (Configuration Service on port 8081)
+- `ed-fi-api` (DMS API on port 8080)
+- `ed-fi-api-config` (Configuration Service on port 8081)
 - `dms-postgresql` (PostgreSQL on port 5435)
 - `dms-local-swagger-ui-1` (Swagger UI on port 8082)
 
@@ -253,7 +253,7 @@ After creating data stores and route contexts, restart the DMS container so it
 reloads data store configuration:
 
 ```powershell
-docker restart dms-local-dms-1
+docker restart ed-fi-api
 ```
 
 Notes:
@@ -267,7 +267,7 @@ After creating all instances, restart the DMS container to load the new
 configurations and deploy the database schema to each tenant database:
 
 ```powershell
-docker restart dms-local-dms-1
+docker restart ed-fi-api
 ```
 
 Wait 30-60 seconds for DMS to restart. During startup, DMS will:
@@ -279,10 +279,10 @@ Verify instances were loaded and schema was deployed:
 
 ```powershell
 # Check instances were loaded
-docker logs dms-local-dms-1 | Select-String "Successfully fetched"
+docker logs ed-fi-api | Select-String "Successfully fetched"
 
 # Check schema deployment (should see entries for each tenant database)
-docker logs dms-local-dms-1 | Select-String "Deploying database schema"
+docker logs ed-fi-api | Select-String "Deploying database schema"
 ```
 
 You should see:
@@ -432,10 +432,10 @@ will only work when the DistrictA tenant is selected.
 
 ```powershell
 # DMS logs
-docker logs dms-local-dms-1 --follow
+docker logs ed-fi-api --follow
 
 # Configuration Service logs
-docker logs dms-config-service --follow
+docker logs ed-fi-api-config --follow
 ```
 
 ## Cleanup

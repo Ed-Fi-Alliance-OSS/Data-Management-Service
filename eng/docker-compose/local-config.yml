@@ -5,11 +5,12 @@
 
 services:
   config:
+    image: ed-fi-api-config-local
     build:
       context: ../../src/config
       additional_contexts:
         parentdir: ../../src/
-    container_name: dms-config-service
+    container_name: ed-fi-api-config-service
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
       AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
@@ -53,7 +54,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 50
-    hostname: config
+    hostname: ed-fi-api-config
 
 networks:
   dms:

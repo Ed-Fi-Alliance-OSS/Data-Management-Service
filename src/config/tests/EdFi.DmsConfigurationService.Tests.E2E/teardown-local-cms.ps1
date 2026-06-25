@@ -10,7 +10,7 @@
     This script reverses the process of setup-local-cms.ps1 by:
     - Stopping all containers in the cs-local stack (not dms-local)
     - Removing all associated volumes
-    - Removing locally-built images (cs-local-config)
+    - Removing locally-built images (ed-fi-api-config-local)
     - Removing the dms network if no other containers are using it
 
     The script targets the cs-local Docker Compose stack to match CI/CD behavior.
@@ -93,7 +93,7 @@ try {
     
     # Force stop any remaining cs-local containers
     Write-Host "`nForce stopping any remaining cs-local containers..." -ForegroundColor Yellow
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local|ed-fi-api-config" }
     if ($remainingContainers) {
         foreach ($container in $remainingContainers) {
             Write-Host "- Force removing container: $container" -ForegroundColor Gray
@@ -130,6 +130,7 @@ try {
     # Remove locally-built cs-local images
     Write-Host "`nRemoving cs-local images..." -ForegroundColor Yellow
     $imageVariants = @(
+        "ed-fi-api-config-local",
         "cs-local-config",
         "cs-local_config"
     )
@@ -191,7 +192,7 @@ try {
     $verificationFailed = $false
     
     # Check for any remaining cs-local containers
-    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local" }
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local|ed-fi-api-config" }
     if ($remainingContainers) {
         Write-Warning "Found remaining cs-local containers:"
         foreach ($container in $remainingContainers) {

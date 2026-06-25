@@ -91,7 +91,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -133,7 +133,7 @@ jobs:
 
       - name: Restart DMS to load the provisioned relational schema
         run: |
-          docker restart dms-local-dms-1
+          docker restart ed-fi-api
 
       - name: Wait for DMS to be ready
         run: |
