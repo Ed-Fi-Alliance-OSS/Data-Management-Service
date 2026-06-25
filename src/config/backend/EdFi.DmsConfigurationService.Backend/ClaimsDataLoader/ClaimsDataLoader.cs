@@ -26,9 +26,15 @@ public class ClaimsDataLoader(
     IClaimsHierarchyRepository claimsHierarchyRepository,
     IClaimsTableValidator claimsTableValidator,
     IClaimsDocumentRepository claimsDocumentRepository,
-    ILogger<ClaimsDataLoader> logger
+    ILogger<ClaimsDataLoader> logger,
+    IResourceClaimMetadataRepository? resourceClaimMetadataRepository = null
 ) : IClaimsDataLoader
 {
+    // ResourceClaim seeding is PostgreSQL-only; absent a registered repository
+    // (e.g. the MSSQL backend) the loader falls back to a no-op.
+    private readonly IResourceClaimMetadataRepository _resourceClaimMetadataRepository =
+        resourceClaimMetadataRepository ?? new NoOpResourceClaimMetadataRepository();
+
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -95,12 +101,15 @@ public class ClaimsDataLoader(
             // Load claim sets
             int claimSetsLoaded = await LoadClaimSetsAsync(claimsNodes.ClaimSetsNode);
 
+            int resourceClaimsLoaded = await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
+
             // Load claims hierarchy
             bool hierarchyLoaded = await LoadClaimsHierarchyAsync(claimsNodes.ClaimsHierarchyNode);
 
             logger.LogInformation(
-                "Successfully loaded {ClaimSetCount} claim sets and hierarchy data",
-                claimSetsLoaded
+                "Successfully loaded {ClaimSetCount} claim sets, {ResourceClaimCount} resource claims, and hierarchy data",
+                claimSetsLoaded,
+                resourceClaimsLoaded
             );
 
             return new ClaimsDataLoadResult.Success(claimSetsLoaded, hierarchyLoaded);
@@ -185,6 +194,81 @@ public class ClaimsDataLoader(
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Loads resource-claim metadata derived from the Claims.json hierarchy.
+    /// </summary>
+    /// <param name="hierarchyNode">JSON array containing the hierarchical claims structure.</param>
+    /// <returns>The number of resource-claim rows inserted.</returns>
+    private async Task<int> LoadResourceClaimsAsync(JsonNode? hierarchyNode)
+    {
+        if (hierarchyNode is not JsonArray hierarchyArray)
+        {
+            logger.LogWarning("No claims hierarchy found in Claims.json or invalid format");
+            return 0;
+        }
+
+        List<ResourceClaimMetadataSeed> resourceClaims = DeriveResourceClaimMetadata(hierarchyArray);
+        if (resourceClaims.Count == 0)
+        {
+            logger.LogWarning("No resource claims found in Claims.json hierarchy");
+            return 0;
+        }
+
+        return await _resourceClaimMetadataRepository.SeedResourceClaims(resourceClaims);
+    }
+
+    internal static List<ResourceClaimMetadataSeed> DeriveResourceClaimMetadata(JsonArray hierarchyArray)
+    {
+        var resourceClaims = new List<ResourceClaimMetadataSeed>();
+        var claimNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (JsonNode? claimNode in hierarchyArray)
+        {
+            AddResourceClaimMetadata(claimNode, resourceClaims, claimNames);
+        }
+
+        return resourceClaims;
+    }
+
+    private static void AddResourceClaimMetadata(
+        JsonNode? claimNode,
+        List<ResourceClaimMetadataSeed> resourceClaims,
+        HashSet<string> claimNames
+    )
+    {
+        if (claimNode is not JsonObject claimObject)
+        {
+            return;
+        }
+
+        string? claimName = claimObject["name"]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(claimName) && claimNames.Add(claimName))
+        {
+            resourceClaims.Add(new ResourceClaimMetadataSeed(ResourceName(claimName), claimName));
+        }
+
+        if (claimObject["claims"] is not JsonArray childClaims)
+        {
+            return;
+        }
+
+        foreach (JsonNode? childClaim in childClaims)
+        {
+            AddResourceClaimMetadata(childClaim, resourceClaims, claimNames);
+        }
+    }
+
+    private static string ResourceName(string claimName)
+    {
+        if (claimName.Equals("http://ed-fi.org/identity/claims/domains/edFiTypes", StringComparison.Ordinal))
+        {
+            return "types";
+        }
+
+        string[] segments = claimName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0 ? claimName : segments[^1];
     }
 
     /// <summary>
