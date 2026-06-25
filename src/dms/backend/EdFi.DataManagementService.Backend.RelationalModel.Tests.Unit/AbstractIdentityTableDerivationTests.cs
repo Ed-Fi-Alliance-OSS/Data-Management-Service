@@ -1577,7 +1577,8 @@ public class Given_Abstract_Identity_Column_Naming_With_Composite_Reference
         _abstractTable
             .TableModel.Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Contain("Program_EducationOrganizationId");
+            .Contain("Program_EducationOrganizationId")
+            .And.NotContain("ProgramReferenceEducationOrganizationId");
     }
 
     /// <summary>
@@ -1589,7 +1590,8 @@ public class Given_Abstract_Identity_Column_Naming_With_Composite_Reference
         _abstractTable
             .TableModel.Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Contain("Program_ProgramTypeDescriptor_DescriptorId");
+            .Contain("Program_ProgramTypeDescriptor_DescriptorId")
+            .And.NotContain("ProgramReferenceProgramTypeDescriptor");
     }
 
     /// <summary>

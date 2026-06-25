@@ -898,7 +898,8 @@ public class Given_Abstract_Union_View_With_Reference_Backed_Scalar_Identity
         _abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
             .Should()
-            .Contain("School_SchoolId");
+            .Contain("School_SchoolId")
+            .And.NotContain("SchoolReferenceSchoolId");
     }
 }
 
@@ -952,7 +953,8 @@ public class Given_Abstract_Union_View_With_Composite_Reference_Identity
         _abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
             .Should()
-            .Contain("Program_EducationOrganizationId");
+            .Contain("Program_EducationOrganizationId")
+            .And.NotContain("ProgramReferenceEducationOrganizationId");
     }
 
     /// <summary>

@@ -505,6 +505,11 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         continue;
                     }
 
+                    // Defensive invariant: ReferenceBindingPass sets ConventionColumn on every
+                    // reference identity binding it creates, and the only other pass that rebuilds
+                    // bindings (ApplyDialectIdentifierShorteningPass) preserves it via `with`. A null
+                    // here would mean a future binding source skipped it — fail fast rather than emit
+                    // a wrong abstract column name. No valid schema can reach this branch.
                     if (identityBinding.ConventionColumn is not { } conventionColumn)
                     {
                         throw new InvalidOperationException(
@@ -515,6 +520,11 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         );
                     }
 
+                    // Defensive invariant: ConventionColumn is a pure function of the reference's
+                    // MappingKey, the reference-relative field, and the descriptor flag, so every
+                    // member sharing this abstract identity path resolves to the same value. The
+                    // mismatch branch below cannot fire for a valid schema; it fails fast only if a
+                    // future schema shape violates that assumption.
                     if (resolved is null)
                     {
                         resolved = new ReferenceResolution(conventionColumn);
