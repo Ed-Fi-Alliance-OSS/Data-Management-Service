@@ -128,9 +128,9 @@ docker ps
 You should see containers running for:
 
 - `ed-fi-api` (DMS API on port 8080)
-- `ed-fi-api-config` (Configuration Service on port 8081)
+- `ed-fi-api-config-service` (Configuration Service on port 8081)
 - `dms-postgresql` (PostgreSQL on port 5435)
-- `dms-local-swagger-ui-1` (Swagger UI on port 8082)
+- `ed-fi-api-swagger-ui` (Swagger UI on port 8082)
 
 ## Step 3: Create Tenant Databases
 

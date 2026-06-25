@@ -6,7 +6,7 @@
 services:
   swagger-ui:
     image: nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
-    container_name: dms-swagger-ui
+    container_name: ed-fi-api-swagger-ui
     ports:
       - "${DMS_SWAGGER_UI_PORT:-8082}:80"
     environment:
@@ -16,7 +16,7 @@ services:
       - ./custom-swagger-ui:/tmp/nginx-template:ro
     networks:
       - dms
-    hostname: dms-swagger-ui
+    hostname: ed-fi-api-swagger-ui
     command: >
       sh -c "envsubst '$$DMS_HTTP_PORTS $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS' < /tmp/nginx-template/index.html > /usr/share/nginx/html/index.html &&
              cp /tmp/nginx-template/*.js /usr/share/nginx/html/ &&

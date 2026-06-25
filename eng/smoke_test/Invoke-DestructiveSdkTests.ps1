@@ -54,7 +54,7 @@ if ($SdkPath) {
 # pre-host-builder SDK configuration for stock openapi-generator SDKs (the in-run
 # DMS TestSdk and EdFi.OdsApi.Sdk 7.3.10132), which lack the newer
 # {SdkNamespace}.Client.HostConfiguration type.
-$path = Get-SmokeTestTool -PackageVersion '7.3.20178'
+$path = Get-SmokeTestTool -PackageVersion '7.3.20185'
 
 $parameters = @{
   BaseUrl = $BaseUrl
