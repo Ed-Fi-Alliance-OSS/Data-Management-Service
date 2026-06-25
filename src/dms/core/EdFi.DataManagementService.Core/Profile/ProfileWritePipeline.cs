@@ -146,6 +146,11 @@ internal static class ProfileWritePipeline
     /// When true, category-4 creatability violations are returned as deferred
     /// metadata while duplicate validation failures still short-circuit.
     /// </param>
+    /// <param name="resourceIdentityJsonPaths">
+    /// Resource identity JSON paths (e.g. "$.schoolReference.schoolId") used to
+    /// implicitly preserve identity members/references hidden by the writable
+    /// profile. Empty or null disables identity preservation.
+    /// </param>
     /// <returns>
     /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
     /// optional stored context, or typed failures.
@@ -162,7 +167,8 @@ internal static class ProfileWritePipeline
         string method,
         string operation,
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
-        bool deferCreatabilityViolations = false
+        bool deferCreatabilityViolations = false,
+        IReadOnlyList<string>? resourceIdentityJsonPaths = null
     )
     {
         // ------------------------------------------------------------------
@@ -217,7 +223,8 @@ internal static class ProfileWritePipeline
             profileName,
             resourceName,
             method,
-            operation
+            operation,
+            resourceIdentityJsonPaths ?? []
         );
 
         WritableRequestShapingResult shapingResult = shaper.Shape(canonicalizedRequestBody);

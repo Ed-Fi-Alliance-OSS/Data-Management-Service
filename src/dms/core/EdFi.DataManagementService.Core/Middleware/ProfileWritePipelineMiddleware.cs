@@ -136,6 +136,14 @@ internal class ProfileWritePipelineMiddleware(
                 scopeCatalog
             );
 
+        // Resource identity JSON paths drive DMS-1229 identity preservation: identity
+        // members/references hidden by the writable profile are still implicitly
+        // included in the shaped write so the resource identity can be computed.
+        IReadOnlyList<string> resourceIdentityJsonPaths =
+        [
+            .. requestInfo.ResourceSchema.IdentityJsonPaths.Select(static path => path.Value),
+        ];
+
         // Execute the profile write pipeline (request-side only, no stored document yet).
         // This middleware only runs for POST/PUT with a writable profile (guarded above),
         // so the resolved content type is always Write.
@@ -151,7 +159,8 @@ internal class ProfileWritePipelineMiddleware(
             method: method,
             operation: operation,
             effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
-            deferCreatabilityViolations: true
+            deferCreatabilityViolations: true,
+            resourceIdentityJsonPaths: resourceIdentityJsonPaths
         );
 
         // Handle failures
@@ -201,7 +210,8 @@ internal class ProfileWritePipelineMiddleware(
             profileName,
             resourceName,
             method,
-            effectiveSchemaRequiredMembersByScope
+            effectiveSchemaRequiredMembersByScope,
+            resourceIdentityJsonPaths
         );
 
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
@@ -223,7 +233,8 @@ internal class ProfileWritePipelineMiddleware(
         string profileName,
         string resourceName,
         string method,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
+        IReadOnlyList<string> resourceIdentityJsonPaths
     ) : IStoredStateProjectionInvoker
     {
         public ProfileAppliedWriteContext ProjectStoredState(
@@ -246,7 +257,8 @@ internal class ProfileWritePipelineMiddleware(
                 method: method,
                 operation: operation,
                 effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
-                deferCreatabilityViolations: true
+                deferCreatabilityViolations: true,
+                resourceIdentityJsonPaths: resourceIdentityJsonPaths
             );
 
             if (result.Context is not null)

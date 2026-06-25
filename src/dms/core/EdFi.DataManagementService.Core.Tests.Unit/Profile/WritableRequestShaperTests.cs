@@ -19,6 +19,12 @@ public abstract class WritableRequestShaperTests
     protected static WritableRequestShaper BuildShaper(
         ContentTypeDefinition writeContent,
         IReadOnlyList<CompiledScopeDescriptor> scopes
+    ) => BuildShaper(writeContent, scopes, []);
+
+    protected static WritableRequestShaper BuildShaper(
+        ContentTypeDefinition writeContent,
+        IReadOnlyList<CompiledScopeDescriptor> scopes,
+        IReadOnlyList<string> resourceIdentityJsonPaths
     )
     {
         var classifier = new ProfileVisibilityClassifier(writeContent, scopes);
@@ -29,9 +35,48 @@ public abstract class WritableRequestShaperTests
             profileName: "TestProfile",
             resourceName: "TestResource",
             method: "POST",
-            operation: "write"
+            operation: "write",
+            resourceIdentityJsonPaths: resourceIdentityJsonPaths
         );
     }
+
+    // -----------------------------------------------------------------------
+    //  Calendar-like fixture for identity/reference preservation tests
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Scope catalog for a Calendar-like resource. References (schoolReference,
+    /// schoolYearTypeReference) are scalar members of the root scope rather than
+    /// separate scopes, matching how the production catalog represents them.
+    /// </summary>
+    protected static IReadOnlyList<CompiledScopeDescriptor> CalendarFixtureScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths:
+                [
+                    "calendarCode",
+                    "calendarTypeDescriptor",
+                    "schoolReference.schoolId",
+                    "schoolYearTypeReference.schoolYear",
+                ]
+            ),
+            new(
+                JsonScope: "$.gradeLevels[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["gradeLevelDescriptor"],
+                CanonicalScopeRelativeMemberPaths: ["gradeLevelDescriptor"]
+            ),
+        ];
+
+    protected static IReadOnlyList<string> CalendarIdentityJsonPaths =>
+        ["$.calendarCode", "$.schoolReference.schoolId", "$.schoolYearTypeReference.schoolYear"];
 
     // Shared scope catalogs from ProfileTestFixtures
     protected static IReadOnlyList<CompiledScopeDescriptor> SharedFixtureScopes =>
@@ -1629,6 +1674,206 @@ public abstract class WritableRequestShaperTests
                 .Contain(s =>
                     s.Address.JsonScope == "$._ext.sample" && s.Visibility == ProfileVisibilityKind.Hidden
                 );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  22. IncludeOnly profile omitting identity references preserves the
+    //      minimum identity surface (DMS-1229 Calendar case)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_IncludeOnly_Profile_Omitting_Identity_References : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Calendar IncludeOnly profile lists calendarCode, calendarTypeDescriptor,
+            // and gradeLevels. schoolReference and schoolYearTypeReference are NOT
+            // listed but carry resource identity, so they must be implicitly preserved.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("calendarCode"), new PropertyRule("calendarTypeDescriptor")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "gradeLevels",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, CalendarIdentityJsonPaths);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-1",
+                    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#Student Specific",
+                    "schoolReference": {
+                        "schoolId": 255901107,
+                        "link": { "rel": "School", "href": "/ed-fi/schools/abc" }
+                    },
+                    "schoolYearTypeReference": { "schoolYear": 2029 },
+                    "gradeLevels": []
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_preserve_nested_schoolReference_identity_leaf()
+        {
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference["schoolId"]!.GetValue<int>().Should().Be(255901107);
+        }
+
+        [Test]
+        public void It_should_preserve_nested_schoolYearTypeReference_identity_leaf()
+        {
+            var schoolYearTypeReference = _result.WritableRequestBody["schoolYearTypeReference"]!.AsObject();
+            schoolYearTypeReference["schoolYear"]!.GetValue<int>().Should().Be(2029);
+        }
+
+        [Test]
+        public void It_should_preserve_only_the_minimum_identity_surface_of_the_reference()
+        {
+            // Only the identity leaf is preserved, so the non-identity "link" member
+            // of the hidden reference is dropped.
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference.ContainsKey("link").Should().BeFalse();
+            schoolReference.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_should_include_the_visible_members()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body["calendarCode"]!.GetValue<string>().Should().Be("CAL-1");
+            body.ContainsKey("calendarTypeDescriptor").Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  23. ExcludeOnly profile cannot effectively exclude identity references
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_ExcludeOnly_Profile_Excluding_Identity_Reference : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // ExcludeOnly profile that explicitly excludes schoolReference. Because
+            // schoolReference carries resource identity, it cannot be effectively
+            // excluded and its identity leaf must still be preserved.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.ExcludeOnly,
+                Properties: [new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, CalendarIdentityJsonPaths);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-2",
+                    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#Student Specific",
+                    "schoolReference": { "schoolId": 255901107 },
+                    "schoolYearTypeReference": { "schoolYear": 2029 },
+                    "gradeLevels": []
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_preserve_the_excluded_identity_reference_leaf()
+        {
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference["schoolId"]!.GetValue<int>().Should().Be(255901107);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  24. Hidden non-identity reference is still stripped (no identity path
+    //      covers it), confirming identity preservation is narrow
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Non_Identity_Reference : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile listing only calendarCode. schoolReference is hidden
+            // and, with no identity path covering it, must be stripped entirely.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("calendarCode")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            // Identity paths do NOT include schoolReference.
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, ["$.calendarCode"]);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-3",
+                    "schoolReference": { "schoolId": 255901107 }
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_strip_the_hidden_non_identity_reference()
+        {
+            _result.WritableRequestBody.AsObject().ContainsKey("schoolReference").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 }

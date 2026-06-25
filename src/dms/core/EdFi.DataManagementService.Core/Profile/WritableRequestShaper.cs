@@ -45,7 +45,8 @@ public sealed class WritableRequestShaper(
     string profileName,
     string resourceName,
     string method,
-    string operation
+    string operation,
+    IReadOnlyList<string> resourceIdentityJsonPaths
 )
 {
     // -----------------------------------------------------------------------
@@ -218,9 +219,19 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
-            // DMS-1229: a hidden submitted scalar member is accepted and stripped
-            // (omitted from the shaped body), not a ForbiddenSubmittedData failure.
-            // Existing stored values are preserved on PUT via stored-side metadata.
+            else if (
+                TryBuildIdentitySurface($"{requestJsonPath}.{memberName}", memberValue, out JsonNode? surface)
+            )
+            {
+                // DMS-1229: a hidden member that carries resource identity is
+                // implicitly preserved as the minimum identity surface, matching
+                // legacy ODS. Unrelated members of the reference are still dropped.
+                output[memberName] = surface;
+            }
+            // DMS-1229: any other hidden submitted scalar member is accepted and
+            // stripped (omitted from the shaped body), not a ForbiddenSubmittedData
+            // failure. Existing stored values are preserved on PUT via stored-side
+            // metadata.
         }
 
         // Emit states for child non-collection scopes not encountered during the walk
@@ -649,5 +660,110 @@ public sealed class WritableRequestShaper(
             MemberSelection.IncludeAll => true,
             _ => true,
         };
+    }
+
+    // -----------------------------------------------------------------------
+    //  Identity preservation (DMS-1229)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds the minimum resource-identity surface for a hidden member at the
+    /// given request JSON path, matching legacy ODS behavior where identity
+    /// members/references are implicitly included even when a writable profile
+    /// hides them.
+    /// </summary>
+    /// <remarks>
+    /// Returns true and emits a value when <paramref name="memberPath"/> is itself
+    /// a resource identity path (the member is an identity scalar — the submitted
+    /// value is cloned), or when it is a strict ancestor of one or more identity
+    /// paths (the member is a container such as a reference object — a new object
+    /// is reconstructed carrying only the identity leaf descendants found in the
+    /// submitted value). Unrelated members are not preserved. Returns false when
+    /// the member does not participate in resource identity.
+    /// </remarks>
+    private bool TryBuildIdentitySurface(string memberPath, JsonNode? submittedValue, out JsonNode? surface)
+    {
+        surface = null;
+
+        if (resourceIdentityJsonPaths.Count == 0)
+        {
+            return false;
+        }
+
+        // The member itself is an identity scalar — preserve the submitted value.
+        if (resourceIdentityJsonPaths.Contains(memberPath))
+        {
+            surface = submittedValue?.DeepClone();
+            return true;
+        }
+
+        // Otherwise collect the identity leaves nested under this member (e.g. the
+        // member is a reference object and "schoolId" is the identity leaf below it).
+        string descendantPrefix = $"{memberPath}.";
+        List<string> relativeLeafPaths =
+        [
+            .. resourceIdentityJsonPaths
+                .Where(identityPath => identityPath.StartsWith(descendantPrefix, StringComparison.Ordinal))
+                .Select(identityPath => identityPath[descendantPrefix.Length..]),
+        ];
+
+        if (relativeLeafPaths.Count == 0 || submittedValue is not JsonObject submittedObject)
+        {
+            return false;
+        }
+
+        var reconstructed = new JsonObject();
+
+        // Count visits every leaf (no short-circuit), copying each one present in the
+        // submitted value into the reconstructed surface; a non-zero count means at
+        // least one identity leaf was preserved.
+        int preservedLeafCount = relativeLeafPaths.Count(relativeLeafPath =>
+            TryCopyIdentityLeaf(submittedObject, relativeLeafPath, reconstructed)
+        );
+
+        if (preservedLeafCount == 0)
+        {
+            return false;
+        }
+
+        surface = reconstructed;
+        return true;
+    }
+
+    /// <summary>
+    /// Navigates <paramref name="source"/> along the dot-separated
+    /// <paramref name="relativeLeafPath"/> and, when the leaf is present, copies it
+    /// into <paramref name="target"/> at the same nested location, creating
+    /// intermediate objects as needed. Returns true when a leaf was copied.
+    /// </summary>
+    private static bool TryCopyIdentityLeaf(JsonObject source, string relativeLeafPath, JsonObject target)
+    {
+        string[] segments = relativeLeafPath.Split('.');
+
+        JsonNode? cursor = source;
+        foreach (string segment in segments)
+        {
+            if (
+                cursor is not JsonObject currentObject
+                || !currentObject.TryGetPropertyValue(segment, out cursor)
+            )
+            {
+                return false;
+            }
+        }
+
+        JsonObject targetCursor = target;
+        for (int i = 0; i < segments.Length - 1; i++)
+        {
+            if (targetCursor[segments[i]] is not JsonObject childObject)
+            {
+                childObject = new JsonObject();
+                targetCursor[segments[i]] = childObject;
+            }
+            targetCursor = childObject;
+        }
+
+        targetCursor[segments[^1]] = cursor?.DeepClone();
+        return true;
     }
 }
