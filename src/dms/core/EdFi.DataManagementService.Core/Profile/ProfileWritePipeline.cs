@@ -41,6 +41,14 @@ public sealed record ProfileWritePipelineResult
     /// Creatability violations intentionally deferred to the relational executor.
     /// Empty when deferral is disabled or no creatability violations were emitted.
     /// </summary>
+    /// <remarks>
+    /// Diagnostic/inspection surface only. The runtime middleware does not consume this
+    /// field: deferred creatability is carried to the backend via the enriched creatability
+    /// flags on <see cref="ProfileAppliedWriteRequest"/> (RootResourceCreatable and the
+    /// per-scope request states) and enforced on the relational write path, not by reading
+    /// this collection. It is retained so callers and tests can inspect which creatability
+    /// violations were deferred.
+    /// </remarks>
     public ImmutableArray<ProfileFailure> DeferredFailures { get; init; } = [];
 
     /// <summary>
@@ -104,11 +112,11 @@ public sealed record ProfileWritePipelineResult
 /// </list>
 /// </para>
 /// <para>
-/// Integration status: This pipeline is staged infrastructure being built and
-/// proven with unit tests (DMS-1116/DMS-1117/DMS-1118). It is not yet wired
-/// into the runtime write path — POST/PUT still flow through the existing
-/// ProfileWriteValidationMiddleware. Runtime integration will replace that
-/// middleware with this pipeline once all pipeline steps are complete.
+/// Integration status: wired into the relational runtime write path (DMS-1229).
+/// ProfileWritePipelineMiddleware invokes <see cref="Execute"/> for relational POST/PUT
+/// requests governed by a writable profile and attaches the resulting
+/// BackendProfileWriteContext for the backend profile-aware merge to consume.
+/// ProfileWriteValidationMiddleware still runs ahead of it in the upsert/update pipeline.
 /// </para>
 /// </remarks>
 internal static class ProfileWritePipeline

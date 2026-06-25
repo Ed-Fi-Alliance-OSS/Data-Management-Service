@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -35,67 +36,38 @@ internal static class ProfileWriteReferenceFilter
     /// <summary>
     /// Determines whether a concrete JSON path (property and numeric-index segments only,
     /// e.g. <c>$.schoolReference.schoolId</c> or <c>$.gradeLevels[0].gradeLevelDescriptor</c>)
-    /// resolves to an existing node in <paramref name="body"/>.
+    /// resolves to an existing node in <paramref name="body"/>. A present member whose value
+    /// is <c>null</c> still counts as existing, matching the writable shaper's
+    /// "member was submitted" semantics.
     /// </summary>
+    /// <remarks>
+    /// Reuses the shared concrete-path parse + navigate helpers rather than re-implementing
+    /// path walking, so the property/array-ordinal semantics live in one place. See
+    /// <see cref="RelationalJsonPathSupport.ParseConcretePath"/> +
+    /// <see cref="RelationalWriteFlattener.TryNavigateConcreteNode"/> and the same pairing in
+    /// <c>RelationalWriteProfileMerge.ResolveCollectionItemNode</c>.
+    /// </remarks>
     internal static bool PathExists(JsonNode body, string concretePath)
     {
-        if (string.IsNullOrEmpty(concretePath) || concretePath[0] != '$')
+        try
         {
+            var parsed = RelationalJsonPathSupport.ParseConcretePath(new JsonPath(concretePath));
+            var segments = RelationalJsonPathSupport.GetRestrictedSegments(
+                new JsonPathExpression(parsed.WildcardPath, [])
+            );
+
+            return RelationalWriteFlattener.TryNavigateConcreteNode(
+                body,
+                segments,
+                parsed.OrdinalPath.AsSpan(),
+                out _
+            );
+        }
+        catch (InvalidOperationException)
+        {
+            // ParseConcretePath / GetRestrictedSegments throw for malformed input; a path
+            // that cannot be parsed cannot resolve, so treat it as absent.
             return false;
         }
-
-        JsonNode? cursor = body;
-        int index = 1;
-
-        while (index < concretePath.Length)
-        {
-            char current = concretePath[index];
-
-            if (current == '.')
-            {
-                int start = index + 1;
-                int end = start;
-                while (end < concretePath.Length && concretePath[end] != '.' && concretePath[end] != '[')
-                {
-                    end++;
-                }
-
-                string memberName = concretePath[start..end];
-                if (cursor is not JsonObject obj || !obj.TryGetPropertyValue(memberName, out cursor))
-                {
-                    return false;
-                }
-
-                index = end;
-            }
-            else if (current == '[')
-            {
-                int close = concretePath.IndexOf(']', index);
-                if (close < 0)
-                {
-                    return false;
-                }
-
-                string indexText = concretePath[(index + 1)..close];
-                if (
-                    cursor is not JsonArray array
-                    || !int.TryParse(indexText, out int arrayIndex)
-                    || arrayIndex < 0
-                    || arrayIndex >= array.Count
-                )
-                {
-                    return false;
-                }
-
-                cursor = array[arrayIndex];
-                index = close + 1;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

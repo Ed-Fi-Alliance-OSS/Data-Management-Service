@@ -467,6 +467,16 @@ public sealed record GenericWritableProfileValidationFailure(
 /// Category-3 failure for submitted member/value data that is forbidden by the
 /// writable profile after request-side visibility and value-filter evaluation.
 /// </summary>
+/// <remarks>
+/// DMS-1229: production request shaping no longer emits this failure. Ordinary hidden
+/// submitted members/scopes are accepted and stripped with no failure, and submitted
+/// collection items that fail a value filter emit
+/// <see cref="CollectionValueFilterViolationWritableProfileValidationFailure"/> instead.
+/// This type and its <c>ProfileFailures.ForbiddenSubmittedData</c> factory are retained as
+/// stable Core.External contract surface (consumers may still map a generic category-3
+/// forbidden-data failure) and remain covered by unit tests; do not remove without a
+/// deliberate external-contract change.
+/// </remarks>
 public sealed record ForbiddenSubmittedDataWritableProfileValidationFailure(
     ProfileFailureContext Context,
     string JsonScope,
@@ -967,6 +977,9 @@ public static class ProfileFailures
         params ProfileFailureDiagnostic[] diagnostics
     ) => CreateWritableProfileValidationFailure(emitter, message, context, diagnostics);
 
+    // DMS-1229: retained as Core.External contract surface. Production shaping no longer
+    // calls this factory (hidden submitted data is now accepted/stripped); it is kept for the
+    // external failure contract and unit coverage. See the type remarks for details.
     public static ForbiddenSubmittedDataWritableProfileValidationFailure ForbiddenSubmittedData(
         string profileName,
         string resourceName,

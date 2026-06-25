@@ -89,7 +89,11 @@ internal static class ProfileWriteFailureResponseMapper
 
     private static Dictionary<string, string[]> BuildValidationErrors(IReadOnlyList<ProfileFailure> failures)
     {
-        Dictionary<string, string[]> validationErrors = [];
+        // Accumulate per path so multiple failures targeting the same request path
+        // (e.g. several filters failing on one collection item) each contribute a
+        // message instead of the last one clobbering the rest. The response contract
+        // is string[] per path; distinct messages are preserved in encounter order.
+        Dictionary<string, List<string>> messagesByPath = [];
 
         foreach (ProfileFailure failure in failures)
         {
@@ -104,10 +108,19 @@ internal static class ProfileWriteFailureResponseMapper
 
             foreach (string requestPath in requestPaths)
             {
-                validationErrors[requestPath] = [failure.Message];
+                if (!messagesByPath.TryGetValue(requestPath, out List<string>? messages))
+                {
+                    messages = [];
+                    messagesByPath[requestPath] = messages;
+                }
+
+                if (!messages.Contains(failure.Message))
+                {
+                    messages.Add(failure.Message);
+                }
             }
         }
 
-        return validationErrors;
+        return messagesByPath.ToDictionary(entry => entry.Key, entry => entry.Value.ToArray());
     }
 }

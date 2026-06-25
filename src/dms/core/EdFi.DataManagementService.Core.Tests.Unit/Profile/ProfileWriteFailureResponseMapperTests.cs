@@ -26,6 +26,13 @@ public abstract class ProfileWriteFailureResponseMapperTests
 
     internal static int StatusInBody(FrontendResponse response) => response.Body!["status"]!.GetValue<int>();
 
+    internal static IReadOnlyList<string> MessagesFor(FrontendResponse response, string requestPath) =>
+        [
+            .. response.Body!["validationErrors"]![requestPath]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>()),
+        ];
+
     [TestFixture]
     public class Given_A_Collection_Value_Filter_Failure : ProfileWriteFailureResponseMapperTests
     {
@@ -332,6 +339,82 @@ public abstract class ProfileWriteFailureResponseMapperTests
         public void It_should_return_system_error_type()
         {
             TypeOf(_response).Should().Be(SystemErrorType);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Multiple_Data_Validation_Failures_Sharing_A_Request_Path
+        : ProfileWriteFailureResponseMapperTests
+    {
+        private FrontendResponse _response = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // A value-filter violation and a duplicate-collision both reference
+            // $.gradeLevels[0] with distinct messages. Both messages must survive in
+            // the aggregated per-path validationErrors entry rather than the later
+            // failure clobbering the earlier one.
+            _response = ProfileWriteFailureResponseMapper.Map(
+                [
+                    ProfileFailures.CollectionValueFilterViolation(
+                        profileName: ProfileName,
+                        resourceName: "School",
+                        method: "POST",
+                        operation: "upsert",
+                        jsonScope: "$.gradeLevels[*]",
+                        requestJsonPaths: ["$.gradeLevels[0]"],
+                        filterPropertyName: "gradeLevelDescriptor",
+                        filterMode: FilterMode.IncludeOnly,
+                        filterValues: ["uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"]
+                    ),
+                    ProfileFailures.DuplicateVisibleCollectionItemCollision(
+                        profileName: ProfileName,
+                        resourceName: "School",
+                        method: "POST",
+                        operation: "upsert",
+                        jsonScope: "$.gradeLevels[*]",
+                        stableParentAddress: new ScopeInstanceAddress("$", []),
+                        semanticIdentityPartsInOrder:
+                        [
+                            new SemanticIdentityPart(
+                                "gradeLevelDescriptor",
+                                JsonValue.Create("uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"),
+                                true
+                            ),
+                        ],
+                        requestJsonPaths: ["$.gradeLevels[0]", "$.gradeLevels[1]"]
+                    ),
+                ],
+                ProfileName,
+                TraceId
+            );
+        }
+
+        [Test]
+        public void It_should_return_data_validation_failed_type()
+        {
+            TypeOf(_response).Should().Be(DataValidationType);
+        }
+
+        [Test]
+        public void It_should_aggregate_both_messages_for_the_shared_path()
+        {
+            IReadOnlyList<string> messages = MessagesFor(_response, "$.gradeLevels[0]");
+
+            messages.Should().HaveCount(2);
+            messages.Should().Contain("Submitted collection item failed the writable profile value filter.");
+            messages
+                .Should()
+                .Contain(
+                    "Visible collection items collide on compiled semantic identity after writable-profile shaping."
+                );
+        }
+
+        [Test]
+        public void It_should_keep_the_message_for_the_non_shared_path()
+        {
+            MessagesFor(_response, "$.gradeLevels[1]").Should().ContainSingle();
         }
     }
 }

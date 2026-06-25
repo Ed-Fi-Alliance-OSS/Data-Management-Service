@@ -132,6 +132,17 @@ DMS should expose these client-visible problem types:
 
 The current generic profile failure mapping in `ProfileWritePipelineMiddleware` is too coarse for DMS-1229 because it maps non-server profile failures to `ForDataPolicyEnforced`. That mapping should be refined so value-filter validation failures are not reported as required-field policy failures.
 
+## Validation And Extraction Boundary (Schema-Valid-Only Compatibility)
+
+DMS-1229's "accept and ignore hidden submitted data" rule is scoped to **schema-valid** submitted data. Profile shaping (`ProfileWritePipelineMiddleware` / `WritableRequestShaper`) runs *after* document/decimal validation and *after* relational reference extraction in the `ApiService` upsert/update pipelines, and those earlier stages operate on the raw submitted body and are profile-unaware. The compatibility boundary is therefore:
+
+- **Schema-valid hidden scalar, object, and reference data is accepted and ignored.** The shaper strips it from `WritableRequestBody` with no failure, and the backend shaped-reference filter drops any reference/descriptor no longer present in the shaped body.
+- **Schema-invalid hidden data can still fail pre-profile validation.** A hidden member with the wrong type (or an invalid decimal) is rejected by `ValidateDocumentMiddleware` / `ValidateDecimalMiddleware` before shaping can strip it.
+- **Malformed hidden references can still fail extraction.** A reference object missing identifying values is rejected by relational reference extraction (`ExtractDocumentInfoMiddleware` / `ReferenceExtractor` in `RelationalWriteValidation` mode) before the backend shaped-reference filter runs.
+- **Complete hidden references are ignored by the backend shaped-reference filter.** A fully-formed reference the profile hides extracts cleanly and is then dropped from the resolved set by `ProfileWriteReferenceFilter`, so it is neither written nor rejected as unresolved.
+
+This matches the legacy ODS surface for the well-formed submitted-data shapes the Behavior Matrix covers. Literal ODS bind-time tolerance of *invalid* hidden values is intentionally **out of scope** for DMS-1229; achieving it would require making document validation and reference extraction profile-aware, which this ticket does not do. If that broader compatibility is later required, it is a separate behavior change, not a documentation/test update.
+
 ## Persistence And Backend Boundary
 
 The relational backend should continue to consume Core-supplied profile write contracts:
@@ -193,6 +204,13 @@ Core unit tests should cover:
 - Collection value-filter failure maps to data-validation response shape.
 - Duplicate visible collection items after shaping still fail as data validation.
 - Identity top-level reference members are effectively included from resource identity paths.
+
+The Validation And Extraction Boundary above is locked by existing coverage; each boundary clause maps to a test that fails if the boundary regresses:
+
+- Schema-valid hidden data accepted and ignored: `WritableRequestShaperTests` (hidden scalar, nested object, non-collection scope, collection, extension scope, null-valued, and hidden non-identity reference cases stripped with no failure; identity references preserved).
+- Schema-invalid hidden data still fails pre-profile validation: `ValidateDocumentMiddlewareTests.Given_A_Request_With_Wrong_Type_Property_Value`.
+- Malformed hidden references still fail extraction: `ReferenceExtractorTests` (partial/invalid nested reference) and `ExtractDocumentInfoMiddlewareTests` (malformed root/nested reference identity member returns a validation response).
+- Complete hidden references ignored by the backend shaped-reference filter: `ProfileWriteReferenceFilterTests` (`RetainPresent` drops references/descriptors absent from the shaped body and keeps identity references present).
 
 Backend or profile-merge tests should cover preservation of hidden stored values if existing tests do not already prove:
 
