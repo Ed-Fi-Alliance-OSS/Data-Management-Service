@@ -14,9 +14,6 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until profile write handling of out-of-profile
-        # submitted data matches ODS behavior.
-        @ignore
         Scenario: 01 POST with IncludeOnly write profile silently strips excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
@@ -45,9 +42,6 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until profile write handling of out-of-profile
-        # submitted data matches ODS behavior.
-        @ignore
         Scenario: 02 POST with IncludeOnly write profile preserves identity and allowed fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
@@ -83,9 +77,6 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until profile write handling of out-of-profile
-        # submitted data matches ODS behavior.
-        @ignore
         Scenario: 03 POST with ExcludeOnly write profile silently strips excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeOnly" for resource "School" with body
                   """
@@ -150,9 +141,6 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until submitted collection items failing profile
-        # value filters return ODS-style data-validation errors.
-        @ignore
         Scenario: 05 POST with collection item filter rejects submitted non-matching items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """
@@ -182,9 +170,6 @@ Feature: Profile Write Filtering
 
         @relational-backend
         @relational-ci-shard-3
-        # DMS-1229: Quarantined until submitted collection items failing profile
-        # value filters return ODS-style data-validation errors.
-        @ignore
         Scenario: 06 POST with collection item filter rejects a submitted non-matching item
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilter" for resource "School" with body
                   """
