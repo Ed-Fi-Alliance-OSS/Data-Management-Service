@@ -175,21 +175,14 @@ internal class ProfileWritePipelineMiddleware(
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
-            int statusCode = result.Failures[0].Category switch
-            {
-                ProfileFailureCategory.CreatabilityViolation => 403,
-                ProfileFailureCategory.CoreBackendContractMismatch => 500,
-                ProfileFailureCategory.InvalidProfileDefinition => 500,
-                ProfileFailureCategory.BindingAccountingFailure => 500,
-                _ => 400, // WritableProfileValidationFailure, InvalidProfileUsage
-            };
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: statusCode,
-                Body: statusCode >= 500
-                    ? FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId)
-                    : FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            // DMS-1229: collection value-filter violations and duplicate visible
+            // collection-item collisions are request data validation failures
+            // (data-validation-failed); creatability and other profile-policy failures
+            // remain data-policy-enforced; internal categories surface as server errors.
+            requestInfo.FrontendResponse = ProfileWriteFailureResponseMapper.Map(
+                result.Failures,
+                profileName,
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
