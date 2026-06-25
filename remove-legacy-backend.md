@@ -19,6 +19,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
 
    ```bash
    rg -n "Old\.Postgresql|UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|NEED_DATABASE_SETUP|DeployDatabaseOnStartup" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
+   rg -n "MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>" src/dms
    ```
 
 2. Treat these as removal targets in product/runtime code:
@@ -124,7 +125,14 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
    - remove old backend source copy
    - remove backend installer restore/publish/copy if the installer is deleted
 
-6. Update scripts and tests that currently rely on the legacy installer:
+6. Update build and package plumbing that publishes or packages the legacy installer:
+
+   - remove or rewrite `PublishBackendInstaller` in `build-dms.ps1`
+   - remove any `PublishBackendInstaller` invocation from `build-dms.ps1`
+   - remove installer output from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec`
+   - remove CI, Docker, or release-package expectations for `/app/Installer` if the installer is deleted
+
+7. Update scripts and tests that currently rely on the legacy installer:
 
    - `eng/docker-compose/start-local-dms.ps1`
    - `eng/docker-compose/start-published-dms.ps1`
@@ -133,7 +141,7 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`
    - Pester tests under `eng/docker-compose/tests`
 
-7. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with relational provisioning checks, especially `dms."EffectiveSchema"` and generated resource tables.
+8. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with relational provisioning checks, especially `dms."EffectiveSchema"` and generated resource tables.
 
 ## Phase 4A: Remove Legacy Document-Store CDC And Kafka Plumbing
 
@@ -178,15 +186,24 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - `ProfileWriteValidationMiddleware`
    - `ProfileWritePipelineMiddleware`
 
-3. Make startup validation unconditional:
+3. Remove non-flag legacy runtime branches that are still selected by nullable `MappingSet` values or optional service lookups:
+
+   - make `QueryRequestHandler` create relational query requests unconditionally and remove legacy `new QueryRequest(...)` paths
+   - make `GetByIdHandler` create relational get requests unconditionally and remove legacy `new GetRequest(...)` paths
+   - make write/delete request contracts relational-only; `MappingSet` should be non-nullable anywhere relational processing requires it
+   - remove `GetTokenInfoHandler` fallback behavior that depends on `ITokenInfoEducationOrganizationLookup`; require the relational token-info lookup registration instead
+   - remove the legacy read-profile filtering path; delete or simplify `ProfileFilteringMiddleware` branches that only exist to distinguish relational requests by `MappingSet is not null`
+   - replace optional `GetService<IChangeQueryRepository>` branches with required relational registrations or explicit relational unsupported handling
+
+4. Make startup validation unconditional:
 
    - `ValidateDatabaseFingerprintReaderRegistrationTask`
    - `ValidateResourceKeyRowReaderRegistrationTask`
    - `ValidateStartupInstancesTask`
 
-4. Update `ApiService` to stop passing `_appSettings.Value.UseRelationalBackend` into `ResourceActionAuthorizationMiddleware`. If that middleware only uses the flag to choose old authorization behavior, remove the constructor parameter and keep the relational behavior.
+5. Update `ApiService` to stop passing `_appSettings.Value.UseRelationalBackend` into `ResourceActionAuthorizationMiddleware`. If that middleware only uses the flag to choose old authorization behavior, remove the constructor parameter and keep the relational behavior.
 
-5. Update or remove "disabled flag" tests. Examples found during inventory:
+6. Update or remove "disabled flag" tests. Examples found during inventory:
 
    - `ValidateDatabaseFingerprintMiddlewareFeatureFlagTests`
    - `ResolveMappingSetMiddlewareTests` cases for `Given_UseRelationalBackend_Is_False`
@@ -195,7 +212,7 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - `ResourceActionAuthorizationMiddlewareTests` legacy-mode helpers
    - app-settings tests expecting the flag default
 
-6. Update error messages that mention "UseRelationalBackend is enabled" so they describe missing relational backend registrations directly.
+7. Update error messages that mention "UseRelationalBackend is enabled" so they describe missing relational backend registrations directly.
 
 ## Phase 6: Remove E2E Lane Tags And Build Script Lane Logic
 
@@ -225,7 +242,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
 5. Rename feature files whose names encode the old lane if they are no longer relational-only variants:
 
-   - `RelationshipsWithEdOrgsOnlyRelational.feature` becomes `RelationshipsWithEdOrgsOnly.feature`
+   - `RelationshipsWithEdOrgsOnlyRelational.feature` becomes `RelationshipsWithEdOrgsOnlyAdditional.feature`
    - `RelationshipsWithPeopleRelational.feature` becomes `RelationshipsWithPeople.feature`
 
 6. Update `build-dms.ps1`:
@@ -301,6 +318,8 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
 4. Update log export paths and job summaries from "Relational E2E" to neutral "DMS E2E" naming.
 
+5. Update package and release workflow templates so they no longer publish, upload, download, or validate `Backend.Installer` artifacts if the installer is deleted.
+
 ## Phase 9: Update Documentation
 
 1. Update developer docs and setup instructions:
@@ -308,6 +327,8 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - `AGENTS.md`
    - `README.md`
    - `GETTING_STARTED.md`
+   - `docs/DOCKER.md`
+   - `docs/MULTI-TENANCY-GETTING-STARTED.md`
    - `docs/RELATIONAL-BACKEND.md`
    - `docs/CONFIGURATION.md`
    - `eng/docker-compose/README.md`
@@ -323,6 +344,9 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - `Category!=@relational-backend`
    - `Category=relational-backend`
    - `Category!=relational-backend`
+   - `NEED_DATABASE_SETUP`
+   - `DMS_DEPLOY_DATABASE_ON_STARTUP`
+   - `AppSettings__DeployDatabaseOnStartup`
 
 4. Document the new default E2E command, for example:
 
@@ -350,6 +374,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
    rg -n "Old\.Postgresql|EdFi\.DataManagementService\.Old\.Postgresql" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|Backend\.Installer|dms\.document|edfi\.dms\.document|to_debezium" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
+   rg -n "MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>" src/dms
    ```
 
    Any remaining matches should be either intentionally historical or renamed/reworked.
@@ -407,7 +432,9 @@ All DMS E2E tests now run against the relational backend because it is the only 
 - `EdFi.DataManagementService.Old.Postgresql` and `EdFi.DataManagementService.Old.Postgresql.Tests.Integration` are deleted.
 - No project or solution references old PostgreSQL projects.
 - No runtime code can select the legacy backend.
+- Core handlers and middleware no longer fall back to legacy request types, legacy token-info lookups, nullable-`MappingSet` backend selection, or optional relational service branches.
 - No Docker or build script flag can enable or disable the relational backend.
+- No deleted legacy installer artifact is published, copied into Docker images, or packaged in the frontend NuGet output.
 - E2E tests, build filters, workflows, and docs no longer use `@relational-backend` or bare `relational-backend`; shard tags are either removed or renamed to backend-neutral tags.
 - CI no longer runs old PostgreSQL integration tests.
 - DMS startup always wires relational document store, relational query handler, mapping initialization, fingerprint validation, resource-key validation, and relational authorization lookup.
