@@ -265,14 +265,27 @@ internal static class RelationalModelSetSchemaHelpers
         IReadOnlyList<ReferenceJsonPathBinding> referenceJsonPaths
     )
     {
+        return BuildReferenceIdentityFieldBaseNameCounts(
+            referenceObjectPath,
+            referenceJsonPaths.Select(binding => binding.ReferenceJsonPath)
+        );
+    }
+
+    /// <summary>
+    /// Builds occurrence counts for reference-relative identity field base names from the reference-side
+    /// value paths of a reference mapping. Shared by concrete reference binding and abstract identity
+    /// column naming so both disambiguate duplicate field names identically.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, int> BuildReferenceIdentityFieldBaseNameCounts(
+        JsonPathExpression referenceObjectPath,
+        IEnumerable<JsonPathExpression> referenceValuePaths
+    )
+    {
         Dictionary<string, int> counts = new(StringComparer.Ordinal);
 
-        foreach (var binding in referenceJsonPaths)
+        foreach (var referenceValuePath in referenceValuePaths)
         {
-            var baseName = BuildReferenceIdentityFieldBaseName(
-                referenceObjectPath,
-                binding.ReferenceJsonPath
-            );
+            var baseName = BuildReferenceIdentityFieldBaseName(referenceObjectPath, referenceValuePath);
             counts[baseName] = counts.TryGetValue(baseName, out var existing) ? existing + 1 : 1;
         }
 
@@ -365,7 +378,14 @@ internal static class RelationalModelSetSchemaHelpers
     {
         if (referenceObjectPath is null)
         {
-            return BuildIdentityPartBaseName(identityPath);
+            // Direct (non-reference) identity field. A descriptor-valued field still stores
+            // dms.Descriptor.DocumentId, so it gets the _DescriptorId suffix, matching concrete
+            // DescriptorIdColumnName naming.
+            var scalarBaseName = BuildIdentityPartBaseName(identityPath);
+
+            return isDescriptor
+                ? RelationalNameConventions.DescriptorIdColumnName(scalarBaseName).Value
+                : scalarBaseName;
         }
 
         var resolvedReferencePath = referenceObjectPath.Value;

@@ -481,6 +481,11 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
         foreach (var member in members)
         {
+            // Match on the member-mapped identity path so subclasses that remap via
+            // superclassIdentityJsonPath still resolve their reference binding; otherwise a
+            // reference-backed abstract identity would silently fall back to a scalar-style name.
+            var mappedPath = MapIdentityPathForMember(member, identityPath, abstractResource);
+
             foreach (var refBinding in member.Model.DocumentReferenceBindings)
             {
                 foreach (var identityBinding in refBinding.IdentityBindings)
@@ -488,7 +493,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                     if (
                         !string.Equals(
                             identityBinding.ReferenceJsonPath.Canonical,
-                            identityPath.Canonical,
+                            mappedPath.Canonical,
                             StringComparison.Ordinal
                         )
                     )
@@ -506,7 +511,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         resolved = new ReferenceResolution(
                             candidate,
                             identityBinding.IdentityJsonPath,
-                            BuildReferenceFieldBaseNameCounts(refBinding)
+                            BuildReferenceIdentityFieldBaseNameCounts(
+                                refBinding.ReferenceObjectPath,
+                                refBinding.IdentityBindings.Select(ib => ib.ReferenceJsonPath)
+                            )
                         );
                     }
                     else if (
@@ -530,30 +538,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         }
 
         return resolved;
-    }
-
-    /// <summary>
-    /// Builds reference-relative field-base-name occurrence counts from a document reference binding's
-    /// identity bindings, mirroring concrete <c>BuildReferenceIdentityFieldBaseNameCounts</c> over
-    /// <c>mapping.ReferenceJsonPaths</c>. Drives the duplicate-field naming fallback so abstract identity
-    /// columns disambiguate the same way concrete reference columns do.
-    /// </summary>
-    private static IReadOnlyDictionary<string, int> BuildReferenceFieldBaseNameCounts(
-        DocumentReferenceBinding referenceBinding
-    )
-    {
-        Dictionary<string, int> counts = new(StringComparer.Ordinal);
-
-        foreach (var identityBinding in referenceBinding.IdentityBindings)
-        {
-            var baseName = BuildReferenceIdentityFieldBaseName(
-                referenceBinding.ReferenceObjectPath,
-                identityBinding.ReferenceJsonPath
-            );
-            counts[baseName] = counts.TryGetValue(baseName, out var existing) ? existing + 1 : 1;
-        }
-
-        return counts;
     }
 
     /// <summary>

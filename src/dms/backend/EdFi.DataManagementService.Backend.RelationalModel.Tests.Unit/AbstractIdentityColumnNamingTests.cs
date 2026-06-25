@@ -66,6 +66,22 @@ public class Given_Building_An_Abstract_Identity_Column_Name
         name.Should().Be("Program_ProgramTypeDescriptor_DescriptorId");
     }
 
+    [Test]
+    public void It_should_append_DescriptorId_for_a_direct_non_reference_descriptor()
+    {
+        // A descriptor-valued identity field that is NOT behind a document reference still stores
+        // dms.Descriptor.DocumentId, so it must get the _DescriptorId suffix (AC parity with concrete).
+        var name = RelationalModelSetSchemaHelpers.BuildAbstractIdentityColumnName(
+            JsonPathExpressionCompiler.Compile("$.programTypeDescriptor"),
+            referenceObjectPath: null,
+            referenceTargetIdentityPath: null,
+            isDescriptor: true,
+            NoCounts
+        );
+
+        name.Should().Be("ProgramTypeDescriptor_DescriptorId");
+    }
+
     /// <summary>
     /// The reviewer's CourseOffering shape: when two reference-side fields collide on the same
     /// reference-relative base name (count &gt; 1), the tie-break must disambiguate using the TARGET
