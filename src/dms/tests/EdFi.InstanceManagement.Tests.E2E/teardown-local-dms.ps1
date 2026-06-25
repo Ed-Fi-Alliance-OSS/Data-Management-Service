@@ -372,7 +372,8 @@ try {
     # Check for any remaining images
     $remainingImages = @()
     foreach ($imageVariant in @("ed-fi-api-local", "ed-fi-api-config-local", "dms-local-dms", "dms-local-config")) {
-        if (docker images -q $imageVariant 2>$null) {
+        $imageId = docker images -q $imageVariant 2>$null
+        if ($imageId) {
             $remainingImages += $imageVariant
         }
     }
