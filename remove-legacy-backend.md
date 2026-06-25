@@ -20,6 +20,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
    ```bash
    rg -n "Old\.Postgresql|UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|NEED_DATABASE_SETUP|DeployDatabaseOnStartup" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>" src/dms
+   rg -n "InstanceManagement|routeContext|dms\.document|Backend\.Installer|Installer/EdFi\.DataManagementService\.Backend\.Installer\.dll|to_debezium" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1
    ```
 
 2. Treat these as removal targets in product/runtime code:
@@ -159,6 +160,11 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/KafkaMessaging.feature`
    - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/KafkaMessageCollector.cs`
    - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/StepDefinitions/KafkaStepDefinitions.cs`
+   - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Features/InstanceManagement/KafkaTopicPerInstance.feature`
+   - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Management/InstanceKafkaMessageCollector.cs`
+   - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Management/InstanceKafkaTestConfiguration.cs`
+   - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Management/KafkaTopicHelper.cs`
+   - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/StepDefinitions/InstanceKafkaStepDefinitions.cs`
 
 3. Update instance-management Debezium helpers that hard-code legacy table lists and publication names:
 
@@ -273,6 +279,16 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - make `SearchContainerSetup` always use relational reset behavior
    - remove direct legacy reset paths and legacy database-name assumptions
 
+9. Migrate Instance Management E2E setup to the relational backend:
+
+   - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` so it no longer relies on the legacy backend by omission; the DMS container must start with the same always-relational runtime path as the rest of DMS E2E
+   - remove the one-shot `Installer/EdFi.DataManagementService.Backend.Installer.dll` call and all `dms.document` verification, schema dump, and schema replay logic
+   - replace the per-instance database setup with generated relational DDL provisioning for each route-context database, verifying `dms."EffectiveSchema"` and expected generated resource tables instead of `dms.document`
+   - update `.env.routeContext.e2e` or replace it with a neutral relational route-context E2E env file; it must not depend on `USE_RELATIONAL_BACKEND`, `NEED_DATABASE_SETUP`, or `DMS_DEPLOY_DATABASE_ON_STARTUP`
+   - update `build-dms.ps1 InstanceE2ETest` to call the relational route-context provisioning flow and restart DMS when needed to clear cached database state
+   - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md` so it describes relational setup and clearly excludes legacy installer/database setup
+   - remove or quarantine Instance Management Kafka topic-per-instance scenarios until relational CDC/Kafka support exists
+
 ## Phase 7: Remove Old Project References And Files
 
 1. Delete:
@@ -375,6 +391,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
    rg -n "UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|Backend\.Installer|dms\.document|edfi\.dms\.document|to_debezium" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>" src/dms
+   rg -n "Test-DmsDocumentTablePresent|Installer/EdFi\.DataManagementService\.Backend\.Installer\.dll|dms\.document|to_debezium" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1
    ```
 
    Any remaining matches should be either intentionally historical or renamed/reworked.
@@ -421,7 +438,15 @@ All DMS E2E tests now run against the relational backend because it is the only 
    ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-4'
    ```
 
-9. Build and inspect the Docker image:
+9. Run Instance Management E2E through the repo-root build script:
+
+   ```powershell
+   ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild
+   ```
+
+   If the suite remains sharded, run each `instance-management-ci-shard-*` filter after the relational route-context setup is in place.
+
+10. Build and inspect the Docker image:
 
    - confirm `/app/Installer` is absent if the installer was deleted
    - confirm no `AppSettings__UseRelationalBackend` environment variable is present in the compose files
@@ -436,6 +461,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 - No Docker or build script flag can enable or disable the relational backend.
 - No deleted legacy installer artifact is published, copied into Docker images, or packaged in the frontend NuGet output.
 - E2E tests, build filters, workflows, and docs no longer use `@relational-backend` or bare `relational-backend`; shard tags are either removed or renamed to backend-neutral tags.
+- Instance Management E2E tests provision route-context databases with relational generated DDL and no longer use `Backend.Installer`, `dms.document`, or legacy CDC/Kafka assumptions.
 - CI no longer runs old PostgreSQL integration tests.
 - DMS startup always wires relational document store, relational query handler, mapping initialization, fingerprint validation, resource-key validation, and relational authorization lookup.
 - Legacy document-store CDC/Debezium/Kafka configuration is removed or explicitly disabled; docs state that relational CDC/Kafka support is pending a separate implementation.
