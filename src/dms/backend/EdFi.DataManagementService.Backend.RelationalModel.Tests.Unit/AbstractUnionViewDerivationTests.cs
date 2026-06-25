@@ -845,3 +845,320 @@ public class Given_Concrete_Resource_Without_IsSubclass_Property
         _memberResourceNames.Should().Equal("LocalEducationAgency");
     }
 }
+
+/// <summary>
+/// Test fixture for abstract union view output column naming: reference-backed scalar (matrix row 2).
+/// The abstract resource EnrollmentCarrier has identity $.schoolReference.schoolId.
+/// The union view output column must be named School_SchoolId (convention: {RefBase}_{Field}).
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_With_Reference_Backed_Scalar_Identity
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+        );
+    }
+
+    /// <summary>
+    /// Reference-backed scalar: union view output column is School_SchoolId (convention name, not
+    /// the concrete key-unified column SchoolId_Unified).
+    /// </summary>
+    [Test]
+    public void It_should_name_reference_backed_scalar_output_column_as_Ref_Field()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("School_SchoolId");
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract union view output column naming: composite reference scalar and
+/// reference-backed descriptor (matrix rows 3 and 4).
+/// Abstract resource ProgramCarrier with identity paths under $.programReference.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_With_Composite_Reference_Identity
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "ProgramCarrier"
+        );
+    }
+
+    /// <summary>
+    /// Composite reference scalar: union view output column is Program_EducationOrganizationId.
+    /// </summary>
+    [Test]
+    public void It_should_name_composite_reference_scalar_output_column_as_Ref_Field()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("Program_EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// Reference-backed descriptor: union view output column is Program_ProgramTypeDescriptor_DescriptorId
+    /// and carries IsDescriptorReference = true.
+    /// </summary>
+    [Test]
+    public void It_should_name_reference_backed_descriptor_output_column_as_Ref_Field_DescriptorId()
+    {
+        var descriptorColumn = _abstractUnionView.OutputColumnsInSelectOrder.Single(column =>
+            column.ColumnName.Value == "Program_ProgramTypeDescriptor_DescriptorId"
+        );
+
+        descriptorColumn.IsDescriptorReference.Should().BeTrue();
+        descriptorColumn
+            .TargetResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"));
+    }
+
+    /// <summary>
+    /// Builds the project schema used by this fixture (reuses ProgramCarrier schemas defined in
+    /// AbstractIdentityTableDerivationTests.cs indirectly via the same inline structure).
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["ProgramCarrier"] = new JsonObject
+                {
+                    ["resourceName"] = "ProgramCarrier",
+                    ["identityJsonPaths"] = new JsonArray
+                    {
+                        "$.programReference.educationOrganizationId",
+                        "$.programReference.programTypeDescriptor",
+                    },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["programOfferings"] = BuildProgramOfferingMemberSchema(),
+                ["programs"] = BuildProgramTargetSchema(),
+                ["programTypeDescriptors"] = BuildProgramTypeDescriptorSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// ProgramOffering subclass of ProgramCarrier; references Program via $.programReference.
+    /// </summary>
+    private static JsonObject BuildProgramOfferingMemberSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramOffering",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "ProgramCarrier",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["Program"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.programReference.educationOrganizationId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programTypeDescriptor",
+                            ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
+                        },
+                    },
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["equalityConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.programReference.educationOrganizationId",
+                "$.programReference.programTypeDescriptor",
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["programReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["educationOrganizationId"] = new JsonObject
+                            {
+                                ["type"] = "integer",
+                                ["format"] = "int64",
+                            },
+                            ["programTypeDescriptor"] = new JsonObject
+                            {
+                                ["type"] = "string",
+                                ["maxLength"] = 306,
+                            },
+                        },
+                        ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+                    },
+                },
+                ["required"] = new JsonArray { "programReference" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Target Program resource with both a scalar and descriptor identity path.
+    /// </summary>
+    private static JsonObject BuildProgramTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Program",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.programTypeDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.educationOrganizationId",
+                },
+                ["ProgramTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ProgramTypeDescriptor",
+                    ["path"] = "$.programTypeDescriptor",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["format"] = "int64",
+                    },
+                    ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
+                },
+                ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Minimal ProgramTypeDescriptor schema.
+    /// </summary>
+    private static JsonObject BuildProgramTypeDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramTypeDescriptor",
+            ["isDescriptor"] = true,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                },
+                ["required"] = new JsonArray("codeValue", "namespace"),
+            },
+        };
+    }
+}

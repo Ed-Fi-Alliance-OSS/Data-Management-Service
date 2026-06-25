@@ -307,6 +307,141 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Builds the physical column name for an abstract identity column, reproducing the same
+    /// reference/descriptor naming conventions used for concrete identity columns. Naming is purely
+    /// convention-driven — <c>relational.nameOverrides</c> are intentionally not consulted (design
+    /// decision D4: abstract identity columns use convention only).
+    /// <para>
+    /// For a plain scalar identity path (<paramref name="referenceObjectPath"/> is <see langword="null"/>),
+    /// the column name is <c>BuildIdentityPartBaseName(identityPath)</c> unchanged.
+    /// </para>
+    /// <para>
+    /// For a reference-backed identity path (<paramref name="referenceObjectPath"/> is not
+    /// <see langword="null"/>), the column name is composed as
+    /// <c>{referenceBaseName}_{fieldBaseName}</c>, where:
+    /// <list type="bullet">
+    /// <item><description>
+    /// <c>referenceBaseName</c> is the PascalCased final property segment of
+    /// <paramref name="referenceObjectPath"/> with a trailing <c>"Reference"</c> token stripped (when
+    /// the result would remain non-empty).
+    /// </description></item>
+    /// <item><description>
+    /// <c>fieldBaseName</c> is resolved by <c>BuildReferenceIdentityFieldBaseName</c> with the same
+    /// duplicate-field occurrence-count fallback as <c>ResolveReferenceIdentityPartBaseName</c>.
+    /// </description></item>
+    /// </list>
+    /// When <paramref name="isDescriptor"/> is <see langword="true"/> the composed name is further
+    /// suffixed via <c>RelationalNameConventions.DescriptorIdColumnName</c>, yielding
+    /// <c>…_DescriptorId</c>.
+    /// </para>
+    /// </summary>
+    /// <param name="identityPath">The abstract identity JSONPath to name.</param>
+    /// <param name="referenceObjectPath">
+    /// The JSONPath to the reference object when the identity path is reference-backed; otherwise
+    /// <see langword="null"/> for a plain scalar identity path.
+    /// </param>
+    /// <param name="referenceTargetIdentityPath">
+    /// The identity JSONPath on the referenced (target) resource for this binding — the equivalent of
+    /// concrete <c>ReferenceJsonPathBinding.IdentityJsonPath</c>. Used only by the duplicate-field
+    /// tie-break fallback so abstract naming matches concrete exactly. Required (non-null) when
+    /// <paramref name="referenceObjectPath"/> is non-null; ignored for plain scalar paths.
+    /// </param>
+    /// <param name="isDescriptor">
+    /// <see langword="true"/> when the column stores a <c>dms.Descriptor.DocumentId</c> reference and the
+    /// name must carry the <c>_DescriptorId</c> suffix.
+    /// </param>
+    /// <param name="referenceFieldBaseNameCounts">
+    /// Occurrence counts of reference-relative field base names within the owning reference mapping, used
+    /// for the duplicate-field tie-break fallback. Pass an empty dictionary for a plain scalar path.
+    /// </param>
+    /// <returns>The resolved physical column name string (without schema or table qualification).</returns>
+    internal static string BuildAbstractIdentityColumnName(
+        JsonPathExpression identityPath,
+        JsonPathExpression? referenceObjectPath,
+        JsonPathExpression? referenceTargetIdentityPath,
+        bool isDescriptor,
+        IReadOnlyDictionary<string, int> referenceFieldBaseNameCounts
+    )
+    {
+        if (referenceObjectPath is null)
+        {
+            return BuildIdentityPartBaseName(identityPath);
+        }
+
+        var resolvedReferencePath = referenceObjectPath.Value;
+        var referenceBaseName = BuildReferenceBaseName(resolvedReferencePath);
+
+        var referenceFieldBaseName = BuildReferenceIdentityFieldBaseName(resolvedReferencePath, identityPath);
+
+        string fieldBaseName;
+
+        if (!referenceFieldBaseNameCounts.TryGetValue(referenceFieldBaseName, out var count) || count <= 1)
+        {
+            fieldBaseName = referenceFieldBaseName;
+        }
+        else
+        {
+            // Match concrete ResolveReferenceIdentityPartBaseName: the duplicate-field tie-break uses the
+            // TARGET resource's identity path (binding.IdentityJsonPath), not the abstract reference-side
+            // path. Fall back to identityPath only defensively if the target path was not supplied.
+            var identityPathBaseName = BuildIdentityPartBaseName(referenceTargetIdentityPath ?? identityPath);
+
+            fieldBaseName = string.Equals(
+                identityPathBaseName,
+                referenceFieldBaseName,
+                StringComparison.Ordinal
+            )
+                ? referenceFieldBaseName
+                : identityPathBaseName;
+        }
+
+        var composed = $"{referenceBaseName}_{fieldBaseName}";
+
+        return isDescriptor ? RelationalNameConventions.DescriptorIdColumnName(composed).Value : composed;
+    }
+
+    /// <summary>
+    /// Derives the reference base name from a reference object JSONPath by PascalCasing the final property
+    /// segment and stripping a trailing <c>"Reference"</c> token when doing so leaves a non-empty result.
+    /// </summary>
+    /// <param name="referenceObjectPath">The JSONPath to the reference object.</param>
+    /// <returns>The reference base name.</returns>
+    private static string BuildReferenceBaseName(JsonPathExpression referenceObjectPath)
+    {
+        string? lastPropertyName = null;
+
+        foreach (var segment in referenceObjectPath.Segments)
+        {
+            if (segment is JsonPathSegment.Property property)
+            {
+                lastPropertyName = property.Name;
+            }
+        }
+
+        if (lastPropertyName is null)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{referenceObjectPath.Canonical}' must include at least one "
+                    + "property segment."
+            );
+        }
+
+        var pascalCased = RelationalNameConventions.ToPascalCase(lastPropertyName);
+
+        const string referenceSuffix = "Reference";
+
+        if (
+            pascalCased.EndsWith(referenceSuffix, StringComparison.Ordinal)
+            && pascalCased.Length > referenceSuffix.Length
+        )
+        {
+            return pascalCased[..^referenceSuffix.Length];
+        }
+
+        return pascalCased;
+    }
+
+    /// <summary>
     /// Builds a set of canonical reference identity JSONPaths from the document reference mappings.
     /// </summary>
     internal static HashSet<string> BuildReferenceIdentityPathSet(

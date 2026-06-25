@@ -384,6 +384,22 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         IReadOnlyList<ConcreteResourceMetadata> members
     )
     {
+        // Resolve, for each identity path, the reference-object boundary, the target-side identity path,
+        // and the duplicate-field occurrence counts. Counts come from the owning reference mapping's
+        // bindings (mirroring concrete BuildReferenceIdentityFieldBaseNameCounts over
+        // mapping.ReferenceJsonPaths), NOT from the abstract resource's identityJsonPaths — so the
+        // duplicate-field fallback in BuildAbstractIdentityColumnName matches concrete naming exactly even
+        // when the abstract identity covers only a subset of the reference's identity fields.
+        var referenceResolutionByIdentityPath = identityJsonPaths.ToDictionary(
+            identityPath => identityPath.Canonical,
+            identityPath => ResolveReferenceObjectPath(identityPath, abstractResource, members),
+            StringComparer.Ordinal
+        );
+
+        IReadOnlyDictionary<string, int> emptyBaseNameCounts = new Dictionary<string, int>(
+            StringComparer.Ordinal
+        );
+
         List<IdentityColumnDerivation> derivations = new(identityJsonPaths.Count);
 
         foreach (var identityPath in identityJsonPaths)
@@ -423,8 +439,20 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 );
             }
 
+            var referenceResolution = referenceResolutionByIdentityPath[identityPath.Canonical];
+            var referenceFieldBaseNameCounts =
+                referenceResolution?.ReferenceFieldBaseNameCounts ?? emptyBaseNameCounts;
+
             var identityColumn = new DbColumnModel(
-                new DbColumnName(BuildIdentityPartBaseName(identityPath)),
+                new DbColumnName(
+                    BuildAbstractIdentityColumnName(
+                        identityPath,
+                        referenceResolution?.ReferenceObjectPath,
+                        referenceResolution?.TargetIdentityPath,
+                        signature.Kind == ColumnKind.DescriptorFk,
+                        referenceFieldBaseNameCounts
+                    )
+                ),
                 signature.Kind,
                 signature.ScalarType,
                 IsNullable: false,
@@ -437,6 +465,107 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
         return derivations;
     }
+
+    /// <summary>
+    /// Resolves the reference-object boundary for an abstract identity path by scanning the concrete
+    /// members' document reference bindings. Returns <see langword="null"/> for plain scalar paths.
+    /// Throws <see cref="InvalidOperationException"/> when members disagree on the reference boundary.
+    /// </summary>
+    private static ReferenceResolution? ResolveReferenceObjectPath(
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        IReadOnlyList<ConcreteResourceMetadata> members
+    )
+    {
+        ReferenceResolution? resolved = null;
+
+        foreach (var member in members)
+        {
+            foreach (var refBinding in member.Model.DocumentReferenceBindings)
+            {
+                foreach (var identityBinding in refBinding.IdentityBindings)
+                {
+                    if (
+                        !string.Equals(
+                            identityBinding.ReferenceJsonPath.Canonical,
+                            identityPath.Canonical,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    var candidate = refBinding.ReferenceObjectPath;
+
+                    if (resolved is null)
+                    {
+                        // Capture the target-side identity path (binding.IdentityJsonPath) and the
+                        // duplicate-field occurrence counts from this reference mapping's bindings so the
+                        // fallback in BuildAbstractIdentityColumnName matches concrete naming exactly.
+                        resolved = new ReferenceResolution(
+                            candidate,
+                            identityBinding.IdentityJsonPath,
+                            BuildReferenceFieldBaseNameCounts(refBinding)
+                        );
+                    }
+                    else if (
+                        !string.Equals(
+                            resolved.ReferenceObjectPath.Canonical,
+                            candidate.Canonical,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"Abstract identity path '{identityPath.Canonical}' for resource "
+                                + $"'{FormatResource(abstractResource)}' has ambiguous reference-object "
+                                + $"boundaries: '{resolved.ReferenceObjectPath.Canonical}' vs '{candidate.Canonical}'."
+                        );
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Builds reference-relative field-base-name occurrence counts from a document reference binding's
+    /// identity bindings, mirroring concrete <c>BuildReferenceIdentityFieldBaseNameCounts</c> over
+    /// <c>mapping.ReferenceJsonPaths</c>. Drives the duplicate-field naming fallback so abstract identity
+    /// columns disambiguate the same way concrete reference columns do.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> BuildReferenceFieldBaseNameCounts(
+        DocumentReferenceBinding referenceBinding
+    )
+    {
+        Dictionary<string, int> counts = new(StringComparer.Ordinal);
+
+        foreach (var identityBinding in referenceBinding.IdentityBindings)
+        {
+            var baseName = BuildReferenceIdentityFieldBaseName(
+                referenceBinding.ReferenceObjectPath,
+                identityBinding.ReferenceJsonPath
+            );
+            counts[baseName] = counts.TryGetValue(baseName, out var existing) ? existing + 1 : 1;
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// The resolved reference-object boundary for an abstract identity path plus the target-side identity
+    /// path on the referenced resource and the duplicate-field occurrence counts for the owning reference
+    /// mapping (both used by the duplicate-field naming fallback).
+    /// </summary>
+    private sealed record ReferenceResolution(
+        JsonPathExpression ReferenceObjectPath,
+        JsonPathExpression TargetIdentityPath,
+        IReadOnlyDictionary<string, int> ReferenceFieldBaseNameCounts
+    );
 
     /// <summary>
     /// Resolves a canonical column signature that can safely represent all participating member signatures.

@@ -1717,6 +1717,399 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
 }
 
 /// <summary>
+/// Test fixture proving that AbstractIdentityMaintenance trigger column mappings for an
+/// abstract resource with composite reference identity carry the renamed columns
+/// (e.g. <c>Program_EducationOrganizationId</c>, <c>Program_ProgramTypeDescriptor_DescriptorId</c>,
+/// <c>Student_StudentUniqueId</c>), not old concatenated names.
+/// Uses a schema where the abstract resource has identity paths routed through resource references,
+/// which produces the Ref_Field / Ref_Field_DescriptorId naming convention.
+/// </summary>
+[TestFixture]
+public class Given_AbstractIdentityMaintenance_Trigger_Carries_Renamed_Abstract_Identity_Columns
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Schema with GeneralStudentProgramAssociation as abstract resource:
+        // identity paths through EducationOrganization reference, Program reference (with descriptor),
+        // and Student reference.  The resulting abstract identity table columns must use the
+        // renamed convention: Resource_Field and Resource_Field_DescriptorId.
+        var coreProjectSchema = BuildAbstractCompositeReferenceProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    [Test]
+    public void It_should_emit_AbstractIdentityMaintenance_trigger_for_the_concrete_subclass()
+    {
+        var abstractMaintenance = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "StudentArtProgramAssociation"
+            && t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+
+        abstractMaintenance.Should().NotBeNull();
+        abstractMaintenance!.Name.Value.Should().Be("TR_StudentArtProgramAssociation_AbstractIdentity");
+    }
+
+    [Test]
+    public void It_should_carry_renamed_columns_in_TargetColumnMappings()
+    {
+        var abstractMaintenance = _triggers.Single(t =>
+            t.Table.Name == "StudentArtProgramAssociation"
+            && t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+
+        var abstractParams =
+            abstractMaintenance.Parameters as TriggerKindParameters.AbstractIdentityMaintenance;
+        abstractParams.Should().NotBeNull();
+
+        var targetColumnNames = abstractParams!
+            .TargetColumnMappings.Select(m => m.TargetColumn.Value)
+            .ToList();
+
+        // Renamed scalar reference column
+        targetColumnNames.Should().Contain("Program_EducationOrganizationId");
+        // Renamed descriptor reference column
+        targetColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
+        // Renamed student reference column
+        targetColumnNames.Should().Contain("Student_StudentUniqueId");
+
+        // Must NOT carry old concatenated-name patterns
+        targetColumnNames
+            .Should()
+            .NotContain(c => c.StartsWith("ProgramReference", StringComparison.Ordinal));
+        targetColumnNames
+            .Should()
+            .NotContain(c => c.StartsWith("StudentReference", StringComparison.Ordinal));
+    }
+
+    // Builds a project schema with GeneralStudentProgramAssociation as the abstract resource and
+    // StudentArtProgramAssociation as a concrete subclass.
+    // Identity paths go through an EducationOrganization reference, a Program reference (including
+    // a descriptor-valued field), and a Student reference — this exercises all renamed column forms.
+    // Referenced resources (EducationOrganization abstract, Program, Student, ProgramTypeDescriptor)
+    // are also included so the schema passes validation.
+    private static JsonObject BuildAbstractCompositeReferenceProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["GeneralStudentProgramAssociation"] = new JsonObject
+                {
+                    ["identityJsonPaths"] = new JsonArray
+                    {
+                        "$.beginDate",
+                        "$.educationOrganizationReference.educationOrganizationId",
+                        "$.programReference.educationOrganizationId",
+                        "$.programReference.programTypeDescriptor",
+                        "$.studentReference.studentUniqueId",
+                    },
+                },
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["studentArtProgramAssociations"] = BuildStudentArtProgramAssociationSchema(),
+                ["schools"] = BuildSchoolSchema(),
+                ["programs"] = BuildProgramSchema(),
+                ["students"] = BuildStudentSchema(),
+                ["programTypeDescriptors"] = BuildProgramTypeDescriptorSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildStudentArtProgramAssociationSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["beginDate"] = new JsonObject { ["type"] = "string", ["format"] = "date" },
+                ["educationOrganizationReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["programReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 306,
+                        },
+                    },
+                },
+                ["studentReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                    },
+                },
+            },
+            ["required"] = new JsonArray(
+                "beginDate",
+                "educationOrganizationReference",
+                "programReference",
+                "studentReference"
+            ),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "StudentArtProgramAssociation",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "GeneralStudentProgramAssociation",
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.beginDate",
+                "$.educationOrganizationReference.educationOrganizationId",
+                "$.programReference.educationOrganizationId",
+                "$.programReference.programTypeDescriptor",
+                "$.studentReference.studentUniqueId",
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["BeginDate"] = new JsonObject { ["isReference"] = false, ["path"] = "$.beginDate" },
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "EducationOrganization",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] =
+                                "$.educationOrganizationReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["Program"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.programReference.educationOrganizationId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programTypeDescriptor",
+                            ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
+                        },
+                    },
+                },
+                ["Student"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Student",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.studentUniqueId",
+                            ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildSchoolSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "domainObjectSubclass",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "EducationOrganization",
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.educationOrganizationId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["format"] = "int64",
+                    },
+                },
+                ["required"] = new JsonArray { "educationOrganizationId" },
+            },
+        };
+    }
+
+    private static JsonObject BuildProgramSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Program",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.programTypeDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.educationOrganizationId",
+                },
+                ["ProgramTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ProgramTypeDescriptor",
+                    ["path"] = "$.programTypeDescriptor",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["format"] = "int64",
+                    },
+                    ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
+                },
+                ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+            },
+        };
+    }
+
+    private static JsonObject BuildStudentSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Student",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["StudentUniqueId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.studentUniqueId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                },
+                ["required"] = new JsonArray { "studentUniqueId" },
+            },
+        };
+    }
+
+    private static JsonObject BuildProgramTypeDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramTypeDescriptor",
+            ["isDescriptor"] = true,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                },
+                ["required"] = new JsonArray("codeValue", "namespace"),
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
