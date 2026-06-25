@@ -134,6 +134,25 @@ public sealed class RelationalDocumentStoreRepository(
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
 
+        // DMS-1229: references and descriptors are extracted from the raw submitted body, but a
+        // writable profile may hide submitted members that the shaper strips from selectedBody.
+        // Restrict resolution to the references/descriptors still present in the shaped body so
+        // hidden ones are accepted and ignored rather than resolved/written or rejected as
+        // unresolved. Identity references preserved by the shaper remain present and are retained.
+        // Security elements need no equivalent filtering: they derive only from identity/reference
+        // members the shaper preserves, and proposed authorization is computed from the shaped
+        // write plan, so profile-hidden submitted data cannot influence the authorization decision.
+        var documentReferences = ResolveProfileShapedReferences(
+            profileWriteContext,
+            relationalUpsertRequest.DocumentInfo.DocumentReferences,
+            selectedBody
+        );
+        var descriptorReferences = ResolveProfileShapedDescriptors(
+            profileWriteContext,
+            relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+            selectedBody
+        );
+
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
@@ -145,8 +164,8 @@ public sealed class RelationalDocumentStoreRepository(
                     relationalUpsertRequest.DocumentInfo.ReferentialId,
                     relationalUpsertRequest.DocumentUuid
                 ),
-                relationalUpsertRequest.DocumentInfo.DocumentReferences,
-                relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+                documentReferences,
+                descriptorReferences,
                 static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
                 static executorResult =>
                     executorResult switch
@@ -265,6 +284,20 @@ public sealed class RelationalDocumentStoreRepository(
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
 
+        // DMS-1229: restrict reference/descriptor resolution to those still present in the
+        // profile-shaped body (see the POST path for the full rationale). Hidden submitted
+        // references/descriptors are accepted and ignored; preserved identity references remain.
+        var documentReferences = ResolveProfileShapedReferences(
+            profileWriteContext,
+            relationalUpdateRequest.DocumentInfo.DocumentReferences,
+            selectedBody
+        );
+        var descriptorReferences = ResolveProfileShapedDescriptors(
+            profileWriteContext,
+            relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+            selectedBody
+        );
+
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
@@ -273,8 +306,8 @@ public sealed class RelationalDocumentStoreRepository(
                 relationalUpdateRequest.ResourceInfo,
                 RelationalWriteOperationKind.Put,
                 new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
-                relationalUpdateRequest.DocumentInfo.DocumentReferences,
-                relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+                documentReferences,
+                descriptorReferences,
                 static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
                 static executorResult =>
                     executorResult switch
@@ -2045,6 +2078,32 @@ public sealed class RelationalDocumentStoreRepository(
             CreateUpsertRelationshipNotAuthorized(noClaimsFailure)
         );
     }
+
+    /// <summary>
+    /// DMS-1229: when a writable profile shaped the body, restricts document references to those
+    /// still present in the shaped body; otherwise returns the references unchanged.
+    /// </summary>
+    private static IReadOnlyList<DocumentReference> ResolveProfileShapedReferences(
+        BackendProfileWriteContext? profileWriteContext,
+        IReadOnlyList<DocumentReference> documentReferences,
+        System.Text.Json.Nodes.JsonNode shapedBody
+    ) =>
+        profileWriteContext is null
+            ? documentReferences
+            : ProfileWriteReferenceFilter.RetainPresent(documentReferences, shapedBody);
+
+    /// <summary>
+    /// DMS-1229: when a writable profile shaped the body, restricts descriptor references to those
+    /// still present in the shaped body; otherwise returns the descriptors unchanged.
+    /// </summary>
+    private static IReadOnlyList<DescriptorReference> ResolveProfileShapedDescriptors(
+        BackendProfileWriteContext? profileWriteContext,
+        IReadOnlyList<DescriptorReference> descriptorReferences,
+        System.Text.Json.Nodes.JsonNode shapedBody
+    ) =>
+        profileWriteContext is null
+            ? descriptorReferences
+            : ProfileWriteReferenceFilter.RetainPresent(descriptorReferences, shapedBody);
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
