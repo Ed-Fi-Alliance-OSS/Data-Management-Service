@@ -81,9 +81,15 @@ $solutionRoot = "$PSScriptRoot/$OutputFolder"
 $projectPath = "$solutionRoot/src/$PackageName/$PackageName.csproj"
 $nuspecPath = "$PSScriptRoot/eng/sdkGen/$PackageName.nuspec"
 
+# OpenAPI Generator CLI version used to generate the SDK. The jar is cached
+# locally under a version-specific filename so that bumping this value forces a
+# fresh download instead of silently reusing a previously downloaded generator.
+$OpenApiGeneratorVersion = "7.19.0"
+$codeGenJar = "openApi-codegen-cli-$OpenApiGeneratorVersion.jar"
+
 function DownloadCodeGen {
-    if (-not (Test-Path -Path openApi-codegen-cli.jar)) {
-        Invoke-WebRequest -OutFile openApi-codegen-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.9.0/openapi-generator-cli-7.9.0.jar
+    if (-not (Test-Path -Path $codeGenJar)) {
+        Invoke-WebRequest -OutFile $codeGenJar "https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/$OpenApiGeneratorVersion/openapi-generator-cli-$OpenApiGeneratorVersion.jar"
     }
 }
 
@@ -126,14 +132,14 @@ function GenerateSdk {
     $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
     # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
 
-    & java -Xmx5g -jar openApi-codegen-cli.jar generate `
+    & java -Xmx5g -jar $codeGenJar generate `
     -g csharp `
     -i $Endpoint `
     --api-package $ApiPackage `
     --model-package $ModelPackage `
     -o $OutputFolder `
     --operation-id-name-mappings $mappings `
-    --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true" `
+    --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true,library=restsharp" `
     --global-property modelTests=false `
     --global-property apiTests=false `
     --global-property apiDocs=false `
