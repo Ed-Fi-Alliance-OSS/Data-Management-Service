@@ -151,6 +151,74 @@ public class ProfileDataValidatorTests
             return apiSchemaDocuments;
         }
 
+        /// <summary>
+        /// Builds a schema whose insert schema exposes <c>_ext.sample</c> containing a nested
+        /// object (<c>petPreference</c>) and a nested collection (<c>pets</c>), used to exercise
+        /// unknown-extension detection inside an extension's own object/collection children.
+        /// </summary>
+        private static ApiSchemaDocuments CreateSchemaWithExtensionChildren(string resourceName)
+        {
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["petPreference"] = new JsonObject
+                                    {
+                                        ["type"] = "object",
+                                        ["properties"] = new JsonObject
+                                        {
+                                            ["minimumWeight"] = new JsonObject { ["type"] = "number" },
+                                        },
+                                    },
+                                    ["pets"] = new JsonObject
+                                    {
+                                        ["type"] = "array",
+                                        ["items"] = new JsonObject
+                                        {
+                                            ["type"] = "object",
+                                            ["properties"] = new JsonObject
+                                            {
+                                                ["petName"] = new JsonObject { ["type"] = "string" },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource(resourceName)
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            var resourceNode = apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new(resourceName));
+
+            if (resourceNode is JsonObject resourceObj)
+            {
+                resourceObj["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            }
+
+            return apiSchemaDocuments;
+        }
+
         private static ApiSchemaDocuments CreateSchemaWithProperties(
             string resourceName,
             params string[] propertyNames
@@ -1905,6 +1973,162 @@ public class ProfileDataValidatorTests
                 .Contain(f =>
                     f.Severity == ValidationSeverity.Warning
                     && f.MemberName == "schoolReference._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_under_collection_item()
+        {
+            // Arrange — an unknown extension declared on a collection item. The collection-item
+            // _ext has no such key, so canonicalization would drop the rule; the pre-pass must
+            // report it (collections use their own traversal path).
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "studentPets", "petName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var collectionRule = new CollectionRule(
+                Name: "studentPets",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ],
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [],
+                Collections: [collectionRule],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the collection-item path; severity follows the IncludeOnly
+            // collection, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "studentPets[]._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_inside_resolved_extension_object()
+        {
+            // Arrange — an unknown extension nested inside an object that lives within a resolved
+            // extension (_ext.sample.petPreference._ext.DoesNotExist). Exercises the recursion
+            // from the extension into its object children.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtensionChildren("Student");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedObject = new ObjectRule(
+                Name: "petPreference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var sampleExtension = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: [nestedObject],
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [sampleExtension]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the full extension-child object path; severity follows the
+            // IncludeOnly object, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.petPreference._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_inside_resolved_extension_collection()
+        {
+            // Arrange — an unknown extension nested inside a collection within a resolved
+            // extension (_ext.sample.pets[]._ext.DoesNotExist). Exercises the recursion from the
+            // extension into its collection children.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtensionChildren("Student");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedCollection = new CollectionRule(
+                Name: "pets",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ],
+                ItemFilter: null
+            );
+            var sampleExtension = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: [nestedCollection]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [sampleExtension]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the full extension-child collection path; severity follows
+            // the IncludeOnly collection, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.pets[]._ext.DoesNotExist"
                     && f.Message.Contains("does not exist")
                 );
         }
