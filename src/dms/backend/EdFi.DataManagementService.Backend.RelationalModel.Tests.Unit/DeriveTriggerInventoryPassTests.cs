@@ -2419,3 +2419,66 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
             .NotContain("School_LocalEducationAgencyId");
     }
 }
+
+/// <summary>
+/// Test fixture proving the AbstractIdentityMaintenance trigger bridges a concrete relational.nameOverrides
+/// column into the override-free abstract identity column. Campus overrides its reference identity column to
+/// SchoolBase_CampusId; the trigger maintaining the SchoolCarrierIdentity table must map that overridden
+/// concrete source column to the override-free abstract target column SchoolBase_SchoolId.
+/// </summary>
+[TestFixture]
+public class Given_AbstractIdentityMaintenance_Trigger_With_Overridden_Member_Reference_Column
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = SchoolCarrierOverrideTestSchema.BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+                new RootIdentityConstraintPass(),
+                new TransitiveIdentityMutabilityPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
+                new ApplyConstraintDialectHashingPass(),
+                new DeriveIndexInventoryPass(),
+                new DeriveTriggerInventoryPass(),
+            }
+        );
+        _triggers = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// The Campus AbstractIdentityMaintenance trigger maps the overridden concrete source column
+    /// (SchoolBase_CampusId) to the override-free abstract target column (SchoolBase_SchoolId).
+    /// </summary>
+    [Test]
+    public void It_should_map_overridden_concrete_source_to_override_free_abstract_target()
+    {
+        var trigger = _triggers.Single(t =>
+            t.Table.Name == "Campus" && t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.AbstractIdentityMaintenance)trigger.Parameters;
+
+        parameters
+            .TargetColumnMappings.Select(m => (m.SourceColumn.Value, m.TargetColumn.Value))
+            .Should()
+            .Contain(("SchoolBase_CampusId", "SchoolBase_SchoolId"));
+    }
+}

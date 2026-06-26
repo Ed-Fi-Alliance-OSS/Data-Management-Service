@@ -473,12 +473,11 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     /// Resolves the override-free convention column name for an abstract identity path by scanning the
     /// concrete members' document reference bindings for a matching <see cref="ReferenceIdentityBinding"/>
     /// and reading the convention name cached by <c>ReferenceBindingPass</c>.
-    /// Returns <see langword="null"/> for plain scalar paths (no member reaches this path via a reference),
-    /// in which case the caller derives the name from the identity path directly.
-    /// Precedence rule: when at least one member reaches the path through a reference, that reference-backed
-    /// convention name wins. Real Ed-Fi schemas never have some members reach one abstract identity path via
-    /// a reference and others via a plain scalar, so this method does not separately validate that case.
-    /// Throws <see cref="InvalidOperationException"/> when same-reference-path duplicate bindings are
+    /// Returns <see langword="null"/> only when no member reaches this path via a reference (every member
+    /// supplies it as a plain scalar/descriptor root column), in which case the caller derives the name from
+    /// the identity path directly.
+    /// Throws <see cref="InvalidOperationException"/> when members are mixed (some reach the path via a
+    /// reference and others via a non-reference column), when same-reference-path duplicate bindings are
     /// ambiguous, when reference-backed members yield different convention column names for the same abstract
     /// identity path, or when the builder context does not contain convention metadata for a matched binding.
     /// </summary>
@@ -490,6 +489,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     )
     {
         DbColumnName? resolved = null;
+        List<QualifiedResourceName> nonReferenceMembers = [];
 
         foreach (var member in members)
         {
@@ -508,6 +508,9 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
             if (candidates.Count == 0)
             {
+                // This member supplies the path as a plain scalar/descriptor root column rather than
+                // through a document reference. Recorded so the mixed-member case below can fail fast.
+                nonReferenceMembers.Add(member.Resource);
                 continue;
             }
 
@@ -537,6 +540,25 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             {
                 resolved = conventionColumn;
             }
+        }
+
+        // A reference-backed member named this abstract identity column, but one or more other members
+        // reach the same path through a non-reference column. Letting the reference-backed name win would
+        // leave those members projecting a differently-named column under one abstract contract, so fail
+        // fast instead of silently picking one side.
+        if (resolved is not null && nonReferenceMembers.Count > 0)
+        {
+            var nonReferenceMemberList = string.Join(
+                ", ",
+                nonReferenceMembers.Select(FormatResource).OrderBy(name => name, StringComparer.Ordinal)
+            );
+
+            throw new InvalidOperationException(
+                $"Abstract identity path '{identityPath.Canonical}' for resource "
+                    + $"'{FormatResource(abstractResource)}' is reference-backed on some members but reaches "
+                    + $"the path via a non-reference column on others: {nonReferenceMemberList}. All members "
+                    + "of an abstract identity path must resolve it through the same kind of binding."
+            );
         }
 
         return resolved;

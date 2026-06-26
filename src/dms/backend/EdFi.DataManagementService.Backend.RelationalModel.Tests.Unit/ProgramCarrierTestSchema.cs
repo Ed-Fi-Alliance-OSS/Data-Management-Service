@@ -32,6 +32,7 @@ internal static class ProgramCarrierTestSchema
                     ["identityJsonPaths"] = new JsonArray
                     {
                         "$.programReference.educationOrganizationId",
+                        "$.programReference.programName",
                         "$.programReference.programTypeDescriptor",
                     },
                 },
@@ -79,6 +80,11 @@ internal static class ProgramCarrierTestSchema
                         },
                         new JsonObject
                         {
+                            ["identityJsonPath"] = "$.programName",
+                            ["referenceJsonPath"] = "$.programReference.programName",
+                        },
+                        new JsonObject
+                        {
                             ["identityJsonPath"] = "$.programTypeDescriptor",
                             ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
                         },
@@ -91,6 +97,7 @@ internal static class ProgramCarrierTestSchema
             ["identityJsonPaths"] = new JsonArray
             {
                 "$.programReference.educationOrganizationId",
+                "$.programReference.programName",
                 "$.programReference.programTypeDescriptor",
             },
             ["jsonSchemaForInsert"] = new JsonObject
@@ -108,13 +115,19 @@ internal static class ProgramCarrierTestSchema
                                 ["type"] = "integer",
                                 ["format"] = "int64",
                             },
+                            ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
                             ["programTypeDescriptor"] = new JsonObject
                             {
                                 ["type"] = "string",
                                 ["maxLength"] = 306,
                             },
                         },
-                        ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+                        ["required"] = new JsonArray
+                        {
+                            "educationOrganizationId",
+                            "programName",
+                            "programTypeDescriptor",
+                        },
                     },
                 },
                 ["required"] = new JsonArray { "programReference" },
@@ -136,7 +149,12 @@ internal static class ProgramCarrierTestSchema
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["decimalPropertyValidationInfos"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.programTypeDescriptor" },
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.educationOrganizationId",
+                "$.programName",
+                "$.programTypeDescriptor",
+            },
             ["documentPathsMapping"] = new JsonObject
             {
                 ["EducationOrganizationId"] = new JsonObject
@@ -146,6 +164,14 @@ internal static class ProgramCarrierTestSchema
                     ["isPartOfIdentity"] = true,
                     ["isRequired"] = true,
                     ["path"] = "$.educationOrganizationId",
+                },
+                ["ProgramName"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.programName",
                 },
                 ["ProgramTypeDescriptor"] = new JsonObject
                 {
@@ -168,9 +194,15 @@ internal static class ProgramCarrierTestSchema
                         ["type"] = "integer",
                         ["format"] = "int64",
                     },
+                    ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
                     ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
                 },
-                ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+                ["required"] = new JsonArray
+                {
+                    "educationOrganizationId",
+                    "programName",
+                    "programTypeDescriptor",
+                },
             },
         };
     }
