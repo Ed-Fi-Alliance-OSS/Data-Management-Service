@@ -19,6 +19,13 @@ on:
       - 'build-sdk.ps1'
       - 'eng/smoke_test/**'
       - 'eng/sdkGen/**'
+      # The populated-template build this workflow consumes per Data Standard version: its reusable
+      # workflow, the per-version smoke template env files, and the template build/restore/filtering
+      # logic (incl. the DS 6.1 educator-prep filter + tolerance). Listed so a change to the DS 6.1
+      # (or 5.2) smoke path is validated on PRs instead of only the cron run (DMS-1136).
+      - '.github/workflows/build-populated-template.yml'
+      - 'eng/docker-compose/.env.smoke.relational*'
+      - 'eng/DatabaseTemplates/**'
 
 permissions:
   contents: write
@@ -335,7 +342,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -355,7 +362,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
