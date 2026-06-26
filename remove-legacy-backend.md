@@ -104,12 +104,13 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
 
 1. Remove PostgreSQL use of `Old.Postgresql.Deploy.DatabaseDeploy` from frontend startup.
 
-2. Remove or redefine `Backend.Installer`:
+2. Delete `Backend.Installer`; do not replace it with another runtime-packaged installer/provisioner:
 
-   - Preferred cleanup: delete `src/dms/backend/EdFi.DataManagementService.Backend.Installer` if it only exists to invoke legacy scripts.
-   - If a one-shot installer is still required, reimplement it as a generated relational DDL provisioner that references `Backend.Ddl`, `Backend.RelationalModel`, and the effective ApiSchema inputs. It must not reference `Old.Postgresql`.
+   - delete `src/dms/backend/EdFi.DataManagementService.Backend.Installer`
+   - remove all `/app/Installer` Docker, package, build, CI, and script plumbing
+   - standardize all relational database provisioning on the existing `SchemaTools ddl provision` flow, or thin script wrappers around that flow
 
-3. Remove DMS legacy direct-start database setup switches unless a generated relational provisioner replaces them:
+3. Remove DMS legacy direct-start database setup switches:
 
    - `NEED_DATABASE_SETUP`
    - `DMS_DEPLOY_DATABASE_ON_STARTUP`
@@ -124,14 +125,14 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
 
    - remove old backend project copy
    - remove old backend source copy
-   - remove backend installer restore/publish/copy if the installer is deleted
+   - remove backend installer restore/publish/copy
 
 6. Update build and package plumbing that publishes or packages the legacy installer:
 
-   - remove or rewrite `PublishBackendInstaller` in `build-dms.ps1`
+   - remove `PublishBackendInstaller` from `build-dms.ps1`
    - remove any `PublishBackendInstaller` invocation from `build-dms.ps1`
    - remove installer output from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec`
-   - remove CI, Docker, or release-package expectations for `/app/Installer` if the installer is deleted
+   - remove CI, Docker, or release-package expectations for `/app/Installer`
 
 7. Update scripts and tests that currently rely on the legacy installer:
 
@@ -142,7 +143,7 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`
    - Pester tests under `eng/docker-compose/tests`
 
-8. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with relational provisioning checks, especially `dms."EffectiveSchema"` and generated resource tables.
+8. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with `SchemaTools ddl provision` checks, especially `dms."EffectiveSchema"` and generated resource tables.
 
 ## Phase 4A: Remove Legacy Document-Store CDC And Kafka Plumbing
 
@@ -283,7 +284,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
    - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` so it no longer relies on the legacy backend by omission; the DMS container must start with the same always-relational runtime path as the rest of DMS E2E
    - remove the one-shot `Installer/EdFi.DataManagementService.Backend.Installer.dll` call and all `dms.document` verification, schema dump, and schema replay logic
-   - replace the per-instance database setup with generated relational DDL provisioning for each route-context database, verifying `dms."EffectiveSchema"` and expected generated resource tables instead of `dms.document`
+   - replace the per-instance database setup with `SchemaTools ddl provision` for each route-context database, verifying `dms."EffectiveSchema"` and expected generated resource tables instead of `dms.document`
    - update `.env.routeContext.e2e` or replace it with a neutral relational route-context E2E env file; it must not depend on `USE_RELATIONAL_BACKEND`, `NEED_DATABASE_SETUP`, or `DMS_DEPLOY_DATABASE_ON_STARTUP`
    - update `build-dms.ps1 InstanceE2ETest` to call the relational route-context provisioning flow and restart DMS when needed to clear cached database state
    - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md` so it describes relational setup and clearly excludes legacy installer/database setup
@@ -300,7 +301,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
    - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/EdFi.DataManagementService.Backend.Postgresql.csproj`
    - `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj`
-   - `src/dms/backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj`, if the installer remains
+   - `src/dms/backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj`
    - test projects that reference old PostgreSQL types
 
 3. Remove old-project and old-test-project `InternalsVisibleTo` entries from all remaining projects, including:
@@ -334,7 +335,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
 4. Update log export paths and job summaries from "Relational E2E" to neutral "DMS E2E" naming.
 
-5. Update package and release workflow templates so they no longer publish, upload, download, or validate `Backend.Installer` artifacts if the installer is deleted.
+5. Update package and release workflow templates so they no longer publish, upload, download, or validate `Backend.Installer` artifacts.
 
 ## Phase 9: Update Documentation
 
@@ -448,7 +449,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
 10. Build and inspect the Docker image:
 
-   - confirm `/app/Installer` is absent if the installer was deleted
+   - confirm `/app/Installer` is absent
    - confirm no `AppSettings__UseRelationalBackend` environment variable is present in the compose files
    - confirm startup logs show relational mapping initialization and no legacy backend query-handler or legacy schema installation
 
@@ -461,8 +462,8 @@ All DMS E2E tests now run against the relational backend because it is the only 
 - No Docker or build script flag can enable or disable the relational backend.
 - No deleted legacy installer artifact is published, copied into Docker images, or packaged in the frontend NuGet output.
 - E2E tests, build filters, workflows, and docs no longer use `@relational-backend` or bare `relational-backend`; shard tags are either removed or renamed to backend-neutral tags.
-- Instance Management E2E tests provision route-context databases with relational generated DDL and no longer use `Backend.Installer`, `dms.document`, or legacy CDC/Kafka assumptions.
+- Instance Management E2E tests provision route-context databases with `SchemaTools ddl provision` and no longer use `Backend.Installer`, `dms.document`, or legacy CDC/Kafka assumptions.
 - CI no longer runs old PostgreSQL integration tests.
 - DMS startup always wires relational document store, relational query handler, mapping initialization, fingerprint validation, resource-key validation, and relational authorization lookup.
 - Legacy document-store CDC/Debezium/Kafka configuration is removed or explicitly disabled; docs state that relational CDC/Kafka support is pending a separate implementation.
-- Documentation describes a single DMS backend path and the required generated relational DDL provisioning workflow.
+- Documentation describes a single DMS backend path and the required `SchemaTools ddl provision` workflow.
