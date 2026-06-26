@@ -38,6 +38,10 @@ jobs:
             package_name: "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
             provenance_file: "populated.template.intoto.jsonl"
             environment_file: "./.env.template.relational"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Dms.Populated.Template.PostgreSQL.6.1.0"
+            provenance_file: "populated.template.6.1.0.intoto.jsonl"
+            environment_file: "./.env.template.relational.ds61"
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: ${{ matrix.standard_version }}

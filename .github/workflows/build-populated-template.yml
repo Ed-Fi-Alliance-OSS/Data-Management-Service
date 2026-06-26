@@ -96,7 +96,7 @@ jobs:
           $environmentFile = '${{ inputs.environment_file }}'
           $packageName = '${{ inputs.package_name }}'
 
-          $relationalEnvFiles = @('./.env.template.relational', './.env.smoke.relational')
+          $relationalEnvFiles = @('./.env.template.relational', './.env.template.relational.ds61', './.env.smoke.relational')
           if ($useRelationalBackend -and $environmentFile -notin $relationalEnvFiles) {
             throw "use_relational_backend requires environment_file to be one of: $($relationalEnvFiles -join ', '); got '$environmentFile'."
           }

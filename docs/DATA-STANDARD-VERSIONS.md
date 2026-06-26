@@ -109,15 +109,22 @@ Workflows that build per-version artifacts select the version through a per-work
   `build-populated-template.yml`. Each matrix leg runs the whole
   build → SBOM → provenance pipeline as one unit (so per-version outputs stay
   correlated), and the per-version package name, provenance file, and template env
-  file are read from the matrix `include` entry. The matrix holds only `5.2.0` today,
-  producing byte-identical output; **adding a version is adding one `include` entry**
-  (plus the schema artifacts and a template env file for that version).
+  file are read from the matrix `include` entry; **adding a version is adding one
+  `include` entry** (plus the schema artifacts and a template env file for that version).
+  - The **populated template** product workflow (tag/release/`workflow_dispatch`) builds
+    both `5.2.0` and `6.1.0`. The `6.1.0` leg is validated by dispatch
+    (`publish_package` defaults off) before any release; the reusable workflow's
+    `environment_file` allowlist gates which env files may be used.
+  - The **scheduled smoke test** (which also runs on PRs touching its paths) stays
+    `5.2.0`-only until the `6.1.0` populated build is validated end-to-end, so the PR
+    lane never goes red on an unproven leg; the `6.1.0` smoke leg is a one-`include`-entry
+    addition once that validation passes.
 
-  > The template surface is intentionally Core + TPDM only
-  > (`.env.template.relational`), which is narrower than the local dev surface
-  > (Core + TPDM + Sample + Homograph in `.env.ds<NN>`). Each version therefore gets
-  > its own template env file, referenced from the matrix `include` entry — it is
-  > **not** the dev `.env.ds<NN>` overlay.
+  > The template surface is intentionally reduced versus the local dev surface
+  > (Core + TPDM + Sample + Homograph in `.env.ds<NN>`): DS 5.2 is Core + TPDM
+  > (`.env.template.relational`); DS 6.1 is Core only (`.env.template.relational.ds61`,
+  > TPDM folded into core). Each version gets its own standalone template env file,
+  > referenced from the matrix `include` entry — it is **not** the dev `.env.ds<NN>` overlay.
 
 - **SDK** (`Pkg EdFi.DmsApi.Sdk.yml`, `Pkg EdFi.DmsApi.TestSdk.yml`) and **Minimal
   template** (`EdFi.Dms.Minimal.Template.PostgreSQL.yml`) are currently
@@ -168,9 +175,11 @@ Adding a version is the same set of small edits regardless of which version:
    ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
    change is needed — the embedded-resource glob picks it up.
 5. **CI.** Add an `include` entry to the `standard_version` matrix in
-   `EdFi.Dms.Populated.Template.PostgreSQL.yml` and `scheduled-smoke-test.yml`, and add
-   the version's Core + TPDM template env file referenced by that entry. (The SDK and
-   Minimal lanes follow once their reusable-workflow extraction lands.)
+   `EdFi.Dms.Populated.Template.PostgreSQL.yml` (and, once validated, `scheduled-smoke-test.yml`),
+   add the version's standalone template env file (its product schema surface — Core + TPDM for
+   5.2, Core only for 6.1) referenced by that entry, and allow that env file in
+   `build-populated-template.yml`'s `environment_file` allowlist. (The SDK and Minimal lanes
+   follow once their reusable-workflow extraction lands.)
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing
