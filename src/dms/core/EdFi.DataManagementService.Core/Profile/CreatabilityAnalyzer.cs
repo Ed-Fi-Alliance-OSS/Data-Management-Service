@@ -40,11 +40,59 @@ public sealed class CreatabilityAnalyzer(
     string profileName,
     string resourceName,
     string method,
-    string operation
+    string operation,
+    IReadOnlyList<string>? resourceIdentityJsonPaths = null
 )
 {
     private readonly IReadOnlyDictionary<string, CompiledScopeDescriptor> _scopesByJsonScope =
         scopeCatalog.ToDictionary(s => s.JsonScope);
+
+    // Top-level root members that carry resource identity. These are implicitly
+    // visible for creatability even when the writable profile hides them, because the shaper
+    // preserves identity members/references. Resource identity paths are root-anchored
+    // (e.g. "$.schoolReference.schoolId"), so the exemption applies only to the root scope.
+    private readonly IReadOnlySet<string> _rootImplicitlyVisibleIdentityMembers = ComputeRootIdentityMembers(
+        resourceIdentityJsonPaths
+    );
+
+    private static IReadOnlySet<string> ComputeRootIdentityMembers(
+        IReadOnlyList<string>? resourceIdentityJsonPaths
+    )
+    {
+        if (resourceIdentityJsonPaths is null || resourceIdentityJsonPaths.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        HashSet<string> members = [];
+        foreach (string identityPath in resourceIdentityJsonPaths)
+        {
+            string relative = identityPath.StartsWith("$.", StringComparison.Ordinal)
+                ? identityPath[2..]
+                : identityPath;
+            members.Add(MemberPathVisibility.ExtractTopLevelMember(relative));
+        }
+        return members;
+    }
+
+    /// <summary>
+    /// Builds the set of members treated as implicitly visible for creatability at the given
+    /// scope: members included via a collection/object/extension rule (which the scalar member
+    /// filter does not know about), plus the root resource identity members for the root scope.
+    /// </summary>
+    private IReadOnlySet<string> BuildImplicitlyVisibleMembers(string jsonScope)
+    {
+        IReadOnlySet<string> childMembers = classifier.GetExplicitChildMemberNames(jsonScope);
+
+        if (jsonScope != "$" || _rootImplicitlyVisibleIdentityMembers.Count == 0)
+        {
+            return childMembers;
+        }
+
+        var merged = new HashSet<string>(childMembers);
+        merged.UnionWith(_rootImplicitlyVisibleIdentityMembers);
+        return merged;
+    }
 
     /// <summary>
     /// Analyzes creatability for all scope states and collection items, enriching
@@ -785,7 +833,8 @@ public sealed class CreatabilityAnalyzer(
             var crResult = CreationRequiredMemberResolver.Resolve(
                 _scopesByJsonScope[collectionJsonScope],
                 effectiveRequired,
-                memberFilter
+                memberFilter,
+                BuildImplicitlyVisibleMembers(collectionJsonScope)
             );
 
             bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;
@@ -862,7 +911,8 @@ public sealed class CreatabilityAnalyzer(
         var crResult = CreationRequiredMemberResolver.Resolve(
             _scopesByJsonScope[jsonScope],
             effectiveRequired,
-            memberFilter
+            memberFilter,
+            BuildImplicitlyVisibleMembers(jsonScope)
         );
 
         bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;
@@ -910,7 +960,8 @@ public sealed class CreatabilityAnalyzer(
         var crResult = CreationRequiredMemberResolver.Resolve(
             _scopesByJsonScope[jsonScope],
             effectiveRequired,
-            memberFilter
+            memberFilter,
+            BuildImplicitlyVisibleMembers(jsonScope)
         );
 
         bool hasHiddenRequired = !crResult.HiddenByProfile.IsEmpty;

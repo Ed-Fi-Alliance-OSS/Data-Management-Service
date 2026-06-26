@@ -467,6 +467,16 @@ public sealed record GenericWritableProfileValidationFailure(
 /// Category-3 failure for submitted member/value data that is forbidden by the
 /// writable profile after request-side visibility and value-filter evaluation.
 /// </summary>
+/// <remarks>
+/// Production request shaping no longer emits this failure. Ordinary hidden
+/// submitted members/scopes are accepted and stripped with no failure, and submitted
+/// collection items that fail a value filter emit
+/// <see cref="CollectionValueFilterViolationWritableProfileValidationFailure"/> instead.
+/// This type and its <c>ProfileFailures.ForbiddenSubmittedData</c> factory are retained as
+/// stable Core.External contract surface (consumers may still map a generic category-3
+/// forbidden-data failure) and remain covered by unit tests; do not remove without a
+/// deliberate external-contract change.
+/// </remarks>
 public sealed record ForbiddenSubmittedDataWritableProfileValidationFailure(
     ProfileFailureContext Context,
     string JsonScope,
@@ -497,6 +507,30 @@ public sealed record DuplicateVisibleCollectionItemCollisionWritableProfileValid
     : WritableProfileValidationFailure(
         ProfileFailureEmitter.RequestCreatabilityAndDuplicateValidation,
         "Visible collection items collide on compiled semantic identity after writable-profile shaping.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
+/// Category-3 failure for a submitted collection item that fails the writable
+/// profile's collection value filter. Distinct from
+/// <see cref="ForbiddenSubmittedDataWritableProfileValidationFailure"/> so the
+/// API layer can map value-filter violations to the ODS-compatible
+/// data-validation response instead of the data-policy-enforced response.
+/// </summary>
+public sealed record CollectionValueFilterViolationWritableProfileValidationFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    ImmutableArray<string> RequestJsonPaths,
+    string FilterPropertyName,
+    FilterMode FilterMode,
+    ImmutableArray<string> FilterValues,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : WritableProfileValidationFailure(
+        ProfileFailureEmitter.RequestVisibilityAndWritableShaping,
+        "Submitted collection item failed the writable profile value filter.",
         Context,
         Diagnostics
     );
@@ -943,6 +977,9 @@ public static class ProfileFailures
         params ProfileFailureDiagnostic[] diagnostics
     ) => CreateWritableProfileValidationFailure(emitter, message, context, diagnostics);
 
+    // Retained as Core.External contract surface. Production shaping no longer
+    // calls this factory (hidden submitted data is now accepted/stripped); it is kept for the
+    // external failure contract and unit coverage. See the type remarks for details.
     public static ForbiddenSubmittedDataWritableProfileValidationFailure ForbiddenSubmittedData(
         string profileName,
         string resourceName,
@@ -992,6 +1029,52 @@ public static class ProfileFailures
             normalizedRequestJsonPaths,
             normalizedForbiddenCanonicalMemberPaths,
             mergedDiagnostics
+        );
+    }
+
+    public static CollectionValueFilterViolationWritableProfileValidationFailure CollectionValueFilterViolation(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        string jsonScope,
+        IEnumerable<string> requestJsonPaths,
+        string filterPropertyName,
+        FilterMode filterMode,
+        IEnumerable<string> filterValues,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(jsonScope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filterPropertyName);
+        ArgumentNullException.ThrowIfNull(requestJsonPaths);
+        ArgumentNullException.ThrowIfNull(filterValues);
+
+        ImmutableArray<string> normalizedRequestJsonPaths = NormalizeRequiredStrings(
+            requestJsonPaths,
+            nameof(requestJsonPaths)
+        );
+
+        ImmutableArray<string> normalizedFilterValues = NormalizeOptionalStrings(
+            filterValues,
+            nameof(filterValues)
+        );
+
+        return new(
+            context,
+            jsonScope,
+            ScopeKind.Collection,
+            normalizedRequestJsonPaths,
+            filterPropertyName,
+            filterMode,
+            normalizedFilterValues,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.Scope(jsonScope, ScopeKind.Collection),
+                new ProfileFailureDiagnostic.RequestPaths(normalizedRequestJsonPaths)
+            )
         );
     }
 

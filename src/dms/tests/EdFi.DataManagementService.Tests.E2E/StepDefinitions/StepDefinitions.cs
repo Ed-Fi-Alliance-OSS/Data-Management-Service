@@ -293,7 +293,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(dataUrl);
                 var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                     dataUrl,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!;
                 _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
@@ -421,7 +421,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PostAsync(
                     url,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -462,7 +462,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST body: {body}");
 
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var authHeader in GetHeaders())
+            foreach (var authHeader in GetWriteHeaders())
             {
                 headers[authHeader.Key] = authHeader.Value;
             }
@@ -471,7 +471,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
@@ -501,7 +501,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(await _apiResponse.TextAsync());
@@ -543,7 +543,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -568,7 +568,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+                new()
+                {
+                    DataByte = System.Text.Encoding.UTF8.GetBytes(body),
+                    Headers = GetWriteHeadersWithIfMatch(ifMatch),
+                }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -593,7 +597,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PutAsync(
                     url,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -632,7 +636,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(body);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -1812,6 +1816,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [GeneratedRegex(@"\{id\}", RegexOptions.Compiled)]
         private static partial Regex IdRegex();
 
+        // Auth-only headers for requests without a body (GET/DELETE).
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
             var list = new List<KeyValuePair<string, string>>
@@ -1821,11 +1826,35 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return list;
         }
 
+        // Headers for write requests (POST/PUT) carrying a JSON body. An explicit Content-Type is
+        // required because Playwright defaults string/byte bodies to application/octet-stream, which
+        // DMS rejects with 415 (DMS-1224). Read/delete requests have no body and use GetHeaders().
+        private IEnumerable<KeyValuePair<string, string>> GetWriteHeaders()
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+                new("Content-Type", "application/json"),
+            };
+            return list;
+        }
+
         private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
         {
             var list = new List<KeyValuePair<string, string>>
             {
                 new("Authorization", GetDmsTokenFromContext()),
+                new("If-Match", ifMatch),
+            };
+            return list;
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> GetWriteHeadersWithIfMatch(string ifMatch)
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+                new("Content-Type", "application/json"),
                 new("If-Match", ifMatch),
             };
             return list;

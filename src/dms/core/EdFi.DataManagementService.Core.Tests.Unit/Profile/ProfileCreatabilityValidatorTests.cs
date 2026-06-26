@@ -366,7 +366,8 @@ public class ProfileCreatabilityValidatorTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_ExcludeOnly_With_Required_Collection_As_Property : ProfileCreatabilityValidatorTests
+    public class Given_ExcludeOnly_With_Required_Array_Name_In_PropertyNameSet
+        : ProfileCreatabilityValidatorTests
     {
         private IReadOnlyList<string> _result = null!;
 
@@ -382,8 +383,10 @@ public class ProfileCreatabilityValidatorTests
             };
             var identityPropertyNames = new HashSet<string> { "schoolId" };
 
-            // ExcludeOnly profile that excludes educationOrganizationCategories via Property element
-            // (not Collection element) - this fully excludes the collection
+            // Defensive/programmatic case: this manually constructed ContentTypeDefinition places
+            // an array member name in PropertyNameSet. Valid profile XML should use <Collection>
+            // for collection members; this assertion only documents the creatability validator's
+            // flat required-member check, not runtime collection visibility semantics.
             var contentType = CreateContentType(
                 MemberSelection.ExcludeOnly,
                 properties: [new PropertyRule("educationOrganizationCategories")]
@@ -395,7 +398,7 @@ public class ProfileCreatabilityValidatorTests
         [Test]
         public void It_returns_the_excluded_required_collection()
         {
-            // educationOrganizationCategories is excluded via Property, not handled by a CollectionRule
+            // The validator reports the required field because its name is in PropertyNameSet.
             _result.Should().Contain("educationOrganizationCategories");
         }
 

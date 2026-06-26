@@ -136,6 +136,14 @@ internal class ProfileWritePipelineMiddleware(
                 scopeCatalog
             );
 
+        // Resource identity JSON paths drive identity preservation: identity
+        // members/references hidden by the writable profile are still implicitly
+        // included in the shaped write so the resource identity can be computed.
+        IReadOnlyList<string> resourceIdentityJsonPaths =
+        [
+            .. requestInfo.ResourceSchema.IdentityJsonPaths.Select(static path => path.Value),
+        ];
+
         // Execute the profile write pipeline (request-side only, no stored document yet).
         // This middleware only runs for POST/PUT with a writable profile (guarded above),
         // so the resolved content type is always Write.
@@ -151,7 +159,8 @@ internal class ProfileWritePipelineMiddleware(
             method: method,
             operation: operation,
             effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
-            deferCreatabilityViolations: true
+            deferCreatabilityViolations: true,
+            resourceIdentityJsonPaths: resourceIdentityJsonPaths
         );
 
         // Handle failures
@@ -166,21 +175,14 @@ internal class ProfileWritePipelineMiddleware(
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
-            int statusCode = result.Failures[0].Category switch
-            {
-                ProfileFailureCategory.CreatabilityViolation => 403,
-                ProfileFailureCategory.CoreBackendContractMismatch => 500,
-                ProfileFailureCategory.InvalidProfileDefinition => 500,
-                ProfileFailureCategory.BindingAccountingFailure => 500,
-                _ => 400, // WritableProfileValidationFailure, InvalidProfileUsage
-            };
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: statusCode,
-                Body: statusCode >= 500
-                    ? FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId)
-                    : FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            // Collection value-filter violations and duplicate visible
+            // collection-item collisions are request data validation failures
+            // (data-validation-failed); creatability and other profile-policy failures
+            // remain data-policy-enforced; internal categories surface as server errors.
+            requestInfo.FrontendResponse = ProfileWriteFailureResponseMapper.Map(
+                result.Failures,
+                profileName,
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
@@ -201,7 +203,8 @@ internal class ProfileWritePipelineMiddleware(
             profileName,
             resourceName,
             method,
-            effectiveSchemaRequiredMembersByScope
+            effectiveSchemaRequiredMembersByScope,
+            resourceIdentityJsonPaths
         );
 
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
@@ -223,7 +226,8 @@ internal class ProfileWritePipelineMiddleware(
         string profileName,
         string resourceName,
         string method,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
+        IReadOnlyList<string> resourceIdentityJsonPaths
     ) : IStoredStateProjectionInvoker
     {
         public ProfileAppliedWriteContext ProjectStoredState(
@@ -246,7 +250,8 @@ internal class ProfileWritePipelineMiddleware(
                 method: method,
                 operation: operation,
                 effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
-                deferCreatabilityViolations: true
+                deferCreatabilityViolations: true,
+                resourceIdentityJsonPaths: resourceIdentityJsonPaths
             );
 
             if (result.Context is not null)

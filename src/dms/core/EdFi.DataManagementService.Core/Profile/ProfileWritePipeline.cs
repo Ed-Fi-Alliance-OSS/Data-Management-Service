@@ -41,6 +41,14 @@ public sealed record ProfileWritePipelineResult
     /// Creatability violations intentionally deferred to the relational executor.
     /// Empty when deferral is disabled or no creatability violations were emitted.
     /// </summary>
+    /// <remarks>
+    /// Diagnostic/inspection surface only. The runtime middleware does not consume this
+    /// field: deferred creatability is carried to the backend via the enriched creatability
+    /// flags on <see cref="ProfileAppliedWriteRequest"/> (RootResourceCreatable and the
+    /// per-scope request states) and enforced on the relational write path, not by reading
+    /// this collection. It is retained so callers and tests can inspect which creatability
+    /// violations were deferred.
+    /// </remarks>
     public ImmutableArray<ProfileFailure> DeferredFailures { get; init; } = [];
 
     /// <summary>
@@ -104,11 +112,11 @@ public sealed record ProfileWritePipelineResult
 /// </list>
 /// </para>
 /// <para>
-/// Integration status: This pipeline is staged infrastructure being built and
-/// proven with unit tests (DMS-1116/DMS-1117/DMS-1118). It is not yet wired
-/// into the runtime write path — POST/PUT still flow through the existing
-/// ProfileWriteValidationMiddleware. Runtime integration will replace that
-/// middleware with this pipeline once all pipeline steps are complete.
+/// Integration status: wired into the relational runtime write path.
+/// ProfileWritePipelineMiddleware invokes <see cref="Execute"/> for relational POST/PUT
+/// requests governed by a writable profile and attaches the resulting
+/// BackendProfileWriteContext for the backend profile-aware merge to consume.
+/// ProfileWriteValidationMiddleware still runs ahead of it in the upsert/update pipeline.
 /// </para>
 /// </remarks>
 internal static class ProfileWritePipeline
@@ -146,6 +154,11 @@ internal static class ProfileWritePipeline
     /// When true, category-4 creatability violations are returned as deferred
     /// metadata while duplicate validation failures still short-circuit.
     /// </param>
+    /// <param name="resourceIdentityJsonPaths">
+    /// Resource identity JSON paths (e.g. "$.schoolReference.schoolId") used to
+    /// implicitly preserve identity members/references hidden by the writable
+    /// profile. Empty or null disables identity preservation.
+    /// </param>
     /// <returns>
     /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
     /// optional stored context, or typed failures.
@@ -162,7 +175,8 @@ internal static class ProfileWritePipeline
         string method,
         string operation,
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
-        bool deferCreatabilityViolations = false
+        bool deferCreatabilityViolations = false,
+        IReadOnlyList<string>? resourceIdentityJsonPaths = null
     )
     {
         // ------------------------------------------------------------------
@@ -217,7 +231,8 @@ internal static class ProfileWritePipeline
             profileName,
             resourceName,
             method,
-            operation
+            operation,
+            resourceIdentityJsonPaths ?? []
         );
 
         WritableRequestShapingResult shapingResult = shaper.Shape(canonicalizedRequestBody);
@@ -249,7 +264,8 @@ internal static class ProfileWritePipeline
             profileName,
             resourceName,
             method,
-            operation
+            operation,
+            resourceIdentityJsonPaths
         );
 
         CreatabilityResult creatabilityResult = creatabilityAnalyzer.Analyze(

@@ -526,8 +526,10 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  5. Given_Create_With_Hidden_Required_Root_Member — C3 forbidden data
-    //     short-circuits before C4 creatability
+    //  5. Given_Create_With_Hidden_Required_Root_Member — the submitted
+    //     hidden member is ignored (not a C3 failure) and the request flows to the
+    //     C4 creatability check, which rejects the create because the required
+    //     member is hidden by the profile.
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -564,7 +566,9 @@ public abstract class ProfileWritePipelineTests
         public void Setup()
         {
             // Request body includes entryDate, which is hidden by the profile.
-            // The pipeline short-circuits at C3 because forbidden data is submitted.
+            // The submitted hidden value is ignored (stripped, no C3 failure),
+            // and the request flows to C4 creatability, which rejects the create because
+            // entryDate is required but hidden by the profile.
             _result = ProfileWritePipeline.Execute(
                 canonicalizedRequestBody: BuildStandardRequestBody(),
                 writeContentType: BuildProfileHidingEntryDate(),
@@ -593,24 +597,35 @@ public abstract class ProfileWritePipelineTests
         }
 
         [Test]
-        public void It_should_contain_forbidden_submitted_data_failures()
+        public void It_should_not_contain_forbidden_submitted_data_failures()
         {
-            // The pipeline short-circuits at C3 with ForbiddenSubmittedData failures
-            // because entryDate and entryTypeDescriptor are submitted but hidden by the profile.
+            // The submitted hidden member is ignored, not reported as a
+            // ForbiddenSubmittedData failure.
             _result
                 .Failures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_should_contain_creatability_violation_failure()
+        {
+            // A hidden submitted value cannot satisfy create-time required members, so
+            // creatability rejects the root create just as it would when the member is
+            // omitted entirely.
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
                 .Should()
                 .NotBeEmpty();
         }
 
         [Test]
-        public void It_should_be_category_3_writable_profile_validation_failures()
+        public void It_should_be_category_4_creatability_violation()
         {
             _result
-                .Failures.Should()
-                .AllSatisfy(f =>
-                    f.Category.Should().Be(ProfileFailureCategory.WritableProfileValidationFailure)
-                );
+                .Failures.OfType<CreatabilityViolationFailure>()
+                .Should()
+                .AllSatisfy(f => f.Category.Should().Be(ProfileFailureCategory.CreatabilityViolation));
         }
     }
 
@@ -925,6 +940,257 @@ public abstract class ProfileWritePipelineTests
         public void It_should_succeed()
         {
             _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Create with a profile hiding a resource identity reference — the
+    //  identity reference is implicitly creatable, so the POST is not rejected
+    //  (Calendar case, modeled on the StudentSchoolAssociation fixture).
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Hidden_Identity_Reference : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing studentReference and entryDate but NOT schoolReference.
+        private static ContentTypeDefinition BuildProfileHidingSchoolReference() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfileHidingSchoolReference(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                resourceIdentityJsonPaths:
+                [
+                    "$.studentReference.studentUniqueId",
+                    "$.schoolReference.schoolId",
+                    "$.entryDate",
+                ]
+            );
+        }
+
+        [Test]
+        public void It_should_not_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Create with a profile hiding a NON-identity required member — identity
+    //  preservation must not leak; the POST is still rejected for creatability.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Hidden_NonIdentity_Required_Member_And_Identity_Paths
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing studentReference and schoolReference but NOT entryDate.
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // entryDate is required and hidden, and is NOT among the supplied identity paths,
+            // so the identity exemption must not apply to it.
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                resourceIdentityJsonPaths:
+                [
+                    "$.studentReference.studentUniqueId",
+                    "$.schoolReference.schoolId",
+                ]
+            );
+        }
+
+        [Test]
+        public void It_should_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .NotBeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Create with a required collection included via a <Collection> rule (not
+    //  a <Property>). The collection is visible, so creatability must not reject.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Required_Collection_Included_Via_Collection_Rule
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing studentReference (Property) and classPeriods (Collection).
+        private static ContentTypeDefinition BuildProfile() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // classPeriods is required and included via <Collection> (not <Property>), so it must
+            // count as visible for creatability. studentReference is the resource identity.
+            var requiredMembers = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["studentReference", "classPeriods"],
+                ["$.calendarReference"] = [],
+                ["$.classPeriods[*]"] = [],
+            };
+
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: requiredMembers,
+                resourceIdentityJsonPaths: ["$.studentReference.studentUniqueId"]
+            );
+        }
+
+        [Test]
+        public void It_should_not_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Create with a required collection that the profile does NOT include (no
+    //  <Collection> rule and not a <Property>) is still rejected for creatability.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Required_Collection_Omitted_By_Profile : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        // IncludeOnly profile listing only studentReference; classPeriods is neither a
+        // <Property> nor a <Collection> rule, so it is hidden.
+        private static ContentTypeDefinition BuildProfile() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            var requiredMembers = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["studentReference", "classPeriods"],
+                ["$.calendarReference"] = [],
+                ["$.classPeriods[*]"] = [],
+            };
+
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: requiredMembers,
+                resourceIdentityJsonPaths: ["$.studentReference.studentUniqueId"]
+            );
+        }
+
+        [Test]
+        public void It_should_emit_a_root_creatability_violation()
+        {
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .NotBeEmpty();
         }
     }
 }

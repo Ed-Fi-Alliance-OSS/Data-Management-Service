@@ -5,12 +5,14 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -205,6 +207,98 @@ public class ValidateEqualityConstraintMiddlewareTests
                 .Contain(
                     "\"validationErrors\":{\"$.classPeriods[*].classPeriodReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"],\"$.schoolReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"]}"
                 );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Conflicting_Hidden_Collection_Stripped_By_A_Writable_Profile
+        : ValidateEqualityConstraintMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The raw submitted body carries a classPeriods collection whose
+            // classPeriodReference.schoolId (2) conflicts with the resource-identity
+            // schoolReference.schoolId (1). A writable profile hides classPeriods, so the shaper
+            // strips it from the shaped write surface while preserving the identity reference.
+            // Equality-constraint validation must run against the shaped body and ignore the hidden
+            // conflict rather than reject the request.
+            var rawBody = """
+                {
+                    "schoolReference": { "schoolId": 1 },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                      {
+                        "classPeriodReference": {
+                          "classPeriodName": "01 - Traditional",
+                          "schoolId": 2
+                        }
+                      }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                }
+                """;
+
+            var shapedBody = """
+                {
+                    "schoolReference": { "schoolId": 1 },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "dates": [],
+                    "gradeLevels": []
+                }
+                """;
+
+            var frontEndRequest = new FrontendRequest(
+                "ed-fi/bellschedules",
+                Body: rawBody,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            _requestInfo.ParsedBody = JsonNode.Parse(rawBody)!;
+            _requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
+                Request: new ProfileAppliedWriteRequest(
+                    WritableRequestBody: JsonNode.Parse(shapedBody)!,
+                    RootResourceCreatable: true,
+                    RequestScopeStates: [],
+                    VisibleRequestCollectionItems: []
+                ),
+                ProfileName: "TestProfile",
+                CompiledScopeCatalog: [],
+                StoredStateProjectionInvoker: null!
+            );
+
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_the_pipeline()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_provides_no_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

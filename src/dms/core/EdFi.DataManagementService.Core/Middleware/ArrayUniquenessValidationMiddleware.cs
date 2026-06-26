@@ -134,11 +134,12 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                     string.Join(", ", relativePaths)
                 );
 
-                (string? arrayPath, int dupeIndex) = requestInfo.ParsedBody.FindDuplicatesWithArrayPath(
-                    arrayRootPath,
-                    relativePaths,
-                    logger
-                );
+                // Validate against the profile-shaped body when a writable profile
+                // applied, so duplicate items inside a collection the profile hides are accepted
+                // and ignored rather than rejected.
+                (string? arrayPath, int dupeIndex) = ProfileWriteValidationBody
+                    .Effective(requestInfo)
+                    .FindDuplicatesWithArrayPath(arrayRootPath, relativePaths, logger);
 
                 if (dupeIndex >= 0 && arrayPath != null)
                 {
@@ -184,9 +185,11 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
 
         try
         {
-            // Get all items from the base path array
-            List<JsonNode?> baseItems = requestInfo
-                .ParsedBody.SelectNodesFromArrayPath(basePath, logger)
+            // Get all items from the base path array. Use the profile-shaped body when a
+            // writable profile applied so nested duplicates inside a hidden collection are ignored.
+            List<JsonNode?> baseItems = ProfileWriteValidationBody
+                .Effective(requestInfo)
+                .SelectNodesFromArrayPath(basePath, logger)
                 .ToList();
             logger.LogDebug("Found {ItemCount} base items for path {BasePath}", baseItems.Count, basePath);
 

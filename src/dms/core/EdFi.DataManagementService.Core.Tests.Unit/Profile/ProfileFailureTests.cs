@@ -973,6 +973,71 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
             .JsonPaths.Should()
             .Equal("$.classPeriods[0]", "$.classPeriods[1]");
     }
+
+    [Test]
+    public void It_should_create_a_collection_value_filter_violation_failure()
+    {
+        CollectionValueFilterViolationWritableProfileValidationFailure failure =
+            ProfileFailures.CollectionValueFilterViolation(
+                profileName: "RestrictedSchoolWrite",
+                resourceName: "School",
+                method: "POST",
+                operation: "upsert",
+                jsonScope: "$.gradeLevels[*]",
+                requestJsonPaths: ["$.gradeLevels[1]", "$.gradeLevels[2]"],
+                filterPropertyName: "gradeLevelDescriptor",
+                filterMode: FilterMode.IncludeOnly,
+                filterValues: ["uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"]
+            );
+
+        failure.Category.Should().Be(ProfileFailureCategory.WritableProfileValidationFailure);
+        failure.Emitter.Should().Be(ProfileFailureEmitter.RequestVisibilityAndWritableShaping);
+        failure.Context.ProfileName.Should().Be("RestrictedSchoolWrite");
+        failure.Context.ResourceName.Should().Be("School");
+        failure.Context.Method.Should().Be("POST");
+        failure.Context.Operation.Should().Be("upsert");
+        failure.JsonScope.Should().Be("$.gradeLevels[*]");
+        failure.AffectedScopeKind.Should().Be(ScopeKind.Collection);
+        failure.RequestJsonPaths.Should().Equal("$.gradeLevels[1]", "$.gradeLevels[2]");
+        failure.FilterPropertyName.Should().Be("gradeLevelDescriptor");
+        failure.FilterMode.Should().Be(FilterMode.IncludeOnly);
+        failure.FilterValues.Should().Equal("uri://ed-fi.org/GradeLevelDescriptor#Ninth grade");
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
+            .Single()
+            .ScopeKind.Should()
+            .Be(ScopeKind.Collection);
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.RequestPaths>()
+            .Single()
+            .JsonPaths.Should()
+            .Equal("$.gradeLevels[1]", "$.gradeLevels[2]");
+    }
+
+    [Test]
+    public void It_should_allow_collection_value_filter_violations_without_filter_values()
+    {
+        CollectionValueFilterViolationWritableProfileValidationFailure failure =
+            ProfileFailures.CollectionValueFilterViolation(
+                profileName: "RestrictedSchoolWrite",
+                resourceName: "School",
+                method: "POST",
+                operation: "upsert",
+                jsonScope: "$.gradeLevels[*]",
+                requestJsonPaths: ["$.gradeLevels[0]"],
+                filterPropertyName: "gradeLevelDescriptor",
+                filterMode: FilterMode.ExcludeOnly,
+                filterValues: []
+            );
+
+        failure.FilterValues.Should().BeEmpty();
+        failure.FilterMode.Should().Be(FilterMode.ExcludeOnly);
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.RequestPaths>()
+            .Single()
+            .JsonPaths.Should()
+            .Equal("$.gradeLevels[0]");
+    }
 }
 
 [TestFixture]

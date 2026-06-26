@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -11,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -164,6 +166,86 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     internal static ReferenceArrayUniquenessValidationMiddleware Middleware()
     {
         return new ReferenceArrayUniquenessValidationMiddleware(NullLogger.Instance);
+    }
+
+    /// <summary>
+    /// Builds a relational writable-profile request: the raw submitted body is parsed and run
+    /// through reference extraction (populating DocumentInfo from the raw body, as the real
+    /// pipeline does), then a BackendProfileWriteContext carrying the profile-shaped writable body
+    /// is attached before the uniqueness middleware runs. This mirrors how
+    /// ProfileWritePipelineMiddleware shapes the write without mutating ParsedBody/DocumentInfo.
+    /// </summary>
+    internal static async Task<(
+        RequestInfo RequestInfo,
+        bool NextCalled
+    )> CreateProfileContextAndCaptureNextAsync(
+        ApiSchemaDocuments apiSchema,
+        string rawJsonBody,
+        string shapedJsonBody,
+        string endpointName,
+        RequestMethod method
+    )
+    {
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: rawJsonBody,
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
+        );
+
+        RequestInfo requestInfo = new(frontEndRequest, method, No.ServiceProvider)
+        {
+            ApiSchemaDocuments = apiSchema,
+            PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new(endpointName),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
+        );
+
+        requestInfo.ParsedBody = JsonNode.Parse(rawJsonBody)!;
+
+        await BuildResourceInfo().Execute(requestInfo, NullNext);
+        requestInfo.MappingSet = ExtractDocumentInfoMiddlewareTests.CreateMappingSet(
+            requestInfo.ResourceInfo
+        );
+        await ExtractDocument().Execute(requestInfo, NullNext);
+
+        requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse(shapedJsonBody)!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "TestProfile",
+            CompiledScopeCatalog: [],
+            StoredStateProjectionInvoker: null!
+        );
+
+        var nextCalled = false;
+
+        await Middleware()
+            .Execute(
+                requestInfo,
+                () =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        return (requestInfo, nextCalled);
     }
 
     [TestFixture]
@@ -356,6 +438,114 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         public void It_continues_to_next_middleware()
         {
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Writable_Profile_Hides_A_Reference_Array_With_Duplicates
+        : ReferenceArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Raw submitted body includes a classPeriods collection with duplicate references.
+            const string rawBody = """
+                {
+                    "schoolReference": { "schoolId": 1 },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                        { "classPeriodReference": { "classPeriodName": "01 - Traditional", "schoolId": 1 } },
+                        { "classPeriodReference": { "classPeriodName": "01 - Traditional", "schoolId": 1 } }
+                    ]
+                }
+                """;
+
+            // The writable profile hides classPeriods entirely, so the shaped write body omits it.
+            const string shapedBody = """
+                {
+                    "schoolReference": { "schoolId": 1 },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325
+                }
+                """;
+
+            (_requestInfo, _nextCalled) = await CreateProfileContextAndCaptureNextAsync(
+                BellScheduleApiSchema(),
+                rawBody,
+                shapedBody,
+                "bellschedules",
+                RequestMethod.POST
+            );
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_validation_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Writable_Profile_Keeps_A_Reference_Array_With_Duplicates
+        : ReferenceArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The writable profile keeps classPeriods visible, and the shaped write body still
+            // carries the duplicate references; duplicate detection must still reject the request.
+            const string body = """
+                {
+                    "schoolReference": { "schoolId": 1 },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                        { "classPeriodReference": { "classPeriodName": "01 - Traditional", "schoolId": 1 } },
+                        { "classPeriodReference": { "classPeriodName": "01 - Traditional", "schoolId": 1 } }
+                    ]
+                }
+                """;
+
+            (_requestInfo, _nextCalled) = await CreateProfileContextAndCaptureNextAsync(
+                BellScheduleApiSchema(),
+                body,
+                body,
+                "bellschedules",
+                RequestMethod.POST
+            );
+        }
+
+        [Test]
+        public void It_does_not_continue_to_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicated_document_reference()
+        {
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("same identifying values");
         }
     }
 
