@@ -221,7 +221,7 @@ public class ValidateEqualityConstraintMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            // DMS-1229: the raw submitted body carries a classPeriods collection whose
+            // The raw submitted body carries a classPeriods collection whose
             // classPeriodReference.schoolId (2) conflicts with the resource-identity
             // schoolReference.schoolId (1). A writable profile hides classPeriods, so the shaper
             // strips it from the shaped write surface while preserving the identity reference.

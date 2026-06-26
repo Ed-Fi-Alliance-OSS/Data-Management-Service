@@ -223,12 +223,12 @@ public sealed class WritableRequestShaper(
                 TryBuildIdentitySurface($"{requestJsonPath}.{memberName}", memberValue, out JsonNode? surface)
             )
             {
-                // DMS-1229: a hidden member that carries resource identity is
+                // A hidden member that carries resource identity is
                 // implicitly preserved as the minimum identity surface, matching
                 // legacy ODS. Unrelated members of the reference are still dropped.
                 output[memberName] = surface;
             }
-            // DMS-1229: any other hidden submitted scalar member is accepted and
+            // Any other hidden submitted scalar member is accepted and
             // stripped (omitted from the shaped body), not a ForbiddenSubmittedData
             // failure. Existing stored values are preserved on PUT via stored-side
             // metadata.
@@ -279,9 +279,12 @@ public sealed class WritableRequestShaper(
         }
         else
         {
-            // DMS-1229: a hidden submitted non-collection scope is accepted and
+            // A hidden submitted non-collection scope is accepted and
             // stripped (not written, no ForbiddenSubmittedData failure). The Hidden
             // RequestScopeState emitted above lets the backend preserve stored values.
+            // No identity surface is reconstructed here (unlike the scalar-member path):
+            // resource identity is root-anchored, so an identity leaf never resides under
+            // a hidden scope — see TryBuildIdentitySurface remarks.
             // Scope is absent or hidden — recursively emit states for descendant
             // non-collection scopes that cannot be encountered during the walk.
             EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
@@ -321,9 +324,11 @@ public sealed class WritableRequestShaper(
                 // If VisibleAbsent, emit the array key with empty array to match expectations
                 output[memberName] = new JsonArray();
             }
-            // DMS-1229: a hidden submitted collection is accepted and stripped (not
+            // A hidden submitted collection is accepted and stripped (not
             // written, no ForbiddenSubmittedData failure). Stored rows are preserved
-            // on PUT via stored-side metadata.
+            // on PUT via stored-side metadata. No identity surface is reconstructed for
+            // collection items: resource identity is root-anchored and collection-item
+            // identity is not a resource identityJsonPath — see TryBuildIdentitySurface.
             return;
         }
 
@@ -337,7 +342,7 @@ public sealed class WritableRequestShaper(
 
             if (!classifier.PassesCollectionItemFilter(jsonScope, item))
             {
-                // DMS-1229: a submitted collection item that fails the profile value
+                // A submitted collection item that fails the profile value
                 // filter remains an immediate validation failure, but is typed so the
                 // API layer maps it to data-validation-failed (not data-policy-enforced).
                 // PassesCollectionItemFilter only returns false when a filter exists,
@@ -456,7 +461,7 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
-                // DMS-1229: a hidden submitted member inside a visible collection item
+                // A hidden submitted member inside a visible collection item
                 // is accepted and stripped, not a ForbiddenSubmittedData failure.
             }
 
@@ -536,12 +541,14 @@ public sealed class WritableRequestShaper(
             }
             else
             {
-                // DMS-1229: a hidden submitted extension scope is accepted and
+                // A hidden submitted extension scope is accepted and
                 // stripped (omitted from the shaped body, no ForbiddenSubmittedData
                 // failure). The Hidden RequestScopeState emitted above lets the backend
                 // preserve stored extension data on PUT. This does not change invalid
                 // extension names, unsupported extension profile usage, or extension
-                // collection value-filter failures.
+                // collection value-filter failures. No identity surface is reconstructed
+                // under a hidden extension: resource identity is root-anchored, so an
+                // identity leaf never resides here — see TryBuildIdentitySurface remarks.
                 // Extension scope is absent or hidden — emit descendant states
                 EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }
@@ -663,7 +670,7 @@ public sealed class WritableRequestShaper(
     }
 
     // -----------------------------------------------------------------------
-    //  Identity preservation (DMS-1229)
+    //  Identity preservation
     // -----------------------------------------------------------------------
 
     /// <summary>
@@ -680,6 +687,17 @@ public sealed class WritableRequestShaper(
     /// is reconstructed carrying only the identity leaf descendants found in the
     /// submitted value). Unrelated members are not preserved. Returns false when
     /// the member does not participate in resource identity.
+    /// <para>
+    /// Boundary: identity preservation covers root resource identity
+    /// members/references only. It is invoked solely from the scalar-member path of
+    /// <see cref="ShapeScopeMembers"/>; hidden non-collection scopes, collections, and
+    /// extensions are stripped without identity reconstruction. This is correct because
+    /// resource <c>identityJsonPaths</c> are root-anchored and carry no array indices
+    /// (mirrored in <c>CreatabilityAnalyzer</c>, which applies the implicit-visibility
+    /// identity exemption only to the root scope), so an identity leaf never resides
+    /// under a hidden object/collection/extension shape. Collection-item identity is a
+    /// distinct concept and is not a resource <c>identityJsonPath</c>.
+    /// </para>
     /// </remarks>
     private bool TryBuildIdentitySurface(string memberPath, JsonNode? submittedValue, out JsonNode? surface)
     {

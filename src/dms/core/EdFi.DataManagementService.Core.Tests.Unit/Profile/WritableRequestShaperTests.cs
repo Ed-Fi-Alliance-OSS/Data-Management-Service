@@ -279,7 +279,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failures_for_hidden_submitted_members()
         {
-            // DMS-1229: hidden submitted scalar (entryTypeDescriptor) and hidden
+            // Hidden submitted scalar (entryTypeDescriptor) and hidden
             // collection-item scalar (officialAttendancePeriod) are accepted and
             // stripped, not reported as ForbiddenSubmittedData failures.
             _result.ValidationFailures.Should().BeEmpty();
@@ -904,7 +904,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_submitted_scope()
         {
-            // DMS-1229: a hidden submitted non-collection scope is accepted and
+            // A hidden submitted non-collection scope is accepted and
             // stripped, not reported as a ForbiddenSubmittedData failure. The
             // Hidden scope state above lets the backend preserve stored values.
             _result.ValidationFailures.Should().BeEmpty();
@@ -1282,7 +1282,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_excluded_submitted_scalar()
         {
-            // DMS-1229: an ExcludeOnly-hidden submitted scalar is accepted and
+            // An ExcludeOnly-hidden submitted scalar is accepted and
             // stripped, not reported as a ForbiddenSubmittedData failure.
             _result.ValidationFailures.Should().BeEmpty();
         }
@@ -1354,7 +1354,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_submitted_collection()
         {
-            // DMS-1229: a hidden submitted collection is accepted and stripped,
+            // A hidden submitted collection is accepted and stripped,
             // not reported as a ForbiddenSubmittedData failure.
             _result.ValidationFailures.Should().BeEmpty();
         }
@@ -1452,7 +1452,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_scalar_submitted_with_null()
         {
-            // DMS-1229: a hidden scalar submitted with a null value is accepted
+            // A hidden scalar submitted with a null value is accepted
             // and stripped, not reported as a ForbiddenSubmittedData failure.
             _result.ValidationFailures.Should().BeEmpty();
             _result.WritableRequestBody.AsObject().ContainsKey("entryTypeDescriptor").Should().BeFalse();
@@ -1519,7 +1519,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_scope_submitted_with_null()
         {
-            // DMS-1229: a hidden non-collection scope submitted with a null value
+            // A hidden non-collection scope submitted with a null value
             // is accepted and stripped, not reported as a failure.
             _result.ValidationFailures.Should().BeEmpty();
         }
@@ -1589,7 +1589,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_collection_submitted_with_null()
         {
-            // DMS-1229: a hidden collection submitted with a null value is
+            // A hidden collection submitted with a null value is
             // accepted and stripped, not reported as a failure.
             _result.ValidationFailures.Should().BeEmpty();
         }
@@ -1652,7 +1652,7 @@ public abstract class WritableRequestShaperTests
         [Test]
         public void It_should_not_emit_validation_failure_for_hidden_submitted_extension_scope()
         {
-            // DMS-1229: a hidden submitted extension scope is accepted and
+            // A hidden submitted extension scope is accepted and
             // stripped, not reported as a ForbiddenSubmittedData failure.
             _result.ValidationFailures.Should().BeEmpty();
         }
@@ -1679,7 +1679,7 @@ public abstract class WritableRequestShaperTests
 
     // -----------------------------------------------------------------------
     //  22. IncludeOnly profile omitting identity references preserves the
-    //      minimum identity surface (DMS-1229 Calendar case)
+    //      minimum identity surface (Calendar case)
     // -----------------------------------------------------------------------
 
     [TestFixture]

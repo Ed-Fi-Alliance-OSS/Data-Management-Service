@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Maps profile write pipeline failures to client-visible <see cref="FrontendResponse"/>
-/// problem responses for DMS-1229.
+/// problem responses.
 /// </summary>
 /// <remarks>
 /// <list type="bullet">

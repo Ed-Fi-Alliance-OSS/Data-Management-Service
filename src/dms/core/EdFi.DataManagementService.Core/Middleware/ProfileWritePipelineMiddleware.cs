@@ -136,7 +136,7 @@ internal class ProfileWritePipelineMiddleware(
                 scopeCatalog
             );
 
-        // Resource identity JSON paths drive DMS-1229 identity preservation: identity
+        // Resource identity JSON paths drive identity preservation: identity
         // members/references hidden by the writable profile are still implicitly
         // included in the shaped write so the resource identity can be computed.
         IReadOnlyList<string> resourceIdentityJsonPaths =
@@ -175,7 +175,7 @@ internal class ProfileWritePipelineMiddleware(
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
-            // DMS-1229: collection value-filter violations and duplicate visible
+            // Collection value-filter violations and duplicate visible
             // collection-item collisions are request data validation failures
             // (data-validation-failed); creatability and other profile-policy failures
             // remain data-policy-enforced; internal categories surface as server errors.

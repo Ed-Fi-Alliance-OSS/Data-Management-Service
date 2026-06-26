@@ -468,7 +468,7 @@ public sealed record GenericWritableProfileValidationFailure(
 /// writable profile after request-side visibility and value-filter evaluation.
 /// </summary>
 /// <remarks>
-/// DMS-1229: production request shaping no longer emits this failure. Ordinary hidden
+/// Production request shaping no longer emits this failure. Ordinary hidden
 /// submitted members/scopes are accepted and stripped with no failure, and submitted
 /// collection items that fail a value filter emit
 /// <see cref="CollectionValueFilterViolationWritableProfileValidationFailure"/> instead.
@@ -977,7 +977,7 @@ public static class ProfileFailures
         params ProfileFailureDiagnostic[] diagnostics
     ) => CreateWritableProfileValidationFailure(emitter, message, context, diagnostics);
 
-    // DMS-1229: retained as Core.External contract surface. Production shaping no longer
+    // Retained as Core.External contract surface. Production shaping no longer
     // calls this factory (hidden submitted data is now accepted/stripped); it is kept for the
     // external failure contract and unit coverage. See the type remarks for details.
     public static ForbiddenSubmittedDataWritableProfileValidationFailure ForbiddenSubmittedData(

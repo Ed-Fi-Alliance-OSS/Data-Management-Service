@@ -47,7 +47,7 @@ public sealed class CreatabilityAnalyzer(
     private readonly IReadOnlyDictionary<string, CompiledScopeDescriptor> _scopesByJsonScope =
         scopeCatalog.ToDictionary(s => s.JsonScope);
 
-    // DMS-1229: top-level root members that carry resource identity. These are implicitly
+    // Top-level root members that carry resource identity. These are implicitly
     // visible for creatability even when the writable profile hides them, because the shaper
     // preserves identity members/references. Resource identity paths are root-anchored
     // (e.g. "$.schoolReference.schoolId"), so the exemption applies only to the root scope.

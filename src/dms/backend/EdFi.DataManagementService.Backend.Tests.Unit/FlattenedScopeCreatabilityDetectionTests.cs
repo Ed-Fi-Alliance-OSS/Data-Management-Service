@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// <summary>
 /// Covers backend enforcement of deferred C4 creatability for flattened (root-table-owned)
 /// embedded-object non-collection scopes — the case the separate-table decider and collection
-/// planner do not reach (DMS-1229 scenario 12, Assessment contentStandard).
+/// planner do not reach (scenario 12, Assessment contentStandard).
 /// </summary>
 public abstract class FlattenedScopeCreatabilityDetectionTests
 {

@@ -112,7 +112,7 @@ public sealed record ProfileWritePipelineResult
 /// </list>
 /// </para>
 /// <para>
-/// Integration status: wired into the relational runtime write path (DMS-1229).
+/// Integration status: wired into the relational runtime write path.
 /// ProfileWritePipelineMiddleware invokes <see cref="Execute"/> for relational POST/PUT
 /// requests governed by a writable profile and attaches the resulting
 /// BackendProfileWriteContext for the backend profile-aware merge to consume.

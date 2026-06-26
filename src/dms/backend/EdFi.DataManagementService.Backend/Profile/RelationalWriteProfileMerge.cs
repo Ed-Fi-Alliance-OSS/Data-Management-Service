@@ -149,7 +149,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // DMS-1229: honor Core's deferred C4 creatability for flattened root-table-owned
+        // Honor Core's deferred C4 creatability for flattened root-table-owned
         // embedded-object non-collection scopes. Per-scope creatability is otherwise enforced
         // only for the root resource via RootResourceCreatable, for separate-table scopes via
         // the separate-table decider, and for collection items via the collection planner. A

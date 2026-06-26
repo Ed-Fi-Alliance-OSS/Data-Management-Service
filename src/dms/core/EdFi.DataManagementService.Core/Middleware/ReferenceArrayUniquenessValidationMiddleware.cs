@@ -24,7 +24,7 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // DMS-1229: DocumentInfo is extracted from the raw submitted body, but a writable profile
+        // DocumentInfo is extracted from the raw submitted body, but a writable profile
         // may hide submitted reference collections that the shaper strips from the write body.
         // Validate duplicate references against the profile-shaped reference arrays so hidden
         // submitted collections are accepted and ignored. Non-profile writes keep using the raw

@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
 /// Restricts the document/descriptor references that the relational write executor
-/// resolves to those still present in the profile-shaped write body (DMS-1229).
+/// resolves to those still present in the profile-shaped write body.
 /// </summary>
 /// <remarks>
 /// References and descriptors are extracted from the raw submitted body

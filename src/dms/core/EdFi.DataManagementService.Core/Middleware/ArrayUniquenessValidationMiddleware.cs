@@ -134,7 +134,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                     string.Join(", ", relativePaths)
                 );
 
-                // DMS-1229: validate against the profile-shaped body when a writable profile
+                // Validate against the profile-shaped body when a writable profile
                 // applied, so duplicate items inside a collection the profile hides are accepted
                 // and ignored rather than rejected.
                 (string? arrayPath, int dupeIndex) = ProfileWriteValidationBody
@@ -185,7 +185,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
 
         try
         {
-            // Get all items from the base path array. DMS-1229: use the profile-shaped body when a
+            // Get all items from the base path array. Use the profile-shaped body when a
             // writable profile applied so nested duplicates inside a hidden collection are ignored.
             List<JsonNode?> baseItems = ProfileWriteValidationBody
                 .Effective(requestInfo)

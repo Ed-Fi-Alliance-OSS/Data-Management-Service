@@ -47,7 +47,7 @@ public static class CreationRequiredMemberResolver
     /// </param>
     /// <param name="implicitlyVisibleMembers">
     /// Top-level member names that are implicitly visible regardless of the profile
-    /// filter — resource identity members/references that DMS-1229 preserves. These
+    /// filter — resource identity members/references that the shaper preserves. These
     /// are never reported as hidden, matching legacy ODS where identity members are
     /// implicitly included. Null or empty disables the exemption.
     /// </param>
@@ -89,7 +89,7 @@ public static class CreationRequiredMemberResolver
         }
 
         // Determine which creation-required members are hidden by the profile.
-        // DMS-1229: resource identity members/references are implicitly visible (the
+        // Resource identity members/references are implicitly visible (the
         // shaper preserves them), so they are never reported as hidden for creatability.
         ImmutableArray<string>.Builder hiddenBuilder = ImmutableArray.CreateBuilder<string>();
         foreach (string member in creationRequired)

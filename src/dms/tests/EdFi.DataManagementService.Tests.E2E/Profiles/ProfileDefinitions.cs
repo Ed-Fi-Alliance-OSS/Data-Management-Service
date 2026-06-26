@@ -245,7 +245,7 @@ public static class ProfileDefinitions
     // These profiles have restricted WriteContentType for testing write-side filtering.
     // Hidden members not allowed by the write profile are silently stripped from the
     // request; submitted collection items that fail a profile value filter are rejected
-    // as data-validation failures (DMS-1229), not silently stripped.
+    // as data-validation failures, not silently stripped.
     // ================================================================================
 
     /// <summary>
@@ -290,7 +290,7 @@ public static class ProfileDefinitions
     /// <summary>
     /// Profile for School with collection item filter on WriteContentType.
     /// Only allows writing grade levels matching the "Ninth grade" descriptor.
-    /// DMS-1229: a submitted grade level that does not match the filter is rejected as a
+    /// A submitted grade level that does not match the filter is rejected as a
     /// data-validation failure (400 data-validation-failed), not silently stripped.
     /// </summary>
     public const string SchoolWriteGradeLevelFilterName = "E2E-Test-School-Write-GradeLevelFilter";
@@ -394,7 +394,7 @@ public static class ProfileDefinitions
     /// <summary>
     /// Profile for School with WriteContentType that has a CollectionRule on the required gradeLevels collection.
     /// The collection is filtered (not excluded), so the collection remains creatable and a POST whose
-    /// submitted grade levels all match the filter succeeds. DMS-1229: a submitted grade level that does
+    /// submitted grade levels all match the filter succeeds. A submitted grade level that does
     /// not match the filter is rejected as a data-validation failure, not silently stripped.
     /// </summary>
     public const string SchoolWriteRequiredCollectionWithRuleName =

@@ -215,7 +215,7 @@ public abstract class CreationRequiredMemberResolverTests
 
     // -----------------------------------------------------------------------
     //  Implicitly-visible identity members are not reported as hidden, while
-    //  hidden non-identity required members still are (DMS-1229)
+    //  hidden non-identity required members still are
     // -----------------------------------------------------------------------
 
     [TestFixture]

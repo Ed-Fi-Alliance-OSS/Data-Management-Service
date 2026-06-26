@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Selects the request body that profile-aware request validation should inspect.
 /// </summary>
 /// <remarks>
-/// DMS-1229: on relational profile writes, <see cref="RequestInfo.ParsedBody"/> intentionally
+/// On relational profile writes, <see cref="RequestInfo.ParsedBody"/> intentionally
 /// remains the raw submitted body (the backend relies on receiving it), and the profile-shaped
 /// write surface is carried separately on <c>BackendProfileWriteContext.Request.WritableRequestBody</c>.
 /// Request validators that would otherwise reject submitted data the profile hides must validate

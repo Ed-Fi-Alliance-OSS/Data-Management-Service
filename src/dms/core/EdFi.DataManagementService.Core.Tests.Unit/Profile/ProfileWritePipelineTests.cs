@@ -526,7 +526,7 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  5. Given_Create_With_Hidden_Required_Root_Member — DMS-1229: the submitted
+    //  5. Given_Create_With_Hidden_Required_Root_Member — the submitted
     //     hidden member is ignored (not a C3 failure) and the request flows to the
     //     C4 creatability check, which rejects the create because the required
     //     member is hidden by the profile.
@@ -566,7 +566,7 @@ public abstract class ProfileWritePipelineTests
         public void Setup()
         {
             // Request body includes entryDate, which is hidden by the profile.
-            // DMS-1229: the submitted hidden value is ignored (stripped, no C3 failure),
+            // The submitted hidden value is ignored (stripped, no C3 failure),
             // and the request flows to C4 creatability, which rejects the create because
             // entryDate is required but hidden by the profile.
             _result = ProfileWritePipeline.Execute(
@@ -599,7 +599,7 @@ public abstract class ProfileWritePipelineTests
         [Test]
         public void It_should_not_contain_forbidden_submitted_data_failures()
         {
-            // DMS-1229: the submitted hidden member is ignored, not reported as a
+            // The submitted hidden member is ignored, not reported as a
             // ForbiddenSubmittedData failure.
             _result
                 .Failures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
@@ -946,7 +946,7 @@ public abstract class ProfileWritePipelineTests
     // -----------------------------------------------------------------------
     //  Create with a profile hiding a resource identity reference — the
     //  identity reference is implicitly creatable, so the POST is not rejected
-    //  (DMS-1229 Calendar case, modeled on the StudentSchoolAssociation fixture).
+    //  (Calendar case, modeled on the StudentSchoolAssociation fixture).
     // -----------------------------------------------------------------------
 
     [TestFixture]

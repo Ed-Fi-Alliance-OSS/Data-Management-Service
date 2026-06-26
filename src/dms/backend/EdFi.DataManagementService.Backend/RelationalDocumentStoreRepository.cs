@@ -134,7 +134,7 @@ public sealed class RelationalDocumentStoreRepository(
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
 
-        // DMS-1229: references and descriptors are extracted from the raw submitted body, but a
+        // References and descriptors are extracted from the raw submitted body, but a
         // writable profile may hide submitted members that the shaper strips from selectedBody.
         // Restrict resolution to the references/descriptors still present in the shaped body so
         // hidden ones are accepted and ignored rather than resolved/written or rejected as
@@ -287,7 +287,7 @@ public sealed class RelationalDocumentStoreRepository(
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
 
-        // DMS-1229: restrict reference/descriptor resolution to those still present in the
+        // Restrict reference/descriptor resolution to those still present in the
         // profile-shaped body (see the POST path for the full rationale). Hidden submitted
         // references/descriptors are accepted and ignored; preserved identity references remain.
         var documentReferences = ResolveProfileShapedReferences(
@@ -2083,7 +2083,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     /// <summary>
-    /// DMS-1229: when a writable profile shaped the body, restricts document references to those
+    /// When a writable profile shaped the body, restricts document references to those
     /// still present in the shaped body; otherwise returns the references unchanged.
     /// </summary>
     private static IReadOnlyList<DocumentReference> ResolveProfileShapedReferences(
@@ -2096,7 +2096,7 @@ public sealed class RelationalDocumentStoreRepository(
             : ProfileWriteReferenceFilter.RetainPresent(documentReferences, shapedBody);
 
     /// <summary>
-    /// DMS-1229: when a writable profile shaped the body, restricts descriptor references to those
+    /// When a writable profile shaped the body, restricts descriptor references to those
     /// still present in the shaped body; otherwise returns the descriptors unchanged.
     /// </summary>
     private static IReadOnlyList<DescriptorReference> ResolveProfileShapedDescriptors(
