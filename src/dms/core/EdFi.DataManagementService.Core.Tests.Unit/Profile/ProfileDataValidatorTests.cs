@@ -1779,7 +1779,7 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
-        public void Validate_should_error_for_unknown_extension_under_exclude_only_parent()
+        public void Validate_should_warn_for_unknown_extension_under_exclude_only_parent()
         {
             // Arrange — schema only has the sample extension, profile excludes an unknown one.
             var validator = new ProfileDataValidator(_logger);
@@ -1807,19 +1807,20 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert — an unknown extension reference is always an error: canonicalization drops
-            // the rule, so a tolerant warning would let it disappear silently rather than give
-            // feedback. Member-level exclusions remain tolerant; whole-extension references do not.
-            result.HasErrors.Should().BeTrue();
+            // Assert — ExcludeOnly tolerates a missing reference: a warning is emitted (so the
+            // profile still loads), and canonicalization drops the rule so no unresolved runtime
+            // scope is created. This preserves the existing missing-reference contract.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
             result
                 .Failures.Should()
                 .ContainSingle(f =>
-                    f.Severity == ValidationSeverity.Error && f.MemberName == "_ext.Nonexistent"
+                    f.Severity == ValidationSeverity.Warning && f.MemberName == "_ext.Nonexistent"
                 );
         }
 
         [Test]
-        public void Validate_should_error_for_unknown_extension_under_include_all_parent()
+        public void Validate_should_warn_for_unknown_extension_under_include_all_parent()
         {
             // Arrange — an IncludeAll extension under an IncludeAll parent must still be
             // existence-checked, because canonicalization would otherwise drop it silently.
@@ -1848,19 +1849,21 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert — clear feedback (error) rather than a silent drop.
-            result.HasErrors.Should().BeTrue();
+            // Assert — IncludeAll tolerates a missing reference: a warning (clear feedback)
+            // rather than a silent drop, and the rule is dropped by canonicalization.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
             result
                 .Failures.Should()
                 .Contain(f =>
-                    f.Severity == ValidationSeverity.Error
+                    f.Severity == ValidationSeverity.Warning
                     && f.MemberName == "_ext.DoesNotExist"
                     && f.Message.Contains("does not exist")
                 );
         }
 
         [Test]
-        public void Validate_should_error_for_unknown_extension_nested_in_include_all_object()
+        public void Validate_should_report_unknown_extension_nested_in_include_all_object()
         {
             // Arrange — an unknown extension nested inside an IncludeAll object under an
             // IncludeAll parent. The member-selection validation short-circuits on IncludeAll,
@@ -1895,12 +1898,12 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert — nested unknown extension is reported with its full path.
-            result.HasErrors.Should().BeTrue();
+            // Assert — feedback is emitted (not silently dropped) with the nested rule's full
+            // path; severity follows the enclosing IncludeAll object, so it is a warning.
             result
                 .Failures.Should()
                 .Contain(f =>
-                    f.Severity == ValidationSeverity.Error
+                    f.Severity == ValidationSeverity.Warning
                     && f.MemberName == "schoolReference._ext.DoesNotExist"
                     && f.Message.Contains("does not exist")
                 );

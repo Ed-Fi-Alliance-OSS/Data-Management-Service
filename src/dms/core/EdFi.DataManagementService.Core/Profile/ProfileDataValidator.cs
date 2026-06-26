@@ -811,13 +811,16 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         as JsonObject;
 
     /// <summary>
-    /// Reports an error for every extension rule whose name does not resolve to an extension
+    /// Reports a failure for every extension rule whose name does not resolve to an extension
     /// key in the schema's <c>_ext.properties</c> at that rule's own location — at the root and
     /// inside objects, collections, and extensions. This runs regardless of member selection
     /// because canonicalization drops an unmatched extension rule wherever it appears (including
     /// under IncludeAll branches that the member-selection validation short-circuits); without
     /// this an unknown extension would silently disappear with no validation feedback. The
     /// traversal mirrors the canonicalizer so the two agree on exactly which rules are unknown.
+    /// Severity follows the existing missing-reference contract of the enclosing container:
+    /// IncludeOnly is an error, ExcludeOnly/IncludeAll a warning (the rule is then dropped by
+    /// canonicalization, so the profile still loads without an unresolved runtime scope).
     /// </summary>
     private static List<ValidationFailure> CollectUnknownExtensionFailures(
         ContentTypeDefinition contentType,
@@ -827,7 +830,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        CheckExtensionsExistAndRecurse(contentType.Extensions, schemaProperties, context, failures);
+        CheckExtensionsExistAndRecurse(
+            contentType.Extensions,
+            schemaProperties,
+            context,
+            SeverityForMissingReference(contentType.MemberSelection),
+            failures
+        );
         foreach (var obj in contentType.Objects)
         {
             WalkObjectForUnknownExtensions(obj, schemaProperties, context, failures);
@@ -840,10 +849,21 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return failures;
     }
 
+    /// <summary>
+    /// Maps an enclosing container's member selection to the severity used when a referenced
+    /// member or extension does not exist, matching the existing validator contract: IncludeOnly
+    /// requires references to exist (error); ExcludeOnly/IncludeAll tolerate absence (warning).
+    /// </summary>
+    private static ValidationSeverity SeverityForMissingReference(MemberSelection memberSelection) =>
+        memberSelection == MemberSelection.IncludeOnly
+            ? ValidationSeverity.Error
+            : ValidationSeverity.Warning;
+
     private static void CheckExtensionsExistAndRecurse(
         IReadOnlyList<ExtensionRule> extensions,
         JsonObject? schemaProperties,
         ValidationContext context,
+        ValidationSeverity severity,
         List<ValidationFailure> failures
     )
     {
@@ -862,7 +882,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             {
                 failures.Add(
                     new ValidationFailure(
-                        ValidationSeverity.Error,
+                        severity,
                         context.ProfileName,
                         context.ResourceName,
                         $"{context.PathPrefix}_ext.{extension.Name}",
@@ -911,7 +931,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         if (objectRule.Extensions is not null)
         {
-            CheckExtensionsExistAndRecurse(objectRule.Extensions, objectProperties, childContext, failures);
+            CheckExtensionsExistAndRecurse(
+                objectRule.Extensions,
+                objectProperties,
+                childContext,
+                SeverityForMissingReference(objectRule.MemberSelection),
+                failures
+            );
         }
         foreach (var nested in objectRule.NestedObjects ?? [])
         {
@@ -942,7 +968,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         if (collectionRule.Extensions is not null)
         {
-            CheckExtensionsExistAndRecurse(collectionRule.Extensions, itemProperties, childContext, failures);
+            CheckExtensionsExistAndRecurse(
+                collectionRule.Extensions,
+                itemProperties,
+                childContext,
+                SeverityForMissingReference(collectionRule.MemberSelection),
+                failures
+            );
         }
         foreach (var nested in collectionRule.NestedObjects ?? [])
         {
