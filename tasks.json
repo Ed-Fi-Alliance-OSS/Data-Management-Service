@@ -4,13 +4,14 @@
     "description": "Capture the active legacy-backend dependency surface before making removals.",
     "acceptance-criteria": [
       "Inventory covers old PostgreSQL projects, runtime feature flags, E2E lane filters, database setup flags, installer references, route-context legacy schema assumptions, and legacy CDC references.",
+      "Inventory searches include hidden docker-compose `.env*` files where legacy variables are known to live.",
       "Historical archive and design-note documents are identified as out of scope for cleanup.",
       "Removal targets are grouped by product/runtime code, tests, Docker/scripts, CI, active docs, and solution/project references."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"Old\\\\.Postgresql|UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|NEED_DATABASE_SETUP|DeployDatabaseOnStartup\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"Old\\\\.Postgresql|UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|NEED_DATABASE_SETUP|DeployDatabaseOnStartup\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run: `rg -n \"MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>\" src/dms`",
-      "Run: `rg -n \"InstanceManagement|routeContext|dms\\\\.document|Backend\\\\.Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|to_debezium\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1`"
+      "Run: `rg --hidden -n \"InstanceManagement|routeContext|dms\\\\.document|Backend\\\\.Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|to_debezium\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose eng/docker-compose/.env* build-dms.ps1`"
     ],
     "completed": false
   },
@@ -86,7 +87,7 @@
       "No replacement relational runtime startup provisioner is added."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings__DeployDatabaseOnStartup|DeployDatabaseOnStartup|InitializeDatabase|IDatabaseDeploy\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings__DeployDatabaseOnStartup|DeployDatabaseOnStartup|InitializeDatabase|IDatabaseDeploy\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Inspect remaining `DeployDatabaseOnStartup` matches and confirm they are CMS-only or historical out-of-scope references.",
       "Run frontend unit tests: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`"
     ],
@@ -125,16 +126,46 @@
   },
   {
     "category": "Installer Removal",
-    "description": "Remove installer and old backend artifact plumbing from DMS runtime scripts, Docker image, build script, NuGet package, and release outputs.",
+    "description": "Remove legacy backend installer startup and Docker image plumbing.",
     "acceptance-criteria": [
       "`src/dms/run.sh` no longer invokes `/app/Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql`.",
       "`src/dms/Dockerfile` no longer copies old backend source/projects or restores, publishes, or copies the backend installer.",
-      "`build-dms.ps1` no longer defines or invokes `PublishBackendInstaller`.",
-      "Frontend nuspec and package/release plumbing no longer include installer output or expect `/app/Installer`."
+      "The built DMS Docker image does not contain `/app/Installer`.",
+      "DMS container startup no longer logs or executes legacy schema installation."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|/app/Installer|PublishBackendInstaller|Backend\\\\.Installer|Old\\\\.Postgresql\" src/dms/run.sh src/dms/Dockerfile build-dms.ps1 src/dms/frontend .github eng`",
+      "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|/app/Installer|Backend\\\\.Installer|Old\\\\.Postgresql\" src/dms/run.sh src/dms/Dockerfile`",
       "Build the DMS Docker image and inspect that `/app/Installer` is absent."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Installer Removal",
+    "description": "Remove backend installer publish targets from `build-dms.ps1`.",
+    "acceptance-criteria": [
+      "`build-dms.ps1` no longer defines `PublishBackendInstaller`.",
+      "`build-dms.ps1` no longer invokes backend installer publish steps in any build lane.",
+      "Build output preparation no longer creates or copies installer output directories.",
+      "No old PostgreSQL backend project is published as part of DMS build-script output."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"PublishBackendInstaller|Backend\\\\.Installer|Old\\\\.Postgresql|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll\" build-dms.ps1`",
+      "Run the relevant build lane or inspect build output creation when local build dependencies are available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Installer Removal",
+    "description": "Remove backend installer entries from NuGet, package, and release artifact definitions.",
+    "acceptance-criteria": [
+      "The frontend nuspec no longer includes backend installer files or `/app/Installer` output.",
+      "Release and package artifact scripts no longer upload, download, copy, or validate `Backend.Installer` output.",
+      "CI or release checks no longer expect the old backend installer artifact to exist.",
+      "Package output contains only active DMS runtime artifacts."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"Backend\\\\.Installer|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|Old\\\\.Postgresql\" src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec .github eng`",
+      "Build or inspect package artifacts when package dependencies are available."
     ],
     "completed": false
   },
@@ -148,7 +179,7 @@
       "DMS E2E, build-script, workflow, template, unit-test, and documentation callers invoke the renamed script."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"provision-relational-e2e-database|provision-e2e-database|RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME\" eng src/dms .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"provision-relational-e2e-database|provision-e2e-database|RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME\" eng eng/docker-compose/.env* src/dms .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run Pester tests under `eng/docker-compose/tests` that cover provisioning scripts.",
       "Run a DMS E2E setup path through `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when local Docker dependencies are available."
     ],
@@ -156,22 +187,52 @@
   },
   {
     "category": "Docker Compose",
-    "description": "Update docker-compose startup, bootstrap, environment utility scripts, and script tests to remove legacy installer and database-setup assumptions.",
+    "description": "Update docker-compose start scripts to remove legacy installer and database-setup assumptions.",
     "acceptance-criteria": [
       "`eng/docker-compose/start-local-dms.ps1` and `start-published-dms.ps1` no longer branch on legacy setup flags or invoke the deleted installer.",
-      "`eng/docker-compose/bootstrap-*.psm1` and `env-utility.psm1` no longer emit or depend on legacy backend/setup variables.",
-      "Pester tests under `eng/docker-compose/tests` are updated for the neutral E2E provisioning helper and the absence of installer plumbing.",
-      "`eng/docker-compose/provision-dms-schema.ps1` remains focused on CMS-selected target provisioning and is not used as the E2E reset/provision path."
+      "`eng/docker-compose/start-all-services.ps1` no longer contains legacy connector or database setup branches tied to the deleted backend.",
+      "Start scripts keep `eng/docker-compose/provision-dms-schema.ps1` focused on CMS-selected target provisioning and do not use it as the E2E reset/provision path.",
+      "Start-script help, parameters, and examples do not mention removed DMS backend/setup variables."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|Backend\\\\.Installer|/app/Installer|provision-dms-schema\" eng/docker-compose`",
+      "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|Backend\\\\.Installer|/app/Installer|provision-dms-schema\" eng/docker-compose/start-local-dms.ps1 eng/docker-compose/start-published-dms.ps1 eng/docker-compose/start-all-services.ps1 eng/docker-compose/.env*`",
+      "Start the local compose stack when Docker dependencies are available and confirm DMS starts without installer or legacy setup logs."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docker Compose",
+    "description": "Update docker-compose bootstrap modules and environment utility helpers for the single backend path.",
+    "acceptance-criteria": [
+      "`eng/docker-compose/bootstrap-*.psm1` no longer emits or depends on legacy backend/setup variables.",
+      "`eng/docker-compose/env-utility.psm1` no longer reads, defaults, or writes legacy backend/setup variables.",
+      "Hidden `.env*` files under `eng/docker-compose` no longer carry `USE_RELATIONAL_BACKEND`, `NEED_DATABASE_SETUP`, or DMS deploy-on-startup variables.",
+      "Bootstrap and env utility behavior uses the neutral E2E provisioning helper where E2E database reset/provisioning is required."
+    ],
+    "steps-to-verify": [
+      "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|AppSettings__DeployDatabaseOnStartup|provision-relational-e2e-database|provision-e2e-database\" eng/docker-compose/bootstrap-*.psm1 eng/docker-compose/env-utility.psm1 eng/docker-compose/.env*`",
+      "Inspect remaining matches and confirm they are active neutral provisioning references only."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docker Compose",
+    "description": "Update docker-compose Pester tests for removed legacy installer and neutral provisioning behavior.",
+    "acceptance-criteria": [
+      "Pester tests under `eng/docker-compose/tests` are updated for the absence of backend installer plumbing.",
+      "Pester tests cover the neutral `provision-e2e-database.ps1` helper where provisioning behavior is tested.",
+      "Tests no longer assert or seed legacy backend/setup environment variables.",
+      "Tests cover the expected start-script behavior after legacy setup branches are removed."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|Backend\\\\.Installer|/app/Installer|provision-relational-e2e-database|provision-e2e-database\" eng/docker-compose/tests`",
       "Run the relevant Pester suite under `eng/docker-compose/tests`."
     ],
     "completed": false
   },
   {
     "category": "Instance Management E2E",
-    "description": "Migrate Instance Management E2E setup to relational route-context database provisioning.",
+    "description": "Update Instance Management E2E setup script for relational route-context database provisioning.",
     "acceptance-criteria": [
       "`src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` starts DMS through the always-relational runtime path.",
       "The setup no longer calls the deleted installer or verifies, dumps, or replays `dms.document` schema state.",
@@ -180,39 +241,101 @@
       "`.env.routeContext.e2e` remains neutral and does not depend on `USE_RELATIONAL_BACKEND`, `NEED_DATABASE_SETUP`, or `DMS_DEPLOY_DATABASE_ON_STARTUP`."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|Test-DmsDocumentTablePresent|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|EffectiveSchema|provision-e2e-database\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1`",
+      "Run: `rg --hidden -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|Test-DmsDocumentTablePresent|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|EffectiveSchema|provision-e2e-database\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose/.env.routeContext.e2e`",
+      "Run Instance Management local setup when Docker dependencies are available and confirm each route-context database has `dms.\"EffectiveSchema\"`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Instance Management E2E",
+    "description": "Update `build-dms.ps1` InstanceE2ETest flow for relational route-context provisioning.",
+    "acceptance-criteria": [
+      "`build-dms.ps1 InstanceE2ETest` invokes the relational route-context provisioning flow before tests run.",
+      "DMS is restarted after route-context database reprovisioning when needed to clear cached database state.",
+      "The InstanceE2ETest flow no longer injects `AppSettings__UseRelationalBackend` or legacy DMS setup variables.",
+      "Existing `instance-management-ci-shard-*` filters are preserved."
+    ],
+    "steps-to-verify": [
+      "Run: `rg --hidden -n \"InstanceE2ETest|routeContext|AppSettings__UseRelationalBackend|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|provision-e2e-database|EffectiveSchema\" build-dms.ps1 eng/docker-compose/.env.routeContext.e2e`",
       "Run: `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild` when Docker dependencies are available.",
       "Run existing `instance-management-ci-shard-*` filters during full validation."
     ],
     "completed": false
   },
   {
+    "category": "Instance Management E2E",
+    "description": "Update Instance Management E2E documentation for relational route-context setup.",
+    "acceptance-criteria": [
+      "`src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md` describes relational route-context database setup.",
+      "Documentation no longer references the deleted installer, `dms.document`, or legacy database setup flags.",
+      "Documentation points to `provision-e2e-database.ps1` where explicit route-context provisioning is relevant.",
+      "Shard-filter examples remain accurate for Instance Management E2E."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|provision-relational-e2e-database|provision-e2e-database|instance-management-ci-shard\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md`",
+      "Manually inspect remaining matches and confirm they describe the new relational route-context flow."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Instance Management E2E",
+    "description": "Delete Instance Management Kafka and Debezium helpers tied to the legacy document store.",
+    "acceptance-criteria": [
+      "`KafkaTopicPerInstance.feature` is deleted.",
+      "`InstanceKafkaMessageCollector.cs`, `InstanceKafkaTestConfiguration.cs`, `KafkaTopicHelper.cs`, and `InstanceKafkaStepDefinitions.cs` are deleted unless a shared non-CDC portion remains actively used.",
+      "`DebeziumConnectorClient.cs` and `PostgresReplicationCleanup.cs` are deleted unless retained code is shared and no longer configures the legacy connector path.",
+      "No Instance Management E2E helper still references `edfi.dms.document`, `dms.document`, `to_debezium`, or legacy publication names."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"KafkaTopicPerInstance|InstanceKafka|KafkaTopicHelper|DebeziumConnectorClient|PostgresReplicationCleanup|edfi\\\\.dms\\\\.document|dms\\\\.document|to_debezium|publication\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E`",
+      "Run Instance Management E2E when Docker dependencies are available."
+    ],
+    "completed": false
+  },
+  {
     "category": "Legacy CDC",
-    "description": "Remove active legacy document-store Debezium connector configuration and default connector startup.",
+    "description": "Remove active legacy document-store Debezium connector configuration and registration.",
     "acceptance-criteria": [
       "`eng/docker-compose/postgresql_connector.json` and `eng/docker-compose/data_store_connector_template.json` are deleted if they only configure legacy document-store CDC.",
       "`eng/docker-compose/setup-connectors.ps1` no longer registers the legacy document-store connector by default.",
       "`start-local-dms.ps1`, `start-published-dms.ps1`, and `start-all-services.ps1` no longer include legacy connector setup branches or comments.",
-      "Kafka and Kafka UI do not start by default after legacy CDC tests are removed unless another active non-CDC dependency requires them."
+      "No docker-compose connector setup path references `dms.document`, `to_debezium`, or `edfi.dms.document`."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"postgresql_connector|data_store_connector|setup-connectors|to_debezium|edfi\\\\.dms\\\\.document|dms\\\\.document|Kafka UI|Kafka\" eng/docker-compose`",
+      "Run: `rg -n \"postgresql_connector|data_store_connector|setup-connectors|to_debezium|edfi\\\\.dms\\\\.document|dms\\\\.document\" eng/docker-compose`",
       "Start the local compose stack and confirm connector registration is not attempted by default when Docker dependencies are available."
     ],
     "completed": false
   },
   {
     "category": "Legacy CDC",
-    "description": "Delete E2E Kafka and Debezium helpers that assert legacy document-store topics, payloads, tables, or publications.",
+    "description": "Require explicit opt-in for Kafka and Kafka UI compose infrastructure.",
     "acceptance-criteria": [
-      "DMS `KafkaMessaging.feature`, `KafkaMessageCollector.cs`, and `KafkaStepDefinitions.cs` are deleted unless a shared non-CDC portion remains actively used.",
-      "Instance Management Kafka topic-per-instance scenarios and helper classes are deleted unless a shared non-CDC portion remains actively used.",
-      "`DebeziumConnectorClient.cs` and `PostgresReplicationCleanup.cs` are deleted unless retained code is shared and no longer configures the legacy connector path.",
+      "`eng/docker-compose/start-local-dms.ps1` no longer includes `kafka.yml` in its default compose file set.",
+      "`eng/docker-compose/start-published-dms.ps1` no longer includes `kafka.yml` in its default compose file set.",
+      "`src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1` no longer passes `-EnableKafkaUI` by default.",
+      "Kafka, Kafka UI, and connector setup only start when an explicit switch or parameter requests Kafka infrastructure.",
+      "Pester or script-level checks cover the default no-Kafka path and the explicit Kafka opt-in path if Kafka infrastructure remains supported."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"kafka\\\\.yml|EnableKafkaUI|EnableKafka|setup-connectors|Kafka UI|Kafka\" eng/docker-compose/start-local-dms.ps1 eng/docker-compose/start-published-dms.ps1 eng/docker-compose/start-all-services.ps1 src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 eng/docker-compose/tests`",
+      "Start the local DMS compose stack without Kafka switches and confirm Kafka/Kafka UI containers are not started.",
+      "Start the local DMS compose stack with the explicit Kafka switch, if retained, and confirm Kafka infrastructure starts."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Legacy CDC",
+    "description": "Delete DMS E2E Kafka helpers tied to legacy document-store topics and payloads.",
+    "acceptance-criteria": [
+      "DMS `KafkaMessaging.feature` is deleted.",
+      "`KafkaMessageCollector.cs` and `KafkaStepDefinitions.cs` are deleted unless a shared non-CDC portion remains actively used.",
+      "No DMS E2E scenario asserts the legacy `edfi.dms.document` topic or legacy document payload shape.",
       "No hidden switch or compatibility shim remains for the legacy document-topic behavior."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"KafkaMessaging|KafkaTopicPerInstance|KafkaMessageCollector|InstanceKafka|KafkaTopicHelper|DebeziumConnectorClient|PostgresReplicationCleanup|edfi\\\\.dms\\\\.document|to_debezium|publication\" src/dms/tests`",
-      "Run DMS and Instance Management E2E builds after feature/test cleanup when Docker dependencies are available."
+      "Run: `rg -n \"KafkaMessaging|KafkaMessageCollector|KafkaStepDefinitions|edfi\\\\.dms\\\\.document|to_debezium|publication\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Run DMS E2E when Docker dependencies are available."
     ],
     "completed": false
   },
@@ -241,7 +364,7 @@
       "No active code reads `USE_RELATIONAL_BACKEND` or `AppSettings__UseRelationalBackend`."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`",
       "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj -c Release` when integration dependencies are available."
     ],
@@ -249,15 +372,45 @@
   },
   {
     "category": "Core Pipeline",
-    "description": "Make database fingerprint, resource-key, mapping-set, document-info, and profile middlewares always follow the relational path.",
+    "description": "Make database fingerprint, resource-key, and mapping-set middlewares always follow the relational path.",
     "acceptance-criteria": [
-      "`ValidateDatabaseFingerprintMiddleware`, `ValidateResourceKeySeedMiddleware`, `ResolveMappingSetMiddleware`, and `ExtractDocumentInfoMiddleware` no longer branch on the removed backend flag.",
-      "`ProfileWriteValidationMiddleware` and `ProfileWritePipelineMiddleware` no longer choose legacy write behavior.",
-      "`ProfileFilteringMiddleware` keeps only behavior needed by relational projection/content-type flow and deletes legacy read-profile filtering.",
-      "Disabled-flag tests are removed or rewritten to assert always-relational behavior."
+      "`ValidateDatabaseFingerprintMiddleware` no longer branches on the removed backend flag.",
+      "`ValidateResourceKeySeedMiddleware` no longer branches on the removed backend flag.",
+      "`ResolveMappingSetMiddleware` always resolves mapping metadata required by the relational pipeline.",
+      "Disabled-flag tests for these middlewares are removed or rewritten to assert always-relational behavior."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"UseRelationalBackend|Given_UseRelationalBackend_Is_False|ValidateDatabaseFingerprintMiddlewareFeatureFlagTests|MappingSet is null|MappingSet is not null\" src/dms/core src/dms/tests src/dms/frontend`",
+      "Run: `rg -n \"UseRelationalBackend|Given_UseRelationalBackend_Is_False|ValidateDatabaseFingerprintMiddlewareFeatureFlagTests|ValidateResourceKeySeedMiddleware|ResolveMappingSetMiddleware|MappingSet is null|MappingSet is not null\" src/dms/core src/dms/tests src/dms/frontend`",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Pipeline",
+    "description": "Make document-info extraction middleware require relational mapping metadata.",
+    "acceptance-criteria": [
+      "`ExtractDocumentInfoMiddleware` no longer branches on the removed backend flag.",
+      "`ExtractDocumentInfoMiddleware` uses relational mapping metadata when extracting document information.",
+      "Toggle-based tests for disabled relational backend behavior are removed or rewritten.",
+      "Missing mapping metadata is treated as a pipeline/configuration defect with an actionable failure."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"ExtractDocumentInfoMiddleware|UseRelationalBackend|Given_UseRelationalBackend_Is_False|MappingSet is null|MappingSet is not null\" src/dms/core src/dms/tests src/dms/frontend`",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Pipeline",
+    "description": "Make profile write and filtering middleware relational-only.",
+    "acceptance-criteria": [
+      "`ProfileWriteValidationMiddleware` no longer chooses legacy write validation behavior.",
+      "`ProfileWritePipelineMiddleware` no longer chooses legacy write pipeline behavior.",
+      "`ProfileFilteringMiddleware` keeps only behavior needed by relational projection/content-type flow and deletes legacy read-profile filtering.",
+      "Profile middleware tests no longer use legacy or disabled-backend setup paths."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"ProfileWriteValidationMiddleware|ProfileWritePipelineMiddleware|ProfileFilteringMiddleware|UseRelationalBackend|legacy|Legacy|Given_UseRelationalBackend_Is_False\" src/dms/core src/dms/tests src/dms/frontend`",
       "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`"
     ],
     "completed": false
@@ -340,7 +493,7 @@
       "`RelationshipsWithEdOrgsOnlyRelational.feature` and `RelationshipsWithPeopleRelational.feature` are renamed to neutral filenames."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"@relational-backend|relational-backend|@relational-ci-shard|relational-ci-shard|RelationshipsWith.*Relational\" src/dms/tests eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"@relational-backend|relational-backend|@relational-ci-shard|relational-ci-shard|RelationshipsWith.*Relational\" src/dms/tests eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run Reqnroll or test generation if that is the repository-standard way to refresh generated feature artifacts.",
       "Run a shard command such as `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'` when Docker dependencies are available."
     ],
@@ -348,17 +501,45 @@
   },
   {
     "category": "Build Script",
-    "description": "Refactor `build-dms.ps1` to remove backend-lane logic and always prepare the neutral E2E relational database.",
+    "description": "Remove backend-lane filter logic from `build-dms.ps1`.",
     "acceptance-criteria": [
       "`ConvertTo-Boolean` usage for `USE_RELATIONAL_BACKEND` is removed.",
       "`Test-FilterIncludesRelationalCategory`, `Test-FilterExcludesRelationalCategory`, and `Assert-E2ETestLaneMatchesFilter` are deleted.",
-      "`Initialize-RelationalE2EDatabase` is renamed to `Initialize-E2EDatabase` and calls `eng/docker-compose/provision-e2e-database.ps1`.",
-      "DMS E2E always resets/provisions the E2E relational database before tests.",
-      "The test process always receives `AppSettings__DataStoreDatabaseName` and no longer receives `AppSettings__UseRelationalBackend`.",
-      "Test-result suffixes are neutralized from `relational` and `relational-shard-N` to `e2e` and `e2e-shard-N`."
+      "Filters such as `Category=@relational-backend`, `Category=relational-backend`, and their negative forms are removed instead of translated to another backend lane.",
+      "Shard filters are preserved only as neutral `@e2e-ci-shard-N` filters."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"USE_RELATIONAL_BACKEND|Test-FilterIncludesRelationalCategory|Test-FilterExcludesRelationalCategory|Assert-E2ETestLaneMatchesFilter|Initialize-RelationalE2EDatabase|AppSettings__UseRelationalBackend|relational-shard|Category.*relational\" build-dms.ps1`",
+      "Run: `rg -n \"USE_RELATIONAL_BACKEND|Test-FilterIncludesRelationalCategory|Test-FilterExcludesRelationalCategory|Assert-E2ETestLaneMatchesFilter|Category[!]?=?@?relational-backend|relational-ci-shard|Category.*relational\" build-dms.ps1`",
+      "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'` when Docker dependencies are available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Build Script",
+    "description": "Make DMS E2E database provisioning neutral and unconditional in `build-dms.ps1`.",
+    "acceptance-criteria": [
+      "`Initialize-RelationalE2EDatabase` is renamed to `Initialize-E2EDatabase`.",
+      "`Initialize-E2EDatabase` calls `eng/docker-compose/provision-e2e-database.ps1`.",
+      "DMS E2E always resets/provisions the E2E relational database before tests.",
+      "Provisioning uses `E2E_DATABASE_NAME` and no longer depends on `RELATIONAL_E2E_DATABASE_NAME`."
+    ],
+    "steps-to-verify": [
+      "Run: `rg --hidden -n \"Initialize-RelationalE2EDatabase|Initialize-E2EDatabase|provision-relational-e2e-database|provision-e2e-database|RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME\" build-dms.ps1 eng/docker-compose eng/docker-compose/.env*`",
+      "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when Docker dependencies are available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Build Script",
+    "description": "Neutralize DMS E2E test environment injection and result naming in `build-dms.ps1`.",
+    "acceptance-criteria": [
+      "The DMS E2E test process always receives `AppSettings__DataStoreDatabaseName`.",
+      "The DMS E2E test process no longer receives `AppSettings__UseRelationalBackend`.",
+      "Test-result suffixes change from `relational` and `relational-shard-N` to `e2e` and `e2e-shard-N`.",
+      "Log and result names do not imply a separate relational backend lane."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"AppSettings__DataStoreDatabaseName|AppSettings__UseRelationalBackend|relational-shard|e2e-shard|Relational E2E|DMS E2E\" build-dms.ps1`",
       "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'` when Docker dependencies are available."
     ],
     "completed": false
@@ -374,36 +555,93 @@
       "DMS E2E helpers remove `AppSettings.UseRelationalBackend`, remove `LegacyDataStoreDatabaseName`, and make `SearchContainerSetup` use the renamed E2E provisioning helper."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME|USE_RELATIONAL_BACKEND|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|LegacyDataStoreDatabaseName|SearchContainerSetup\" eng src/dms/tests build-dms.ps1 .github docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME|USE_RELATIONAL_BACKEND|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|LegacyDataStoreDatabaseName|SearchContainerSetup\" eng eng/docker-compose/.env* src/dms/tests build-dms.ps1 .github docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run DMS E2E setup through `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when Docker dependencies are available."
     ],
     "completed": false
   },
   {
     "category": "CI",
-    "description": "Update DMS CI workflows and templates for a single relational backend path with no old PostgreSQL integration job or installer artifacts.",
+    "description": "Update DMS CI workflow jobs for the single backend path.",
     "acceptance-criteria": [
       "The `Run Old PostgreSQL Integration Tests` job is removed from `.github/workflows/on-dms-pullrequest.yml`.",
       "DMS E2E workflows run without `relational-backend` filters and use neutral E2E shard filters where needed.",
-      "Template workflows remove `use_relational_backend` inputs and branches.",
-      "Log export paths and job summaries use neutral `DMS E2E` naming instead of `Relational E2E`.",
-      "Package and release workflows no longer publish, upload, download, or validate `Backend.Installer` artifacts."
+      "Nightly, scheduled build, pre-image, and smoke workflows use the neutral `.env.e2e` or renamed smoke/template environment files.",
+      "Workflow job names no longer imply an old PostgreSQL or separate relational backend lane."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"Run Old PostgreSQL Integration Tests|use_relational_backend|relational-backend|relational-ci-shard|Relational E2E|Backend\\\\.Installer|/app/Installer\" .github/workflows`",
-      "Review `.github/workflows/on-dms-pullrequest.yml`, nightly E2E, scheduled build/pre-image/smoke workflows, and populated/minimal template workflows for neutral backend behavior."
+      "Run: `rg -n \"Run Old PostgreSQL Integration Tests|relational-backend|relational-ci-shard|Relational E2E|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational\" .github/workflows/on-dms-pullrequest.yml .github/workflows/nightly-keycloak-e2e.yml .github/workflows/scheduled-build.yml .github/workflows/scheduled-pre-image-test.yml .github/workflows/scheduled-smoke-test.yml`",
+      "Review the DMS E2E workflow commands and confirm only neutral E2E shard filters remain."
+    ],
+    "completed": false
+  },
+  {
+    "category": "CI",
+    "description": "Update template workflows to remove relational-backend inputs and branches.",
+    "acceptance-criteria": [
+      "Template workflows remove `use_relational_backend` inputs.",
+      "Template workflows remove conditional branches that select legacy versus relational backend behavior.",
+      "Populated and minimal PostgreSQL template workflows use the single backend path.",
+      "Template workflow examples use neutral environment files and E2E filters."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"use_relational_backend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|\\\\.env\\\\.template\\\\.relational\" .github/workflows/build-populated-template.yml .github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml .github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml`",
+      "Review template workflow inputs and generated commands for neutral backend behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "CI",
+    "description": "Update CI log summaries and package/release artifact handling.",
+    "acceptance-criteria": [
+      "Log export paths and job summaries use neutral `DMS E2E` naming instead of `Relational E2E`.",
+      "Package and release workflows no longer publish `Backend.Installer` artifacts.",
+      "Package and release workflows no longer upload, download, or validate backend installer artifacts.",
+      "CI artifact checks no longer expect `/app/Installer` in image or package output."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"Relational E2E|Backend\\\\.Installer|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|PublishBackendInstaller\" .github/workflows`",
+      "Review package and release workflow artifacts for removed installer expectations."
     ],
     "completed": false
   },
   {
     "category": "Documentation",
-    "description": "Update active documentation and developer instructions to describe the single relational DMS backend path.",
+    "description": "Update root and Docker setup docs for the single DMS backend path.",
     "acceptance-criteria": [
-      "`AGENTS.md`, `README.md`, `GETTING_STARTED.md`, `docs/DOCKER.md`, `docs/MULTI-TENANCY-GETTING-STARTED.md`, `docs/RELATIONAL-BACKEND.md`, `docs/CONFIGURATION.md`, and `eng/docker-compose/README.md` are updated as active docs.",
-      "Docs no longer tell developers to choose between legacy and relational DMS backends or E2E lanes.",
+      "`AGENTS.md`, `README.md`, `GETTING_STARTED.md`, `docs/DOCKER.md`, and `eng/docker-compose/README.md` describe the single relational DMS backend path.",
+      "Setup instructions no longer tell developers to choose between legacy and relational DMS backends or E2E lanes.",
       "Examples no longer use `.env.e2e.relational`, `USE_RELATIONAL_BACKEND`, `AppSettings__UseRelationalBackend`, relational backend category filters, DMS deploy-on-startup settings, `RELATIONAL_E2E_DATABASE_NAME`, or relational-named E2E env/script files.",
       "Docs include the neutral DMS E2E command and neutral shard filter examples using `.env.e2e` and `@e2e-ci-shard-N`.",
+      "Docker setup docs no longer describe `/app/Installer` or legacy startup provisioning."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"\\\\.env\\\\.e2e\\\\.relational|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|Category[!]?=?@?relational-backend|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings(:|__)DeployDatabaseOnStartup|RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|/app/Installer|Backend\\\\.Installer\" AGENTS.md README.md GETTING_STARTED.md docs/DOCKER.md eng/docker-compose/README.md`",
+      "Inspect remaining matches and confirm they are CMS-only or intentionally retained pending-support notes."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Update relational, configuration, and multitenancy docs for neutral provisioning names.",
+    "acceptance-criteria": [
+      "`docs/MULTI-TENANCY-GETTING-STARTED.md`, `docs/RELATIONAL-BACKEND.md`, and `docs/CONFIGURATION.md` no longer describe a selectable legacy backend.",
+      "Docs use `E2E_DATABASE_NAME`, `provision-e2e-database.ps1`, `.env.e2e`, `.env.smoke`, and `.env.template` where those examples are relevant.",
       "Docs describe the required `SchemaTools ddl provision` workflow for relational provisioning where appropriate.",
+      "CMS `DeployDatabaseOnStartup` documentation remains intact where it applies only to Configuration Service."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"\\\\.env\\\\.e2e\\\\.relational|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|Category[!]?=?@?relational-backend|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings(:|__)DeployDatabaseOnStartup|RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|SchemaTools ddl provision\" docs/MULTI-TENANCY-GETTING-STARTED.md docs/RELATIONAL-BACKEND.md docs/CONFIGURATION.md`",
+      "Inspect remaining `DeployDatabaseOnStartup` matches and confirm they are CMS-only."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Verify active documentation cleanup and leave historical docs untouched.",
+    "acceptance-criteria": [
+      "Active docs no longer contain legacy backend lane instructions, DMS deploy-on-startup instructions, or old E2E environment names.",
+      "Active docs that mention Kafka/CDC state that relational CDC/Kafka support is pending a separate implementation.",
       "Historical archive and design-note documents are not edited."
     ],
     "steps-to-verify": [
@@ -432,17 +670,18 @@
     "acceptance-criteria": [
       "Active DMS runtime code, tests, CI, Docker, scripts, and active docs have no old PostgreSQL project references.",
       "Active references to `UseRelationalBackend`, relational backend E2E lane categories, DMS deploy-on-startup flags, installer artifacts, legacy document schema, and legacy CDC topic names are removed.",
+      "Static searches include hidden docker-compose `.env*` files.",
       "Remaining `DeployDatabaseOnStartup` matches are CMS-only or historical out-of-scope.",
       "Remaining change-query unsupported behavior is explicit and not a legacy-backend selector.",
       "Historical archive and design-note documents are not edited solely to satisfy searches."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"Old\\\\.Postgresql|EdFi\\\\.DataManagementService\\\\.Old\\\\.Postgresql\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
-      "Run: `rg -n \"UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
-      "Run: `rg -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|DeployDatabaseOnStartup|Backend\\\\.Installer|dms\\\\.document|edfi\\\\.dms\\\\.document|to_debezium\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
-      "Run: `rg -n \"RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational\" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"Old\\\\.Postgresql|EdFi\\\\.DataManagementService\\\\.Old\\\\.Postgresql\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|DeployDatabaseOnStartup|Backend\\\\.Installer|dms\\\\.document|edfi\\\\.dms\\\\.document|to_debezium\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
+      "Run: `rg --hidden -n \"RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational\" src/dms eng eng/docker-compose/.env* .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run: `rg -n \"MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>\" src/dms`",
-      "Run: `rg -n \"Test-DmsDocumentTablePresent|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|to_debezium\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1`"
+      "Run: `rg --hidden -n \"Test-DmsDocumentTablePresent|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|to_debezium\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose eng/docker-compose/.env* build-dms.ps1`"
     ],
     "completed": false
   },
@@ -451,7 +690,7 @@
     "description": "Run solution build and focused unit/integration tests after the cleanup.",
     "acceptance-criteria": [
       "DMS solution builds in Release configuration.",
-      "Core, backend, and frontend focused unit test projects pass.",
+      "Core, backend, frontend, and DMS unit guardrail test projects pass.",
       "PostgreSQL backend integration tests pass where local PostgreSQL dependencies are available.",
       "MSSQL backend integration tests pass where local SQL Server dependencies are available.",
       "API-level DMS integration tests pass where required database dependencies are available."
@@ -461,6 +700,7 @@
       "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`",
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -c Release`",
       "Run: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`",
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Unit/EdFi.DataManagementService.Tests.Unit.csproj -c Release`",
       "Run when dependencies are available: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj -c Release`",
       "Run when dependencies are available: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj -c Release --filter \"Category=MssqlIntegration\"`",
       "Run when dependencies are available: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj -c Release`"
