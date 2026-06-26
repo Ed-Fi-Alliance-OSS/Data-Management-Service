@@ -112,7 +112,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
   "azp": "8cc91775-aaae-47c8-abdc-f4671bbb6cdb",
   "scope": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
   "aud": "account",
-  "iss": "http://dms-config-service:8081",
+  "iss": "http://ed-fi-api-config:8081",
   "namespacePrefixes": "uri://ed-fi.org",
   "educationOrganizationIds": "255,255901",
   "client_name": "For ed orgs",
@@ -338,7 +338,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
 
 ```http
 POST /oauth/token_info HTTP/1.1
-Host: dms-config-service:8081
+Host: ed-fi-api-config:8081
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 Content-Type: application/x-www-form-urlencoded
 

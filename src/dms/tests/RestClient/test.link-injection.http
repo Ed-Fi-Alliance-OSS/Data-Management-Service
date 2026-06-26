@@ -37,7 +37,7 @@
 #
 # Prereqs:
 #   /e2e start --relational          # link injection is a relational-backend feature
-#   /e2e status                      # confirm dms-local-dms-1 is healthy
+#   /e2e status                      # confirm ed-fi-api is healthy
 #
 # Execute top-to-bottom with the VS Code REST Client extension.
 

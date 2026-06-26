@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.DmsApi.Sdk
+name: Pkg EdFi.Api.Minimal.Template.PostgreSQL
 on:
   release:
     types:
@@ -12,12 +12,17 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      publish_package:
+        description: "Publish the built template package to the Azure Artifacts feed"
+        type: boolean
+        default: false
 
 env:
   STANDARD_VERSION: "5.2.0"
-  SDK_PACKAGE_NAME: "EdFi.DmsApi.Sdk.Standard.5.2.0"
+  PACKAGE_NAME: "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
-  PROVENANCE_FILE: "core.sdk.intoto.jsonl"
+  PROVENANCE_FILE: "minimal.template.intoto.jsonl"
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
   ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
@@ -27,8 +32,8 @@ env:
 permissions: read-all
 
 jobs:
-  build-sdk:
-    name: Build SDK Package
+  build-template:
+    name: Build Minimal Template Package
     if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     defaults:
@@ -42,6 +47,29 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Checkout Ed-Fi-Data-Standard
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+            repository: Ed-Fi-Alliance-OSS/Ed-Fi-Data-Standard
+            path: Ed-Fi-Data-Standard/
+            ref: v${{ env.STANDARD_VERSION }} # Added v prefix to match the tag format
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve relational database name
+        run: |
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
+          if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
+            throw "RELATIONAL_E2E_DATABASE_NAME must be set in .env.template.relational"
+          }
+          "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
@@ -63,11 +91,11 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
-      - name: Set SDK Version Numbers
+      - name: Set Version Numbers
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
@@ -75,20 +103,41 @@ jobs:
 
       - name: Start DMS Docker
         run: |
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e"
+          $env:LOG_LEVEL="Warning"
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig
         working-directory: eng/docker-compose/
 
-      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the claims-ready
-      # gate does not apply, and the DMS container restarts until this data store exists
-      # (restart: unless-stopped).
-      - name: Configure DMS Data Store
+      - name: Provision relational database
         run: |
-          ./configure-local-data-store.ps1 -EnvironmentFile "./.env.e2e"
+          ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.template.relational -Configuration Release
         working-directory: eng/docker-compose/
+
+      # DMS fails fatally at startup when the Configuration Service has no data stores.
+      # No data store is created by default; register the single relational data store here
+      # and hand its id forward; the Configuration Service protects data store connection
+      # strings in API responses, so the id from registration is the only reliable way to
+      # select this data store later.
+      - name: Register relational data store
+        run: |
+          Import-Module ../Dms-Management.psm1 -Force
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          if (-not $dataStoreId) {
+            throw "Failed to register the relational data store."
+          }
+          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
+
+      - name: Restart DMS to load the provisioned relational schema
+        run: |
+          docker restart ed-fi-api
 
       - name: Wait for DMS to be ready
         run: |
-          $maxAttempts = 10
+          $maxAttempts = 30
           $attempt = 0
           $ready = $false
 
@@ -113,17 +162,41 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
-      - name: Build Core SDK
+      - name: Generate Minimal Template package
         run: |
-          ./build-sdk.ps1 BuildAndGenerateSdk -PackageName EdFi.DmsApi.Sdk
+          Import-Module ./Template-Management.psm1 -Force
 
-      - name: Generate Core SDK Package
-        run: |
+          # Generate unique application name for this run
+          $uniqueAppName = "Demo application ${{ github.run_id }}"
+
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
-          ./build-sdk.ps1 Package `
-                -SDKVersion $packageVersion `
-                -StandardVersion ${{ env.STANDARD_VERSION }} `
-                -PackageName EdFi.DmsApi.Sdk
+          Build-Template `
+                  -TemplateType Minimal `
+                  -DmsUrl 'http://localhost:8080' `
+                  -CmsUrl 'http://localhost:8081' `
+                  -MinimalSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Descriptors' `
+                  -Extension 'ed-fi'`
+                  -ConfigFilePath './MinimalTemplateSettings.psd1' `
+                  -StandardVersion '${{ env.STANDARD_VERSION }}'`
+                  -PackageVersion $packageVersion `
+                  -ApplicationName $uniqueAppName `
+                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
+                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
+                  -DumpAllUserSchemas
+        working-directory: eng/DatabaseTemplates/
+
+      - name: Verify template package restore
+        run: |
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME
+        working-directory: eng/DatabaseTemplates/
+
+      - name: Upload Bulk Load Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Bulkload-logs
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
+          retention-days: 10
 
       - name: Export Docker Logs
         if: failure()
@@ -142,7 +215,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Logs
+          name: Docker-Logs
           path: ${{ github.workspace }}/logs
           retention-days: 10
 
@@ -150,38 +223,36 @@ jobs:
         id: hash-code
         run: |
           "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        working-directory: eng/DatabaseTemplates/
 
-      - name: Upload Core SDK Packages as Artifacts
+      - name: Upload Minimal Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "${{ env.SDK_PACKAGE_NAME }}-NuGet"
-          path: ${{ github.workspace }}/*.nupkg
+          name: "${{ env.PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
           if-no-files-found: error
           retention-days: 30
 
   generate-package-sbom:
-    name: Create Core SDK SBOM
+    name: Create Minimal Template SBOM
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
-    needs: build-sdk
-    permissions:
-      actions: read
-      contents: write
+    needs: build-template
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - name: Get Core SDK Artifacts
+      - name: Get Minimal Template Package Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: ${{ env.SDK_PACKAGE_NAME }}-NuGet
+          name: ${{ env.PACKAGE_NAME }}-NuGet
 
-      - name: Generate Core SDK Software Bill of Materials (SBOM)
+      - name: Generate Minimal Template Software Bill of Materials (SBOM)
         run: |
-          $packageName = "${{ env.SDK_PACKAGE_NAME }}"
-          $version = "${{ needs.build-sdk.outputs.dms-version }}"
+          $packageName = "${{ env.PACKAGE_NAME }}"
+          $version = "${{ needs.build-template.outputs.dms-version }}"
 
           Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
 
@@ -199,16 +270,16 @@ jobs:
 
           cp _manifest/spdx_2.2/manifest.spdx.* .
 
-      - name: Upload Core SDK SBOM
+      - name: Upload Minimal Template SBOM
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: ${{ env.SDK_PACKAGE_NAME }}-SBOM
+          name: ${{ env.PACKAGE_NAME }}-SBOM
           path: ${{ env.MANIFEST_FILE }}
           if-no-files-found: error
           retention-days: 30
 
-      - name: Generate Core SDK hash code for SBOM
+      - name: Generate Minimal Template SBOM Hash Code
         id: sbom-hash-code
         shell: bash
         run: |
@@ -217,24 +288,25 @@ jobs:
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
   generate-package-provenance:
-    name: Create Core SDK Provenance
-    needs: build-sdk
+    name: Create Minimal Template Provenance
+    needs: build-template
     permissions:
       actions: read
       id-token: write
       contents: write
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
-      base64-subjects: ${{ needs.build-sdk.outputs.hash-code }}
-      provenance-name: core.sdk.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
+      base64-subjects: ${{ needs.build-template.outputs.hash-code }}
+      provenance-name: minimal.template.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
       upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
-  publish-sdk-package:
-    name: Publish Core SDK Package
+  publish-template-package:
+    name: Publish Minimal Template Package
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
     needs:
-      - build-sdk
+      - build-template
       - generate-package-sbom
       - generate-package-provenance
     runs-on: ubuntu-latest
@@ -245,17 +317,17 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Get Core SDK Artifact Package Artifact
+      - name: Get Minimal Template Package Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: ${{ env.SDK_PACKAGE_NAME }}-NuGet
+          name: ${{ env.PACKAGE_NAME }}-NuGet
 
       - name: Install-credential-handler
         run: |
             Import-Module ./package-helpers.psm1
             InstallCredentialHandler
 
-      - name: Push Core SDK Package to Azure Artifacts
+      - name: Push Minimal Template Package to Azure
         run: |
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
@@ -265,12 +337,12 @@ jobs:
 
          $artifact | ForEach-Object {
              $arguments.PackageFile = $_
-             ./build-sdk.ps1 Push @arguments
+             ./build-dms.ps1 Push @arguments
           }
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release' }}
+    if: ${{ github.event_name == 'release'  }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -279,7 +351,7 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Promote Core SDK Azure Package
+      - name: Promote Minimal Template Azure Package
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -287,14 +359,14 @@ jobs:
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "${{ env.SDK_PACKAGE_NAME }}"
+            PackageName = "${{ env.PACKAGE_NAME}}"
           }
 
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
   attach-sbom-and-provenance-to-release:
-    name: Attach Test SDK SBOM and Provenance to GitHub Release
+    name: Attach Minimal Template SBOM and Provenance to GitHub Release
     runs-on: ubuntu-latest
     needs:
       - generate-package-sbom
@@ -306,7 +378,7 @@ jobs:
       - name: Download SBOM Artifact
         uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
         with:
-          name: "${{ env.SDK_PACKAGE_NAME }}-SBOM"
+          name: "${{ env.PACKAGE_NAME }}-SBOM"
           path: ${{ env.MANIFEST_FILE }}
           sha256: "${{ needs.generate-package-sbom.outputs.sbom-hash-code }}"
 
@@ -322,7 +394,7 @@ jobs:
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
           $file = "${{ env.MANIFEST_FILE }}"
-          $uploadName = "${{ env.SDK_PACKAGE_NAME }}-SBOM.zip"
+          $uploadName = "${{ env.PACKAGE_NAME }}-SBOM.zip"
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -362,5 +434,3 @@ jobs:
               -Uri "$($url)?name=$($uploadName)" `
               -Headers $gh_headers `
               -InFile $file
-
-

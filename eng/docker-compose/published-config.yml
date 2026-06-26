@@ -5,8 +5,8 @@
 
 services:
   config:
-    image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
-    container_name: dms-config-service
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
+    container_name: ed-fi-api-config-service
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
       AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
@@ -50,7 +50,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 50
-    hostname: config
+    hostname: ed-fi-api-config
 
 networks:
   dms:

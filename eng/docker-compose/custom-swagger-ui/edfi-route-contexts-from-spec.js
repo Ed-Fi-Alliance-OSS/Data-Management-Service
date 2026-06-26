@@ -351,7 +351,7 @@ window.EdFiRouteContext = function () {
         let rewrittenUrl = url;
 
         // Browser cannot resolve Docker DNS names; map to localhost while preserving scheme/port.
-        rewrittenUrl = rewrittenUrl.replace(/:\/\/dms-config-service(?=[:/]|$)/g, '://localhost');
+        rewrittenUrl = rewrittenUrl.replace(/:\/\/ed-fi-api-config(?=[:/]|$)/g, '://localhost');
 
         const routePrefix = buildRoutePrefix();
         if (routePrefix && rewrittenUrl.includes('/data/') && !rewrittenUrl.includes('/metadata/')) {
@@ -442,7 +442,7 @@ window.EdFiRouteContext = function () {
                                         ...server,
                                         url:
                                             typeof server.url === 'string'
-                                                ? server.url.replace(/:\/\/dms-config-service(?=[:/]|$)/g, '://localhost')
+                                                ? server.url.replace(/:\/\/ed-fi-api-config(?=[:/]|$)/g, '://localhost')
                                                 : server.url,
                                     }));
 

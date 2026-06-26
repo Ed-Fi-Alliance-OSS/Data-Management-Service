@@ -31,7 +31,7 @@ jobs:
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: "5.2.0"
-      package_name: "EdFi.Dms.Smoke.Template.PostgreSQL.5.2.0"
+      package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: "populated.template.intoto.jsonl"
       # The smoke test consumes the template artifact built in this run; nothing is
@@ -98,14 +98,14 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Download Populated Template Package artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: "EdFi.Dms.Smoke.Template.PostgreSQL.5.2.0-NuGet"
+          name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0-NuGet"
           path: ${{ github.workspace }}/template-package
 
       # The smoke environment serves the four-package DS52 + TPDM + Sample + Homograph
@@ -165,7 +165,7 @@ jobs:
 
       - name: Restart DMS to load the smoke data store
         run: |
-          docker restart dms-local-dms-1
+          docker restart ed-fi-api
 
       - name: Wait for services to be ready
         run: |
@@ -204,12 +204,12 @@ jobs:
 
       - name: Generate SDK for Smoke Tests
         run: |
-          ./build-sdk.ps1 BuildAndGenerateSdk -DmsUrl "http://localhost:8080" -PackageName "EdFi.DmsApi.TestSdk"
+          ./build-sdk.ps1 BuildAndGenerateSdk -DmsUrl "http://localhost:8080" -PackageName "EdFi.Api.TestSdk"
 
       - name: Verify SDK Generation
         run: |
           Write-Host "Checking SDK generation results..."
-          $sdkPath = "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll"
+          $sdkPath = "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.Api.TestSdk/bin/Release/net10.0/EdFi.Api.TestSdk.dll"
           Write-Host "Expected SDK path: $sdkPath"
 
           if (Test-Path $sdkPath) {
@@ -242,12 +242,12 @@ jobs:
 
       - name: Run NonDestructive DMS SDK Tests
         run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
+          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.Api.TestSdk/bin/Release/net10.0/EdFi.Api.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive DMS SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.Api.TestSdk/bin/Release/net10.0/EdFi.Api.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run NonDestructive ODS SDK Tests

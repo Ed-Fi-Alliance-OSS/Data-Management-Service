@@ -383,13 +383,13 @@ Tenant: {{tenant2Name}}
 ### This setting is REQUIRED for multi-tenancy - it deploys schema to all instance databases
 ###
 ### Run this command in your terminal:
-###   docker restart dms-local-dms-1
+###   docker restart ed-fi-api
 ###
 ### Wait 30-60 seconds for DMS to restart and deploy schemas
 ###
 ### Verify DMS loaded all instances and deployed schemas:
-###   docker logs dms-local-dms-1 | grep "Successfully fetched"
-###   docker logs dms-local-dms-1 | grep "Deploying database schema"
+###   docker logs ed-fi-api | grep "Successfully fetched"
+###   docker logs ed-fi-api | grep "Deploying database schema"
 ###   Should show: "Successfully fetched X DMS instances"
 ###   Should show: "Deploying database schema to DMS instance '...'" for each instance
 
