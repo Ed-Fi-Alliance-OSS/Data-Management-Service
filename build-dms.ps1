@@ -451,6 +451,18 @@ function Get-E2ETestEnvironmentContext {
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+
+    # Compose the requested data-standard overlay (.env.ds<NN>) onto the base env file once, here, so
+    # every downstream consumer - relational provisioning, seed loading, configure, and DMS startup -
+    # reads the same data-standard values. Without this single composition point, startup composed the
+    # overlay (via start-local-dms.ps1 -DataStandardVersion) while provisioning/seed/configure read the
+    # raw base file, mixing e.g. DS 6.1 runtime schema with a DS 5.2 template/seed. With no
+    # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+    $environmentFilePath = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $environmentFilePath `
+        -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
     $useRelationalBackend = ConvertTo-Boolean -Value ([string]$environmentValues["USE_RELATIONAL_BACKEND"])
 
@@ -902,9 +914,18 @@ function Start-DockerEnvironment {
 
     $environmentFilePath =
         if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
-            Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+            # Standalone entry points (e.g. StartEnvironment) bypass Get-E2ETestEnvironmentContext, so
+            # compose the data-standard overlay here too; otherwise the seed/configure steps below would
+            # read the raw base env file while DMS started on the selected data standard version.
+            Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+            $baseEnvironmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+            Resolve-DataStandardEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -BaseEnvironmentFile $baseEnvironmentFilePath `
+                -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
         }
         else {
+            # Already composed by Get-E2ETestEnvironmentContext; use as-is (no double-composition).
             $ResolvedEnvironmentFile
         }
 
@@ -934,12 +955,12 @@ function Start-DockerEnvironment {
             if ($UsePublishedImage) {
                 if ($LoadSeedData) {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                     }
                 }
                 else {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                     }
                 }
             }
@@ -972,7 +993,7 @@ function Start-DockerEnvironment {
                         $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
                         $env:AppSettings__DeployDatabaseOnStartup = "false"
                         Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                         }
                     }
                     finally {
@@ -997,7 +1018,7 @@ function Start-DockerEnvironment {
                 }
                 else {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                     }
                 }
 
