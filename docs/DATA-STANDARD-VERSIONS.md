@@ -157,6 +157,20 @@ whereas 5.2 lists TPDM as a distinct extension. Enabling 6.1 E2E therefore means
 these expectations for 6.1, not search-replacing `5.2.0` → `6.1.0`. This is part of the staged
 PR-E2E work (it lands when DS 6.1 joins the E2E lane).
 
+### Per-PR E2E scope — DS 6.1 is staged (decision)
+
+The every-change (per-PR) relational E2E lane stays **DS 5.2** for now: `on-dms-pullrequest.yml`
+runs `build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e.relational'` (no `-DataStandardVersion`),
+sharded but single-version. DS 6.1 is exercised by the **scheduled / package-build** lanes (the
+populated-template product matrix) rather than on every PR, so the slow, occasionally-flaky per-PR
+lane is not doubled before 6.1 is otherwise proven.
+
+Turning the per-PR lane on for 6.1 later is a small, contained change — add a `standard_version`
+dimension to the E2E matrix and pass `-DataStandardVersion 6.1` (`build-dms.ps1` now composes the
+`.env.ds<NN>` overlay consistently across provisioning, seed, configure, and startup). The gating
+prerequisite is **not** the wiring — it is authoring the version-coupled expectations above against
+a running 6.1 stack.
+
 ## Adding a Data Standard version
 
 Adding a version is the same set of small edits regardless of which version:
