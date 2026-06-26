@@ -293,7 +293,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(dataUrl);
                 var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                     dataUrl,
-                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!;
                 _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
@@ -421,7 +421,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PostAsync(
                     url,
-                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -462,7 +462,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST body: {body}");
 
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var authHeader in GetHeaders())
+            foreach (var authHeader in GetWriteHeaders())
             {
                 headers[authHeader.Key] = authHeader.Value;
             }
@@ -543,7 +543,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -571,7 +571,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 new()
                 {
                     DataByte = System.Text.Encoding.UTF8.GetBytes(body),
-                    Headers = GetHeadersWithIfMatch(ifMatch),
+                    Headers = GetWriteHeadersWithIfMatch(ifMatch),
                 }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
@@ -597,7 +597,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PutAsync(
                     url,
-                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -636,7 +636,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(body);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -1791,11 +1791,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [GeneratedRegex(@"\{id\}", RegexOptions.Compiled)]
         private static partial Regex IdRegex();
 
+        // Auth-only headers for requests without a body (GET/DELETE).
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
-            // Send an explicit JSON Content-Type so write requests are treated as baseline JSON.
-            // Without it Playwright defaults string bodies to application/octet-stream, which DMS
-            // now rejects with 415 (DMS-1224).
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+            };
+            return list;
+        }
+
+        // Headers for write requests (POST/PUT) carrying a JSON body. An explicit Content-Type is
+        // required because Playwright defaults string/byte bodies to application/octet-stream, which
+        // DMS rejects with 415 (DMS-1224). Read/delete requests have no body and use GetHeaders().
+        private IEnumerable<KeyValuePair<string, string>> GetWriteHeaders()
+        {
             var list = new List<KeyValuePair<string, string>>
             {
                 new("Authorization", GetDmsTokenFromContext()),
@@ -1805,6 +1815,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+                new("If-Match", ifMatch),
+            };
+            return list;
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> GetWriteHeadersWithIfMatch(string ifMatch)
         {
             var list = new List<KeyValuePair<string, string>>
             {

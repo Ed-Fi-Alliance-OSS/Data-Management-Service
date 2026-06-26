@@ -347,6 +347,12 @@ Feature: OWASP critical attack path protections
                   }
                   """
              Then it should respond with 415
+              And the response headers include
+                  """
+                  {
+                      "Content-Type": "application/problem+json"
+                  }
+                  """
               And the response body is
                   """
                   {
