@@ -39,6 +39,10 @@ jobs:
             package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
             provenance_file: "populated.template.intoto.jsonl"
             environment_file: "./.env.smoke.relational"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
+            provenance_file: "populated.template.6.1.0.intoto.jsonl"
+            environment_file: "./.env.smoke.relational.ds61"
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: ${{ matrix.standard_version }}
@@ -69,6 +73,13 @@ jobs:
           - standard_version: "5.2.0"
             package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
             environment_file: "./.env.smoke.relational"
+            # The published ODS SDK sweep uses EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0,
+            # which is DS 5.2-specific, so it only runs on the 5.2 leg.
+            run_ods_sdk_tests: true
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
+            environment_file: "./.env.smoke.relational.ds61"
+            run_ods_sdk_tests: false
 
     env:
       SMOKE_DATABASE_NAME: edfi_datamanagementservice_smoke
@@ -270,12 +281,16 @@ jobs:
           ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.Api.TestSdk/bin/Release/net10.0/EdFi.Api.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
+      # The ODS SDK sweep uses the published EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 (DS 5.2),
+      # so it only runs on the DS 5.2 leg. DS 6.1 is still covered by the API + DMS SDK tests above.
       - name: Run NonDestructive ODS SDK Tests
+        if: ${{ matrix.run_ods_sdk_tests }}
         run: |
           ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive ODS SDK Tests
+        if: ${{ matrix.run_ods_sdk_tests }}
         run: |
           ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
