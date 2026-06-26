@@ -119,7 +119,7 @@ Describe "Get-EducationOrganizationIdsFromSampleData" {
     }
 }
 
-Describe "Get-EducatorPreparationSampleFileNames" {
+Describe "Get-EducatorPreparationSampleFileName" {
     BeforeAll {
         $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Push-Location $script:templatesDir
@@ -130,11 +130,11 @@ Describe "Get-EducatorPreparationSampleFileNames" {
             Pop-Location
         }
 
-        function script:Invoke-EdPrepNames {
+        function script:Invoke-EdPrepName {
             param([string]$Directory)
             InModuleScope Template-Management -Parameters @{ dir = $Directory } {
                 param($dir)
-                @(Get-EducatorPreparationSampleFileNames -SourceDirectory $dir)
+                @(Get-EducatorPreparationSampleFileName -SourceDirectory $dir)
             }
         }
     }
@@ -159,7 +159,7 @@ Describe "Get-EducatorPreparationSampleFileNames" {
         )
         foreach ($f in $present) { Set-Content -LiteralPath (Join-Path $script:work $f) -Value '<x/>' }
 
-        $excluded = Invoke-EdPrepNames -Directory $script:work
+        $excluded = Invoke-EdPrepName -Directory $script:work
 
         $expected = @(
             'Candidate.xml', 'EducationOrgCalendar-EdPrep.xml', 'EducationOrganization-EdPrep.xml', 'MasterSchedule-EdPrep.xml',
@@ -179,7 +179,7 @@ Describe "Get-EducatorPreparationSampleFileNames" {
         Set-Content -LiteralPath (Join-Path $script:work 'PerformanceEvaluation.xml') -Value '<x/>'
         Set-Content -LiteralPath (Join-Path $script:work 'StudentAssessmentSample.xml') -Value '<x/>'
 
-        $excluded = Invoke-EdPrepNames -Directory $script:work
+        $excluded = Invoke-EdPrepName -Directory $script:work
 
         @($excluded) | Should -Be @('PerformanceEvaluation.xml')
     }
@@ -188,7 +188,7 @@ Describe "Get-EducatorPreparationSampleFileNames" {
         Set-Content -LiteralPath (Join-Path $script:work 'Student.xml') -Value '<x/>'
         Set-Content -LiteralPath (Join-Path $script:work 'EducationOrganization.xml') -Value '<x/>'
 
-        $excluded = Invoke-EdPrepNames -Directory $script:work
+        $excluded = Invoke-EdPrepName -Directory $script:work
 
         $excluded.Count | Should -Be 0
     }

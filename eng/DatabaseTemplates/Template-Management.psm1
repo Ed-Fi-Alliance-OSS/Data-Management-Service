@@ -747,7 +747,7 @@ function Get-EducationOrganizationIdsFromSampleData {
 .PARAMETER SourceDirectory
     Directory of populated sample data files to inspect.
 #>
-function Get-EducatorPreparationSampleFileNames {
+function Get-EducatorPreparationSampleFileName {
     param (
         [Parameter(Mandatory = $true)]
         [string]$SourceDirectory
@@ -783,19 +783,21 @@ function Get-EducatorPreparationSampleFileNames {
 .DESCRIPTION
     The BulkLoadClient loads every file in its target directory, so excluding files means pointing
     the load at a filtered copy. Copies the source directory into a fresh temporary directory minus
-    the files from Get-EducatorPreparationSampleFileNames; the original checkout is left untouched.
+    the files from Get-EducatorPreparationSampleFileName; the original checkout is left untouched.
     Returns the original directory unchanged when there is nothing to exclude (e.g. DS 5.2).
 
 .PARAMETER SourceDirectory
     Directory of populated sample data files to filter.
 #>
 function New-EducatorPreparationFilteredSampleDirectory {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build helper invoked non-interactively; it only creates a temporary working copy of the sample directory, so -WhatIf/-Confirm semantics add no value.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console; the function returns the directory path, so Write-Output would corrupt the pipeline result.')]
     param (
         [Parameter(Mandatory = $true)]
         [string]$SourceDirectory
     )
 
-    $excludedFiles = Get-EducatorPreparationSampleFileNames -SourceDirectory $SourceDirectory
+    $excludedFiles = Get-EducatorPreparationSampleFileName -SourceDirectory $SourceDirectory
     if ($excludedFiles.Count -eq 0) {
         return $SourceDirectory
     }
@@ -886,6 +888,7 @@ enum TemplateType {
 function Build-Template {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
 
         [Parameter(Mandatory = $true)]
@@ -973,7 +976,7 @@ function Build-Template {
         # Keep the populated template comparable to DS 5.2: drop the bulky DS 6.1 educator-preparation
         # data set (ProfessionalDevelopment/Candidate/PerformanceEvaluation/etc.) while keeping the
         # AssessmentMetadata-EdPrep assessments that core StudentAssessment sample data references.
-        # No-op for sample data with no educator-prep files (DS 5.2). See Get-EducatorPreparationSampleFileNames.
+        # No-op for sample data with no educator-prep files (DS 5.2). See Get-EducatorPreparationSampleFileName.
         $populatedSampleDataDirectory = New-EducatorPreparationFilteredSampleDirectory -SourceDirectory $PopulatedSampleDataDirectory
 
         # The sandbox authorizes most resources by relationship to its claimed education organizations
