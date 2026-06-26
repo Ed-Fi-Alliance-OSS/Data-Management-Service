@@ -38,6 +38,10 @@ jobs:
             package_name: "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
             provenance_file: "minimal.template.intoto.jsonl"
             environment_file: "./.env.template.relational"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Minimal.Template.PostgreSql.6.1.0"
+            provenance_file: "minimal.template.6.1.0.intoto.jsonl"
+            environment_file: "./.env.template.relational.ds61"
     uses: ./.github/workflows/build-minimal-template.yml
     with:
       standard_version: ${{ matrix.standard_version }}
