@@ -971,7 +971,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
             // Validate the members of resolved extensions under an IncludeAll parent.
             // Existence of unknown extensions is reported separately by
-            // CollectUnknownExtensionFailures, which runs regardless of member selection.
+            // CollectExtensionResolutionFailures, which runs regardless of member selection.
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 
