@@ -38,8 +38,9 @@ cd eng/docker-compose
 ```
 
 `-DataStandardVersion` is accepted by `start-local-dms.ps1`,
-`start-published-dms.ps1`, the repo-root `build-dms.ps1` (which forwards it to the
-start/seed calls), and both E2E `setup-local-dms.ps1` wrappers
+`start-published-dms.ps1`, the repo-root `build-dms.ps1` (which composes the overlay once
+and applies the derived env file across its provisioning, seed, configure, and startup
+steps), and both E2E `setup-local-dms.ps1` wrappers
 (`src/dms/tests/EdFi.DataManagementService.Tests.E2E/`,
 `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/`).
 
@@ -87,11 +88,16 @@ The version key flows from configuration: `appsettings.json`
 (`ClaimsOptions:DataStandardVersion`) and the compose files
 (`ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}`).
 
-> **Not yet versioned:** the `ResourceClaim` seed
-> (`0009_Insert_ResourceClaim.sql`, run by dbup) is still the Data Standard 5.2
-> baseline; per-version resource-claim seeding is a separate change. The
-> authorization-strategy seed (`0008_Insert_AuthorizationStrategy.sql`) is
-> data-standard-independent and shared across all versions.
+> **ResourceClaim seeding:** the static `ResourceClaim` seed
+> (`0009_Insert_ResourceClaim.sql`, run by dbup) stays the Data Standard 5.2 baseline so
+> existing rows keep their identifiers. On top of that, `ClaimsDataLoader` derives the
+> resource-claim rows from the version-selected `Claims.json` hierarchy at initial load and
+> inserts only the rows missing from the table (`ResourceClaimMetadataRepository`,
+> `ON CONFLICT (ClaimName) DO NOTHING`), so a version contributes its own resources
+> (e.g. DS 6.1's in-core TPDM) without editing the dbup script. Seeding is PostgreSQL-only;
+> on the MSSQL backend the loader falls back to a no-op. The authorization-strategy seed
+> (`0008_Insert_AuthorizationStrategy.sql`) is data-standard-independent and shared across
+> all versions.
 
 ## CI / package builds
 
