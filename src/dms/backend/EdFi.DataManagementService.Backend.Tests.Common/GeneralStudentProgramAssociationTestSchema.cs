@@ -15,9 +15,9 @@ public static class GeneralStudentProgramAssociationTestSchema
 {
     /// <summary>
     /// Builds a project schema with <c>GeneralStudentProgramAssociation</c> as the abstract resource
-    /// whose identity paths flow through EducationOrganization, Program (with a descriptor field), and
-    /// Student references. Referenced resources (School as an EducationOrganization subclass, Program,
-    /// Student, ProgramTypeDescriptor) are included so the schema passes validation.
+    /// whose identity paths flow through EducationOrganization, Program (with two scalar fields and a
+    /// descriptor field), and Student references. Referenced resources (School as an EducationOrganization
+    /// subclass, Program, Student, ProgramTypeDescriptor) are included so the schema passes validation.
     /// </summary>
     public static JsonObject BuildProjectSchema()
     {
@@ -35,6 +35,7 @@ public static class GeneralStudentProgramAssociationTestSchema
                         "$.beginDate",
                         "$.educationOrganizationReference.educationOrganizationId",
                         "$.programReference.educationOrganizationId",
+                        "$.programReference.programName",
                         "$.programReference.programTypeDescriptor",
                         "$.studentReference.studentUniqueId",
                     },
@@ -81,6 +82,7 @@ public static class GeneralStudentProgramAssociationTestSchema
                     ["properties"] = new JsonObject
                     {
                         ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                        ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
                         ["programTypeDescriptor"] = new JsonObject
                         {
                             ["type"] = "string",
@@ -121,6 +123,7 @@ public static class GeneralStudentProgramAssociationTestSchema
                 "$.beginDate",
                 "$.educationOrganizationReference.educationOrganizationId",
                 "$.programReference.educationOrganizationId",
+                "$.programReference.programName",
                 "$.programReference.programTypeDescriptor",
                 "$.studentReference.studentUniqueId",
             },
@@ -157,6 +160,11 @@ public static class GeneralStudentProgramAssociationTestSchema
                         {
                             ["identityJsonPath"] = "$.educationOrganizationId",
                             ["referenceJsonPath"] = "$.programReference.educationOrganizationId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programName",
+                            ["referenceJsonPath"] = "$.programReference.programName",
                         },
                         new JsonObject
                         {
@@ -230,7 +238,7 @@ public static class GeneralStudentProgramAssociationTestSchema
     }
 
     /// <summary>
-    /// Program resource with a scalar and a descriptor-valued identity path.
+    /// Program resource with two scalar identity paths and a descriptor-valued identity path.
     /// </summary>
     public static JsonObject BuildProgramSchema()
     {
@@ -242,7 +250,12 @@ public static class GeneralStudentProgramAssociationTestSchema
             ["isSubclass"] = false,
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.programTypeDescriptor" },
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.educationOrganizationId",
+                "$.programName",
+                "$.programTypeDescriptor",
+            },
             ["documentPathsMapping"] = new JsonObject
             {
                 ["EducationOrganizationId"] = new JsonObject
@@ -251,6 +264,13 @@ public static class GeneralStudentProgramAssociationTestSchema
                     ["isPartOfIdentity"] = true,
                     ["isRequired"] = true,
                     ["path"] = "$.educationOrganizationId",
+                },
+                ["ProgramName"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.programName",
                 },
                 ["ProgramTypeDescriptor"] = new JsonObject
                 {
@@ -273,9 +293,15 @@ public static class GeneralStudentProgramAssociationTestSchema
                         ["type"] = "integer",
                         ["format"] = "int64",
                     },
+                    ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
                     ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
                 },
-                ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
+                ["required"] = new JsonArray
+                {
+                    "educationOrganizationId",
+                    "programName",
+                    "programTypeDescriptor",
+                },
             },
         };
     }

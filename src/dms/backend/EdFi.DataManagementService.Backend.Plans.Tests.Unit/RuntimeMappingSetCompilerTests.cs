@@ -510,16 +510,20 @@ public class Given_RuntimeMappingSetCompiler
             abstractColumnNames.Should().Contain("Student_StudentUniqueId");
             abstractColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
             abstractColumnNames.Should().Contain("Program_EducationOrganizationId");
+            abstractColumnNames.Should().Contain("Program_ProgramName");
             abstractColumnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
             unionViewColumnNames.Should().Contain("Student_StudentUniqueId");
             unionViewColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
             unionViewColumnNames.Should().Contain("Program_EducationOrganizationId");
+            unionViewColumnNames.Should().Contain("Program_ProgramName");
             unionViewColumnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
 
             abstractColumnNames.Should().NotContain("StudentReferenceStudentUniqueId");
             abstractColumnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor");
+            abstractColumnNames.Should().NotContain("ProgramReferenceProgramName");
             unionViewColumnNames.Should().NotContain("StudentReferenceStudentUniqueId");
             unionViewColumnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor");
+            unionViewColumnNames.Should().NotContain("ProgramReferenceProgramName");
         }
     }
 

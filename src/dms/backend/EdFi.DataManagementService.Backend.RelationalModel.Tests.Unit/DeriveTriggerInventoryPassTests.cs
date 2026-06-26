@@ -1781,6 +1781,8 @@ public class Given_AbstractIdentityMaintenance_Trigger_Carries_Renamed_Abstract_
 
         // Renamed scalar reference column
         targetColumnNames.Should().Contain("Program_EducationOrganizationId");
+        // Renamed additional scalar reference column (a reference-backed scalar other than the first)
+        targetColumnNames.Should().Contain("Program_ProgramName");
         // Renamed descriptor reference column
         targetColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
         // Renamed student reference column

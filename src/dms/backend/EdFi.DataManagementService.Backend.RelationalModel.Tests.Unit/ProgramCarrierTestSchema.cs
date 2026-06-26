@@ -15,7 +15,7 @@ internal static class ProgramCarrierTestSchema
 {
     /// <summary>
     /// Builds a project schema with a ProgramCarrier abstract resource and a ProgramOffering member
-    /// that references Program via $.programReference with both a scalar and a descriptor identity field.
+    /// that references Program via $.programReference with two scalar fields and a descriptor identity field.
     /// </summary>
     internal static JsonObject BuildProjectSchema()
     {
@@ -136,7 +136,7 @@ internal static class ProgramCarrierTestSchema
     }
 
     /// <summary>
-    /// Target Program resource with both a scalar and descriptor identity path.
+    /// Target Program resource with two scalar identity paths and a descriptor identity path.
     /// </summary>
     internal static JsonObject BuildProgramTargetSchema()
     {

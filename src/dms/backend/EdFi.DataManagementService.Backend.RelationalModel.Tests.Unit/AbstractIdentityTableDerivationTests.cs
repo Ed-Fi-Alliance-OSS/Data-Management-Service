@@ -1573,10 +1573,11 @@ public class Given_Abstract_Identity_Table_With_Superclass_Identity_Path_And_Mul
 }
 
 /// <summary>
-/// Test fixture for abstract identity column naming: composite reference scalar and reference-backed
+/// Test fixture for abstract identity column naming: composite reference scalars and reference-backed
 /// descriptor.
-/// The abstract resource ProgramCarrier has two identity paths under $.programReference:
+/// The abstract resource ProgramCarrier has three identity paths under $.programReference:
 ///   - $.programReference.educationOrganizationId → Program_EducationOrganizationId
+///   - $.programReference.programName             → Program_ProgramName
 ///   - $.programReference.programTypeDescriptor   → Program_ProgramTypeDescriptor_DescriptorId
 /// </summary>
 [TestFixture]
@@ -2265,6 +2266,201 @@ public class Given_Abstract_Identity_Path_With_Ambiguous_Grouped_Reference_Bindi
                     ["stateEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
                 },
                 ["required"] = new JsonArray("localEducationAgencyId", "stateEducationAgencyId"),
+            },
+        };
+    }
+}
+
+/// <summary>
+/// Test fixture for an abstract identity path that two concrete members both reach through a document
+/// reference, but via differently-named references: the same reference object path is mapped under different
+/// documentPathsMapping MappingKeys (<c>Program</c> vs <c>ProgramAlias</c>). The convention column is
+/// MappingKey-derived, so the two members resolve the single abstract identity path to divergent column names
+/// (<c>Program_EducationOrganizationId</c> vs <c>ProgramAlias_EducationOrganizationId</c>). Real Ed-Fi schemas
+/// never name the same shared reference differently across an abstract resource's members; this fixture forces
+/// the shape to prove the derivation fails fast rather than silently letting one member's name win while the
+/// other projects a differently-named column under the single abstract contract.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Path_With_Divergent_Member_Convention_Columns
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when members resolve one abstract identity path to different convention columns.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_members_resolve_one_abstract_path_to_divergent_convention_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("ambiguous abstract identity naming");
+        // Both divergent MappingKey-derived column names appear in the diagnostic.
+        _exception.Message.Should().Contain("Program_EducationOrganizationId");
+        _exception.Message.Should().Contain("ProgramAlias_EducationOrganizationId");
+    }
+
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["DivergentCarrier"] = new JsonObject
+                {
+                    ["resourceName"] = "DivergentCarrier",
+                    ["identityJsonPaths"] = new JsonArray { "$.programReference.educationOrganizationId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["firstDivergentMembers"] = BuildMemberSchema("FirstDivergentMember", "Program"),
+                ["secondDivergentMembers"] = BuildMemberSchema("SecondDivergentMember", "ProgramAlias"),
+                ["programs"] = BuildProgramTargetSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Member subclass of DivergentCarrier whose identity reaches $.programReference.educationOrganizationId
+    /// through a document reference to Program under the supplied MappingKey (the reference role name). The
+    /// MappingKey drives the convention column name, so two members using different keys for the same shared
+    /// reference object path diverge.
+    /// </summary>
+    private static JsonObject BuildMemberSchema(string resourceName, string mappingKey)
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "DivergentCarrier",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                [mappingKey] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.programReference.educationOrganizationId",
+                        },
+                    },
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["equalityConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.programReference.educationOrganizationId" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["programReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["educationOrganizationId"] = new JsonObject
+                            {
+                                ["type"] = "integer",
+                                ["format"] = "int64",
+                            },
+                        },
+                        ["required"] = new JsonArray { "educationOrganizationId" },
+                    },
+                },
+                ["required"] = new JsonArray { "programReference" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Program: standalone target referenced by both members.
+    /// </summary>
+    private static JsonObject BuildProgramTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Program",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.educationOrganizationId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["format"] = "int64",
+                    },
+                },
+                ["required"] = new JsonArray { "educationOrganizationId" },
             },
         };
     }

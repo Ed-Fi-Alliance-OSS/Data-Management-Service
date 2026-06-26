@@ -2749,6 +2749,7 @@ public class Given_Reference_Backed_Abstract_Identity_Table_Has_Renamed_Constrai
         columnNames.Should().Contain("Student_StudentUniqueId");
         columnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
         columnNames.Should().Contain("Program_EducationOrganizationId");
+        columnNames.Should().Contain("Program_ProgramName");
         columnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
 
         // Must NOT contain the old concatenated forms eliminated by the DMS-1223 rename.
