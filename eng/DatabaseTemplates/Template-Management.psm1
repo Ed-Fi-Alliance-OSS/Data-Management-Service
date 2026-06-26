@@ -103,7 +103,12 @@ function Get-KeySecret() {
 
         [string]$ApplicationName = "Demo application",
 
-        [long[]]$DataStoreIds = @()
+        [long[]]$DataStoreIds = @(),
+
+        # Education organizations the application is scoped to. When empty, Add-Application applies
+        # its own default; pass an explicit set to authorize relationship-scoped resources beyond
+        # the default district hierarchy (e.g. the DS 6.1 Educator Preparation Provider orgs).
+        [long[]]$EducationOrganizationIds = @()
     )
 
     $params = @{
@@ -118,6 +123,9 @@ function Get-KeySecret() {
     $params.ClaimSetName = $ClaimSetName
     $params.ApplicationName = $ApplicationName
     $params.DataStoreIds = $DataStoreIds
+    if ($EducationOrganizationIds.Count -gt 0) {
+        $params.EducationOrganizationIds = $EducationOrganizationIds
+    }
     $keySecret = Add-Application @params
 
     return $keySecret
@@ -625,82 +633,55 @@ function Build-TemplateNuGetPackage {
 
 <#
 .SYNOPSIS
-    Returns the educator-preparation sample file names that should be omitted from a populated
-    template load.
+    Extracts the distinct education organization ids defined in a populated sample data set.
 
 .DESCRIPTION
-    In Data Standard 6.1 the TPDM model folded into core, so the v6.1.0 sample set ships
-    educator-preparation interchanges that the v5.2.0 set never had: the standalone epdm
-    interchange files (Candidate, Path, PerformanceEvaluation, ProfessionalDevelopment,
-    RecruitmentAndStaffing) plus the "*-EdPrep" variants that extend core interchanges with
-    Educator Preparation Provider (EPP) data. Those rows are scoped to the EPP education
-    organization, which lies outside the populated loader's LEA relationship scope
-    (RelationshipsWithEdOrgsOnly), so loading them under the EdFiSandbox claim set fails
-    authorization. Excluding them keeps the DS 6.1 populated template's data surface aligned
-    with the DS 5.2 populated template, which contained no educator-preparation rows.
+    The populated sandbox application authorizes most resources by relationship to its claimed
+    education organizations (RelationshipsWithEdOrgsOnly), so it must claim every education
+    organization the sample data references. In Data Standard 6.1 the TPDM model folded into
+    core, so the sample set adds an Educator Preparation Provider hierarchy (its own schools,
+    LEAs, and post-secondary institutions) that is disjoint from the Grand Bend district. Rather
+    than hard-code a per-version id list, this scans the EducationOrganization sample files for
+    every education-organization identity/reference id so the sandbox is scoped to exactly the
+    edorgs present — covering the EPP orgs in 6.1 and staying correct as the sample data evolves.
+    Program ids and other non-edorg identifiers are intentionally excluded.
 
-.PARAMETER SourceDirectory
-    Directory of populated sample data files to inspect.
+.PARAMETER SampleDataDirectory
+    Directory of populated sample data files to scan (the EducationOrganization*.xml files).
 #>
-function Get-EducatorPreparationSampleFileNames {
+function Get-EducationOrganizationIdsFromSampleData {
     param (
         [Parameter(Mandatory = $true)]
-        [string]$SourceDirectory
+        [string]$SampleDataDirectory
     )
 
-    $standaloneEpdmFiles = @(
-        'Candidate.xml',
-        'Path.xml',
-        'PerformanceEvaluation.xml',
-        'ProfessionalDevelopment.xml',
-        'RecruitmentAndStaffing.xml'
+    # Ed-Fi education-organization id element names (identity and reference). The generic
+    # EducationOrganizationId covers any edorg referenced without a type-specific element.
+    $edOrgIdElementNames = @(
+        'EducationOrganizationId',
+        'SchoolId',
+        'LocalEducationAgencyId',
+        'StateEducationAgencyId',
+        'EducationServiceCenterId',
+        'PostSecondaryInstitutionId',
+        'EducatorPreparationProviderId',
+        'OrganizationDepartmentId',
+        'CommunityOrganizationId',
+        'CommunityProviderId',
+        'EducationOrganizationNetworkId'
     )
+    $pattern = '<(' + ($edOrgIdElementNames -join '|') + ')>(\d+)</\1>'
 
-    $edPrepVariants = @(
-        Get-ChildItem -Path $SourceDirectory -Filter '*-EdPrep.xml' -File -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty Name
-    )
+    $ids = [System.Collections.Generic.HashSet[long]]::new()
+    Get-ChildItem -Path $SampleDataDirectory -Filter 'EducationOrganization*.xml' -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $content = Get-Content -Path $_.FullName -Raw
+            foreach ($match in [regex]::Matches($content, $pattern)) {
+                [void]$ids.Add([long]$match.Groups[2].Value)
+            }
+        }
 
-    return @(
-        $standaloneEpdmFiles + $edPrepVariants |
-            Where-Object { Test-Path -Path (Join-Path $SourceDirectory $_) -PathType Leaf } |
-            Sort-Object -Unique
-    )
-}
-
-<#
-.SYNOPSIS
-    Copies a populated sample directory into a fresh temporary directory, omitting the
-    educator-preparation files identified by Get-EducatorPreparationSampleFileNames.
-
-.DESCRIPTION
-    The BulkLoadClient loads every file in its target directory, so excluding files means
-    pointing the load at a filtered copy. The original checkout is left untouched.
-
-.PARAMETER SourceDirectory
-    Directory of populated sample data files to filter.
-#>
-function New-EducatorPreparationFilteredSampleDirectory {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$SourceDirectory
-    )
-
-    $excludedFiles = Get-EducatorPreparationSampleFileNames -SourceDirectory $SourceDirectory
-
-    $destination = Join-Path ([System.IO.Path]::GetTempPath()) ("populated-sample-no-edprep-" + [System.Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $destination -Force | Out-Null
-
-    Get-ChildItem -Path $SourceDirectory -File |
-        Where-Object { $excludedFiles -notcontains $_.Name } |
-        ForEach-Object { Copy-Item -Path $_.FullName -Destination (Join-Path $destination $_.Name) -Force }
-
-    Write-Host "Excluded $($excludedFiles.Count) educator-preparation sample file(s) from the populated load:" -ForegroundColor Yellow
-    foreach ($excluded in $excludedFiles) {
-        Write-Host "  - $excluded"
-    }
-
-    return $destination
+    return @($ids | Sort-Object)
 }
 
 enum TemplateType {
@@ -756,13 +737,6 @@ enum TemplateType {
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
 
-.PARAMETER ExcludeEducatorPreparation
-    Omit the educator-preparation (epdm) sample files from the populated load. Data Standard 6.1
-    folded TPDM into core, so its sample set adds educator-preparation rows scoped to the Educator
-    Preparation Provider education organization, which the populated loader's LEA-scoped sandbox
-    cannot authorize (RelationshipsWithEdOrgsOnly). Excluding them keeps the DS 6.1 populated
-    template aligned with the DS 5.2 populated template. See Get-EducatorPreparationSampleFileNames.
-
 .PARAMETER PostgresPassword
     The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
 
@@ -817,8 +791,6 @@ function Build-Template {
 
         [switch]$DumpAllUserSchemas,
 
-        [switch]$ExcludeEducatorPreparation,
-
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
@@ -867,23 +839,36 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        # The DS 6.1 sample set adds educator-preparation rows the LEA-scoped sandbox cannot
-        # authorize; filter them to a temporary copy so the load matches the DS 5.2 populated
-        # template surface. See Get-EducatorPreparationSampleFileNames for the rationale.
-        $populatedSampleDataDirectory = $PopulatedSampleDataDirectory
-        if ($ExcludeEducatorPreparation) {
-            $populatedSampleDataDirectory = New-EducatorPreparationFilteredSampleDirectory -SourceDirectory $PopulatedSampleDataDirectory
+        # The sandbox loads the full populated sample set, and most resources are authorized by
+        # relationship to the caller's claimed education organizations (RelationshipsWithEdOrgsOnly).
+        # Scope the sandbox to every edorg the sample data defines so the whole set authorizes —
+        # in DS 6.1 this is what lets the folded-in Educator Preparation Provider hierarchy (its own
+        # schools/LEAs/post-secondary institutions, disjoint from the Grand Bend district) load.
+        $sandboxEducationOrganizationIds = @(
+            Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $PopulatedSampleDataDirectory
+        )
+
+        $sandboxParams = @{
+            CmsUrl          = $CmsUrl
+            CmsToken        = $CmsToken
+            ClaimSetName    = 'EdFiSandbox'
+            ApplicationName = "$ApplicationName Sandbox"
+            DataStoreIds    = @($targetDataStoreId)
+        }
+        if ($sandboxEducationOrganizationIds.Count -gt 0) {
+            Write-Host "Scoping sandbox application to $($sandboxEducationOrganizationIds.Count) education organizations from the populated sample data."
+            $sandboxParams.EducationOrganizationIds = $sandboxEducationOrganizationIds
         }
 
         # Create Sandbox application and assign to the data store
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDataStoreId)
+        $sandboxApp = Get-KeySecret @sandboxParams
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
         Invoke-BulkLoad -BaseUrl $DmsUrl `
             -Key $sandboxApp.Key `
             -Secret $sandboxApp.Secret `
-            -SampleDataDirectory $populatedSampleDataDirectory `
+            -SampleDataDirectory $PopulatedSampleDataDirectory `
             -Extension $Extension `
             -BulkLoadClientPaths $bulkLoadClientPaths `
             -ForceReloadData `
