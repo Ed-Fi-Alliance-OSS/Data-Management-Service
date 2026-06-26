@@ -20,7 +20,7 @@ WORKDIR /app
 RUN echo "Tag Version:" $VERSION
 RUN echo "Assembly Version:" $ASSEMBLY_VERSION
 
-RUN wget -O /app/EdFi.DmsConfigurationService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DmsConfigurationService/versions/${VERSION}/content" && \
+RUN wget -O /app/EdFi.DmsConfigurationService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.Api.ConfigurationService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DmsConfigurationService.zip -d /app/ && \
     rm -f /app/EdFi.DmsConfigurationService.zip
 
