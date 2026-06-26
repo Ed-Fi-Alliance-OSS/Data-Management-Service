@@ -12,7 +12,13 @@ param(
     [switch]$NoDataStore,
     [string]$SchoolYearRange = "",
     [string]$DataStoreDatabaseName = "",
-    [switch]$AddSmokeTestCredentials
+    [switch]$AddSmokeTestCredentials,
+
+    # Database engine for the DMS datastore. "mssql" registers an MSSQL-shaped data-store
+    # connection string (Server=dms-mssql;...) instead of the PostgreSQL form. The
+    # Configuration Service itself always runs on PostgreSQL.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql"
 )
 
 $ErrorActionPreference = "Stop"
@@ -246,7 +252,11 @@ function Invoke-ConfigureLocalDataStore {
         $DataStoreDatabaseName = "",
 
         [switch]
-        $AddSmokeTestCredentials
+        $AddSmokeTestCredentials,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine = "postgresql"
     )
 
     $resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile
@@ -304,6 +314,24 @@ function Invoke-ConfigureLocalDataStore {
     $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
+    # Resolve the data-store connection string stored in CMS for the DMS datastore. For MSSQL
+    # this is the SQL Server form pointing at the dms-mssql container; for PostgreSQL it is left
+    # empty so Add-DataStore builds its PostgreSQL connection string from the Postgres* values.
+    # provision-dms-schema.ps1 reads this string back and translates the Docker host to the
+    # host-side mapped port before invoking SchemaTools.
+    $dataStoreConnectionString = ""
+    if ($DatabaseEngine -eq "mssql") {
+        $mssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD"
+        $mssqlDbName = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+        $dataStoreConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine "mssql" `
+            -DbHost "dms-mssql" `
+            -Port 1433 `
+            -Username "sa" `
+            -Password $mssqlPassword `
+            -DatabaseName $mssqlDbName
+    }
+
     if ($NoDataStore) {
         Write-Information "Selecting existing route-unqualified data store from CMS." -InformationAction Continue
         $dataStores = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
@@ -330,6 +358,7 @@ function Invoke-ConfigureLocalDataStore {
             -EndYear $schoolYears[-1] `
             -PostgresCredential $postgresCredential `
             -PostgresDbName $postgresDbName `
+            -ConnectionString $dataStoreConnectionString `
             -Tenant $tenant
 
         $dataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
@@ -364,6 +393,7 @@ function Invoke-ConfigureLocalDataStore {
         -AccessToken $configToken `
         -PostgresCredential $postgresCredential `
         -PostgresDbName $postgresDbName `
+        -ConnectionString $dataStoreConnectionString `
         -Name "Local Development Data Store" `
         -DataStoreType "Development" `
         -Tenant $tenant
@@ -388,4 +418,5 @@ Invoke-ConfigureLocalDataStore `
     -NoDataStore:$NoDataStore `
     -SchoolYearRange $SchoolYearRange `
     -DataStoreDatabaseName $DataStoreDatabaseName `
-    -AddSmokeTestCredentials:$AddSmokeTestCredentials
+    -AddSmokeTestCredentials:$AddSmokeTestCredentials `
+    -DatabaseEngine $DatabaseEngine

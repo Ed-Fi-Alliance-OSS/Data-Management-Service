@@ -295,10 +295,21 @@ function Invoke-BootstrapWrapper {
         # The value is held locally and NOT forwarded to the initial start-script infra invocation;
         # it is forwarded only to the post-provision start-script health-wait invocation and,
         # when -LoadSeedData is also requested, to load-dms-seed-data.ps1.
-        [string]$DmsBaseUrl
+        [string]$DmsBaseUrl,
+
+        # Database engine for the DMS datastore ("postgresql" or "mssql"). Forwarded to the
+        # configure phase always, and to the start phases only for start-local-dms.ps1 (mssql.yml
+        # is a local-only tier; start-published-dms.ps1 has no -DatabaseEngine parameter).
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql"
     )
 
     $ErrorActionPreference = "Stop"
+
+    # mssql.yml is a local-only datastore tier. Only start-local-dms.ps1 understands
+    # -DatabaseEngine; start-published-dms.ps1 does not, so the engine is forwarded to the start
+    # phases only for the local start script. The configure phase always accepts it.
+    $startScriptSupportsDatabaseEngine = ($StartScriptName -eq "start-local-dms.ps1")
 
     # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
     # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
@@ -474,6 +485,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
+        if ($startScriptSupportsDatabaseEngine) { $startArgs.DatabaseEngine = $DatabaseEngine }
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -516,6 +528,7 @@ function Invoke-BootstrapWrapper {
         if ($NoDataStore) { $configureArgs.NoDataStore = $true }
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
+        $configureArgs.DatabaseEngine = $DatabaseEngine
 
         # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
@@ -590,6 +603,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
+            if ($startScriptSupportsDatabaseEngine) { $healthWaitArgs.DatabaseEngine = $DatabaseEngine }
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -628,6 +642,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
+        if ($startScriptSupportsDatabaseEngine) { $dmsStartArgs.DatabaseEngine = $DatabaseEngine }
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

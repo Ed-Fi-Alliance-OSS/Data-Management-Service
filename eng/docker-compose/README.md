@@ -20,10 +20,11 @@ start up different configurations:
 1. `kafka.yml` covers Kafka
 2. `kafka-ui.yml` covers KafkaUI
 3. `postgresql.yml` starts only PostgreSQL
-4. `local-dms.yml` runs the DMS from local source code.
-5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-6. `keycloak.yml` runs KeyCloak (identity provider).
-7. `swagger-ui.yml` covers SwaggerUI
+4. `mssql.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
+5. `local-dms.yml` runs the DMS from local source code.
+6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+7. `keycloak.yml` runs KeyCloak (identity provider).
+8. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -131,6 +132,46 @@ image from source code.
 
 ```pwsh
 ./start-local-dms.ps1 -r
+```
+
+## Running on the MSSQL backend
+
+The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
+`-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
+`start-local-dms.ps1` (infrastructure), together with the MSSQL environment file:
+
+```pwsh
+# Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -EnableSwaggerUI -LoadSeedData
+
+# Tear down (delete volumes)
+./start-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -d -v
+```
+
+`mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
+image used in CI, publishing port `1433`. Defaults (`MSSQL_SA_PASSWORD`, `MSSQL_PORT`,
+`MSSQL_DB_NAME`) live in `.env.mssql.relational`.
+
+A few things are specific to the MSSQL path:
+
+* **It is dual-database.** Only the DMS datastore moves to SQL Server. The Configuration
+  Service and the self-contained (OpenIddict) identity provider have no MSSQL backend and
+  continue to run on PostgreSQL, so `-DatabaseEngine mssql` composes **both** `mssql.yml`
+  (DMS) and `postgresql.yml` (CMS + identity). `DMS_CONFIG_DATASTORE` stays `postgresql`.
+* **Relational backend only.** MSSQL is supported through the relational backend
+  (`USE_RELATIONAL_BACKEND=true`, `DMS_DATASTORE=mssql`); the legacy document-store deploy
+  path is not implemented for MSSQL. Schema is provisioned by `provision-dms-schema.ps1`,
+  which auto-detects the SQL Server dialect from the data-store connection string and invokes
+  `dms-schema ddl provision --dialect mssql --create-database`.
+* **No Debezium CDC.** The relational backend serves both writes and queries directly from
+  SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
+* **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
+  it is database-engine agnostic.
+
+After the stack is up, run the smoke tests the same way as for PostgreSQL:
+
+```pwsh
+../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
 
 ## Schema Selection
