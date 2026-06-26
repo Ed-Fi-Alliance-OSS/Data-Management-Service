@@ -325,3 +325,44 @@ Feature: OWASP critical attack path protections
                   | schoolId          | 1004           |
                   | nameOfInstitution | CSRF Form Test |
              Then it should respond with 401
+
+        @relational-backend
+        @relational-ci-shard-3
+        Scenario: 20 Unsupported write Content-Type is rejected with 415
+             When a POST request is made to "/ed-fi/schools" with header "Content-Type" value "text/plain"
+                  """
+                  {
+                      "schoolId": 1201,
+                      "nameOfInstitution": "Unsupported Media Type School",
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+                          }
+                      ],
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 415
+              And the response headers include
+                  """
+                  {
+                      "Content-Type": "application/problem+json"
+                  }
+                  """
+              And the response body is
+                  """
+                  {
+                      "detail": "The value specified in the 'Content-Type' header is not supported by this host.",
+                      "type": "urn:ed-fi:api:unsupported-media-type",
+                      "title": "Unsupported Media Type",
+                      "status": 415,
+                      "validationErrors": {},
+                      "errors": [
+                          "The value specified in the 'Content-Type' header is not supported by this host."
+                      ]
+                  }
+                  """

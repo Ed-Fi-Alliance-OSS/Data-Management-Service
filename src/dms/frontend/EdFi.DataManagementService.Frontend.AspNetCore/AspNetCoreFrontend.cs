@@ -56,11 +56,17 @@ public static class AspNetCoreFrontend
         return formCollection.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToString());
     }
 
+    private const string ContentTypeHeaderName = "Content-Type";
+
     /// <summary>
-    /// Takes an HttpRequest and returns a deserialized, not null or empty request Headers
+    /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
+    /// dropped, except for an explicitly supplied Content-Type. Core must distinguish a missing
+    /// Content-Type (exempt) from an explicit blank or whitespace value (rejected with 415), so
+    /// that value is preserved verbatim here instead of being discarded along with the header.
     /// </summary>
-    private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request) =>
-        request
+    private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
+    {
+        var headers = request
             .Headers.Select(h => new
             {
                 h.Key,
@@ -68,6 +74,19 @@ public static class AspNetCoreFrontend
             })
             .Where(h => h.Value != null)
             .ToDictionary(x => x.Key, x => x.Value!, StringComparer.OrdinalIgnoreCase);
+
+        // The filtering above discards a Content-Type that was sent but is blank/whitespace.
+        // Restore it so core can reject the explicit value rather than treat it as missing.
+        if (
+            !headers.ContainsKey(ContentTypeHeaderName)
+            && request.Headers.TryGetValue(ContentTypeHeaderName, out StringValues contentType)
+        )
+        {
+            headers[ContentTypeHeaderName] = contentType.ToString();
+        }
+
+        return headers;
+    }
 
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
