@@ -625,6 +625,38 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return failures;
     }
 
+    /// <summary>
+    /// Resolves an extension namespace node from the schema's <c>_ext.properties</c> by
+    /// matching <paramref name="extensionName"/> case-insensitively. Returns the matching
+    /// schema node, or null when no extension key matches. Prefers an exact (ordinal) match
+    /// to keep behavior stable when distinct keys differ only by case.
+    /// </summary>
+    private static JsonObject? ResolveExtensionSchemaNode(JsonObject? extProperties, string extensionName)
+    {
+        if (extProperties is null)
+        {
+            return null;
+        }
+
+        if (extProperties[extensionName] is JsonObject exactMatch)
+        {
+            return exactMatch;
+        }
+
+        foreach (var property in extProperties)
+        {
+            if (
+                property.Key.Equals(extensionName, StringComparison.OrdinalIgnoreCase)
+                && property.Value is JsonObject node
+            )
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
     private static List<ValidationFailure> ValidateExtensionRule(
         ExtensionRule extension,
         JsonObject schemaProperties,
@@ -654,7 +686,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         var extNode = schemaProperties["_ext"] as JsonObject;
         var extProperties = extNode?["properties"] as JsonObject;
-        var extensionSchemaNode = extProperties?[extension.Name] as JsonObject;
+        // Resolve the extension namespace case-insensitively. Profile XML preserves the
+        // authored extension name (e.g. "Sample"), but the schema exposes the extension
+        // payload under the project endpoint key (e.g. "sample"). A case-sensitive lookup
+        // would treat a validly-cased-differently extension as missing (DMS-1233).
+        var extensionSchemaNode = ResolveExtensionSchemaNode(extProperties, extension.Name);
         var extensionProperties = extensionSchemaNode?["properties"] as JsonObject;
 
         if (extensionProperties is null)

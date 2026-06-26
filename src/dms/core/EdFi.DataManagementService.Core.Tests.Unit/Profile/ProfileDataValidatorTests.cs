@@ -1704,6 +1704,120 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_resolve_mixed_case_extension_name_to_schema_key()
+        {
+            // Arrange — schema exposes the extension under the lower-case project key sample
+            // while the profile authors it as Sample, per DMS-1233.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Sample",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("sampleField")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — Sample resolves to schema key sample, so there is no missing-extension failure.
+            result.IsValid.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void Validate_should_error_for_unknown_extension_under_include_only_parent()
+        {
+            // Arrange — schema only has the sample extension, profile references an unknown one.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Nonexistent",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — unknown extension under IncludeOnly is an error (profile is dropped at load).
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "Nonexistent"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_warn_for_unknown_extension_under_exclude_only_parent()
+        {
+            // Arrange — schema only has the sample extension, profile excludes an unknown one.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Nonexistent",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — unknown extension under ExcludeOnly is a warning (profile still loads).
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Warning && f.MemberName == "Nonexistent"
+                );
+        }
+
+        [Test]
         public void Validate_should_return_error_for_nested_object_named_link()
         {
             // Arrange — schema has schoolReference.schoolId; profile defines a nested object named "link"
