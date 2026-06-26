@@ -101,7 +101,7 @@ $solutionRoot = "$PSScriptRoot/src/config"
 $defaultSolution = "$solutionRoot/EdFi.DmsConfigurationService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $projectName = "EdFi.DmsConfigurationService.Frontend.AspNetCore"
-$packageName = "EdFi.DmsConfigurationService"
+$packageName = "EdFi.Api.ConfigurationService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
@@ -393,7 +393,7 @@ function Invoke-PushPackage {
 }
 
 $dockerTagBase = "local"
-$dockerTagDMS = "$($dockerTagBase)/dms-configuration-service"
+$dockerTagDMS = "$($dockerTagBase)/ed-fi-api-configuration-service"
 
 function DockerBuild {
     $versionArgs = @()

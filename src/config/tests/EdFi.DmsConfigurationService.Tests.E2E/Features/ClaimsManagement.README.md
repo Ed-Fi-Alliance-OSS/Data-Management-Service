@@ -116,7 +116,7 @@ dotnet test --filter "FullyQualifiedName~ClaimsManagement" --filter "Name~scenar
 
 1. Check Docker logs:
    ```bash
-   docker logs dms-local-config-1
+   docker logs ed-fi-api-config-service
    ```
 
 2. Verify claims are loaded:

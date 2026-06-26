@@ -132,7 +132,7 @@ Authorization: bearer {{configToken}}
 ### Step 8: Restart DMS so the new profile lands in the catalog cache
 # DMS caches the profile catalog for 30 minutes with no reload endpoint.
 # Run this once after step 7 before any DMS-side request:
-#   docker restart dms-local-dms-1
+#   docker restart ed-fi-api
 
 ### Step 9: API endpoints
 @dataApi=http://localhost:{{dmsPort}}/data

@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.DmsApi.TestSdk
+name: Pkg EdFi.Api.TestSdk
 on:
   release:
     types:
@@ -15,7 +15,7 @@ on:
 
 env:
   STANDARD_VERSION: "5.2.0"
-  SDK_PACKAGE_NAME: "EdFi.DmsApi.TestSdk.Standard.5.2.0"
+  SDK_PACKAGE_NAME: "EdFi.Api.TestSdk.Standard.5.2.0"
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PROVENANCE_FILE: "test.sdk.intoto.jsonl"
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
@@ -63,7 +63,7 @@ jobs:
           build-contexts: |
             parentdir=./src
           push: false
-          tags: dms-local-dms:latest
+          tags: ed-fi-api-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
@@ -115,7 +115,7 @@ jobs:
 
       - name: Build Test SDK
         run: |
-          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName EdFi.DmsApi.TestSdk
+          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName EdFi.Api.TestSdk
 
       - name: Generate Test SDK Package
         run: |
@@ -123,7 +123,7 @@ jobs:
           ./build-sdk.ps1 Package `
                 -SDKVersion $packageVersion `
                 -StandardVersion ${{ env.STANDARD_VERSION }} `
-                -PackageName EdFi.DmsApi.TestSdk
+                -PackageName EdFi.Api.TestSdk
 
       - name: Export Docker Logs
         if: failure()

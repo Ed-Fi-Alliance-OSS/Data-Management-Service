@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>EdFi.DataManagementService</id>
+    <id>EdFi.Api</id>
     <version>$version$</version>
     <title>Ed-Fi API</title>
     <authors>Ed-Fi Alliance</authors>

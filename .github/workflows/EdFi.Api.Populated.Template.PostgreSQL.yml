@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.Dms.Populated.Template.PostgreSQL
+name: Pkg EdFi.Api.Populated.Template.PostgreSQL
 on:
   release:
     types:
@@ -20,7 +20,7 @@ on:
 
 env:
   STANDARD_VERSION: "5.2.0"
-  PACKAGE_NAME: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
+  PACKAGE_NAME: "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PROVENANCE_FILE: "populated.template.intoto.jsonl"
 
@@ -35,7 +35,7 @@ jobs:
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: "5.2.0"
-      package_name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
+      package_name: "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: "populated.template.intoto.jsonl"
       publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}

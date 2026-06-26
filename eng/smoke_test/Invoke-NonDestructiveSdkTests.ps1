@@ -21,9 +21,9 @@ param(
   [string]
   $SdkPath,
 
-  [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
+  [ValidateSet("EdFi.Api.TestSdk", "EdFi.Api.Sdk", "EdFi.OdsApi.Sdk")]
   [string]
-  $SdkNamespace = "EdFi.DmsApi.TestSdk",
+  $SdkNamespace = "EdFi.Api.TestSdk",
 
   # Optional explicit OAuth token URL; without it the console resolves the token
   # endpoint from the DMS discovery document
@@ -54,7 +54,7 @@ if ($SdkPath) {
 # pre-host-builder SDK configuration for stock openapi-generator SDKs (the in-run
 # DMS TestSdk and EdFi.OdsApi.Sdk 7.3.10132), which lack the newer
 # {SdkNamespace}.Client.HostConfiguration type.
-$path = Get-SmokeTestTool -PackageVersion '7.3.20178'
+$path = Get-SmokeTestTool -PackageVersion '7.3.20185'
 
 $parameters = @{
   BaseUrl = $BaseUrl

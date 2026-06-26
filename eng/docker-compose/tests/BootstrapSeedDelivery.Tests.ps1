@@ -1509,12 +1509,12 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
 
         It "Resolve-OAuthTokenUrl never returns a container DNS name" {
             # Regression: BulkLoadClient runs on the host, so OAuth URLs derived from container
-            # service names (dms-config-service, dms-keycloak) would be unreachable.
+            # service names (ed-fi-api-config, dms-keycloak) would be unreachable.
             $envValues = ReadValuesFromEnvFile -EnvironmentFile (Join-Path $script:sourceDockerComposeRoot ".env.example")
 
             $selfContained = Resolve-OAuthTokenUrl -EnvValues $envValues -IdentityProvider "self-contained"
             $selfContained | Should -Match '^http://localhost:\d+/'
-            $selfContained | Should -Not -Match 'dms-config-service'
+            $selfContained | Should -Not -Match 'ed-fi-api-config'
 
             $keycloak = Resolve-OAuthTokenUrl -EnvValues $envValues -IdentityProvider "keycloak"
             $keycloak | Should -Match '^http://localhost:\d+/'

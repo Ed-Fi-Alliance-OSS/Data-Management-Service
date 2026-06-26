@@ -47,5 +47,5 @@ Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplicat
 - Local troubleshooting can inspect the same signal with:
 
 ```pwsh
-docker exec dms-local-dms cat /tmp/dms-startup-status.json
+docker exec ed-fi-api cat /tmp/dms-startup-status.json
 ```
