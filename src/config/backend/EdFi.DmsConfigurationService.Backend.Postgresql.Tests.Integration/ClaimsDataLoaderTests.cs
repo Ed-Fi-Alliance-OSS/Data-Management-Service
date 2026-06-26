@@ -195,42 +195,72 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     [Test]
     public async Task Given_a_resource_claim_repository_It_should_seed_resource_claims_from_the_loaded_hierarchy()
     {
-        // Arrange - empty the ResourceClaim table so any rows present after the load came from the
-        // version-selected Claims.json hierarchy, not the static 0009 seed (ClearClaimsTablesAsync,
-        // run in [SetUp], does not touch ResourceClaim).
-        await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
+        // ResourceClaim is a SHARED table that [SetUp] (ClearClaimsTablesAsync) does NOT reset - it
+        // holds the static 0009 seed that other fixtures (e.g. ResourceClaimRepositoryTests' projection)
+        // depend on. This test empties it so any rows present after the load must have come from the
+        // version-selected Claims.json hierarchy, so it snapshots the baseline up front and restores it
+        // in the finally - otherwise it would pollute the shared database depending on test order.
+        List<ResourceClaimMetadataSeed> baseline;
+        await using (var snapshotConnection = await DataSource!.OpenConnectionAsync())
         {
-            await arrangeConnection.ExecuteAsync("DELETE FROM dmscs.ResourceClaim");
+            baseline = (
+                await snapshotConnection.QueryAsync<ResourceClaimMetadataSeed>(
+                    "SELECT ResourceName, ClaimName FROM dmscs.ResourceClaim"
+                )
+            ).ToList();
         }
 
-        var claimsDocumentRepository = new ClaimsDocumentRepository(
-            Options.Create(Configuration.DatabaseOptions.Value),
-            NullLogger<ClaimsDocumentRepository>.Instance
-        );
-        var loaderWithSeeding = new Backend.ClaimsDataLoader.ClaimsDataLoader(
-            _claimsProvider,
-            _claimSetRepository,
-            _claimsHierarchyRepository,
-            _claimsTableValidator,
-            claimsDocumentRepository,
-            NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance,
-            new ResourceClaimMetadataRepository(
+        try
+        {
+            await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
+            {
+                await arrangeConnection.ExecuteAsync("DELETE FROM dmscs.ResourceClaim");
+            }
+
+            var claimsDocumentRepository = new ClaimsDocumentRepository(
                 Options.Create(Configuration.DatabaseOptions.Value),
-                NullLogger<ResourceClaimMetadataRepository>.Instance
-            )
-        );
+                NullLogger<ClaimsDocumentRepository>.Instance
+            );
+            var loaderWithSeeding = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+                _claimsProvider,
+                _claimSetRepository,
+                _claimsHierarchyRepository,
+                _claimsTableValidator,
+                claimsDocumentRepository,
+                NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance,
+                new ResourceClaimMetadataRepository(
+                    Options.Create(Configuration.DatabaseOptions.Value),
+                    NullLogger<ResourceClaimMetadataRepository>.Instance
+                )
+            );
 
-        // Act
-        var result = await loaderWithSeeding.LoadInitialClaimsAsync();
+            // Act
+            var result = await loaderWithSeeding.LoadInitialClaimsAsync();
 
-        // Assert - the production load path derived resource claims from the hierarchy and inserted them.
-        Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
+            // Assert - the production load path derived resource claims from the hierarchy and inserted them.
+            Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
 
-        await using var connection = await DataSource!.OpenConnectionAsync();
-        var resourceClaimCount = await connection.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM dmscs.ResourceClaim"
-        );
-        Assert.That(resourceClaimCount, Is.GreaterThan(0));
+            await using var connection = await DataSource!.OpenConnectionAsync();
+            var resourceClaimCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM dmscs.ResourceClaim"
+            );
+            Assert.That(resourceClaimCount, Is.GreaterThan(0));
+        }
+        finally
+        {
+            // Restore the shared state: the 0009 ResourceClaim baseline plus the empty ClaimSet/
+            // ClaimsHierarchy that a freshly [SetUp]'d test expects, so test order can't leak.
+            await using var restoreConnection = await DataSource!.OpenConnectionAsync();
+            await restoreConnection.ExecuteAsync("DELETE FROM dmscs.ResourceClaim");
+            if (baseline.Count > 0)
+            {
+                await restoreConnection.ExecuteAsync(
+                    "INSERT INTO dmscs.ResourceClaim (ResourceName, ClaimName) VALUES (@ResourceName, @ClaimName)",
+                    baseline
+                );
+            }
+            await ClearClaimsTablesAsync();
+        }
     }
 
     [Test]
