@@ -94,7 +94,7 @@ jobs:
       config-file-path: ./.github/workflows/bidi-config.json
 
   verify-lock-files:
-    name: Verify Lock Files
+    name: Verify Config Lock Files
     runs-on: ubuntu-latest
     permissions:
       contents: read

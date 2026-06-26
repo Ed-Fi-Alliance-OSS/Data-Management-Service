@@ -147,7 +147,7 @@ jobs:
           }
 
   verify-lock-files:
-    name: Verify Lock Files
+    name: Verify DMS Lock Files
     runs-on: ubuntu-latest
     permissions:
       contents: read

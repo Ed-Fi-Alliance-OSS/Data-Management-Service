@@ -58,20 +58,28 @@ BeforeAll {
     }
 
     # Returns a normalized signature per PackageReference: the Include id plus the
-    # restore-relevant child metadata (IncludeAssets, PrivateAssets). The id alone is
-    # not enough -- dropping PrivateAssets=all on an analyzer would let it flow
-    # transitively and change the restore graph while leaving the id set identical.
-    # Handles both the block form (<PackageReference ...>...</PackageReference>) and
-    # the self-closing form (<PackageReference ... />), for which the body is empty.
+    # restore-relevant metadata (IncludeAssets, PrivateAssets). The id alone is not
+    # enough -- dropping PrivateAssets=all on an analyzer would let it flow transitively
+    # and change the restore graph while leaving the id set identical. Parsing via [xml]
+    # (rather than regex) is robust to attribute order, quote style, and the child-element
+    # vs attribute form of IncludeAssets/PrivateAssets; it also fails loudly on malformed
+    # content, which is correct here -- a props file that is not well-formed XML would not
+    # build, so it should never silently drop a reference from the comparison.
     function Get-PackageReferenceSignature {
         param([Parameter(Mandatory)][AllowEmptyString()][string] $Content)
 
-        [regex]::Matches($Content, '(?s)<PackageReference\s+Include="([^"]+)"\s*(?:/>|>(.*?)</PackageReference>)') |
+        if ([string]::IsNullOrWhiteSpace($Content)) { return @() }
+
+        ([xml] $Content).SelectNodes('//PackageReference') |
             ForEach-Object {
-                $body = $_.Groups[2].Value
-                $includeAssets = (([regex]::Match($body, '(?s)<IncludeAssets>(.*?)</IncludeAssets>')).Groups[1].Value -replace '\s+', ' ').Trim()
-                $privateAssets = (([regex]::Match($body, '(?s)<PrivateAssets>(.*?)</PrivateAssets>')).Groups[1].Value -replace '\s+', ' ').Trim()
-                "$($_.Groups[1].Value)|IncludeAssets=$includeAssets|PrivateAssets=$privateAssets"
+                $id = $_.GetAttribute('Include')
+                $includeNode = $_.SelectSingleNode('IncludeAssets')
+                $privateNode = $_.SelectSingleNode('PrivateAssets')
+                $includeRaw = if ($includeNode) { $includeNode.InnerText } else { $_.GetAttribute('IncludeAssets') }
+                $privateRaw = if ($privateNode) { $privateNode.InnerText } else { $_.GetAttribute('PrivateAssets') }
+                $includeAssets = ($includeRaw -replace '\s+', ' ').Trim()
+                $privateAssets = ($privateRaw -replace '\s+', ' ').Trim()
+                "$id|IncludeAssets=$includeAssets|PrivateAssets=$privateAssets"
             } |
             Sort-Object -Unique
     }

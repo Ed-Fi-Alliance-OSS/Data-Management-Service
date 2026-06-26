@@ -20,6 +20,13 @@ exact versions, enforce that lock everywhere it is restored (PR CI **and** the
 Docker image builds), and keep it automatically up to date when Dependabot bumps
 a direct dependency.
 
+> [!NOTE]
+> "Automatically up to date" refers to the lock _files_: the auto-regeneration
+> workflow (§5 below) regenerates and pushes them with no maintainer action.
+> Bringing a failed `--locked-mode` gate back to green is a separate, deliberate
+> manual step — a `GITHUB_TOKEN` push does not re-trigger CI, and auto-re-triggering
+> would require a PAT this design avoids. See §5 for the routine recovery.
+
 ## How it works
 
 ### 1. Lock files are enabled globally
