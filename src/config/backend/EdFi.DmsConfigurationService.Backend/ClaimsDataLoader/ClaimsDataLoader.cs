@@ -347,25 +347,47 @@ public class ClaimsDataLoader(
         {
             logger.LogInformation("Updating claims data in database");
 
-            // Reload/upload replaces the claim sets and hierarchy wholesale. Seed any
-            // resource-claim metadata introduced by the new hierarchy first (insert-missing,
-            // idempotent) so ResourceClaim-backed projections — which require every hierarchy
-            // claim to resolve to a ResourceClaim row — stay consistent. Initial load seeds the
-            // same way; without this the upload/reload paths leave new claims without metadata.
-            // No-op on the MSSQL backend (no registered repository).
-            await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
-
+            // Replace the claim sets and hierarchy wholesale in ReplaceClaimsDocument's own
+            // transaction FIRST. ResourceClaim metadata seeding runs on a separate connection that
+            // commits immediately, so it must happen only AFTER the document is durably applied —
+            // otherwise a rolled-back/failed replace (validation error, multi-user conflict, FK
+            // violation, etc.) would orphan ResourceClaim rows for a claims document that was never
+            // applied. The replace never reads ResourceClaim; the metadata is consumed by claim-set
+            // projections on later requests, so seeding after the commit is correct.
             ClaimsDocumentUpdateResult result = await claimsDocumentRepository.ReplaceClaimsDocument(
                 claimsNodes
             );
 
+            if (result is ClaimsDocumentUpdateResult.Success success)
+            {
+                // Document committed. Seed any resource-claim metadata the new hierarchy introduces
+                // (insert-missing, idempotent) so ResourceClaim-backed projections — which require
+                // every hierarchy claim to resolve to a ResourceClaim row — stay consistent. No-op on
+                // the MSSQL backend (no registered repository). If this rare post-commit step fails,
+                // the document is already applied; report it so the operator re-runs the (idempotent)
+                // load to seed the new claims' metadata rather than silently serving 404-prone claims.
+                try
+                {
+                    await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
+                }
+                catch (DatabaseOperationException ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Claims document was applied, but seeding resource-claim metadata failed; "
+                            + "re-run the claims load to seed the new claims' metadata"
+                    );
+                    return new ClaimsDataLoadResult.DatabaseFailure(
+                        "Claims document was applied, but resource-claim metadata seeding failed; "
+                            + "re-run the claims load to complete it"
+                    );
+                }
+
+                return new ClaimsDataLoadResult.Success(success.ClaimSetsInserted, success.HierarchyUpdated);
+            }
+
             return result switch
             {
-                ClaimsDocumentUpdateResult.Success success => new ClaimsDataLoadResult.Success(
-                    success.ClaimSetsInserted,
-                    success.HierarchyUpdated
-                ),
-
                 ClaimsDocumentUpdateResult.ValidationFailure validation =>
                     new ClaimsDataLoadResult.ValidationFailure(validation.Errors),
 
