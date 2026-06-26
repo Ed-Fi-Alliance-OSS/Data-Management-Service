@@ -104,7 +104,7 @@ The version key flows from configuration: `appsettings.json`
 Workflows that build per-version artifacts select the version through a per-workflow
 `standard_version` matrix rather than a hard-coded literal.
 
-- **Populated template** (`EdFi.Dms.Populated.Template.PostgreSQL.yml`) and the
+- **Populated template** (`EdFi.Api.Populated.Template.PostgreSQL.yml`) and the
   **scheduled smoke test** (`scheduled-smoke-test.yml`) delegate to the reusable
   `build-populated-template.yml`. Each matrix leg runs the whole
   build → SBOM → provenance pipeline as one unit (so per-version outputs stay
@@ -126,8 +126,8 @@ Workflows that build per-version artifacts select the version through a per-work
   > TPDM folded into core). Each version gets its own standalone template env file,
   > referenced from the matrix `include` entry — it is **not** the dev `.env.ds<NN>` overlay.
 
-- **SDK** (`Pkg EdFi.DmsApi.Sdk.yml`, `Pkg EdFi.DmsApi.TestSdk.yml`) and **Minimal
-  template** (`EdFi.Dms.Minimal.Template.PostgreSQL.yml`) are currently
+- **SDK** (`Pkg EdFi.Api.Sdk.yml`, `Pkg EdFi.Api.TestSdk.yml`) and **Minimal
+  template** (`EdFi.Api.Minimal.Template.PostgreSQL.yml`) are currently
   single-version (`5.2.0`), with the version held in each file's top-level `env`
   block. These workflows are flat, self-contained job graphs whose provenance job
   reads the build job's `hash-code` output; GitHub Actions does not correlate matrix
@@ -175,7 +175,7 @@ Adding a version is the same set of small edits regardless of which version:
    ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
    change is needed — the embedded-resource glob picks it up.
 5. **CI.** Add an `include` entry to the `standard_version` matrix in
-   `EdFi.Dms.Populated.Template.PostgreSQL.yml` (and, once validated, `scheduled-smoke-test.yml`),
+   `EdFi.Api.Populated.Template.PostgreSQL.yml` (and, once validated, `scheduled-smoke-test.yml`),
    add the version's standalone template env file (its product schema surface — Core + TPDM for
    5.2, Core only for 6.1) referenced by that entry, and allow that env file in
    `build-populated-template.yml`'s `environment_file` allowlist. (The SDK and Minimal lanes

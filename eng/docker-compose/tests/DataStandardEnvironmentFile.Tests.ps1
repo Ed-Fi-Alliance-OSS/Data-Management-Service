@@ -20,7 +20,7 @@ Describe "New-DataStandardDerivedEnvFile" {
 POSTGRES_DB_NAME=edfi_datamanagementservice
 USE_API_SCHEMA_PATH=true
 API_SCHEMA_PATH=/app/ApiSchema
-DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Populated.Template.PostgreSql.5.2.0
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0
 # A comment that must survive
 SCHEMA_PACKAGES='[
   {
@@ -49,7 +49,7 @@ LOG_LEVEL=Warning
     It "replaces the multi-line SCHEMA_PACKAGES block with the overlay value" {
         Set-Content -LiteralPath $script:overlayPath -Value @"
 DMS_CONFIG_DATA_STANDARD_VERSION=6.1
-DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Populated.Template.PostgreSql.6.1.0
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0
 SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
 "@
 
@@ -67,14 +67,14 @@ SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
     It "overrides scalar keys and adds new keys from the overlay" {
         Set-Content -LiteralPath $script:overlayPath -Value @"
 DMS_CONFIG_DATA_STANDARD_VERSION=6.1
-DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Populated.Template.PostgreSql.6.1.0
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0
 SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
 "@
 
         New-DataStandardDerivedEnvFile -BaseEnvironmentFile $script:basePath -OverlayEnvironmentFile $script:overlayPath -TargetPath $script:targetPath
         $values = ReadValuesFromEnvFile $script:targetPath
 
-        $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Dms.Populated.Template.PostgreSql.6.1.0"
+        $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
         $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
     }
 
@@ -126,8 +126,8 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         $script:composeRoot = Join-Path $script:work "compose"
         New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
         $script:basePath = Join-Path $script:work ".env.base"
-        Set-Content -LiteralPath $script:basePath -Value "DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Populated.Template.PostgreSql.5.2.0`nLOG_LEVEL=Warning`n" -NoNewline
-        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.ds61") -Value "DMS_CONFIG_DATA_STANDARD_VERSION=6.1`nDATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
+        Set-Content -LiteralPath $script:basePath -Value "DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0`nLOG_LEVEL=Warning`n" -NoNewline
+        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.ds61") -Value "DMS_CONFIG_DATA_STANDARD_VERSION=6.1`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
     }
 
     AfterEach {
@@ -146,7 +146,7 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         $result | Should -Not -Be $script:basePath
         $values = ReadValuesFromEnvFile $result
         $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
-        $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Dms.Populated.Template.PostgreSql.6.1.0"
+        $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
     }
 
     It "fails fast when the overlay for the version is missing" {
