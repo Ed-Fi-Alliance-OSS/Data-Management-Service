@@ -7,7 +7,7 @@
 # which is enabled in DMS-1239. They are committed @ignore until that lands. They were
 # verified green locally against a throwaway relational harness (see plan Task 6).
 
-@InstanceCleanup @changequeries-isolation @ignore @DMS-1239
+@InstanceCleanup @changequeries-isolation @ignore @DMS-1239 @instance-management-ci-shard-2
 Feature: ChangeQueries isolation across tenants and instances
     Verify that change versions, /deletes, /keyChanges, and ReadChanges authorization are
     isolated per (tenant, instance) database. Tenant_255901 owns instances 255901/2024 and
