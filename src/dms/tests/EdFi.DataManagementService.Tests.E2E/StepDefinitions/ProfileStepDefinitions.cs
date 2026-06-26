@@ -292,7 +292,11 @@ public class ProfileStepDefinitions(
     public async Task GivenTheSystemHasTheseEntities(string entityType, DataTable dataTable)
     {
         string token = await GetTokenForPrerequisiteEntities();
-        var headers = new List<KeyValuePair<string, string>> { new("Authorization", $"Bearer {token}") };
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", $"Bearer {token}"),
+            new("Content-Type", "application/json"),
+        };
 
         // First create any descriptors referenced in the data
         foreach (var descriptor in dataTable.ExtractDescriptors())
@@ -1915,6 +1919,14 @@ public class ProfileStepDefinitions(
                 _logger.log.Information($"Profile POST - Content-Type: {contentType}");
                 headers.Add(new("Content-Type", contentType));
             }
+        }
+
+        // Default to baseline JSON when no profile-specific content type applies, so write
+        // requests are not rejected as unsupported media type (DMS-1224). Without an explicit
+        // Content-Type, Playwright sends application/octet-stream for string bodies.
+        if (!headers.Exists(header => header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)))
+        {
+            headers.Add(new("Content-Type", "application/json"));
         }
 
         return headers;

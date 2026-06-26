@@ -1789,9 +1789,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
+            // Send an explicit JSON Content-Type so write requests are treated as baseline JSON.
+            // Without it Playwright defaults string bodies to application/octet-stream, which DMS
+            // now rejects with 415 (DMS-1224).
             var list = new List<KeyValuePair<string, string>>
             {
                 new("Authorization", GetDmsTokenFromContext()),
+                new("Content-Type", "application/json"),
             };
             return list;
         }
@@ -1801,6 +1805,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var list = new List<KeyValuePair<string, string>>
             {
                 new("Authorization", GetDmsTokenFromContext()),
+                new("Content-Type", "application/json"),
                 new("If-Match", ifMatch),
             };
             return list;
