@@ -58,13 +58,16 @@ internal class ValidateContentTypeMiddleware(ILogger _logger) : IPipelineStep
         frontendRequest.Headers.TryGetValue("Content-Type", out string? value) ? value : null;
 
     /// <summary>
-    /// A baseline write Content-Type is supported when it is absent (not an explicit value),
+    /// A baseline write Content-Type is supported when the header is absent (null),
     /// standard JSON, or an Ed-Fi profile media type (validated later by ProfileResolutionMiddleware).
-    /// An explicit value that cannot be parsed, or that resolves to any other media type, is unsupported.
+    /// Only a missing header is exempt; an explicit empty or whitespace value is malformed and,
+    /// like any value that cannot be parsed or resolves to another media type, is unsupported.
     /// </summary>
     private static bool IsSupportedWriteContentType(string? contentType)
     {
-        if (string.IsNullOrWhiteSpace(contentType))
+        // Only a missing header is exempt. An explicit empty or whitespace value is malformed and
+        // falls through to the parse check below, which rejects it before any body parsing.
+        if (contentType is null)
         {
             return true;
         }

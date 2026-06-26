@@ -170,6 +170,42 @@ public class ValidateContentTypeMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Post_Request_With_An_Explicit_Blank_Content_Type : ValidateContentTypeMiddlewareTests
+    {
+        private RequestInfo _emptyRequestInfo = No.RequestInfo();
+        private RequestInfo _whitespaceRequestInfo = No.RequestInfo();
+        private readonly CountingNext _emptyNext = new();
+        private readonly CountingNext _whitespaceNext = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // An explicit empty or whitespace Content-Type is malformed, unlike a missing header,
+            // and must be rejected before body parsing.
+            _emptyRequestInfo = RequestInfoWith("");
+            await Middleware().Execute(_emptyRequestInfo, _emptyNext.Next);
+
+            _whitespaceRequestInfo = RequestInfoWith("   ");
+            await Middleware().Execute(_whitespaceRequestInfo, _whitespaceNext.Next);
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _emptyNext.WasCalled.Should().BeFalse();
+            _whitespaceNext.WasCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_status_415()
+        {
+            _emptyRequestInfo.FrontendResponse.StatusCode.Should().Be(415);
+            _whitespaceRequestInfo.FrontendResponse.StatusCode.Should().Be(415);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_With_Application_Json : ValidateContentTypeMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
