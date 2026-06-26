@@ -782,6 +782,17 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
 
         JsonObject? objectProperties = MemberProperties(schemaProperties, objectRule.Name);
+
+        // Stop when the object itself does not resolve in the schema. The missing object is
+        // reported by the member-selection validation (which, like this, descends only into a
+        // resolved node); descending here would treat the object's child extensions as missing
+        // and could escalate a tolerated malformed profile to an error — a loadability change
+        // outside this normalization's scope.
+        if (objectProperties is null)
+        {
+            return;
+        }
+
         ValidationContext childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
 
         if (objectRule.Extensions is not null)
@@ -817,6 +828,15 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
 
         JsonObject? itemProperties = CollectionItemProperties(schemaProperties, collectionRule.Name);
+
+        // Stop when the collection itself does not resolve in the schema (see WalkObjectExtensions):
+        // the missing collection is reported by member-selection validation, and descending here
+        // would escalate its child extensions and change loadability outside this change's scope.
+        if (itemProperties is null)
+        {
+            return;
+        }
+
         ValidationContext childContext = context.WithPathPrefix(
             $"{context.PathPrefix}{collectionRule.Name}[]."
         );

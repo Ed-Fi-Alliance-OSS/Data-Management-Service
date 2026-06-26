@@ -2250,6 +2250,105 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_not_escalate_extension_under_missing_object_in_exclude_only()
+        {
+            // Arrange — an ExcludeOnly profile references an object absent from the schema, and
+            // that object contains an IncludeOnly extension. The missing object is reported by
+            // member-selection validation (warning under ExcludeOnly); the extension pre-pass must
+            // not descend into the missing object and escalate its nested extension to an error,
+            // which would reject a profile that previously loaded (a loadability regression).
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var objectRule = new ObjectRule(
+                Name: "nonexistentObject",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        "X",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("a")],
+                        null,
+                        null
+                    ),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                Properties: [],
+                Objects: [objectRule],
+                Collections: [],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — profile still loads with feedback: the missing object is a warning and the
+            // nested extension is not escalated to an error.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().NotContain(f => f.MemberName == "nonexistentObject._ext.X");
+        }
+
+        [Test]
+        public void Validate_should_not_escalate_extension_under_missing_collection_in_exclude_only()
+        {
+            // Arrange — same as the missing-object case, for a collection absent from the schema.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var collectionRule = new CollectionRule(
+                Name: "nonexistentCollection",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        "X",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("a")],
+                        null,
+                        null
+                    ),
+                ],
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                Properties: [],
+                Objects: [],
+                Collections: [collectionRule],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — profile still loads with feedback: the missing collection is a warning and
+            // the nested extension is not escalated to an error.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().NotContain(f => f.MemberName == "nonexistentCollection[]._ext.X");
+        }
+
+        [Test]
         public void Validate_should_resolve_extension_name_to_non_lowercase_schema_key()
         {
             // Arrange — schema key is camelCase sampleStaff (not all-lowercase). The canonical
