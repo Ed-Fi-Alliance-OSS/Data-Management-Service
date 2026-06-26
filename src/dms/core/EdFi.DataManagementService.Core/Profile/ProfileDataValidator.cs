@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Profile.ProfileExtensionSchemaResolver;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -634,56 +635,6 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     }
 
     /// <summary>
-    /// Resolves the canonical schema extension key for <paramref name="extensionName"/> from
-    /// the schema's <c>_ext.properties</c>, matching case-insensitively. Returns the matching
-    /// key (in the schema's casing), or null when no extension key matches. Prefers an exact
-    /// (ordinal) match to keep behavior stable when distinct keys differ only by case.
-    /// </summary>
-    private static string? ResolveExtensionKey(JsonObject? extProperties, string extensionName)
-    {
-        if (extProperties is null)
-        {
-            return null;
-        }
-
-        if (extProperties.ContainsKey(extensionName))
-        {
-            return extensionName;
-        }
-
-        var match = extProperties.FirstOrDefault(property =>
-            property.Key.Equals(extensionName, StringComparison.OrdinalIgnoreCase)
-        );
-        return match.Key;
-    }
-
-    /// <summary>
-    /// Resolves the extension namespace node from the schema's <c>_ext.properties</c> for
-    /// <paramref name="extensionName"/>, matching case-insensitively, or null when no key matches.
-    /// </summary>
-    private static JsonObject? ResolveExtensionSchemaNode(JsonObject? extProperties, string extensionName)
-    {
-        string? key = ResolveExtensionKey(extProperties, extensionName);
-        return key is null ? null : extProperties?[key] as JsonObject;
-    }
-
-    /// <summary>The <c>_ext.properties</c> object at the current schema location, or null.</summary>
-    private static JsonObject? ExtensionPropertiesAt(JsonObject? schemaProperties) =>
-        (schemaProperties?["_ext"] as JsonObject)?["properties"] as JsonObject;
-
-    /// <summary>The <c>properties</c> object of a named member's schema node, or null.</summary>
-    private static JsonObject? MemberSchemaProperties(JsonObject? schemaProperties, string memberName) =>
-        (schemaProperties?[memberName] as JsonObject)?["properties"] as JsonObject;
-
-    /// <summary>The <c>items.properties</c> object of a named collection's schema node, or null.</summary>
-    private static JsonObject? CollectionItemSchemaProperties(
-        JsonObject? schemaProperties,
-        string collectionName
-    ) =>
-        ((schemaProperties?[collectionName] as JsonObject)?["items"] as JsonObject)?["properties"]
-        as JsonObject;
-
-    /// <summary>
     /// Resolves every extension rule against the schema's <c>_ext.properties</c> at that rule's
     /// own location — at the root and inside objects, collections, and extensions — regardless of
     /// member selection. Canonicalization walks the whole tree and drops any unmatched extension
@@ -691,9 +642,10 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     /// so this is the single source of extension feedback and the traversal mirrors it. Two kinds
     /// of failure are produced:
     /// <list type="bullet">
-    /// <item>An extension whose name does not resolve to a schema key: severity follows the
-    /// enclosing container's missing-reference contract (IncludeOnly error, otherwise warning),
-    /// and canonicalization drops the rule so the profile loads without an unresolved scope.</item>
+    /// <item>An extension whose name does not resolve to a schema key: a non-IncludeAll rule
+    /// (the author explicitly selected/deselected members of the extension), or any rule under an
+    /// IncludeOnly parent, is an error; an IncludeAll rule under a tolerant parent is a warning,
+    /// and canonicalization then drops the rule so the profile loads without an unresolved scope.</item>
     /// <item>Two sibling rules that resolve to the <em>same</em> schema key (e.g. "sample" and
     /// "Sample"): always an error, because both survive canonicalization and the cached
     /// ExtensionRulesByName dictionary would throw on the duplicate key.</item>
@@ -713,7 +665,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             contentType.Extensions,
             schemaProperties,
             context,
-            SeverityForMissingReference(contentType.MemberSelection),
+            contentType.MemberSelection,
             failures
         );
         foreach (var obj in contentType.Objects)
@@ -729,20 +681,25 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     }
 
     /// <summary>
-    /// Maps an enclosing container's member selection to the severity used when a referenced
-    /// member or extension does not exist, matching the existing validator contract: IncludeOnly
-    /// requires references to exist (error); ExcludeOnly/IncludeAll tolerate absence (warning).
+    /// Severity for an extension rule that names an extension absent from the schema. An explicit
+    /// non-IncludeAll rule selects or deselects specific members, which only makes sense if the
+    /// extension exists, so it is an error regardless of parent; a reference under an IncludeOnly
+    /// parent must also exist (error). An IncludeAll rule under a tolerant (ExcludeOnly/IncludeAll)
+    /// parent is a warning — it asserts nothing specific and canonicalization drops it safely.
     /// </summary>
-    private static ValidationSeverity SeverityForMissingReference(MemberSelection memberSelection) =>
-        memberSelection == MemberSelection.IncludeOnly
-            ? ValidationSeverity.Error
-            : ValidationSeverity.Warning;
+    private static ValidationSeverity SeverityForMissingExtension(
+        MemberSelection parentSelection,
+        MemberSelection extensionSelection
+    ) =>
+        parentSelection != MemberSelection.IncludeOnly && extensionSelection == MemberSelection.IncludeAll
+            ? ValidationSeverity.Warning
+            : ValidationSeverity.Error;
 
     private static void CheckExtensions(
         IReadOnlyList<ExtensionRule> extensions,
         JsonObject? schemaProperties,
         ValidationContext context,
-        ValidationSeverity missingSeverity,
+        MemberSelection parentSelection,
         List<ValidationFailure> failures
     )
     {
@@ -757,14 +714,14 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            string? canonicalKey = ResolveExtensionKey(extProperties, extension.Name);
-            if (canonicalKey is null)
+            if (!TryResolveExtensionKey(extProperties, extension.Name, out string canonicalKey))
             {
-                // Unknown name: missing-reference severity. Not a duplicate — an unmatched rule
-                // is dropped by canonicalization, so case-variant unknown names cannot collide.
+                // Unknown name: severity per the missing-reference contract. Not a duplicate — an
+                // unmatched rule is dropped by canonicalization, so case-variant unknown names
+                // cannot collide.
                 failures.Add(
                     new ValidationFailure(
-                        missingSeverity,
+                        SeverityForMissingExtension(parentSelection, extension.MemberSelection),
                         context.ProfileName,
                         context.ResourceName,
                         $"{context.PathPrefix}_ext.{extension.Name}",
@@ -823,7 +780,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             return;
         }
 
-        JsonObject? objectProperties = MemberSchemaProperties(schemaProperties, objectRule.Name);
+        JsonObject? objectProperties = MemberProperties(schemaProperties, objectRule.Name);
         ValidationContext childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
 
         if (objectRule.Extensions is not null)
@@ -832,7 +789,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 objectRule.Extensions,
                 objectProperties,
                 childContext,
-                SeverityForMissingReference(objectRule.MemberSelection),
+                objectRule.MemberSelection,
                 failures
             );
         }
@@ -858,7 +815,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             return;
         }
 
-        JsonObject? itemProperties = CollectionItemSchemaProperties(schemaProperties, collectionRule.Name);
+        JsonObject? itemProperties = CollectionItemProperties(schemaProperties, collectionRule.Name);
         ValidationContext childContext = context.WithPathPrefix(
             $"{context.PathPrefix}{collectionRule.Name}[]."
         );
@@ -869,7 +826,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 collectionRule.Extensions,
                 itemProperties,
                 childContext,
-                SeverityForMissingReference(collectionRule.MemberSelection),
+                collectionRule.MemberSelection,
                 failures
             );
         }
@@ -897,13 +854,18 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
 
         // Existence of the extension namespace is validated independently of member
-        // selection by CollectUnknownExtensionFailures, which walks every extension rule
+        // selection by CollectExtensionResolutionFailures, which walks every extension rule
         // in the tree (the same traversal canonicalization uses to drop unmatched rules).
         // Here we only validate the members of an extension that resolves; an unresolved
         // extension has no members to check and is reported by that pre-pass.
-        var extProperties = ExtensionPropertiesAt(schemaProperties);
-        var extensionProperties =
-            ResolveExtensionSchemaNode(extProperties, extension.Name)?["properties"] as JsonObject;
+        JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
+        JsonObject? extensionProperties = TryResolveExtensionKey(
+            extProperties,
+            extension.Name,
+            out string canonicalKey
+        )
+            ? MemberProperties(extProperties, canonicalKey)
+            : null;
 
         if (extensionProperties is null)
         {

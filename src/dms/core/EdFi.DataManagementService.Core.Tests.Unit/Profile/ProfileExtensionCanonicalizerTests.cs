@@ -227,6 +227,151 @@ public class ProfileExtensionCanonicalizerTests
         }
 
         [Test]
+        public void Canonicalize_rewrites_extension_nested_in_object()
+        {
+            // Arrange — extension lives on an object as addresses._ext.sample.
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["addresses"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["_ext"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["sample"] = new JsonObject { ["type"] = "object" },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents)
+                .Returns(BuildDocuments("Staff", jsonSchemaForInsert));
+
+            var objectRule = new ObjectRule(
+                Name: "addresses",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions: [Extension("Sample")]
+            );
+            var writeContentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [objectRule],
+                Collections: [],
+                Extensions: []
+            );
+            var definition = new ProfileDefinition(
+                "TestProfile",
+                [new ResourceProfile("Staff", null, null, writeContentType)]
+            );
+
+            // Act
+            ProfileDefinition result = ProfileExtensionCanonicalizer.Canonicalize(
+                definition,
+                _effectiveApiSchemaProvider
+            );
+
+            // Assert
+            ExtensionRule canonical = result
+                .Resources[0]
+                .WriteContentType!.Objects.Single()
+                .Extensions!.Single();
+            canonical.Name.Should().Be("sample");
+        }
+
+        [Test]
+        public void Canonicalize_rewrites_extension_inside_resolved_extension_object()
+        {
+            // Arrange — _ext.sample.obj._ext.other: an extension nested inside an object that
+            // lives within a resolved extension. Exercises recursion from a resolved extension
+            // into its object children.
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["obj"] = new JsonObject
+                                    {
+                                        ["type"] = "object",
+                                        ["properties"] = new JsonObject
+                                        {
+                                            ["_ext"] = new JsonObject
+                                            {
+                                                ["type"] = "object",
+                                                ["properties"] = new JsonObject
+                                                {
+                                                    ["other"] = new JsonObject { ["type"] = "object" },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents)
+                .Returns(BuildDocuments("Staff", jsonSchemaForInsert));
+
+            var innerObject = new ObjectRule(
+                Name: "obj",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions: [Extension("Other")]
+            );
+            var sampleExtension = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: [innerObject],
+                Collections: null
+            );
+            var writeContentType = ContentTypeWithExtension(MemberSelection.IncludeAll, sampleExtension);
+            var definition = new ProfileDefinition(
+                "TestProfile",
+                [new ResourceProfile("Staff", null, null, writeContentType)]
+            );
+
+            // Act
+            ProfileDefinition result = ProfileExtensionCanonicalizer.Canonicalize(
+                definition,
+                _effectiveApiSchemaProvider
+            );
+
+            // Assert — the outer sample stays and the inner Other is rewritten to other.
+            ExtensionRule outer = result.Resources[0].WriteContentType!.Extensions.Single();
+            outer.Name.Should().Be("sample");
+            ExtensionRule inner = outer.Objects!.Single().Extensions!.Single();
+            inner.Name.Should().Be("other");
+        }
+
+        [Test]
         public void Canonicalize_drops_root_extension_rule_when_extension_only_exists_nested()
         {
             // Arrange — the sample extension exists ONLY on staffPets[*]._ext, not at the root.

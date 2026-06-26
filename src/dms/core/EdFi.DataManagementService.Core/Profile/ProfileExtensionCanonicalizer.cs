@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
+using static EdFi.DataManagementService.Core.Profile.ProfileExtensionSchemaResolver;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -128,60 +129,6 @@ internal static class ProfileExtensionCanonicalizer
         }
 
         return null;
-    }
-
-    // ───────────────────────────────────────────────────────────────────────
-    //  Schema navigation helpers
-    // ───────────────────────────────────────────────────────────────────────
-
-    /// <summary>The <c>_ext.properties</c> object at the current schema location, or null.</summary>
-    private static JsonObject? ExtensionPropertiesAt(JsonObject? schemaProperties) =>
-        (schemaProperties?["_ext"] as JsonObject)?["properties"] as JsonObject;
-
-    /// <summary>The <c>properties</c> object of a named member's schema node, or null.</summary>
-    private static JsonObject? MemberProperties(JsonObject? schemaProperties, string memberName) =>
-        (schemaProperties?[memberName] as JsonObject)?["properties"] as JsonObject;
-
-    /// <summary>The <c>items.properties</c> object of a named collection's schema node, or null.</summary>
-    private static JsonObject? CollectionItemProperties(
-        JsonObject? schemaProperties,
-        string collectionName
-    ) =>
-        ((schemaProperties?[collectionName] as JsonObject)?["items"] as JsonObject)?["properties"]
-        as JsonObject;
-
-    /// <summary>
-    /// Matches <paramref name="name"/> against the extension keys at <paramref name="extProperties"/>
-    /// case-insensitively (exact ordinal match preferred). Returns false when no key matches.
-    /// </summary>
-    private static bool TryResolveExtensionKey(
-        JsonObject? extProperties,
-        string name,
-        out string canonicalKey
-    )
-    {
-        canonicalKey = name;
-
-        if (extProperties is null)
-        {
-            return false;
-        }
-
-        if (extProperties.ContainsKey(name))
-        {
-            return true;
-        }
-
-        var match = extProperties.FirstOrDefault(property =>
-            property.Key.Equals(name, StringComparison.OrdinalIgnoreCase)
-        );
-        if (match.Key is null)
-        {
-            return false;
-        }
-
-        canonicalKey = match.Key;
-        return true;
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -356,6 +303,7 @@ internal static class ProfileExtensionCanonicalizer
 
         JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
         List<ExtensionRule>? rewritten = null;
+        HashSet<string>? emittedKeys = null;
 
         for (int i = 0; i < extensions.Count; i++)
         {
@@ -364,6 +312,18 @@ internal static class ProfileExtensionCanonicalizer
             if (!TryResolveExtensionKey(extProperties, rule.Name, out string canonicalName))
             {
                 // Unmatched at this location: drop it so no unresolved runtime scope is emitted.
+                rewritten ??= [.. extensions.Take(i)];
+                continue;
+            }
+
+            // Defensive de-dup: sibling rules that resolve to the same schema key (e.g. "sample"
+            // and "Sample") would collapse to duplicate keys in ExtensionRulesByName and throw at
+            // navigation time. The validator rejects this, so a validated profile never reaches
+            // here, but keep the canonicalizer self-consistent for any caller by dropping the
+            // later duplicate rather than emitting a colliding key.
+            emittedKeys ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!emittedKeys.Add(canonicalName))
+            {
                 rewritten ??= [.. extensions.Take(i)];
                 continue;
             }

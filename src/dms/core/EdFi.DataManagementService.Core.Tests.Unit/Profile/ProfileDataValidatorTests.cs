@@ -1931,6 +1931,50 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_error_for_unknown_include_only_extension_under_include_all_parent()
+        {
+            // Arrange — an explicit IncludeOnly extension rule selects specific members of the
+            // extension, so the extension must exist even under an IncludeAll parent. An unknown
+            // such rule is an error and must not be downgraded to a warning the parent tolerates,
+            // which would silently drop the explicit restriction.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Smaple",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("sampleField")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — error (profile rejected), not a warning that loads the profile with the
+            // explicit IncludeOnly restriction silently dropped.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.Smaple"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
         public void Validate_should_report_unknown_extension_nested_in_include_all_object()
         {
             // Arrange — an unknown extension nested inside an IncludeAll object under an
