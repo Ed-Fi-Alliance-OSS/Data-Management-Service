@@ -151,6 +151,74 @@ public class ProfileDataValidatorTests
             return apiSchemaDocuments;
         }
 
+        /// <summary>
+        /// Builds a schema whose insert schema exposes <c>_ext.sample</c> containing a nested
+        /// object (<c>petPreference</c>) and a nested collection (<c>pets</c>), used to exercise
+        /// unknown-extension detection inside an extension's own object/collection children.
+        /// </summary>
+        private static ApiSchemaDocuments CreateSchemaWithExtensionChildren(string resourceName)
+        {
+            var jsonSchemaForInsert = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["petPreference"] = new JsonObject
+                                    {
+                                        ["type"] = "object",
+                                        ["properties"] = new JsonObject
+                                        {
+                                            ["minimumWeight"] = new JsonObject { ["type"] = "number" },
+                                        },
+                                    },
+                                    ["pets"] = new JsonObject
+                                    {
+                                        ["type"] = "array",
+                                        ["items"] = new JsonObject
+                                        {
+                                            ["type"] = "object",
+                                            ["properties"] = new JsonObject
+                                            {
+                                                ["petName"] = new JsonObject { ["type"] = "string" },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource(resourceName)
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            var resourceNode = apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new(resourceName));
+
+            if (resourceNode is JsonObject resourceObj)
+            {
+                resourceObj["jsonSchemaForInsert"] = jsonSchemaForInsert;
+            }
+
+            return apiSchemaDocuments;
+        }
+
         private static ApiSchemaDocuments CreateSchemaWithProperties(
             string resourceName,
             params string[] propertyNames
@@ -1301,14 +1369,14 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert
+            // Assert — the unknown extension is reported once, as an error, by the
+            // mode-independent unknown-extension pre-pass.
             result.IsValid.Should().BeFalse();
             result.HasErrors.Should().BeTrue();
             result.Failures.Should().HaveCount(1);
             result.Failures[0].Severity.Should().Be(ValidationSeverity.Error);
-            result.Failures[0].MemberName.Should().Be("SampleExtension");
-            result.Failures[0].Message.Should().Contain("cannot be validated");
-            result.Failures[0].Message.Should().Contain("no _ext property");
+            result.Failures[0].MemberName.Should().Be("_ext.SampleExtension");
+            result.Failures[0].Message.Should().Contain("does not exist");
         }
 
         [Test]
@@ -1701,6 +1769,618 @@ public class ProfileDataValidatorTests
                     && f.MemberName == "_ext.sample.link"
                     && f.Message.Contains("server-generated field")
                 );
+        }
+
+        [Test]
+        public void Validate_should_resolve_mixed_case_extension_name_to_schema_key()
+        {
+            // Arrange — schema exposes the extension under the lower-case project key sample
+            // while the profile authors it as Sample.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Sample",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("sampleField")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — Sample resolves to schema key sample, so there is no missing-extension failure.
+            result.IsValid.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void Validate_should_error_for_unknown_extension_under_include_only_parent()
+        {
+            // Arrange — schema only has the sample extension, profile references an unknown one.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Nonexistent",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — unknown extension under IncludeOnly is an error (profile is dropped at load).
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.Nonexistent"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_warn_for_unknown_extension_under_exclude_only_parent()
+        {
+            // Arrange — schema only has the sample extension, profile excludes an unknown one.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Nonexistent",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — ExcludeOnly tolerates a missing reference: a warning is emitted (so the
+            // profile still loads), and canonicalization drops the rule so no unresolved runtime
+            // scope is created. This preserves the existing missing-reference contract.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result
+                .Failures.Should()
+                .ContainSingle(f =>
+                    f.Severity == ValidationSeverity.Warning && f.MemberName == "_ext.Nonexistent"
+                );
+        }
+
+        [Test]
+        public void Validate_should_warn_for_unknown_extension_under_include_all_parent()
+        {
+            // Arrange — an IncludeAll extension under an IncludeAll parent must still be
+            // existence-checked, because canonicalization would otherwise drop it silently.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "DoesNotExist",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — IncludeAll tolerates a missing reference: a warning (clear feedback)
+            // rather than a silent drop, and the rule is dropped by canonicalization.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Warning
+                    && f.MemberName == "_ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_error_for_unknown_include_only_extension_under_include_all_parent()
+        {
+            // Arrange — an explicit IncludeOnly extension rule selects specific members of the
+            // extension, so the extension must exist even under an IncludeAll parent. An unknown
+            // such rule is an error and must not be downgraded to a warning the parent tolerates,
+            // which would silently drop the explicit restriction.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "Smaple",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("sampleField")],
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — error (profile rejected), not a warning that loads the profile with the
+            // explicit IncludeOnly restriction silently dropped.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.Smaple"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_nested_in_include_all_object()
+        {
+            // Arrange — an unknown extension nested inside an IncludeAll object under an
+            // IncludeAll parent. The member-selection validation short-circuits on IncludeAll,
+            // so only the mode-independent unknown-extension pre-pass can surface this; without
+            // it the rule would be dropped by canonicalization with no feedback.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var objectRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [objectRule],
+                Collections: [],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — feedback is emitted (not silently dropped) with the nested rule's full
+            // path; severity follows the enclosing IncludeAll object, so it is a warning.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Warning
+                    && f.MemberName == "schoolReference._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_under_collection_item()
+        {
+            // Arrange — an unknown extension declared on a collection item. The collection-item
+            // _ext has no such key, so canonicalization would drop the rule; the pre-pass must
+            // report it (collections use their own traversal path).
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithCollection("Student", "studentPets", "petName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var collectionRule = new CollectionRule(
+                Name: "studentPets",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ],
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [],
+                Collections: [collectionRule],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the collection-item path; severity follows the IncludeOnly
+            // collection, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "studentPets[]._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_inside_resolved_extension_object()
+        {
+            // Arrange — an unknown extension nested inside an object that lives within a resolved
+            // extension (_ext.sample.petPreference._ext.DoesNotExist). Exercises the recursion
+            // from the extension into its object children.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtensionChildren("Student");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedObject = new ObjectRule(
+                Name: "petPreference",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var sampleExtension = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: [nestedObject],
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [sampleExtension]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the full extension-child object path; severity follows the
+            // IncludeOnly object, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.petPreference._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_report_unknown_extension_inside_resolved_extension_collection()
+        {
+            // Arrange — an unknown extension nested inside a collection within a resolved
+            // extension (_ext.sample.pets[]._ext.DoesNotExist). Exercises the recursion from the
+            // extension into its collection children.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtensionChildren("Student");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var nestedCollection = new CollectionRule(
+                Name: "pets",
+                MemberSelection: MemberSelection.IncludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ],
+                ItemFilter: null
+            );
+            var sampleExtension = new ExtensionRule(
+                Name: "sample",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: [nestedCollection]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [sampleExtension]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — reported with the full extension-child collection path; severity follows
+            // the IncludeOnly collection, so it is an error.
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "_ext.sample.pets[]._ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_error_for_duplicate_extension_names_differing_only_by_case()
+        {
+            // Arrange — sample and Sample both resolve to the schema key sample and would
+            // collapse to a duplicate key in ExtensionRulesByName at runtime.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [
+                    new ExtensionRule("sample", MemberSelection.IncludeAll, null, null, null, null),
+                    new ExtensionRule("Sample", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — both resolve to schema key "sample", so the collision is rejected with an
+            // error rather than throwing during navigation.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error && f.Message.Contains("collapse to the same key")
+                );
+        }
+
+        [Test]
+        public void Validate_should_warn_not_error_for_unresolved_case_variant_extensions_under_exclude_only()
+        {
+            // Arrange — Foo and foo are both unknown (schema only has sample). Neither resolves,
+            // so canonicalization drops both; they must keep the ExcludeOnly missing-reference
+            // contract (warnings) rather than be rejected as a duplicate collision.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [
+                    new ExtensionRule("Foo", MemberSelection.IncludeAll, null, null, null, null),
+                    new ExtensionRule("foo", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — two missing-reference warnings (one per unresolved name), no error, and no
+            // duplicate-collision failure.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().HaveCount(2);
+            result.Failures.Should().OnlyContain(f => f.Severity == ValidationSeverity.Warning);
+            result.Failures.Should().Contain(f => f.MemberName == "_ext.Foo");
+            result.Failures.Should().Contain(f => f.MemberName == "_ext.foo");
+            result.Failures.Should().NotContain(f => f.Message.Contains("collapse to the same key"));
+        }
+
+        [Test]
+        public void Validate_should_not_escalate_extension_under_missing_object_in_exclude_only()
+        {
+            // Arrange — an ExcludeOnly profile references an object absent from the schema, and
+            // that object contains an IncludeOnly extension. The missing object is reported by
+            // member-selection validation (warning under ExcludeOnly); the extension pre-pass must
+            // not descend into the missing object and escalate its nested extension to an error,
+            // which would reject a profile that previously loaded (a loadability regression).
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var objectRule = new ObjectRule(
+                Name: "nonexistentObject",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        "X",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("a")],
+                        null,
+                        null
+                    ),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                Properties: [],
+                Objects: [objectRule],
+                Collections: [],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — profile still loads with feedback: the missing object is a warning and the
+            // nested extension is not escalated to an error.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().NotContain(f => f.MemberName == "nonexistentObject._ext.X");
+        }
+
+        [Test]
+        public void Validate_should_not_escalate_extension_under_missing_collection_in_exclude_only()
+        {
+            // Arrange — same as the missing-object case, for a collection absent from the schema.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithProperties("Student", "firstName");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var collectionRule = new CollectionRule(
+                Name: "nonexistentCollection",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions:
+                [
+                    new ExtensionRule(
+                        "X",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("a")],
+                        null,
+                        null
+                    ),
+                ],
+                ItemFilter: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                Properties: [],
+                Objects: [],
+                Collections: [collectionRule],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — profile still loads with feedback: the missing collection is a warning and
+            // the nested extension is not escalated to an error.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().NotContain(f => f.MemberName == "nonexistentCollection[]._ext.X");
+        }
+
+        [Test]
+        public void Validate_should_resolve_extension_name_to_non_lowercase_schema_key()
+        {
+            // Arrange — schema key is camelCase sampleStaff (not all-lowercase). The canonical
+            // key must come from the schema, so a differently-cased authored name resolves.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sampleStaff", "field");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "samplestaff",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — samplestaff resolves to schema key sampleStaff; no missing-extension failure.
+            result.IsValid.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
         }
 
         [Test]

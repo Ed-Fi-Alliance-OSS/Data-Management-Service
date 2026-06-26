@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Profile.ProfileExtensionSchemaResolver;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -464,6 +465,15 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // names so the pre-pass is the single source of those failures.
         var failures = CollectServerGeneratedNameFailures(contentType, baseContext);
 
+        // Resolve every extension rule against the schema at its own location, regardless
+        // of member selection (canonicalization walks the whole tree and drops unmatched
+        // rules, so this is the single source of extension feedback). An unknown extension
+        // is an error when the rule is non-IncludeAll (it explicitly selects/deselects
+        // members) or when it sits under an IncludeOnly parent; an IncludeAll rule under a
+        // tolerant parent is a warning. Two rules that resolve to the same schema key would
+        // throw when ExtensionRulesByName is built, so that collision is always an error.
+        failures.AddRange(CollectExtensionResolutionFailures(contentType, schemaProperties, baseContext));
+
         failures.AddRange(
             contentType.MemberSelection switch
             {
@@ -625,6 +635,232 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return failures;
     }
 
+    /// <summary>
+    /// Resolves every extension rule against the schema's <c>_ext.properties</c> at that rule's
+    /// own location — at the root and inside objects, collections, and extensions — regardless of
+    /// member selection. Canonicalization walks the whole tree and drops any unmatched extension
+    /// rule (including under IncludeAll branches that member-selection validation short-circuits),
+    /// so this is the single source of extension feedback and the traversal mirrors it. Two kinds
+    /// of failure are produced:
+    /// <list type="bullet">
+    /// <item>An extension whose name does not resolve to a schema key: a non-IncludeAll rule
+    /// (the author explicitly selected/deselected members of the extension), or any rule under an
+    /// IncludeOnly parent, is an error; an IncludeAll rule under a tolerant parent is a warning,
+    /// and canonicalization then drops the rule so the profile loads without an unresolved scope.</item>
+    /// <item>Two sibling rules that resolve to the <em>same</em> schema key (e.g. "sample" and
+    /// "Sample"): always an error, because both survive canonicalization and the cached
+    /// ExtensionRulesByName dictionary would throw on the duplicate key.</item>
+    /// </list>
+    /// Unresolved names are never treated as duplicates: each is dropped, so case-variant unknown
+    /// names keep the missing-reference severity rather than being rejected as a collision.
+    /// </summary>
+    private static List<ValidationFailure> CollectExtensionResolutionFailures(
+        ContentTypeDefinition contentType,
+        JsonObject schemaProperties,
+        ValidationContext context
+    )
+    {
+        var failures = new List<ValidationFailure>();
+
+        CheckExtensions(
+            contentType.Extensions,
+            schemaProperties,
+            context,
+            contentType.MemberSelection,
+            failures
+        );
+        foreach (var obj in contentType.Objects)
+        {
+            WalkObjectExtensions(obj, schemaProperties, context, failures);
+        }
+        foreach (var collection in contentType.Collections)
+        {
+            WalkCollectionExtensions(collection, schemaProperties, context, failures);
+        }
+
+        return failures;
+    }
+
+    /// <summary>
+    /// Severity for an extension rule that names an extension absent from the schema. An explicit
+    /// non-IncludeAll rule selects or deselects specific members, which only makes sense if the
+    /// extension exists, so it is an error regardless of parent; a reference under an IncludeOnly
+    /// parent must also exist (error). An IncludeAll rule under a tolerant (ExcludeOnly/IncludeAll)
+    /// parent is a warning — it asserts nothing specific and canonicalization drops it safely.
+    /// </summary>
+    private static ValidationSeverity SeverityForMissingExtension(
+        MemberSelection parentSelection,
+        MemberSelection extensionSelection
+    ) =>
+        parentSelection != MemberSelection.IncludeOnly && extensionSelection == MemberSelection.IncludeAll
+            ? ValidationSeverity.Warning
+            : ValidationSeverity.Error;
+
+    private static void CheckExtensions(
+        IReadOnlyList<ExtensionRule> extensions,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        MemberSelection parentSelection,
+        List<ValidationFailure> failures
+    )
+    {
+        JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
+        HashSet<string>? resolvedKeys = null;
+
+        foreach (var extension in extensions)
+        {
+            // Server-generated extension names are rejected by the dedicated pre-pass.
+            if (ServerGeneratedFieldNames.Contains(extension.Name))
+            {
+                continue;
+            }
+
+            if (!TryResolveExtensionKey(extProperties, extension.Name, out string canonicalKey))
+            {
+                // Unknown name: severity per the missing-reference contract. Not a duplicate — an
+                // unmatched rule is dropped by canonicalization, so case-variant unknown names
+                // cannot collide.
+                failures.Add(
+                    new ValidationFailure(
+                        SeverityForMissingExtension(parentSelection, extension.MemberSelection),
+                        context.ProfileName,
+                        context.ResourceName,
+                        $"{context.PathPrefix}_ext.{extension.Name}",
+                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type does not exist in resource '{context.ResourceName}'."
+                    )
+                );
+                continue;
+            }
+
+            resolvedKeys ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!resolvedKeys.Add(canonicalKey))
+            {
+                // Two sibling rules resolve to the same schema key: both survive canonicalization
+                // and ExtensionRulesByName would throw on the duplicate key, so this is an error.
+                failures.Add(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        context.ProfileName,
+                        context.ResourceName,
+                        $"{context.PathPrefix}_ext.{extension.Name}",
+                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type resolves to schema extension key "
+                            + $"'{canonicalKey}', which is already used by another extension rule at the same level; extension names are "
+                            + "matched to the schema key case-insensitively, so these collapse to the same key."
+                    )
+                );
+                continue;
+            }
+
+            // Resolved and unique: recurse into the extension's own objects/collections at the
+            // extension's child schema location.
+            JsonObject? extensionProperties =
+                (extProperties?[canonicalKey] as JsonObject)?["properties"] as JsonObject;
+            ValidationContext childContext = context.WithPathPrefix(
+                $"{context.PathPrefix}_ext.{extension.Name}."
+            );
+            foreach (var nestedObject in extension.Objects ?? [])
+            {
+                WalkObjectExtensions(nestedObject, extensionProperties, childContext, failures);
+            }
+            foreach (var nestedCollection in extension.Collections ?? [])
+            {
+                WalkCollectionExtensions(nestedCollection, extensionProperties, childContext, failures);
+            }
+        }
+    }
+
+    private static void WalkObjectExtensions(
+        ObjectRule objectRule,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (ServerGeneratedFieldNames.Contains(objectRule.Name))
+        {
+            return;
+        }
+
+        JsonObject? objectProperties = MemberProperties(schemaProperties, objectRule.Name);
+
+        // Stop when the object itself does not resolve in the schema. The missing object is
+        // reported by the member-selection validation (which, like this, descends only into a
+        // resolved node); descending here would treat the object's child extensions as missing
+        // and could escalate a tolerated malformed profile to an error — a loadability change
+        // outside this normalization's scope.
+        if (objectProperties is null)
+        {
+            return;
+        }
+
+        ValidationContext childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
+
+        if (objectRule.Extensions is not null)
+        {
+            CheckExtensions(
+                objectRule.Extensions,
+                objectProperties,
+                childContext,
+                objectRule.MemberSelection,
+                failures
+            );
+        }
+        foreach (var nested in objectRule.NestedObjects ?? [])
+        {
+            WalkObjectExtensions(nested, objectProperties, childContext, failures);
+        }
+        foreach (var collection in objectRule.Collections ?? [])
+        {
+            WalkCollectionExtensions(collection, objectProperties, childContext, failures);
+        }
+    }
+
+    private static void WalkCollectionExtensions(
+        CollectionRule collectionRule,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (ServerGeneratedFieldNames.Contains(collectionRule.Name))
+        {
+            return;
+        }
+
+        JsonObject? itemProperties = CollectionItemProperties(schemaProperties, collectionRule.Name);
+
+        // Stop when the collection itself does not resolve in the schema (see WalkObjectExtensions):
+        // the missing collection is reported by member-selection validation, and descending here
+        // would escalate its child extensions and change loadability outside this change's scope.
+        if (itemProperties is null)
+        {
+            return;
+        }
+
+        ValidationContext childContext = context.WithPathPrefix(
+            $"{context.PathPrefix}{collectionRule.Name}[]."
+        );
+
+        if (collectionRule.Extensions is not null)
+        {
+            CheckExtensions(
+                collectionRule.Extensions,
+                itemProperties,
+                childContext,
+                collectionRule.MemberSelection,
+                failures
+            );
+        }
+        foreach (var nested in collectionRule.NestedObjects ?? [])
+        {
+            WalkObjectExtensions(nested, itemProperties, childContext, failures);
+        }
+        foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
+        {
+            WalkCollectionExtensions(nestedCollection, itemProperties, childContext, failures);
+        }
+    }
+
     private static List<ValidationFailure> ValidateExtensionRule(
         ExtensionRule extension,
         JsonObject schemaProperties,
@@ -638,36 +874,22 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             return failures;
         }
 
-        if (!schemaProperties.ContainsKey("_ext"))
-        {
-            failures.Add(
-                new ValidationFailure(
-                    context.Severity,
-                    context.ProfileName,
-                    context.ResourceName,
-                    extension.Name,
-                    $"Extension '{extension.Name}' in {context.ContentTypeName} content type cannot be validated - resource has no _ext property."
-                )
-            );
-            return failures;
-        }
-
-        var extNode = schemaProperties["_ext"] as JsonObject;
-        var extProperties = extNode?["properties"] as JsonObject;
-        var extensionSchemaNode = extProperties?[extension.Name] as JsonObject;
-        var extensionProperties = extensionSchemaNode?["properties"] as JsonObject;
+        // Existence of the extension namespace is validated independently of member
+        // selection by CollectExtensionResolutionFailures, which walks every extension rule
+        // in the tree (the same traversal canonicalization uses to drop unmatched rules).
+        // Here we only validate the members of an extension that resolves; an unresolved
+        // extension has no members to check and is reported by that pre-pass.
+        JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
+        JsonObject? extensionProperties = TryResolveExtensionKey(
+            extProperties,
+            extension.Name,
+            out string canonicalKey
+        )
+            ? MemberProperties(extProperties, canonicalKey)
+            : null;
 
         if (extensionProperties is null)
         {
-            failures.Add(
-                new ValidationFailure(
-                    context.Severity,
-                    context.ProfileName,
-                    context.ResourceName,
-                    extension.Name,
-                    $"Extension '{extension.Name}' in {context.ContentTypeName} content type does not exist in resource '{context.ResourceName}'."
-                )
-            );
             return failures;
         }
 
@@ -768,11 +990,9 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            if (extension.MemberSelection == MemberSelection.IncludeAll)
-            {
-                continue;
-            }
-
+            // Validate the members of resolved extensions under an IncludeAll parent.
+            // Existence of unknown extensions is reported separately by
+            // CollectExtensionResolutionFailures, which runs regardless of member selection.
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 
