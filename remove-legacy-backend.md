@@ -494,3 +494,42 @@ All DMS E2E tests now run against the relational backend because it is the only 
 - DMS startup always wires relational document store, relational query handler, mapping initialization, fingerprint validation, resource-key validation, and relational authorization lookup.
 - Legacy document-store CDC/Debezium/Kafka configuration is removed from active compose/test execution; legacy-only Kafka scenarios and helpers are deleted; docs state that relational CDC/Kafka support is pending a separate implementation.
 - Documentation describes a single DMS backend path and the required `SchemaTools ddl provision` workflow.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+  1. When a mapping set is unexpectedly missing in always-relational handlers, is throwing
+     InvalidOperationException and surfacing a 500 acceptable, or do you want a specific problem response?
+
+  2. Is the public break fully approved? Specifically deleting Old.Postgresql, moving AddPostgresqlDatastore to
+     Backend.Postgresql, and removing packaged /app/Installer with no shims or type forwarders.
+
+  3. For provision-e2e-database.ps1, should it stay PostgreSQL-only and accept explicit database names for Instance
+     Management, or should it discover route-context target databases from CMS/config?
+
+  4. Should Instance Management route-context database names remain hard-coded in test constants/setup, or move
+     into .env.routeContext.e2e under a neutral setting like E2E_DATABASE_NAMES?
+
+  5. Once legacy CDC tests are deleted, should E2E setup still start Kafka/Kafka UI by default, or should Kafka
+     infra remain available only behind explicit switches?
+
+  6. For active docs, should Kafka/CDC sections be reduced to a short “relational CDC pending” note, or should we
+     keep generic Kafka UI setup instructions where they are not tied to dms.document?
+
+
+### Answers 1
+
+  1. Use InvalidOperationException / 500 for unexpectedly missing mapping sets.
+     A missing mapping set after always-relational middleware is a server pipeline/configuration defect, not a
+     client problem. I’d fail fast with an actionable exception message and let the normal 500 path handle it.
+
+  2. Yes
+
+  3. Keep provision-e2e-database.ps1 PostgreSQL-only and explicit.
+
+  4. Remain as-is
+
+  5. Do not start Kafka/Kafka UI by default after CDC tests are deleted.
+
+  6. Make the minimal changes to the Kafka/CDC docs specified in the plan.
