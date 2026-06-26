@@ -18,7 +18,7 @@ WORKDIR /app
 
 RUN echo "Tag Version:" $VERSION
 
-RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
+RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.Api/versions/${VERSION}/content" && \
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
     cp -r /app/DataManagementService/. /app/ && \
     rm -f /app/EdFi.DataManagementService.zip && \
