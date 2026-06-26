@@ -623,6 +623,86 @@ function Build-TemplateNuGetPackage {
     Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
 }
 
+<#
+.SYNOPSIS
+    Returns the educator-preparation sample file names that should be omitted from a populated
+    template load.
+
+.DESCRIPTION
+    In Data Standard 6.1 the TPDM model folded into core, so the v6.1.0 sample set ships
+    educator-preparation interchanges that the v5.2.0 set never had: the standalone epdm
+    interchange files (Candidate, Path, PerformanceEvaluation, ProfessionalDevelopment,
+    RecruitmentAndStaffing) plus the "*-EdPrep" variants that extend core interchanges with
+    Educator Preparation Provider (EPP) data. Those rows are scoped to the EPP education
+    organization, which lies outside the populated loader's LEA relationship scope
+    (RelationshipsWithEdOrgsOnly), so loading them under the EdFiSandbox claim set fails
+    authorization. Excluding them keeps the DS 6.1 populated template's data surface aligned
+    with the DS 5.2 populated template, which contained no educator-preparation rows.
+
+.PARAMETER SourceDirectory
+    Directory of populated sample data files to inspect.
+#>
+function Get-EducatorPreparationSampleFileNames {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    $standaloneEpdmFiles = @(
+        'Candidate.xml',
+        'Path.xml',
+        'PerformanceEvaluation.xml',
+        'ProfessionalDevelopment.xml',
+        'RecruitmentAndStaffing.xml'
+    )
+
+    $edPrepVariants = @(
+        Get-ChildItem -Path $SourceDirectory -Filter '*-EdPrep.xml' -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name
+    )
+
+    return @(
+        $standaloneEpdmFiles + $edPrepVariants |
+            Where-Object { Test-Path -Path (Join-Path $SourceDirectory $_) -PathType Leaf } |
+            Sort-Object -Unique
+    )
+}
+
+<#
+.SYNOPSIS
+    Copies a populated sample directory into a fresh temporary directory, omitting the
+    educator-preparation files identified by Get-EducatorPreparationSampleFileNames.
+
+.DESCRIPTION
+    The BulkLoadClient loads every file in its target directory, so excluding files means
+    pointing the load at a filtered copy. The original checkout is left untouched.
+
+.PARAMETER SourceDirectory
+    Directory of populated sample data files to filter.
+#>
+function New-EducatorPreparationFilteredSampleDirectory {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    $excludedFiles = Get-EducatorPreparationSampleFileNames -SourceDirectory $SourceDirectory
+
+    $destination = Join-Path ([System.IO.Path]::GetTempPath()) ("populated-sample-no-edprep-" + [System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+
+    Get-ChildItem -Path $SourceDirectory -File |
+        Where-Object { $excludedFiles -notcontains $_.Name } |
+        ForEach-Object { Copy-Item -Path $_.FullName -Destination (Join-Path $destination $_.Name) -Force }
+
+    Write-Host "Excluded $($excludedFiles.Count) educator-preparation sample file(s) from the populated load:" -ForegroundColor Yellow
+    foreach ($excluded in $excludedFiles) {
+        Write-Host "  - $excluded"
+    }
+
+    return $destination
+}
+
 enum TemplateType {
     Minimal
     Populated
@@ -675,6 +755,13 @@ enum TemplateType {
 
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
+
+.PARAMETER ExcludeEducatorPreparation
+    Omit the educator-preparation (epdm) sample files from the populated load. Data Standard 6.1
+    folded TPDM into core, so its sample set adds educator-preparation rows scoped to the Educator
+    Preparation Provider education organization, which the populated loader's LEA-scoped sandbox
+    cannot authorize (RelationshipsWithEdOrgsOnly). Excluding them keeps the DS 6.1 populated
+    template aligned with the DS 5.2 populated template. See Get-EducatorPreparationSampleFileNames.
 
 .PARAMETER PostgresPassword
     The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
@@ -730,6 +817,8 @@ function Build-Template {
 
         [switch]$DumpAllUserSchemas,
 
+        [switch]$ExcludeEducatorPreparation,
+
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
@@ -778,6 +867,14 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
+        # The DS 6.1 sample set adds educator-preparation rows the LEA-scoped sandbox cannot
+        # authorize; filter them to a temporary copy so the load matches the DS 5.2 populated
+        # template surface. See Get-EducatorPreparationSampleFileNames for the rationale.
+        $populatedSampleDataDirectory = $PopulatedSampleDataDirectory
+        if ($ExcludeEducatorPreparation) {
+            $populatedSampleDataDirectory = New-EducatorPreparationFilteredSampleDirectory -SourceDirectory $PopulatedSampleDataDirectory
+        }
+
         # Create Sandbox application and assign to the data store
         $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDataStoreId)
 
@@ -786,7 +883,7 @@ function Build-Template {
         Invoke-BulkLoad -BaseUrl $DmsUrl `
             -Key $sandboxApp.Key `
             -Secret $sandboxApp.Secret `
-            -SampleDataDirectory $PopulatedSampleDataDirectory `
+            -SampleDataDirectory $populatedSampleDataDirectory `
             -Extension $Extension `
             -BulkLoadClientPaths $bulkLoadClientPaths `
             -ForceReloadData `

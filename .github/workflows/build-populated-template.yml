@@ -49,6 +49,11 @@ on:
         required: false
         type: boolean
         default: false
+      exclude_educator_preparation:
+        description: "Omit educator-preparation (epdm) sample files from the populated load. Required for DS 6.1, where TPDM folded into core and its educator-prep samples are scoped outside the loader's LEA relationship scope."
+        required: false
+        type: boolean
+        default: false
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
         required: true
@@ -285,6 +290,7 @@ jobs:
           $uniqueAppName = "Demo application ${{ github.run_id }}"
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          $excludeEducatorPreparation = [System.Convert]::ToBoolean('${{ inputs.exclude_educator_preparation }}')
           Build-Template `
                   -TemplateType Populated `
                   -DmsUrl 'http://localhost:8080' `
@@ -295,7 +301,8 @@ jobs:
                   -ConfigFilePath './PopulatedTemplateSettings.psd1' `
                   -StandardVersion '${{ inputs.standard_version }}'`
                   -PackageVersion $packageVersion `
-                  -ApplicationName $uniqueAppName
+                  -ApplicationName $uniqueAppName `
+                  -ExcludeEducatorPreparation:$excludeEducatorPreparation
         working-directory: eng/DatabaseTemplates/
 
       - name: Generate Populated Template package (relational backend)
@@ -307,6 +314,7 @@ jobs:
           $uniqueAppName = "Demo application ${{ github.run_id }}"
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          $excludeEducatorPreparation = [System.Convert]::ToBoolean('${{ inputs.exclude_educator_preparation }}')
           Build-Template `
                   -TemplateType Populated `
                   -DmsUrl 'http://localhost:8080' `
@@ -320,7 +328,8 @@ jobs:
                   -ApplicationName $uniqueAppName `
                   -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
                   -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
-                  -DumpAllUserSchemas
+                  -DumpAllUserSchemas `
+                  -ExcludeEducatorPreparation:$excludeEducatorPreparation
         working-directory: eng/DatabaseTemplates/
 
       - name: Verify template package restore

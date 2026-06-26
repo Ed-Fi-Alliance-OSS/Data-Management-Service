@@ -38,10 +38,15 @@ jobs:
             package_name: "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
             provenance_file: "populated.template.intoto.jsonl"
             environment_file: "./.env.template.relational"
+            exclude_educator_preparation: false
+          # DS 6.1 folded TPDM into core, so its sample set ships educator-preparation rows
+          # scoped to the Educator Preparation Provider edorg, outside the loader's LEA scope.
+          # Exclude them to keep this template's data surface aligned with DS 5.2.
           - standard_version: "6.1.0"
             package_name: "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
             provenance_file: "populated.template.6.1.0.intoto.jsonl"
             environment_file: "./.env.template.relational.ds61"
+            exclude_educator_preparation: true
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: ${{ matrix.standard_version }}
@@ -53,5 +58,6 @@ jobs:
       environment_file: ${{ matrix.environment_file }}
       verify_restore: true
       require_populated_data: true
+      exclude_educator_preparation: ${{ matrix.exclude_educator_preparation }}
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
