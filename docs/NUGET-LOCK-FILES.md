@@ -114,15 +114,22 @@ than reusing cached resolution.
 > (`permissions: contents: write`) — **not** a Personal Access Token. **No
 > Dependabot secret needs to be provisioned.**
 
-**Expected flow (common case):** Dependabot's bump commit already contains the
+**Expected flow (no transitive change):** when a bump leaves every project's
+transitive closure unchanged, Dependabot's own commit already carries the
 regenerated lock files, so this workflow finds nothing to commit (no-op) and the
 `--locked-mode` gates pass on the first CI run.
 
-**Edge case (transitive `<ProjectReference>` change, #13950):** the workflow
-pushes the missing lock files, but a push made with the built-in `GITHUB_TOKEN`
+**Transitive `<ProjectReference>` change (#13950) — expect this regularly:**
+because this codebase has a deep, layered project-reference graph, a bump to one
+direct package often shifts the transitive closure of projects that do not
+reference it directly. Dependabot leaves those lock files stale, so this workflow
+regenerates and pushes them — but a push made with the built-in `GITHUB_TOKEN`
 does **not** trigger new workflow runs (GitHub's recursion guard), so the
 `--locked-mode` gate does not re-run and stays red on the corrected commit.
-Recovery, most reliable first:
+Re-triggering the gate automatically would require pushing with a PAT or GitHub
+App token — i.e. provisioning a secret — which this design deliberately avoids.
+**Treat the manual clear below as a routine step on Dependabot PRs, not a rare
+exception.** Recovery, most reliable first:
 
 1. push a **maintainer-owned no-op commit** to the PR branch — a push not made
    with `GITHUB_TOKEN` re-triggers CI, so this is the dependable fix; or
@@ -166,8 +173,9 @@ builds are the enforcement points.
   here-string. Those templates must reproduce the **restore-relevant** content of
   the committed props — `RestorePackagesWithLockFile` **and** the analyzer
   `PackageReference`s (`Microsoft.CodeAnalysis.CSharp.CodeStyle`,
-  `SonarAnalyzer.CSharp`) — or a regenerated props would restore a different graph
-  and dirty/break the lock files. CI enforces this parity via
+  `SonarAnalyzer.CSharp`, including their `PrivateAssets`/`IncludeAssets`) — or a
+  regenerated props would restore a different graph and dirty/break the lock
+  files. CI enforces this parity via
   [`LockFileParity.Tests.ps1`](../eng/docker-compose/tests/LockFileParity.Tests.ps1).
 - **`find` over shell glob.** Shell `**` expansion is off by default on Ubuntu
   runners; stage lock files with

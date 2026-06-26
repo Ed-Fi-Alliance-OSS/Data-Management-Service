@@ -57,11 +57,22 @@ BeforeAll {
         return $match.Groups[1].Value
     }
 
-    function Get-PackageReferenceId {
+    # Returns a normalized signature per PackageReference: the Include id plus the
+    # restore-relevant child metadata (IncludeAssets, PrivateAssets). The id alone is
+    # not enough -- dropping PrivateAssets=all on an analyzer would let it flow
+    # transitively and change the restore graph while leaving the id set identical.
+    # Handles both the block form (<PackageReference ...>...</PackageReference>) and
+    # the self-closing form (<PackageReference ... />), for which the body is empty.
+    function Get-PackageReferenceSignature {
         param([Parameter(Mandatory)][AllowEmptyString()][string] $Content)
 
-        [regex]::Matches($Content, 'PackageReference\s+Include="([^"]+)"') |
-            ForEach-Object { $_.Groups[1].Value } |
+        [regex]::Matches($Content, '(?s)<PackageReference\s+Include="([^"]+)"\s*(?:/>|>(.*?)</PackageReference>)') |
+            ForEach-Object {
+                $body = $_.Groups[2].Value
+                $includeAssets = (([regex]::Match($body, '(?s)<IncludeAssets>(.*?)</IncludeAssets>')).Groups[1].Value -replace '\s+', ' ').Trim()
+                $privateAssets = (([regex]::Match($body, '(?s)<PrivateAssets>(.*?)</PrivateAssets>')).Groups[1].Value -replace '\s+', ' ').Trim()
+                "$($_.Groups[1].Value)|IncludeAssets=$includeAssets|PrivateAssets=$privateAssets"
+            } |
             Sort-Object -Unique
     }
 
@@ -107,12 +118,13 @@ Describe "DMS-1133 build-script Directory.Build.props parity" {
         Test-EnablesLockFile -Content $generated |
             Should -BeTrue -Because "the $Area build-script template must keep RestorePackagesWithLockFile"
 
-        # The analyzer PackageReference set must match, or a regenerated props restores a different
-        # graph and dirties/breaks the committed lock files.
-        $committedRefs = @(Get-PackageReferenceId -Content $committed)
-        $generatedRefs = @(Get-PackageReferenceId -Content $generated)
+        # The analyzer PackageReferences must match on id AND on their restore-relevant metadata
+        # (IncludeAssets / PrivateAssets), or a regenerated props restores a different graph and
+        # dirties/breaks the committed lock files.
+        $committedRefs = @(Get-PackageReferenceSignature -Content $committed)
+        $generatedRefs = @(Get-PackageReferenceSignature -Content $generated)
 
-        ($generatedRefs -join ", ") |
-            Should -Be ($committedRefs -join ", ") -Because "the $Area build-script template and committed Directory.Build.props must declare the same PackageReferences"
+        ($generatedRefs -join "`n") |
+            Should -Be ($committedRefs -join "`n") -Because "the $Area build-script template and committed Directory.Build.props must declare the same PackageReferences with the same IncludeAssets/PrivateAssets"
     }
 }
