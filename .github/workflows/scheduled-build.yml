@@ -69,7 +69,7 @@ jobs:
 
       - name: DMS Build - IdentityProvider (${{matrix.identityprovider}})
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}} -LockedMode
 
       - name: Restore .NET tools
         if: success()

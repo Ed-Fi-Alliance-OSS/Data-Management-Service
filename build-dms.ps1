@@ -69,6 +69,13 @@ param(
     [ValidateSet("Debug", "Release")]
     $Configuration = "Debug",
 
+    # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
+    # packages.lock.json is out of sync. Release and scheduled CI pass this so the published
+    # packages are built from the committed lock graph; local builds leave it off (see
+    # docs/NUGET-LOCK-FILES.md).
+    [switch]
+    $LockedMode,
+
     [bool]
     $DryRun = $false,
 
@@ -146,7 +153,11 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
+    Invoke-Execute {
+        $restoreArgs = @()
+        if ($LockedMode) { $restoreArgs += "--locked-mode" }
+        dotnet restore $defaultSolution --verbosity:normal @restoreArgs
+    }
 }
 
 function SetDMSAssemblyInfo {
@@ -193,7 +204,9 @@ function PublishApi {
     Invoke-Execute {
         $project = "$applicationRoot/$projectName/"
         $outputPath = "$project/publish"
-        dotnet publish $project -c $Configuration -o $outputPath --nologo
+        # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
+        # letting publish run a second, unlocked restore that would bypass the lock graph.
+        dotnet publish $project -c $Configuration -o $outputPath --nologo --no-restore
     }
 }
 
@@ -201,7 +214,7 @@ function PublishBackendInstaller {
     Invoke-Execute {
         $installerProject = "$backendRoot/$installerProjectName/"
         $outputPath = "$installerProject/publish"
-        dotnet publish $installerProject -c $Configuration -o $outputPath --nologo
+        dotnet publish $installerProject -c $Configuration -o $outputPath --nologo --no-restore
     }
 }
 
@@ -209,7 +222,7 @@ function PublishCliApiDownloader {
     Invoke-Execute {
         $schemaDownloaderProject = "$clisRoot/$schemaDownloaderProjectName/"
         $outputPath = "$schemaDownloaderProject/publish"
-        dotnet publish $schemaDownloaderProject -c $Configuration -o $outputPath --nologo
+        dotnet publish $schemaDownloaderProject -c $Configuration -o $outputPath --nologo --no-restore
     }
 }
 

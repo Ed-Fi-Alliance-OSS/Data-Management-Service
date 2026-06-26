@@ -65,6 +65,13 @@ param(
     [ValidateSet("Debug", "Release")]
     $Configuration = "Debug",
 
+    # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
+    # packages.lock.json is out of sync. Release and scheduled CI pass this so the published
+    # packages are built from the committed lock graph; local builds leave it off (see
+    # docs/NUGET-LOCK-FILES.md).
+    [switch]
+    $LockedMode,
+
     [bool]
     $DryRun = $false,
 
@@ -117,7 +124,11 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
+    Invoke-Execute {
+        $restoreArgs = @()
+        if ($LockedMode) { $restoreArgs += "--locked-mode" }
+        dotnet restore $defaultSolution --verbosity:normal @restoreArgs
+    }
 }
 
 function SetDMSAssemblyInfo {
@@ -189,7 +200,9 @@ function PublishApi {
             $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
         }
 
-        dotnet publish $project -c $Configuration -o $outputPath --nologo @versionArgs
+        # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
+        # letting publish run a second, unlocked restore that would bypass the lock graph.
+        dotnet publish $project -c $Configuration -o $outputPath --nologo --no-restore @versionArgs
     }
 }
 

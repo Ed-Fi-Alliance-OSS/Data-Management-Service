@@ -23,9 +23,10 @@ a direct dependency.
 > [!NOTE]
 > "Automatically up to date" refers to the lock _files_: the auto-regeneration
 > workflow (§5 below) regenerates and pushes them with no maintainer action.
-> Bringing a failed `--locked-mode` gate back to green is a separate, deliberate
-> manual step — a `GITHUB_TOKEN` push does not re-trigger CI, and auto-re-triggering
-> would require a PAT this design avoids. See §5 for the routine recovery.
+> Bringing the `--locked-mode` gate back to green is a separate manual step: the
+> workflow's `GITHUB_TOKEN` push updates the PR, which makes GitHub create the
+> gate's `pull_request` run in an _approval-required_ state, so a maintainer must
+> approve it. See §5 for the routine recovery.
 
 ## How it works
 
@@ -75,9 +76,14 @@ the committed lock graph too. [`src/dms/Dockerfile`](../src/dms/Dockerfile) and
 > **Maintenance hotspot:** each Dockerfile's `packages.lock.json` COPY list must
 > mirror its `.csproj` COPY list. A future `<ProjectReference>` change can pull a
 > new project into the restore closure; if its lock file is not also copied, the
-> in-image `--locked-mode` restore breaks. A forgotten COPY entry is caught in CI
-> by [`LockFileParity.Tests.ps1`](../eng/docker-compose/tests/LockFileParity.Tests.ps1),
-> but the lock-file _contents_ are still validated only by the `--locked-mode`
+> in-image `--locked-mode` restore breaks.
+> [`LockFileParity.Tests.ps1`](../eng/docker-compose/tests/LockFileParity.Tests.ps1)
+> catches an _asymmetric_ COPY list — a `.csproj` copied without its
+> `packages.lock.json`, or vice versa — but it compares only the two COPY lists, so
+> it does not prove the full restore closure is copied: a brand-new project absent
+> from _both_ lists slips past it and is caught instead by the in-image
+> `--locked-mode` build, whose restore fails on the missing `<ProjectReference>`
+> target. The lock-file _contents_ are likewise validated only by the `--locked-mode`
 > restore, so build both images after changing project references.
 
 ### 4. Dependabot cooldown
@@ -130,25 +136,31 @@ regenerated lock files, so this workflow finds nothing to commit (no-op) and the
 because this codebase has a deep, layered project-reference graph, a bump to one
 direct package often shifts the transitive closure of projects that do not
 reference it directly. Dependabot leaves those lock files stale, so this workflow
-regenerates and pushes them — but a push made with the built-in `GITHUB_TOKEN`
-does **not** trigger new workflow runs (GitHub's recursion guard), so the
-`--locked-mode` gate does not re-run and stays red on the corrected commit.
-Re-triggering the gate automatically would require pushing with a PAT or GitHub
-App token — i.e. provisioning a secret — which this design deliberately avoids.
-**Treat the manual clear below as a routine step on Dependabot PRs, not a rare
-exception.** Recovery, most reliable first:
+regenerates and pushes them. That push updates the PR, so GitHub creates a fresh
+`pull_request` run of the `--locked-mode` gate against the corrected commit — but
+because the push used the built-in `GITHUB_TOKEN`, GitHub creates that run in an
+**approval-required** state instead of starting it automatically ([GitHub Docs:
+GITHUB_TOKEN](https://docs.github.com/en/actions/concepts/security/github_token)).
+Starting it without approval would require pushing with a PAT or GitHub App token
+— i.e. provisioning a secret — which this design deliberately avoids. **Treat
+clearing that approval as a routine step on Dependabot PRs, not a rare exception.**
+Recovery, most reliable first:
 
-1. push a **maintainer-owned no-op commit** to the PR branch — a push not made
-   with `GITHUB_TOKEN` re-triggers CI, so this is the dependable fix; or
-2. **approve the pending workflow run** _if_ GitHub created one — a `GITHUB_TOKEN`
-   push usually creates no run, so there is often nothing to approve.
+1. **approve the pending gate run** — a maintainer with write access opens the PR's
+   checks and clicks **"Approve workflows to run"**; the approval-required
+   `pull_request` run then executes against the pushed lock-file commit and clears
+   the gate; or
+2. push a **maintainer-owned no-op commit** to the PR branch — a push not made with
+   `GITHUB_TOKEN` starts CI without the approval gate, a reliable fallback if no
+   pending run appears.
 
 > [!WARNING]
 > Two actions that look like fixes but are **not** reliable here:
 >
 > - **`@dependabot recreate`** rebuilds the PR from scratch, which still omits the
 >   transitive lock updates (#13950); the gate fails again and the workflow
->   re-pushes via `GITHUB_TOKEN`, returning to the same dead-end.
+>   re-pushes via `GITHUB_TOKEN`, leaving you back at the same approve-the-pending-run
+>   step — extra churn, not a shortcut.
 > - **"Re-run jobs"** on the failed run re-runs against the original commit SHA,
 >   not the pushed lock-file commit.
 
