@@ -41,6 +41,7 @@ public static class FailureResponse
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
     private static readonly string _parameterValidationFailedType =
         $"{_badRequestTypePrefix}:parameter-validation-failed";
+    private static readonly string _unsupportedMediaTypeType = $"{_typePrefix}:unsupported-media-type";
 
     internal static JsonObject CreateBaseJsonObject(
         string detail,
@@ -199,6 +200,17 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors
+        );
+
+    public static JsonNode ForUnsupportedMediaType(string detail, TraceId traceId, string[] errors) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _unsupportedMediaTypeType,
+            title: "Unsupported Media Type",
+            status: 415,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: errors
         );
 
     public static JsonNode ForUnauthorized(TraceId traceId, string error, string description) =>
