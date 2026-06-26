@@ -467,10 +467,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         // Resolve every extension rule against the schema at its own location, regardless
         // of member selection (canonicalization walks the whole tree and drops unmatched
-        // rules, so this is the single source of extension feedback). Unknown extensions
-        // get the missing-reference severity (IncludeOnly error, otherwise warning); two
-        // rules that resolve to the same schema key would throw when ExtensionRulesByName
-        // is built, so that collision is always an error.
+        // rules, so this is the single source of extension feedback). An unknown extension
+        // is an error when the rule is non-IncludeAll (it explicitly selects/deselects
+        // members) or when it sits under an IncludeOnly parent; an IncludeAll rule under a
+        // tolerant parent is a warning. Two rules that resolve to the same schema key would
+        // throw when ExtensionRulesByName is built, so that collision is always an error.
         failures.AddRange(CollectExtensionResolutionFailures(contentType, schemaProperties, baseContext));
 
         failures.AddRange(
