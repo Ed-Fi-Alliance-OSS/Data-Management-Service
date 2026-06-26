@@ -28,15 +28,14 @@ internal class ExtractDocumentSecurityElementsMiddleware(ILogger _logger) : IPip
         Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid", "");
 
         // DMS-1229 guardrail: security elements are extracted from the RAW submitted body
-        // (ParsedBody), not the profile-shaped write surface. This is currently safe because
-        // writable profiles only shape relational writes, and the relational write path computes
-        // its authorization decision from the shaped write plan
-        // (RelationalDocumentStoreRepository.AuthorizePost/PutRelationshipIfRequired) — the
-        // relational backend never consumes DocumentSecurityElements, and identity/reference-derived
-        // security elements are preserved by the shaper regardless. If a future relational consumer
-        // reads DocumentSecurityElements for a profile-shaped write, it MUST restrict to the shaped
-        // surface (BackendProfileWriteContext.Request.WritableRequestBody) so that profile-hidden
-        // submitted data cannot influence the authorization decision.
+        // (ParsedBody), not the profile-shaped write surface. Relational profile shaping
+        // stores its result on BackendProfileWriteContext and does not replace ParsedBody,
+        // so this middleware still sees the schema-validated request body used by the
+        // existing authorization-pathway setup. Required identity/security references
+        // remain validated upstream by ValidateDocumentMiddleware. The relational backend
+        // profile merge/persistence path uses BackendProfileWriteContext.Request.WritableRequestBody
+        // for shaped writes, so profile-hidden submitted data is not written merely because
+        // it was available to raw request validation/extraction.
         requestInfo.DocumentSecurityElements = requestInfo.ResourceSchema.ExtractSecurityElements(
             requestInfo.ParsedBody,
             _logger
