@@ -115,10 +115,12 @@ Workflows that build per-version artifacts select the version through a per-work
     both `5.2.0` and `6.1.0`. The `6.1.0` leg is validated by dispatch
     (`publish_package` defaults off) before any release; the reusable workflow's
     `environment_file` allowlist gates which env files may be used.
-  - The **scheduled smoke test** (which also runs on PRs touching its paths) stays
-    `5.2.0`-only until the `6.1.0` populated build is validated end-to-end, so the PR
-    lane never goes red on an unproven leg; the `6.1.0` smoke leg is a one-`include`-entry
-    addition once that validation passes.
+  - The **scheduled smoke test** (which also runs on PRs touching its paths) runs both a
+    `5.2.0` and a `6.1.0` leg (the `6.1.0` populated build is validated end-to-end). The
+    ODS-published-SDK sweep stays `5.2.0`-only — it consumes the DS-5.2-specific
+    `EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0` package — and is gated by a `run_ods_sdk_tests`
+    matrix flag; the `6.1.0` leg's API surface is instead covered by the NonDestructive API tests
+    and the DMS-generated SDK.
 
   > The template surface is intentionally reduced versus the local dev surface
   > (Core + TPDM + Sample + Homograph in `.env.ds<NN>`): DS 5.2 is Core + TPDM
