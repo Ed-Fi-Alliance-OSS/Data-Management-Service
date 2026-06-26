@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -2269,5 +2270,152 @@ internal static class TriggerInventoryTestSchemaBuilder
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+    }
+}
+
+/// <summary>
+/// Trigger derivation over a grouped-duplicate reference, where one reference field
+/// (<c>$.schoolReference.schoolId</c>) is bound to two target identity fields (<c>$.schoolId</c> and
+/// <c>$.localEducationAgencyId</c>) that key-unify on the referenced School. This exercises two trigger
+/// paths that previously mishandled duplicate <c>ReferenceJsonPath</c> bindings:
+/// <list type="bullet">
+/// <item>Abstract identity maintenance must accept the converging duplicate (two identity-part columns
+/// resolving to one stored column) rather than rejecting any count other than one.</item>
+/// <item>Identity propagation must pair each referrer target column with the source column for its own
+/// target identity path, instead of collapsing duplicates by reference path and applying one identity
+/// path's source column to every binding.</item>
+/// </list>
+/// </summary>
+[TestFixture]
+public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture using the default duplicate reference binding order.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _triggers = BuildTriggers(reverseDuplicateReferenceBindings: false);
+    }
+
+    /// <summary>
+    /// Derives the trigger inventory for the grouped-duplicate fixture. Key unification must run before
+    /// abstract identity derivation so the grouped duplicate columns converge; transitive identity
+    /// mutability must run so the propagation fallback trigger is emitted on the mutable referenced
+    /// resource.
+    /// </summary>
+    private static IReadOnlyList<DbTriggerInfo> BuildTriggers(bool reverseDuplicateReferenceBindings)
+    {
+        var coreProjectSchema =
+            AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema(
+                reverseDuplicateReferenceBindings
+            );
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+                new RootIdentityConstraintPass(),
+                new TransitiveIdentityMutabilityPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
+                new ApplyConstraintDialectHashingPass(),
+                new DeriveIndexInventoryPass(),
+                new DeriveTriggerInventoryPass(),
+            }
+        );
+        return builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules()).TriggersInCreateOrder;
+    }
+
+    private static IReadOnlyList<(string Source, string Target)> AbstractMaintenanceMappings(
+        IReadOnlyList<DbTriggerInfo> triggers
+    )
+    {
+        var trigger = triggers.Single(t =>
+            t.Table.Name == "EnrollmentSchoolCarrier"
+            && t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.AbstractIdentityMaintenance)trigger.Parameters;
+
+        return parameters
+            .TargetColumnMappings.Select(m => (m.SourceColumn.Value, m.TargetColumn.Value))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<(string Source, string Target)> PropagationMappings(
+        IReadOnlyList<DbTriggerInfo> triggers
+    )
+    {
+        var trigger = triggers.Single(t =>
+            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+        );
+        var parameters = (TriggerKindParameters.IdentityPropagationFallback)trigger.Parameters;
+
+        return parameters
+            .ReferrerUpdates.Single(r => r.ReferrerTable.Name == "EnrollmentSchoolCarrier")
+            .ColumnMappings.Select(m => (m.SourceColumn.Value, m.TargetColumn.Value))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// The abstract identity maintenance trigger must be derived for the grouped-duplicate subclass: the
+    /// two identity-part columns bound to <c>$.schoolReference.schoolId</c> converge to one stored column
+    /// (<c>School_SchoolId</c>), so the mapping must use that converged column rather than failing because
+    /// more than one identity-part column was found.
+    /// </summary>
+    [Test]
+    public void It_should_derive_abstract_identity_maintenance_for_grouped_duplicate_reference()
+    {
+        AbstractMaintenanceMappings(_triggers).Should().Contain(("School_SchoolId", "School_SchoolId"));
+    }
+
+    /// <summary>
+    /// Identity propagation must pair the referrer target column with the source column for its own target
+    /// identity path. The duplicate bindings share <c>$.schoolReference.schoolId</c> but map to distinct
+    /// target identity fields; the surviving mapping must use the <c>SchoolId</c> source (its identity
+    /// path), never the <c>LocalEducationAgencyId</c> source that a reference-path-collapsed lookup would
+    /// apply to every binding.
+    /// </summary>
+    [Test]
+    public void It_should_pair_propagation_source_with_its_own_identity_path()
+    {
+        PropagationMappings(_triggers)
+            .Select(m => m.Source)
+            .Should()
+            .OnlyContain(source => source == "SchoolId")
+            .And.NotContain("LocalEducationAgencyId");
+    }
+
+    /// <summary>
+    /// Reversing the duplicate reference binding order must not change the emitted trigger source columns.
+    /// The field-name-matched binding is chosen deterministically (the same rule that names abstract
+    /// identity columns), so both propagation and abstract identity maintenance keep the SchoolId-derived
+    /// source rather than the value-equal LocalEducationAgencyId one a binding-order-sensitive selection
+    /// would emit under the reversed order.
+    /// </summary>
+    [Test]
+    public void It_should_derive_trigger_sources_independent_of_duplicate_binding_order()
+    {
+        var reversed = BuildTriggers(reverseDuplicateReferenceBindings: true);
+
+        PropagationMappings(reversed).Should().Equal(PropagationMappings(_triggers));
+        AbstractMaintenanceMappings(reversed).Should().Equal(AbstractMaintenanceMappings(_triggers));
+
+        PropagationMappings(reversed).Select(m => m.Source).Should().NotContain("LocalEducationAgencyId");
+        AbstractMaintenanceMappings(reversed)
+            .Select(m => m.Source)
+            .Should()
+            .NotContain("School_LocalEducationAgencyId");
     }
 }

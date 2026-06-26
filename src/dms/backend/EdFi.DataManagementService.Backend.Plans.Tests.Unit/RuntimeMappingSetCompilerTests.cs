@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -391,331 +392,13 @@ public class Given_RuntimeMappingSetCompiler
     public class Given_Abstract_Resource_Plan_Uses_Renamed_Reference_Backed_Columns
         : Given_RuntimeMappingSetCompiler
     {
-        // Schema with GeneralStudentProgramAssociation as the abstract resource whose identity
-        // paths flow through EducationOrganization, Program (with a descriptor field), and Student
-        // references — the exact same shape as the trigger-inventory fixture in
-        // DeriveTriggerInventoryPassTests.cs.
-        private const string AbstractCompositeReferenceProjectSchemaJson = """
-            {
-              "projectName": "Ed-Fi",
-              "projectVersion": "5.0.0",
-              "projectEndpointName": "ed-fi",
-              "isExtensionProject": false,
-              "description": "Test schema with reference-backed abstract resource",
-              "resourceNameMapping": {},
-              "caseInsensitiveEndpointNameMapping": {},
-              "educationOrganizationHierarchy": {},
-              "educationOrganizationTypes": [],
-              "abstractResources": {
-                "GeneralStudentProgramAssociation": {
-                  "identityJsonPaths": [
-                    "$.beginDate",
-                    "$.educationOrganizationReference.educationOrganizationId",
-                    "$.programReference.educationOrganizationId",
-                    "$.programReference.programTypeDescriptor",
-                    "$.studentReference.studentUniqueId"
-                  ]
-                },
-                "EducationOrganization": {
-                  "identityJsonPaths": [
-                    "$.educationOrganizationId"
-                  ]
-                }
-              },
-              "resourceSchemas": {
-                "studentArtProgramAssociations": {
-                  "resourceName": "StudentArtProgramAssociation",
-                  "isDescriptor": false,
-                  "isSchoolYearEnumeration": false,
-                  "isResourceExtension": false,
-                  "allowIdentityUpdates": false,
-                  "isSubclass": true,
-                  "subclassType": "association",
-                  "superclassProjectName": "Ed-Fi",
-                  "superclassResourceName": "GeneralStudentProgramAssociation",
-                  "identityJsonPaths": [
-                    "$.beginDate",
-                    "$.educationOrganizationReference.educationOrganizationId",
-                    "$.programReference.educationOrganizationId",
-                    "$.programReference.programTypeDescriptor",
-                    "$.studentReference.studentUniqueId"
-                  ],
-                  "booleanJsonPaths": [],
-                  "numericJsonPaths": [],
-                  "dateJsonPaths": [ "$.beginDate" ],
-                  "dateTimeJsonPaths": [],
-                  "equalityConstraints": [],
-                  "arrayUniquenessConstraints": [],
-                  "documentPathsMapping": {
-                    "BeginDate": {
-                      "isReference": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "path": "$.beginDate"
-                    },
-                    "EducationOrganization": {
-                      "isReference": true,
-                      "isDescriptor": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "projectName": "Ed-Fi",
-                      "resourceName": "EducationOrganization",
-                      "referenceJsonPaths": [
-                        {
-                          "identityJsonPath": "$.educationOrganizationId",
-                          "referenceJsonPath": "$.educationOrganizationReference.educationOrganizationId"
-                        }
-                      ]
-                    },
-                    "Program": {
-                      "isReference": true,
-                      "isDescriptor": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "projectName": "Ed-Fi",
-                      "resourceName": "Program",
-                      "referenceJsonPaths": [
-                        {
-                          "identityJsonPath": "$.educationOrganizationId",
-                          "referenceJsonPath": "$.programReference.educationOrganizationId"
-                        },
-                        {
-                          "identityJsonPath": "$.programTypeDescriptor",
-                          "referenceJsonPath": "$.programReference.programTypeDescriptor"
-                        }
-                      ]
-                    },
-                    "Student": {
-                      "isReference": true,
-                      "isDescriptor": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "projectName": "Ed-Fi",
-                      "resourceName": "Student",
-                      "referenceJsonPaths": [
-                        {
-                          "identityJsonPath": "$.studentUniqueId",
-                          "referenceJsonPath": "$.studentReference.studentUniqueId"
-                        }
-                      ]
-                    }
-                  },
-                  "queryFieldMapping": {},
-                  "securableElements": {
-                    "Namespace": [],
-                    "EducationOrganization": [],
-                    "Student": [],
-                    "Contact": [],
-                    "Staff": []
-                  },
-                  "authorizationPathways": [],
-                  "decimalPropertyValidationInfos": [],
-                  "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                      "beginDate": { "type": "string", "format": "date" },
-                      "educationOrganizationReference": {
-                        "type": "object",
-                        "properties": {
-                          "educationOrganizationId": { "type": "integer" }
-                        }
-                      },
-                      "programReference": {
-                        "type": "object",
-                        "properties": {
-                          "educationOrganizationId": { "type": "integer" },
-                          "programTypeDescriptor": { "type": "string", "maxLength": 306 }
-                        }
-                      },
-                      "studentReference": {
-                        "type": "object",
-                        "properties": {
-                          "studentUniqueId": { "type": "string", "maxLength": 32 }
-                        }
-                      }
-                    },
-                    "required": [
-                      "beginDate",
-                      "educationOrganizationReference",
-                      "programReference",
-                      "studentReference"
-                    ]
-                  }
-                },
-                "schools": {
-                  "resourceName": "School",
-                  "isDescriptor": false,
-                  "isSchoolYearEnumeration": false,
-                  "isResourceExtension": false,
-                  "allowIdentityUpdates": false,
-                  "isSubclass": true,
-                  "subclassType": "domainObjectSubclass",
-                  "superclassProjectName": "Ed-Fi",
-                  "superclassResourceName": "EducationOrganization",
-                  "identityJsonPaths": [ "$.educationOrganizationId" ],
-                  "booleanJsonPaths": [],
-                  "numericJsonPaths": [],
-                  "dateJsonPaths": [],
-                  "dateTimeJsonPaths": [],
-                  "equalityConstraints": [],
-                  "arrayUniquenessConstraints": [],
-                  "documentPathsMapping": {
-                    "EducationOrganizationId": {
-                      "isReference": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "path": "$.educationOrganizationId"
-                    }
-                  },
-                  "queryFieldMapping": {},
-                  "securableElements": {
-                    "Namespace": [],
-                    "EducationOrganization": [],
-                    "Student": [],
-                    "Contact": [],
-                    "Staff": []
-                  },
-                  "authorizationPathways": [],
-                  "decimalPropertyValidationInfos": [],
-                  "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                      "educationOrganizationId": { "type": "integer", "format": "int64" }
-                    },
-                    "required": [ "educationOrganizationId" ]
-                  }
-                },
-                "programs": {
-                  "resourceName": "Program",
-                  "isDescriptor": false,
-                  "isSchoolYearEnumeration": false,
-                  "isResourceExtension": false,
-                  "allowIdentityUpdates": false,
-                  "isSubclass": false,
-                  "identityJsonPaths": [ "$.educationOrganizationId", "$.programTypeDescriptor" ],
-                  "booleanJsonPaths": [],
-                  "numericJsonPaths": [],
-                  "dateJsonPaths": [],
-                  "dateTimeJsonPaths": [],
-                  "equalityConstraints": [],
-                  "arrayUniquenessConstraints": [],
-                  "documentPathsMapping": {
-                    "EducationOrganizationId": {
-                      "isReference": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "path": "$.educationOrganizationId"
-                    },
-                    "ProgramTypeDescriptor": {
-                      "isReference": true,
-                      "isDescriptor": true,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "projectName": "Ed-Fi",
-                      "resourceName": "ProgramTypeDescriptor",
-                      "path": "$.programTypeDescriptor"
-                    }
-                  },
-                  "queryFieldMapping": {},
-                  "securableElements": {
-                    "Namespace": [],
-                    "EducationOrganization": [],
-                    "Student": [],
-                    "Contact": [],
-                    "Staff": []
-                  },
-                  "authorizationPathways": [],
-                  "decimalPropertyValidationInfos": [],
-                  "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                      "educationOrganizationId": { "type": "integer", "format": "int64" },
-                      "programTypeDescriptor": { "type": "string", "maxLength": 306 }
-                    },
-                    "required": [ "educationOrganizationId", "programTypeDescriptor" ]
-                  }
-                },
-                "students": {
-                  "resourceName": "Student",
-                  "isDescriptor": false,
-                  "isSchoolYearEnumeration": false,
-                  "isResourceExtension": false,
-                  "allowIdentityUpdates": false,
-                  "isSubclass": false,
-                  "identityJsonPaths": [ "$.studentUniqueId" ],
-                  "booleanJsonPaths": [],
-                  "numericJsonPaths": [],
-                  "dateJsonPaths": [],
-                  "dateTimeJsonPaths": [],
-                  "equalityConstraints": [],
-                  "arrayUniquenessConstraints": [],
-                  "documentPathsMapping": {
-                    "StudentUniqueId": {
-                      "isReference": false,
-                      "isPartOfIdentity": true,
-                      "isRequired": true,
-                      "path": "$.studentUniqueId"
-                    }
-                  },
-                  "queryFieldMapping": {},
-                  "securableElements": {
-                    "Namespace": [],
-                    "EducationOrganization": [],
-                    "Student": [],
-                    "Contact": [],
-                    "Staff": []
-                  },
-                  "authorizationPathways": [],
-                  "decimalPropertyValidationInfos": [],
-                  "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                      "studentUniqueId": { "type": "string", "maxLength": 32 }
-                    },
-                    "required": [ "studentUniqueId" ]
-                  }
-                },
-                "programTypeDescriptors": {
-                  "resourceName": "ProgramTypeDescriptor",
-                  "isDescriptor": true,
-                  "isSchoolYearEnumeration": false,
-                  "isResourceExtension": false,
-                  "allowIdentityUpdates": false,
-                  "isSubclass": false,
-                  "identityJsonPaths": [],
-                  "booleanJsonPaths": [],
-                  "numericJsonPaths": [],
-                  "dateJsonPaths": [],
-                  "dateTimeJsonPaths": [],
-                  "equalityConstraints": [],
-                  "arrayUniquenessConstraints": [],
-                  "documentPathsMapping": {},
-                  "queryFieldMapping": {},
-                  "securableElements": {
-                    "Namespace": [],
-                    "EducationOrganization": [],
-                    "Student": [],
-                    "Contact": [],
-                    "Staff": []
-                  },
-                  "authorizationPathways": [],
-                  "decimalPropertyValidationInfos": [],
-                  "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                      "codeValue": { "type": "string", "maxLength": 20 },
-                      "namespace": { "type": "string", "maxLength": 255 }
-                    },
-                    "required": [ "codeValue", "namespace" ]
-                  }
-                }
-              }
-            }
-            """;
-
         private static readonly QualifiedResourceName _studentArtProgramAssociationResource = new(
             "Ed-Fi",
             "StudentArtProgramAssociation"
+        );
+        private static readonly QualifiedResourceName _generalStudentProgramAssociationResource = new(
+            "Ed-Fi",
+            "GeneralStudentProgramAssociation"
         );
 
         private static EffectiveSchemaSet CreateCompositeAbstractResourceSchemaSet()
@@ -728,7 +411,7 @@ public class Given_RuntimeMappingSetCompiler
             );
             var generalProgramKeyEntry = new ResourceKeyEntry(
                 2,
-                new QualifiedResourceName("Ed-Fi", "GeneralStudentProgramAssociation"),
+                _generalStudentProgramAssociationResource,
                 "5.0.0",
                 true
             );
@@ -785,7 +468,7 @@ public class Given_RuntimeMappingSetCompiler
                 ]
             );
 
-            var projectSchema = (JsonObject)JsonNode.Parse(AbstractCompositeReferenceProjectSchemaJson)!;
+            var projectSchema = GeneralStudentProgramAssociationTestSchema.BuildProjectSchema();
 
             return new EffectiveSchemaSet(
                 effectiveSchema,
@@ -794,14 +477,11 @@ public class Given_RuntimeMappingSetCompiler
         }
 
         /// <summary>
-        /// The compiled write-plan column bindings for <c>StudentArtProgramAssociation</c> must include
-        /// the <em>renamed</em> reference-backed abstract identity columns.
-        /// This assertion is a genuine guard: if the pipeline regressed to the old concatenated names
-        /// (e.g. <c>StudentReferenceStudentUniqueId</c>), the <c>Contain</c> checks would fail because
-        /// those column names no longer exist in the relational model.
+        /// Runtime compilation must preserve the renamed reference-backed abstract identity column contract
+        /// on the derived abstract identity table and union view.
         /// </summary>
         [Test]
-        public async Task It_should_compile_write_plan_with_renamed_reference_backed_abstract_identity_columns()
+        public async Task It_should_compile_model_with_renamed_reference_backed_abstract_identity_columns()
         {
             var schemaSet = CreateCompositeAbstractResourceSchemaSet();
             var compiler = new RuntimeMappingSetCompiler(
@@ -813,24 +493,33 @@ public class Given_RuntimeMappingSetCompiler
             var key = compiler.GetCurrentKey();
             var mappingSet = await compiler.CompileAsync(key, CancellationToken.None);
 
-            mappingSet.WritePlansByResource.Should().ContainKey(_studentArtProgramAssociationResource);
-            var writePlan = mappingSet.WritePlansByResource[_studentArtProgramAssociationResource];
-            var rootTablePlan = writePlan.TablePlansInDependencyOrder.Single(p =>
-                p.TableModel.Table.Name == "StudentArtProgramAssociation"
+            var abstractIdentityTable = mappingSet.Model.AbstractIdentityTablesInNameOrder.Single(table =>
+                table.AbstractResourceKey.Resource == _generalStudentProgramAssociationResource
+            );
+            var unionView = mappingSet.Model.AbstractUnionViewsInNameOrder.Single(view =>
+                view.AbstractResourceKey.Resource == _generalStudentProgramAssociationResource
             );
 
-            var columnNames = rootTablePlan.ColumnBindings.Select(b => b.Column.ColumnName.Value).ToList();
+            var abstractColumnNames = abstractIdentityTable
+                .TableModel.Columns.Select(column => column.ColumnName.Value)
+                .ToList();
+            var unionViewColumnNames = unionView
+                .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+                .ToList();
 
-            // Reference-backed abstract identity columns must use the renamed convention
-            // (Resource_Field) introduced by DMS-1223.
-            columnNames.Should().Contain("Student_StudentUniqueId");
-            columnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
-            columnNames.Should().Contain("Program_EducationOrganizationId");
-            columnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
+            abstractColumnNames.Should().Contain("Student_StudentUniqueId");
+            abstractColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
+            abstractColumnNames.Should().Contain("Program_EducationOrganizationId");
+            abstractColumnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
+            unionViewColumnNames.Should().Contain("Student_StudentUniqueId");
+            unionViewColumnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
+            unionViewColumnNames.Should().Contain("Program_EducationOrganizationId");
+            unionViewColumnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
 
-            // Must NOT carry the old concatenated names that existed before the rename.
-            columnNames.Should().NotContain("StudentReferenceStudentUniqueId");
-            columnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor");
+            abstractColumnNames.Should().NotContain("StudentReferenceStudentUniqueId");
+            abstractColumnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor");
+            unionViewColumnNames.Should().NotContain("StudentReferenceStudentUniqueId");
+            unionViewColumnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor");
         }
     }
 

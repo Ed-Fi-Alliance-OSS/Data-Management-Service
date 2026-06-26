@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Serialization;
-
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
@@ -715,20 +713,6 @@ public sealed record ReferenceIdentityBinding
     public JsonPathExpression ReferenceJsonPath { get; init; }
 
     public DbColumnName Column { get; init; }
-
-    /// <summary>
-    /// The override-free convention column name computed by <c>ReferenceBindingPass</c> before any
-    /// <c>relational.nameOverrides</c> are applied. Used by
-    /// <c>AbstractIdentityTableAndUnionViewDerivationPass</c> to name abstract identity columns
-    /// so they match the concrete reference binding's override-free name by construction.
-    /// Intentionally not serialized — it is a derivation-time scratch value, valid only within a single
-    /// in-memory build where ReferenceBindingPass runs before abstract identity derivation. As a record
-    /// property it participates in value equality, so a deserialized binding (where this is null) is not
-    /// <c>Equals</c> to its in-memory original; this is harmless because no consumer compares whole
-    /// <see cref="ReferenceIdentityBinding"/> instances by value.
-    /// </summary>
-    [JsonIgnore]
-    public DbColumnName? ConventionColumn { get; init; }
 }
 
 /// <summary>

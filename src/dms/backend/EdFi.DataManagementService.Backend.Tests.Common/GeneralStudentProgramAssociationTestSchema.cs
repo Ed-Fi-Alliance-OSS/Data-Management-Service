@@ -5,13 +5,13 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 /// <summary>
 /// Shared schema builder for the GeneralStudentProgramAssociation abstract resource.
 /// Used by constraint derivation and trigger inventory pass tests.
 /// </summary>
-internal static class GeneralStudentProgramAssociationTestSchema
+public static class GeneralStudentProgramAssociationTestSchema
 {
     /// <summary>
     /// Builds a project schema with <c>GeneralStudentProgramAssociation</c> as the abstract resource
@@ -19,7 +19,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// Student references. Referenced resources (School as an EducationOrganization subclass, Program,
     /// Student, ProgramTypeDescriptor) are included so the schema passes validation.
     /// </summary>
-    internal static JsonObject BuildProjectSchema()
+    public static JsonObject BuildProjectSchema()
     {
         return new JsonObject
         {
@@ -59,7 +59,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// StudentArtProgramAssociation concrete subclass of GeneralStudentProgramAssociation;
     /// identity paths route through EducationOrganization, Program (descriptor-valued field), and Student.
     /// </summary>
-    internal static JsonObject BuildStudentArtProgramAssociationSchema()
+    public static JsonObject BuildStudentArtProgramAssociationSchema()
     {
         var jsonSchemaForInsert = new JsonObject
         {
@@ -189,7 +189,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// <summary>
     /// School as a domainObjectSubclass of EducationOrganization.
     /// </summary>
-    internal static JsonObject BuildSchoolSchema()
+    public static JsonObject BuildSchoolSchema()
     {
         return new JsonObject
         {
@@ -232,7 +232,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// <summary>
     /// Program resource with a scalar and a descriptor-valued identity path.
     /// </summary>
-    internal static JsonObject BuildProgramSchema()
+    public static JsonObject BuildProgramSchema()
     {
         return new JsonObject
         {
@@ -283,7 +283,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// <summary>
     /// Student resource with a scalar identity path.
     /// </summary>
-    internal static JsonObject BuildStudentSchema()
+    public static JsonObject BuildStudentSchema()
     {
         return new JsonObject
         {
@@ -319,7 +319,7 @@ internal static class GeneralStudentProgramAssociationTestSchema
     /// <summary>
     /// Minimal ProgramTypeDescriptor schema for descriptor binding.
     /// </summary>
-    internal static JsonObject BuildProgramTypeDescriptorSchema()
+    public static JsonObject BuildProgramTypeDescriptorSchema()
     {
         return new JsonObject
         {

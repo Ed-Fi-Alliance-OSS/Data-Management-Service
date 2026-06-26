@@ -310,9 +310,8 @@ internal static class RelationalModelSetSchemaHelpers
     /// Builds the physical column name for a plain-scalar or direct-descriptor abstract identity column.
     /// Used only when the identity path is not reference-backed (no document reference binding exists
     /// for this path on the concrete members). Reference-backed abstract identity columns are named by
-    /// reusing the override-free convention column name carried on
-    /// <see cref="ReferenceIdentityBinding.ConventionColumn"/> — computed by <c>ReferenceBindingPass</c>
-    /// and consumed by <c>AbstractIdentityTableAndUnionViewDerivationPass</c>.
+    /// reusing the override-free convention column name computed by <c>ReferenceBindingPass</c>
+    /// and cached in the builder context for <c>AbstractIdentityTableAndUnionViewDerivationPass</c>.
     /// <para>
     /// The column name is <c>BuildIdentityPartBaseName(identityPath)</c> unchanged, or further suffixed
     /// via <c>RelationalNameConventions.DescriptorIdColumnName</c> when <paramref name="isDescriptor"/>

@@ -235,7 +235,23 @@ internal static class IdentityProjectionResolver
             );
         }
 
-        return identityBindingsForPath.Select(ib => ib.Column).ToArray();
+        // Grouped duplicate bindings share one ReferenceJsonPath but map to several key-unified target
+        // identity fields. Order the field-name-matched binding first — the same rule that names abstract
+        // identity columns — with a deterministic tie-break, so callers that take the representative member
+        // (SelectIdentityElementColumn) produce a source independent of binding order.
+        return identityBindingsForPath
+            .OrderBy(ib =>
+                string.Equals(
+                    BuildReferenceIdentityFieldBaseName(binding.ReferenceObjectPath, ib.ReferenceJsonPath),
+                    BuildIdentityPartBaseName(ib.IdentityJsonPath),
+                    StringComparison.Ordinal
+                )
+                    ? 0
+                    : 1
+            )
+            .ThenBy(ib => ib.IdentityJsonPath.Canonical, StringComparer.Ordinal)
+            .Select(ib => ib.Column)
+            .ToArray();
     }
 
     /// <summary>

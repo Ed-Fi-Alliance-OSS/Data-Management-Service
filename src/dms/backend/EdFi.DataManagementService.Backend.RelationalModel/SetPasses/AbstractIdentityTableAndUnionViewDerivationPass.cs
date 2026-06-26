@@ -71,7 +71,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 var identityDerivations = BuildIdentityColumnDerivations(
                     identityJsonPaths,
                     abstractResource,
-                    members
+                    members,
+                    context
                 );
                 var identityColumns = identityDerivations
                     .Select(derivation => derivation.IdentityColumn)
@@ -381,7 +382,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     private static IReadOnlyList<IdentityColumnDerivation> BuildIdentityColumnDerivations(
         IReadOnlyList<JsonPathExpression> identityJsonPaths,
         QualifiedResourceName abstractResource,
-        IReadOnlyList<ConcreteResourceMetadata> members
+        IReadOnlyList<ConcreteResourceMetadata> members,
+        RelationalModelSetBuilderContext context
     )
     {
         // Resolve, for each identity path, the convention column name carried from the concrete
@@ -390,7 +392,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         // override-free name, eliminating any re-derivation divergence. Null = plain scalar path.
         var conventionColumnByIdentityPath = identityJsonPaths.ToDictionary(
             identityPath => identityPath.Canonical,
-            identityPath => ResolveReferenceConventionColumn(identityPath, abstractResource, members),
+            identityPath =>
+                ResolveReferenceConventionColumn(identityPath, abstractResource, members, context),
             StringComparer.Ordinal
         );
 
@@ -468,21 +471,22 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
     /// <summary>
     /// Resolves the override-free convention column name for an abstract identity path by scanning the
-    /// concrete members' document reference bindings for a matching <see cref="ReferenceIdentityBinding"/>.
+    /// concrete members' document reference bindings for a matching <see cref="ReferenceIdentityBinding"/>
+    /// and reading the convention name cached by <c>ReferenceBindingPass</c>.
     /// Returns <see langword="null"/> for plain scalar paths (no member reaches this path via a reference),
     /// in which case the caller derives the name from the identity path directly.
     /// Precedence rule: when at least one member reaches the path through a reference, that reference-backed
     /// convention name wins. Real Ed-Fi schemas never have some members reach one abstract identity path via
     /// a reference and others via a plain scalar, so this method does not separately validate that case.
-    /// Throws <see cref="InvalidOperationException"/> when reference-backed members yield different convention
-    /// column names for the same abstract identity path (ambiguous abstract identity naming), or when a
-    /// matched binding has a null <see cref="ReferenceIdentityBinding.ConventionColumn"/> (it must be set by
-    /// <c>ReferenceBindingPass</c>).
+    /// Throws <see cref="InvalidOperationException"/> when same-reference-path duplicate bindings are
+    /// ambiguous, when reference-backed members yield different convention column names for the same abstract
+    /// identity path, or when the builder context does not contain convention metadata for a matched binding.
     /// </summary>
     private static DbColumnName? ResolveReferenceConventionColumn(
         JsonPathExpression identityPath,
         QualifiedResourceName abstractResource,
-        IReadOnlyList<ConcreteResourceMetadata> members
+        IReadOnlyList<ConcreteResourceMetadata> members,
+        RelationalModelSetBuilderContext context
     )
     {
         DbColumnName? resolved = null;
@@ -494,61 +498,166 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             // reference-backed abstract identity would silently fall back to a scalar-style name.
             var mappedPath = MapIdentityPathForMember(member, identityPath, abstractResource);
 
-            foreach (var refBinding in member.Model.DocumentReferenceBindings)
+            var candidates = ResolveReferenceConventionColumnCandidates(
+                context,
+                identityPath,
+                abstractResource,
+                member,
+                mappedPath
+            );
+
+            if (candidates.Count == 0)
             {
-                foreach (var identityBinding in refBinding.IdentityBindings)
+                continue;
+            }
+
+            var conventionColumn = SelectReferenceConventionColumnCandidate(
+                identityPath,
+                abstractResource,
+                member,
+                candidates
+            );
+
+            // The convention column is a pure function of the reference's MappingKey, the
+            // reference-relative field, and the descriptor flag, so every member sharing this abstract
+            // identity path resolves to the same value. The mismatch branch fails fast if a future schema
+            // shape violates that.
+            if (resolved is { } existing)
+            {
+                if (!string.Equals(existing.Value, conventionColumn.Value, StringComparison.Ordinal))
                 {
-                    if (
-                        !string.Equals(
-                            identityBinding.ReferenceJsonPath.Canonical,
-                            mappedPath.Canonical,
-                            StringComparison.Ordinal
-                        )
-                    )
-                    {
-                        continue;
-                    }
-
-                    // Invariant: ReferenceBindingPass runs before this pass and sets ConventionColumn on
-                    // every reference identity binding. A null here would mean a binding reached this pass
-                    // without it (a future producer, or a deserialize round-trip that drops the
-                    // [JsonIgnore] value) — fail fast rather than emit a wrong abstract column name.
-                    if (identityBinding.ConventionColumn is not { } conventionColumn)
-                    {
-                        throw new InvalidOperationException(
-                            $"Abstract identity path '{identityPath.Canonical}' for resource "
-                                + $"'{FormatResource(abstractResource)}' matched a reference identity binding "
-                                + $"on member '{FormatResource(member.Resource)}' with a null ConventionColumn. "
-                                + "ConventionColumn must be set by ReferenceBindingPass."
-                        );
-                    }
-
-                    // ConventionColumn is a pure function of the reference's MappingKey, the
-                    // reference-relative field, and the descriptor flag, so every member sharing this
-                    // abstract identity path resolves to the same value. The mismatch branch cannot fire
-                    // for a valid schema; it fails fast only if a future schema shape violates that.
-                    if (resolved is { } existing)
-                    {
-                        if (!string.Equals(existing.Value, conventionColumn.Value, StringComparison.Ordinal))
-                        {
-                            throw new InvalidOperationException(
-                                $"Abstract identity path '{identityPath.Canonical}' for resource "
-                                    + $"'{FormatResource(abstractResource)}' has ambiguous abstract identity naming: "
-                                    + $"convention column '{existing.Value}' vs '{conventionColumn.Value}'."
-                            );
-                        }
-                    }
-                    else
-                    {
-                        resolved = conventionColumn;
-                    }
-
-                    break;
+                    throw new InvalidOperationException(
+                        $"Abstract identity path '{identityPath.Canonical}' for resource "
+                            + $"'{FormatResource(abstractResource)}' has ambiguous abstract identity naming: "
+                            + $"convention column '{existing.Value}' vs '{conventionColumn.Value}'."
+                    );
                 }
+            }
+            else
+            {
+                resolved = conventionColumn;
             }
         }
 
         return resolved;
+    }
+
+    private static IReadOnlyList<ReferenceConventionColumnCandidate> ResolveReferenceConventionColumnCandidates(
+        RelationalModelSetBuilderContext context,
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        ConcreteResourceMetadata member,
+        JsonPathExpression mappedPath
+    )
+    {
+        List<ReferenceConventionColumnCandidate> candidates = [];
+
+        foreach (var refBinding in member.Model.DocumentReferenceBindings)
+        {
+            foreach (var identityBinding in refBinding.IdentityBindings)
+            {
+                if (
+                    !string.Equals(
+                        identityBinding.ReferenceJsonPath.Canonical,
+                        mappedPath.Canonical,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    continue;
+                }
+
+                if (
+                    !context.TryGetReferenceIdentityConventionColumn(
+                        member.Resource,
+                        refBinding.ReferenceObjectPath,
+                        identityBinding.ReferenceJsonPath,
+                        identityBinding.IdentityJsonPath,
+                        out var conventionColumn
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Abstract identity path '{identityPath.Canonical}' for resource "
+                            + $"'{FormatResource(abstractResource)}' matched a reference identity binding "
+                            + $"'{identityBinding.ReferenceJsonPath.Canonical}' -> "
+                            + $"'{identityBinding.IdentityJsonPath.Canonical}' on member "
+                            + $"'{FormatResource(member.Resource)}', but ReferenceBindingPass did not cache "
+                            + "a convention column for that binding."
+                    );
+                }
+
+                candidates.Add(
+                    new ReferenceConventionColumnCandidate(
+                        identityBinding.ReferenceJsonPath,
+                        identityBinding.IdentityJsonPath,
+                        conventionColumn,
+                        BuildReferenceIdentityFieldBaseName(
+                            refBinding.ReferenceObjectPath,
+                            identityBinding.ReferenceJsonPath
+                        ),
+                        BuildIdentityPartBaseName(identityBinding.IdentityJsonPath)
+                    )
+                );
+            }
+        }
+
+        return candidates;
+    }
+
+    private static DbColumnName SelectReferenceConventionColumnCandidate(
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        ConcreteResourceMetadata member,
+        IReadOnlyList<ReferenceConventionColumnCandidate> candidates
+    )
+    {
+        var distinctConventionColumns = candidates
+            .Select(static candidate => candidate.ConventionColumn.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (distinctConventionColumns.Length == 1)
+        {
+            return candidates[0].ConventionColumn;
+        }
+
+        var fieldMatchedCandidates = candidates
+            .Where(static candidate =>
+                string.Equals(
+                    candidate.ReferenceFieldBaseName,
+                    candidate.IdentityPartBaseName,
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        var distinctFieldMatchedConventionColumns = fieldMatchedCandidates
+            .Select(static candidate => candidate.ConventionColumn.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (distinctFieldMatchedConventionColumns.Length == 1)
+        {
+            return fieldMatchedCandidates[0].ConventionColumn;
+        }
+
+        var candidateDetails = string.Join(
+            ", ",
+            candidates.Select(candidate =>
+                $"'{candidate.ReferenceJsonPath.Canonical}' -> "
+                + $"'{candidate.IdentityJsonPath.Canonical}' = '{candidate.ConventionColumn.Value}'"
+            )
+        );
+
+        throw new InvalidOperationException(
+            $"Abstract identity path '{identityPath.Canonical}' for resource "
+                + $"'{FormatResource(abstractResource)}' matched duplicate reference identity bindings on "
+                + $"member '{FormatResource(member.Resource)}' with ambiguous convention columns: "
+                + $"{candidateDetails}. Duplicate ReferenceJsonPath bindings must resolve by matching "
+                + "the reference field name to one target identity field, or by producing the same "
+                + "convention column."
+        );
     }
 
     /// <summary>
@@ -1075,6 +1184,17 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             _ => scalarType.Kind.ToString(),
         };
     }
+
+    /// <summary>
+    /// Captures one reference identity binding that can name an abstract identity column.
+    /// </summary>
+    private sealed record ReferenceConventionColumnCandidate(
+        JsonPathExpression ReferenceJsonPath,
+        JsonPathExpression IdentityJsonPath,
+        DbColumnName ConventionColumn,
+        string ReferenceFieldBaseName,
+        string IdentityPartBaseName
+    );
 
     /// <summary>
     /// Represents the resolved kind and type metadata for an identity column across concrete members.

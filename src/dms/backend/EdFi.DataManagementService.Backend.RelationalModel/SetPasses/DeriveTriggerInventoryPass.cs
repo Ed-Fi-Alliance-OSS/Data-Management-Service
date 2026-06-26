@@ -385,7 +385,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             {
                 var columnMappings = BuildPropagationColumnMappings(
                     entry.Binding,
-                    entry.Mapping,
                     entry.ReferrerResource,
                     entry.BindingTable,
                     triggerTableModel,
@@ -537,7 +536,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// </remarks>
     private static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
         DocumentReferenceBinding binding,
-        DocumentReferenceMapping mapping,
         QualifiedResourceName referrerResource,
         DbTableModel bindingTableModel,
         DbTableModel triggerTable,
@@ -547,51 +545,81 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         // Build lookup: identity JSON path → source column on the trigger table.
         var sourceColumnsByPath = BuildColumnNameLookupBySourceJsonPath(triggerTable, targetResource);
 
-        // Build lookup: reference JSON path → identity JSON path.
-        var identityPathByReferencePath = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var entry in mapping.ReferenceJsonPaths)
-        {
-            identityPathByReferencePath[entry.ReferenceJsonPath.Canonical] = entry.IdentityJsonPath.Canonical;
-        }
-
-        // Deduplicate by TargetColumn: key unification can cause multiple identity bindings
-        // to resolve to the same stored column. Duplicate column mappings would produce invalid
-        // SQL (SQL Server Error 264: duplicate columns in SET clause).
-        HashSet<string> seenTargets = new(StringComparer.Ordinal);
-        List<TriggerColumnMapping> mappings = new(binding.IdentityBindings.Count);
+        // Group identity bindings by their resolved (stored) target column, preserving first-appearance
+        // order for the SET clause. Key unification can map several identity bindings to one stored target
+        // column — including grouped duplicate ReferenceJsonPath bindings that map one reference field to
+        // several key-unified target identity fields — and collapsing them avoids invalid SQL (SQL Server
+        // Error 264: duplicate columns in SET clause). ib.Column may be a unified-alias computed column, so
+        // resolve it to its canonical storage column before grouping.
+        var orderedTargets = new List<DbColumnName>();
+        var bindingsByTarget = new Dictionary<string, List<ReferenceIdentityBinding>>(StringComparer.Ordinal);
 
         foreach (var ib in binding.IdentityBindings)
         {
-            if (
-                !identityPathByReferencePath.TryGetValue(ib.ReferenceJsonPath.Canonical, out var identityPath)
-            )
+            var targetColumn = ResolveToStoredColumn(ib.Column, bindingTableModel, referrerResource);
+
+            if (!bindingsByTarget.TryGetValue(targetColumn.Value, out var grouped))
             {
-                throw new InvalidOperationException(
-                    $"Propagation fallback trigger derivation for referrer '{FormatResource(referrerResource)}': "
-                        + $"reference JSON path '{ib.ReferenceJsonPath.Canonical}' did not map to "
-                        + "a target identity path."
-                );
+                grouped = [];
+                bindingsByTarget[targetColumn.Value] = grouped;
+                orderedTargets.Add(targetColumn);
             }
 
-            if (!sourceColumnsByPath.TryGetValue(identityPath, out var sourceColumn))
+            grouped.Add(ib);
+        }
+
+        List<TriggerColumnMapping> mappings = new(orderedTargets.Count);
+
+        foreach (var targetColumn in orderedTargets)
+        {
+            // Choose the source from the field-name-matched binding (the rule that names abstract identity
+            // columns), so the emitted source is independent of binding order rather than reflecting
+            // whichever grouped duplicate happened to be first. The chosen binding's own IdentityJsonPath
+            // resolves the source column, keeping the source-to-target pairing correct.
+            var chosen = SelectReferenceFieldMatchedBinding(
+                binding.ReferenceObjectPath,
+                bindingsByTarget[targetColumn.Value]
+            );
+
+            if (!sourceColumnsByPath.TryGetValue(chosen.IdentityJsonPath.Canonical, out var sourceColumn))
             {
                 throw new InvalidOperationException(
                     $"Propagation fallback trigger derivation for target '{FormatResource(targetResource)}': "
-                        + $"identity path '{identityPath}' did not map to a column on trigger table "
-                        + $"'{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
+                        + $"identity path '{chosen.IdentityJsonPath.Canonical}' did not map to a column on "
+                        + $"trigger table '{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
                 );
             }
 
-            // ib.Column may be a unified-alias computed column; resolve to its canonical storage column.
-            var targetColumn = ResolveToStoredColumn(ib.Column, bindingTableModel, referrerResource);
-
-            if (seenTargets.Add(targetColumn.Value))
-            {
-                mappings.Add(new TriggerColumnMapping(sourceColumn, targetColumn));
-            }
+            mappings.Add(new TriggerColumnMapping(sourceColumn, targetColumn));
         }
 
         return mappings.ToArray();
+    }
+
+    /// <summary>
+    /// Chooses one identity binding from a group that resolves to the same stored column. Prefers the
+    /// binding whose reference field name matches its target identity field name — the same rule that names
+    /// abstract identity columns — with a deterministic tie-break, so trigger source selection does not
+    /// depend on binding order. Grouped duplicate bindings are key-unified, so every candidate carries the
+    /// same stored value; this only fixes which equivalent column name is emitted.
+    /// </summary>
+    private static ReferenceIdentityBinding SelectReferenceFieldMatchedBinding(
+        JsonPathExpression referenceObjectPath,
+        IReadOnlyList<ReferenceIdentityBinding> candidates
+    )
+    {
+        return candidates
+            .OrderBy(ib =>
+                string.Equals(
+                    BuildReferenceIdentityFieldBaseName(referenceObjectPath, ib.ReferenceJsonPath),
+                    BuildIdentityPartBaseName(ib.IdentityJsonPath),
+                    StringComparison.Ordinal
+                )
+                    ? 0
+                    : 1
+            )
+            .ThenBy(ib => ib.IdentityJsonPath.Canonical, StringComparer.Ordinal)
+            .First();
     }
 
     /// <summary>
@@ -662,16 +690,19 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             if (identityPartColumns is not null)
             {
-                if (identityPartColumns.Count != 1)
-                {
-                    throw new InvalidOperationException(
-                        $"Abstract identity path '{abstractPath}' (concrete path '{concretePath}') "
-                            + $"on resource '{FormatResource(resource)}' expected exactly one identity-part column "
-                            + $"but found {identityPartColumns.Count}."
-                    );
-                }
+                // A logical reference field can fan out to multiple identity-part columns when
+                // duplicate ReferenceJsonPath bindings map one reference field to several target
+                // identity fields (the same grouped-duplicate shape the abstract identity table accepts).
+                // They must converge to one stored column; SelectIdentityElementColumn verifies that and
+                // returns the representative member, throwing only on genuine divergence.
+                var sourceColumn = SelectIdentityElementColumn(
+                    identityPartColumns,
+                    rootTable,
+                    concretePath,
+                    resource
+                );
 
-                mappings.Add(new TriggerColumnMapping(identityPartColumns[0], abstractColumn.ColumnName));
+                mappings.Add(new TriggerColumnMapping(sourceColumn, abstractColumn.ColumnName));
                 continue;
             }
 

@@ -977,8 +977,14 @@ public class Given_Abstract_Identity_Table_With_Key_Unified_Duplicate_Root_Sourc
     [SetUp]
     public void Setup()
     {
-        var projectSchema =
-            AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema();
+        _result = BuildDerivedSet(reverseDuplicateReferenceBindings: false);
+    }
+
+    private static DerivedRelationalModelSet BuildDerivedSet(bool reverseDuplicateReferenceBindings)
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema(
+            reverseDuplicateReferenceBindings
+        );
         var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             projectSchema,
             isExtensionProject: false
@@ -996,7 +1002,7 @@ public class Given_Abstract_Identity_Table_With_Key_Unified_Duplicate_Root_Sourc
             }
         );
 
-        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
     /// <summary>
@@ -1025,6 +1031,47 @@ public class Given_Abstract_Identity_Table_With_Key_Unified_Duplicate_Root_Sourc
             .Subject;
 
         identityProjection.ColumnName.Value.Should().Be("SchoolId_Unified");
+    }
+
+    /// <summary>
+    /// It should not let duplicate reference identity binding order change the abstract column contract.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_duplicate_reference_bindings_independent_of_binding_order()
+    {
+        var reversedResult = BuildDerivedSet(reverseDuplicateReferenceBindings: true);
+
+        ResolveAbstractIdentityColumnNames(reversedResult)
+            .Should()
+            .Equal(ResolveAbstractIdentityColumnNames(_result))
+            .And.Contain("School_SchoolId")
+            .And.NotContain("School_LocalEducationAgencyId");
+
+        ResolveUnionViewOutputColumnNames(reversedResult)
+            .Should()
+            .Equal(ResolveUnionViewOutputColumnNames(_result))
+            .And.Contain("School_SchoolId")
+            .And.NotContain("School_LocalEducationAgencyId");
+    }
+
+    private static string[] ResolveAbstractIdentityColumnNames(DerivedRelationalModelSet modelSet)
+    {
+        return modelSet
+            .AbstractIdentityTablesInNameOrder.Single(table =>
+                table.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+            )
+            .TableModel.Columns.Select(column => column.ColumnName.Value)
+            .ToArray();
+    }
+
+    private static string[] ResolveUnionViewOutputColumnNames(DerivedRelationalModelSet modelSet)
+    {
+        return modelSet
+            .AbstractUnionViewsInNameOrder.Single(view =>
+                view.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+            )
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .ToArray();
     }
 }
 
@@ -1961,7 +2008,9 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     /// Build project schema with grouped reference-field duplicates that key-unify before abstract identity
     /// derivation.
     /// </summary>
-    internal static JsonObject BuildGroupedReferenceIdentityProjectSchema()
+    internal static JsonObject BuildGroupedReferenceIdentityProjectSchema(
+        bool reverseDuplicateReferenceBindings = false
+    )
     {
         return new JsonObject
         {
@@ -1978,7 +2027,9 @@ internal static class AbstractIdentityTableTestSchemaBuilder
             },
             ["resourceSchemas"] = new JsonObject
             {
-                ["enrollmentSchoolCarriers"] = BuildGroupedReferenceIdentityMemberSchema(),
+                ["enrollmentSchoolCarriers"] = BuildGroupedReferenceIdentityMemberSchema(
+                    reverseDuplicateReferenceBindings
+                ),
                 ["schools"] = BuildGroupedReferenceIdentityTargetSchema(),
             },
         };
@@ -2013,8 +2064,24 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     /// <summary>
     /// Build subclass resource schema whose identity comes from one grouped duplicate reference field.
     /// </summary>
-    private static JsonObject BuildGroupedReferenceIdentityMemberSchema()
+    private static JsonObject BuildGroupedReferenceIdentityMemberSchema(
+        bool reverseDuplicateReferenceBindings
+    )
     {
+        var schoolIdBinding = new JsonObject
+        {
+            ["identityJsonPath"] = "$.schoolId",
+            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+        };
+        var localEducationAgencyIdBinding = new JsonObject
+        {
+            ["identityJsonPath"] = "$.localEducationAgencyId",
+            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+        };
+        var referenceJsonPaths = reverseDuplicateReferenceBindings
+            ? new JsonArray { localEducationAgencyIdBinding, schoolIdBinding }
+            : new JsonArray { schoolIdBinding, localEducationAgencyIdBinding };
+
         return new JsonObject
         {
             ["resourceName"] = "EnrollmentSchoolCarrier",
@@ -2035,19 +2102,7 @@ internal static class AbstractIdentityTableTestSchemaBuilder
                     ["isRequired"] = true,
                     ["projectName"] = "Ed-Fi",
                     ["resourceName"] = "School",
-                    ["referenceJsonPaths"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.schoolId",
-                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
-                        },
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.localEducationAgencyId",
-                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
-                        },
-                    },
+                    ["referenceJsonPaths"] = referenceJsonPaths,
                 },
             },
             ["arrayUniquenessConstraints"] = new JsonArray(),
