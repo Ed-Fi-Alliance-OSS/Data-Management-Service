@@ -43,6 +43,10 @@ on:
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
         required: true
+      AZURE_ARTIFACTS_USER_NAME:
+        # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
+        # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
+        required: false
     outputs:
       hash-code:
         description: "Hash code of the built package"
