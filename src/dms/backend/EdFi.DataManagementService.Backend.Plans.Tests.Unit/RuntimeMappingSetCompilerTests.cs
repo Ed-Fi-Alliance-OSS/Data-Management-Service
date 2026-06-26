@@ -238,11 +238,15 @@ public class Given_RuntimeMappingSetCompiler
     }
 
     [TestFixture]
-    public class Given_Abstract_Resource_Plan_Uses_Renamed_Columns : Given_RuntimeMappingSetCompiler
+    public class Given_Scalar_Abstract_Resource_Plan_Uses_Identity_Column_Names
+        : Given_RuntimeMappingSetCompiler
     {
-        // A minimal schema with an EducationOrganization abstract resource and a School subclass
-        // that references it.  The write plan column bindings must carry the renamed abstract identity
-        // columns (e.g. EducationOrganizationId), not old concatenated names.
+        // Covers the plain-scalar abstract identity path (EducationOrganization's
+        // $.educationOrganizationId) with a School subclass that references it. This is NOT the DMS-1223
+        // reference-backed rename — that path is unchanged scalar coverage. The reference-backed DMS-1223
+        // behavior (Student_StudentUniqueId, Program_ProgramTypeDescriptor_DescriptorId) is guarded by
+        // Given_Abstract_Resource_Plan_Uses_Renamed_Reference_Backed_Columns below. Here the write plan
+        // column bindings must carry the abstract identity column (EducationOrganizationId).
         private const string AbstractResourceProjectSchemaJson = """
             {
               "projectName": "Ed-Fi",

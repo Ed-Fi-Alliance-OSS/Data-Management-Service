@@ -387,8 +387,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         // Resolve, for each identity path, the convention column name carried from the concrete
         // reference binding (the override-free name set by ReferenceBindingPass). This ensures
         // abstract identity column names are identical by construction to the concrete binding's
-        // override-free name, eliminating any re-derivation divergence.
-        var referenceResolutionByIdentityPath = identityJsonPaths.ToDictionary(
+        // override-free name, eliminating any re-derivation divergence. Null = plain scalar path.
+        var conventionColumnByIdentityPath = identityJsonPaths.ToDictionary(
             identityPath => identityPath.Canonical,
             identityPath => ResolveReferenceConventionColumn(identityPath, abstractResource, members),
             StringComparer.Ordinal
@@ -433,14 +433,14 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 );
             }
 
-            var referenceResolution = referenceResolutionByIdentityPath[identityPath.Canonical];
+            var referenceConventionColumn = conventionColumnByIdentityPath[identityPath.Canonical];
 
             string columnNameValue;
 
-            if (referenceResolution is not null)
+            if (referenceConventionColumn is { } conventionColumn)
             {
                 // Reference-backed: reuse the convention column name carried from the concrete binding.
-                columnNameValue = referenceResolution.ConventionColumn.Value;
+                columnNameValue = conventionColumn.Value;
             }
             else
             {
@@ -469,19 +469,23 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     /// <summary>
     /// Resolves the override-free convention column name for an abstract identity path by scanning the
     /// concrete members' document reference bindings for a matching <see cref="ReferenceIdentityBinding"/>.
-    /// Returns <see langword="null"/> for plain scalar paths (no reference binding found).
-    /// Throws <see cref="InvalidOperationException"/> when members yield different convention column names
-    /// for the same abstract identity path (ambiguous abstract identity naming), or when a matched binding
-    /// has a null <see cref="ReferenceIdentityBinding.ConventionColumn"/> (it must be set by
+    /// Returns <see langword="null"/> for plain scalar paths (no member reaches this path via a reference),
+    /// in which case the caller derives the name from the identity path directly.
+    /// Precedence rule: when at least one member reaches the path through a reference, that reference-backed
+    /// convention name wins. Real Ed-Fi schemas never have some members reach one abstract identity path via
+    /// a reference and others via a plain scalar, so this method does not separately validate that case.
+    /// Throws <see cref="InvalidOperationException"/> when reference-backed members yield different convention
+    /// column names for the same abstract identity path (ambiguous abstract identity naming), or when a
+    /// matched binding has a null <see cref="ReferenceIdentityBinding.ConventionColumn"/> (it must be set by
     /// <c>ReferenceBindingPass</c>).
     /// </summary>
-    private static ReferenceResolution? ResolveReferenceConventionColumn(
+    private static DbColumnName? ResolveReferenceConventionColumn(
         JsonPathExpression identityPath,
         QualifiedResourceName abstractResource,
         IReadOnlyList<ConcreteResourceMetadata> members
     )
     {
-        ReferenceResolution? resolved = null;
+        DbColumnName? resolved = null;
 
         foreach (var member in members)
         {
@@ -505,11 +509,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         continue;
                     }
 
-                    // Defensive invariant: ReferenceBindingPass sets ConventionColumn on every
-                    // reference identity binding it creates, and the only other pass that rebuilds
-                    // bindings (ApplyDialectIdentifierShorteningPass) preserves it via `with`. A null
-                    // here would mean a future binding source skipped it — fail fast rather than emit
-                    // a wrong abstract column name. No valid schema can reach this branch.
+                    // Invariant: ReferenceBindingPass runs before this pass and sets ConventionColumn on
+                    // every reference identity binding. A null here would mean a binding reached this pass
+                    // without it (a future producer, or a deserialize round-trip that drops the
+                    // [JsonIgnore] value) — fail fast rather than emit a wrong abstract column name.
                     if (identityBinding.ConventionColumn is not { } conventionColumn)
                     {
                         throw new InvalidOperationException(
@@ -520,28 +523,24 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                         );
                     }
 
-                    // Defensive invariant: ConventionColumn is a pure function of the reference's
-                    // MappingKey, the reference-relative field, and the descriptor flag, so every
-                    // member sharing this abstract identity path resolves to the same value. The
-                    // mismatch branch below cannot fire for a valid schema; it fails fast only if a
-                    // future schema shape violates that assumption.
-                    if (resolved is null)
+                    // ConventionColumn is a pure function of the reference's MappingKey, the
+                    // reference-relative field, and the descriptor flag, so every member sharing this
+                    // abstract identity path resolves to the same value. The mismatch branch cannot fire
+                    // for a valid schema; it fails fast only if a future schema shape violates that.
+                    if (resolved is { } existing)
                     {
-                        resolved = new ReferenceResolution(conventionColumn);
+                        if (!string.Equals(existing.Value, conventionColumn.Value, StringComparison.Ordinal))
+                        {
+                            throw new InvalidOperationException(
+                                $"Abstract identity path '{identityPath.Canonical}' for resource "
+                                    + $"'{FormatResource(abstractResource)}' has ambiguous abstract identity naming: "
+                                    + $"convention column '{existing.Value}' vs '{conventionColumn.Value}'."
+                            );
+                        }
                     }
-                    else if (
-                        !string.Equals(
-                            resolved.ConventionColumn.Value,
-                            conventionColumn.Value,
-                            StringComparison.Ordinal
-                        )
-                    )
+                    else
                     {
-                        throw new InvalidOperationException(
-                            $"Abstract identity path '{identityPath.Canonical}' for resource "
-                                + $"'{FormatResource(abstractResource)}' has ambiguous abstract identity naming: "
-                                + $"convention column '{resolved.ConventionColumn.Value}' vs '{conventionColumn.Value}'."
-                        );
+                        resolved = conventionColumn;
                     }
 
                     break;
@@ -551,12 +550,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
         return resolved;
     }
-
-    /// <summary>
-    /// The resolved override-free convention column name for a reference-backed abstract identity path,
-    /// carried directly from the concrete reference binding set by <c>ReferenceBindingPass</c>.
-    /// </summary>
-    private sealed record ReferenceResolution(DbColumnName ConventionColumn);
 
     /// <summary>
     /// Resolves a canonical column signature that can safely represent all participating member signatures.

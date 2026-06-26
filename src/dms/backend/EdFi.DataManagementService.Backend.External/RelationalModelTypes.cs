@@ -721,7 +721,11 @@ public sealed record ReferenceIdentityBinding
     /// <c>relational.nameOverrides</c> are applied. Used by
     /// <c>AbstractIdentityTableAndUnionViewDerivationPass</c> to name abstract identity columns
     /// so they match the concrete reference binding's override-free name by construction.
-    /// Intentionally not serialized — it is a derivation-time scratch value only.
+    /// Intentionally not serialized — it is a derivation-time scratch value, valid only within a single
+    /// in-memory build where ReferenceBindingPass runs before abstract identity derivation. As a record
+    /// property it participates in value equality, so a deserialized binding (where this is null) is not
+    /// <c>Equals</c> to its in-memory original; this is harmless because no consumer compares whole
+    /// <see cref="ReferenceIdentityBinding"/> instances by value.
     /// </summary>
     [JsonIgnore]
     public DbColumnName? ConventionColumn { get; init; }

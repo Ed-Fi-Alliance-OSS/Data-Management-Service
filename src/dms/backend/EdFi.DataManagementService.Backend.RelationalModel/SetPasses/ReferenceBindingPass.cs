@@ -128,6 +128,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                 );
             }
 
+            // MappingKey is the documentPathsMapping entry key from the ApiSchema — the bare
+            // reference/role name (e.g. "Student", "Program", "AdministrationPointOfContact.Education-
+            // Organization"). MetaEd-generated schemas never suffix it with "Reference", so ToPascalCase
+            // yields the resource-based column base directly (e.g. Student_StudentUniqueId). This same
+            // override-free base is carried as ConventionColumn so abstract identity columns match.
             var originalReferenceBaseName = RelationalNameConventions.ToPascalCase(mapping.MappingKey);
             var referenceBaseName = ResolveReferenceBaseName(mapping, builderContext);
             var tableBuilder = ReferenceObjectPathScopeResolver

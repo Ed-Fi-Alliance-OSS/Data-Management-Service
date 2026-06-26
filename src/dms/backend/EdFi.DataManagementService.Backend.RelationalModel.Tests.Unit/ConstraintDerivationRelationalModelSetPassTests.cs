@@ -1428,10 +1428,17 @@ public class Given_Abstract_Reference_Composite_FK_Target_Columns
             isExtensionProject: false
         );
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        // ReferenceBindingPass must run before AbstractIdentityTableAndUnionViewDerivationPass (as it
+        // does in production) so the abstract identity columns are derived from the concrete reference
+        // binding's convention name (the DMS-1223 path); the reverse order would silently bypass it.
+        // This is the minimal pass subset needed to exercise that path, not the full production pipeline.
         var builder = new DerivedRelationalModelSetBuilder([
             new BaseTraversalAndDescriptorBindingPass(),
-            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
             new ReferenceBindingPass(),
+            new TransitiveIdentityMutabilityPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
             new ArrayUniquenessConstraintPass(),
@@ -1469,24 +1476,15 @@ public class Given_Abstract_Reference_Composite_FK_Target_Columns
                 constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
             );
 
-        // TargetColumns on the abstract identity table must use the renamed convention
+        // TargetColumns must be the exact, ordered set of abstract identity table columns under their
+        // renamed convention: the natural identity column followed by DocumentId. An exact ordered
+        // assertion (not Contain) guards against extra, missing, or misordered target columns, which
+        // matter for FK correspondence. The old concatenated EducationOrganizationReference-prefixed
+        // form is excluded by construction here.
         educationOrganizationFk
             .TargetColumns.Select(column => column.Value)
             .Should()
-            .Contain("EducationOrganizationId");
-
-        // Must include DocumentId as the trailing FK column
-        educationOrganizationFk.TargetColumns.Select(column => column.Value).Should().Contain("DocumentId");
-
-        // Must NOT carry old concatenated identity names.  The previous guard used
-        // StartsWith("EducationOrganizationIdentity") which can never appear (that is the *table*
-        // name, not a column name) — it was vacuous.  The rename eliminates the old
-        // EducationOrganizationReference-prefixed concatenation, which is what this guards.
-        educationOrganizationFk
-            .TargetColumns.Should()
-            .NotContain(column =>
-                column.Value.StartsWith("EducationOrganizationReference", StringComparison.Ordinal)
-            );
+            .Equal("EducationOrganizationId", "DocumentId");
     }
 }
 
@@ -2996,313 +2994,8 @@ internal static class ConstraintDerivationTestSchemaBuilder
     /// Referenced resources (School as an EducationOrganization subclass, Program, Student,
     /// ProgramTypeDescriptor) are included so the schema passes validation.
     /// </summary>
-    internal static JsonObject BuildAbstractCompositeReferenceIdentityProjectSchema()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Ed-Fi",
-            ["projectEndpointName"] = "ed-fi",
-            ["projectVersion"] = "5.0.0",
-            ["abstractResources"] = new JsonObject
-            {
-                ["GeneralStudentProgramAssociation"] = new JsonObject
-                {
-                    ["identityJsonPaths"] = new JsonArray
-                    {
-                        "$.beginDate",
-                        "$.educationOrganizationReference.educationOrganizationId",
-                        "$.programReference.educationOrganizationId",
-                        "$.programReference.programTypeDescriptor",
-                        "$.studentReference.studentUniqueId",
-                    },
-                },
-                ["EducationOrganization"] = new JsonObject
-                {
-                    ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
-                },
-            },
-            ["resourceSchemas"] = new JsonObject
-            {
-                ["studentArtProgramAssociations"] = BuildStudentArtProgramAssociationSchema(),
-                ["schools"] = BuildCompositeSchoolSchema(),
-                ["programs"] = BuildCompositeProgramSchema(),
-                ["students"] = BuildCompositeStudentSchema(),
-                ["programTypeDescriptors"] = BuildCompositeProgramTypeDescriptorSchema(),
-            },
-        };
-    }
-
-    private static JsonObject BuildStudentArtProgramAssociationSchema()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["beginDate"] = new JsonObject { ["type"] = "string", ["format"] = "date" },
-                ["educationOrganizationReference"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
-                    },
-                },
-                ["programReference"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
-                        ["programTypeDescriptor"] = new JsonObject
-                        {
-                            ["type"] = "string",
-                            ["maxLength"] = 306,
-                        },
-                    },
-                },
-                ["studentReference"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
-                    },
-                },
-            },
-            ["required"] = new JsonArray(
-                "beginDate",
-                "educationOrganizationReference",
-                "programReference",
-                "studentReference"
-            ),
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "StudentArtProgramAssociation",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = true,
-            ["subclassType"] = "association",
-            ["superclassProjectName"] = "Ed-Fi",
-            ["superclassResourceName"] = "GeneralStudentProgramAssociation",
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray
-            {
-                "$.beginDate",
-                "$.educationOrganizationReference.educationOrganizationId",
-                "$.programReference.educationOrganizationId",
-                "$.programReference.programTypeDescriptor",
-                "$.studentReference.studentUniqueId",
-            },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["BeginDate"] = new JsonObject { ["isReference"] = false, ["path"] = "$.beginDate" },
-                ["EducationOrganization"] = new JsonObject
-                {
-                    ["isReference"] = true,
-                    ["isDescriptor"] = false,
-                    ["isRequired"] = true,
-                    ["projectName"] = "Ed-Fi",
-                    ["resourceName"] = "EducationOrganization",
-                    ["referenceJsonPaths"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.educationOrganizationId",
-                            ["referenceJsonPath"] =
-                                "$.educationOrganizationReference.educationOrganizationId",
-                        },
-                    },
-                },
-                ["Program"] = new JsonObject
-                {
-                    ["isReference"] = true,
-                    ["isDescriptor"] = false,
-                    ["isRequired"] = true,
-                    ["projectName"] = "Ed-Fi",
-                    ["resourceName"] = "Program",
-                    ["referenceJsonPaths"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.educationOrganizationId",
-                            ["referenceJsonPath"] = "$.programReference.educationOrganizationId",
-                        },
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.programTypeDescriptor",
-                            ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
-                        },
-                    },
-                },
-                ["Student"] = new JsonObject
-                {
-                    ["isReference"] = true,
-                    ["isDescriptor"] = false,
-                    ["isRequired"] = true,
-                    ["projectName"] = "Ed-Fi",
-                    ["resourceName"] = "Student",
-                    ["referenceJsonPaths"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.studentUniqueId",
-                            ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
-                        },
-                    },
-                },
-            },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildCompositeSchoolSchema()
-    {
-        return new JsonObject
-        {
-            ["resourceName"] = "School",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = true,
-            ["subclassType"] = "domainObjectSubclass",
-            ["superclassProjectName"] = "Ed-Fi",
-            ["superclassResourceName"] = "EducationOrganization",
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["EducationOrganizationId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["isPartOfIdentity"] = true,
-                    ["isRequired"] = true,
-                    ["path"] = "$.educationOrganizationId",
-                },
-            },
-            ["jsonSchemaForInsert"] = new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["educationOrganizationId"] = new JsonObject
-                    {
-                        ["type"] = "integer",
-                        ["format"] = "int64",
-                    },
-                },
-                ["required"] = new JsonArray { "educationOrganizationId" },
-            },
-        };
-    }
-
-    private static JsonObject BuildCompositeProgramSchema()
-    {
-        return new JsonObject
-        {
-            ["resourceName"] = "Program",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.programTypeDescriptor" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["EducationOrganizationId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["isPartOfIdentity"] = true,
-                    ["isRequired"] = true,
-                    ["path"] = "$.educationOrganizationId",
-                },
-                ["ProgramTypeDescriptor"] = new JsonObject
-                {
-                    ["isReference"] = true,
-                    ["isDescriptor"] = true,
-                    ["isPartOfIdentity"] = true,
-                    ["isRequired"] = true,
-                    ["projectName"] = "Ed-Fi",
-                    ["resourceName"] = "ProgramTypeDescriptor",
-                    ["path"] = "$.programTypeDescriptor",
-                },
-            },
-            ["jsonSchemaForInsert"] = new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["educationOrganizationId"] = new JsonObject
-                    {
-                        ["type"] = "integer",
-                        ["format"] = "int64",
-                    },
-                    ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
-                },
-                ["required"] = new JsonArray { "educationOrganizationId", "programTypeDescriptor" },
-            },
-        };
-    }
-
-    private static JsonObject BuildCompositeStudentSchema()
-    {
-        return new JsonObject
-        {
-            ["resourceName"] = "Student",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["StudentUniqueId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["isPartOfIdentity"] = true,
-                    ["isRequired"] = true,
-                    ["path"] = "$.studentUniqueId",
-                },
-            },
-            ["jsonSchemaForInsert"] = new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
-                },
-                ["required"] = new JsonArray { "studentUniqueId" },
-            },
-        };
-    }
-
-    private static JsonObject BuildCompositeProgramTypeDescriptorSchema()
-    {
-        return new JsonObject
-        {
-            ["resourceName"] = "ProgramTypeDescriptor",
-            ["isDescriptor"] = true,
-            ["isResourceExtension"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
-            ["documentPathsMapping"] = new JsonObject(),
-            ["jsonSchemaForInsert"] = new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
-                    ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
-                },
-                ["required"] = new JsonArray("codeValue", "namespace"),
-            },
-        };
-    }
+    internal static JsonObject BuildAbstractCompositeReferenceIdentityProjectSchema() =>
+        GeneralStudentProgramAssociationTestSchema.BuildProjectSchema();
 
     /// <summary>
     /// Build abstract reference missing identity project schema.
