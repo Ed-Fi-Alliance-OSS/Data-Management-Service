@@ -19,6 +19,12 @@ public abstract class WritableRequestShaperTests
     protected static WritableRequestShaper BuildShaper(
         ContentTypeDefinition writeContent,
         IReadOnlyList<CompiledScopeDescriptor> scopes
+    ) => BuildShaper(writeContent, scopes, []);
+
+    protected static WritableRequestShaper BuildShaper(
+        ContentTypeDefinition writeContent,
+        IReadOnlyList<CompiledScopeDescriptor> scopes,
+        IReadOnlyList<string> resourceIdentityJsonPaths
     )
     {
         var classifier = new ProfileVisibilityClassifier(writeContent, scopes);
@@ -29,9 +35,48 @@ public abstract class WritableRequestShaperTests
             profileName: "TestProfile",
             resourceName: "TestResource",
             method: "POST",
-            operation: "write"
+            operation: "write",
+            resourceIdentityJsonPaths: resourceIdentityJsonPaths
         );
     }
+
+    // -----------------------------------------------------------------------
+    //  Calendar-like fixture for identity/reference preservation tests
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Scope catalog for a Calendar-like resource. References (schoolReference,
+    /// schoolYearTypeReference) are scalar members of the root scope rather than
+    /// separate scopes, matching how the production catalog represents them.
+    /// </summary>
+    protected static IReadOnlyList<CompiledScopeDescriptor> CalendarFixtureScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths:
+                [
+                    "calendarCode",
+                    "calendarTypeDescriptor",
+                    "schoolReference.schoolId",
+                    "schoolYearTypeReference.schoolYear",
+                ]
+            ),
+            new(
+                JsonScope: "$.gradeLevels[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["gradeLevelDescriptor"],
+                CanonicalScopeRelativeMemberPaths: ["gradeLevelDescriptor"]
+            ),
+        ];
+
+    protected static IReadOnlyList<string> CalendarIdentityJsonPaths =>
+        ["$.calendarCode", "$.schoolReference.schoolId", "$.schoolYearTypeReference.schoolYear"];
 
     // Shared scope catalogs from ProfileTestFixtures
     protected static IReadOnlyList<CompiledScopeDescriptor> SharedFixtureScopes =>
@@ -232,21 +277,12 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_scalar()
+        public void It_should_not_emit_validation_failures_for_hidden_submitted_members()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
-        }
-
-        [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_collection_item_scalar()
-        {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.classPeriods[0].officialAttendancePeriod"));
+            // Hidden submitted scalar (entryTypeDescriptor) and hidden
+            // collection-item scalar (officialAttendancePeriod) are accepted and
+            // stripped, not reported as ForbiddenSubmittedData failures.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
@@ -344,21 +380,24 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_have_failure_for_addresses_scope()
+        public void It_should_have_value_filter_failure_for_addresses_scope()
         {
             _result
                 .ValidationFailures[0]
                 .Should()
-                .BeOfType<ForbiddenSubmittedDataWritableProfileValidationFailure>();
-            var failure = (ForbiddenSubmittedDataWritableProfileValidationFailure)
+                .BeOfType<CollectionValueFilterViolationWritableProfileValidationFailure>();
+            var failure = (CollectionValueFilterViolationWritableProfileValidationFailure)
                 _result.ValidationFailures[0];
             failure.JsonScope.Should().Be("$.addresses[*]");
+            failure.FilterPropertyName.Should().Be("addressTypeDescriptor");
+            failure.FilterMode.Should().Be(FilterMode.IncludeOnly);
+            failure.FilterValues.Should().Equal("uri://ed-fi.org/AddressType#Physical");
         }
 
         [Test]
         public void It_should_have_rooted_request_json_path_in_failure()
         {
-            var failure = (ForbiddenSubmittedDataWritableProfileValidationFailure)
+            var failure = (CollectionValueFilterViolationWritableProfileValidationFailure)
                 _result.ValidationFailures[0];
             failure.RequestJsonPaths.Should().ContainSingle().Which.Should().Be("$.addresses[0]");
         }
@@ -420,6 +459,9 @@ public abstract class WritableRequestShaperTests
         public void It_should_collect_two_validation_failures()
         {
             _result.ValidationFailures.Should().HaveCount(2);
+            _result
+                .ValidationFailures.Should()
+                .AllBeOfType<CollectionValueFilterViolationWritableProfileValidationFailure>();
         }
 
         [Test]
@@ -860,12 +902,12 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_scope()
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_scope()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.calendarReference"));
+            // A hidden submitted non-collection scope is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure. The
+            // Hidden scope state above lets the backend preserve stored values.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
@@ -1238,17 +1280,16 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_excluded_submitted_scalar()
+        public void It_should_not_emit_validation_failure_for_excluded_submitted_scalar()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
+            // An ExcludeOnly-hidden submitted scalar is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  16. Hidden collection submitted — ForbiddenSubmittedData failure expected
+    //  16. Hidden collection submitted — accepted and stripped, no failure
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1311,12 +1352,11 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_submitted_collection()
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_collection()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+            // A hidden submitted collection is accepted and stripped,
+            // not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
 
         [Test]
@@ -1374,7 +1414,7 @@ public abstract class WritableRequestShaperTests
     }
 
     // -----------------------------------------------------------------------
-    //  18. Hidden scalar member submitted with null value — ForbiddenSubmittedData expected
+    //  18. Hidden scalar member submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1410,17 +1450,17 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_scalar_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_scalar_submitted_with_null()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
+            // A hidden scalar submitted with a null value is accepted
+            // and stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
+            _result.WritableRequestBody.AsObject().ContainsKey("entryTypeDescriptor").Should().BeFalse();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  19. Hidden non-collection scope submitted with null value — ForbiddenSubmittedData expected
+    //  19. Hidden non-collection scope submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1477,17 +1517,16 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_scope_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_scope_submitted_with_null()
         {
-            _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Contains("$.calendarReference"));
+            // A hidden non-collection scope submitted with a null value
+            // is accepted and stripped, not reported as a failure.
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 
     // -----------------------------------------------------------------------
-    //  20. Hidden collection submitted with null value — ForbiddenSubmittedData expected
+    //  20. Hidden collection submitted with null value — accepted and stripped
     // -----------------------------------------------------------------------
 
     [TestFixture]
@@ -1548,12 +1587,293 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
-        public void It_should_emit_validation_failure_for_hidden_collection_submitted_with_null()
+        public void It_should_not_emit_validation_failure_for_hidden_collection_submitted_with_null()
         {
+            // A hidden collection submitted with a null value is
+            // accepted and stripped, not reported as a failure.
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  21. Hidden extension scope submitted — accepted and stripped, no failure
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Extension_Scope_Submitted : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include the "sample" extension →
+            // $._ext.sample is Hidden even though it is a known scope.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, ProfileTestFixtures.ExtensionFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": { "sampleField": "should be stripped" }
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failure_for_hidden_submitted_extension_scope()
+        {
+            // A hidden submitted extension scope is accepted and
+            // stripped, not reported as a ForbiddenSubmittedData failure.
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_not_include_hidden_extension_scope_in_shaped_body()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("_ext").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_hidden_scope_state_for_extension_scope()
+        {
+            // The Hidden scope state lets the backend preserve stored extension
+            // data during PUT merge.
             _result
-                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
-                .Should()
-                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$._ext.sample" && s.Visibility == ProfileVisibilityKind.Hidden
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  22. IncludeOnly profile omitting identity references preserves the
+    //      minimum identity surface (Calendar case)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_IncludeOnly_Profile_Omitting_Identity_References : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Calendar IncludeOnly profile lists calendarCode, calendarTypeDescriptor,
+            // and gradeLevels. schoolReference and schoolYearTypeReference are NOT
+            // listed but carry resource identity, so they must be implicitly preserved.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("calendarCode"), new PropertyRule("calendarTypeDescriptor")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "gradeLevels",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: null,
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, CalendarIdentityJsonPaths);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-1",
+                    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#Student Specific",
+                    "schoolReference": {
+                        "schoolId": 255901107,
+                        "link": { "rel": "School", "href": "/ed-fi/schools/abc" }
+                    },
+                    "schoolYearTypeReference": { "schoolYear": 2029 },
+                    "gradeLevels": []
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_preserve_nested_schoolReference_identity_leaf()
+        {
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference["schoolId"]!.GetValue<int>().Should().Be(255901107);
+        }
+
+        [Test]
+        public void It_should_preserve_nested_schoolYearTypeReference_identity_leaf()
+        {
+            var schoolYearTypeReference = _result.WritableRequestBody["schoolYearTypeReference"]!.AsObject();
+            schoolYearTypeReference["schoolYear"]!.GetValue<int>().Should().Be(2029);
+        }
+
+        [Test]
+        public void It_should_preserve_only_the_minimum_identity_surface_of_the_reference()
+        {
+            // Only the identity leaf is preserved, so the non-identity "link" member
+            // of the hidden reference is dropped.
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference.ContainsKey("link").Should().BeFalse();
+            schoolReference.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_should_include_the_visible_members()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body["calendarCode"]!.GetValue<string>().Should().Be("CAL-1");
+            body.ContainsKey("calendarTypeDescriptor").Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  23. ExcludeOnly profile cannot effectively exclude identity references
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_ExcludeOnly_Profile_Excluding_Identity_Reference : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // ExcludeOnly profile that explicitly excludes schoolReference. Because
+            // schoolReference carries resource identity, it cannot be effectively
+            // excluded and its identity leaf must still be preserved.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.ExcludeOnly,
+                Properties: [new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, CalendarIdentityJsonPaths);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-2",
+                    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#Student Specific",
+                    "schoolReference": { "schoolId": 255901107 },
+                    "schoolYearTypeReference": { "schoolYear": 2029 },
+                    "gradeLevels": []
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_preserve_the_excluded_identity_reference_leaf()
+        {
+            var schoolReference = _result.WritableRequestBody["schoolReference"]!.AsObject();
+            schoolReference["schoolId"]!.GetValue<int>().Should().Be(255901107);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  24. Hidden non-identity reference is still stripped (no identity path
+    //      covers it), confirming identity preservation is narrow
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Non_Identity_Reference : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile listing only calendarCode. schoolReference is hidden
+            // and, with no identity path covering it, must be stripped entirely.
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("calendarCode")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            // Identity paths do NOT include schoolReference.
+            var shaper = BuildShaper(profile, CalendarFixtureScopes, ["$.calendarCode"]);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarCode": "CAL-3",
+                    "schoolReference": { "schoolId": 255901107 }
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_strip_the_hidden_non_identity_reference()
+        {
+            _result.WritableRequestBody.AsObject().ContainsKey("schoolReference").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_not_emit_validation_failures()
+        {
+            _result.ValidationFailures.Should().BeEmpty();
         }
     }
 }

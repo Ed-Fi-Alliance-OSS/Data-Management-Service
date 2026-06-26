@@ -149,6 +149,26 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Honor Core's deferred C4 creatability for flattened root-table-owned
+        // embedded-object non-collection scopes. Per-scope creatability is otherwise enforced
+        // only for the root resource via RootResourceCreatable, for separate-table scopes via
+        // the separate-table decider, and for collection items via the collection planner. A
+        // flattened scope such as the Assessment contentStandard has no separate table, so its
+        // non-creatable result would be dropped and a non-creatable create silently allowed.
+        var flattenedScopeTableScopes = new HashSet<string>(
+            request.WritePlan.TablePlansInDependencyOrder.Select(plan => plan.TableModel.JsonScope.Canonical),
+            StringComparer.Ordinal
+        );
+        ProfileCreatabilityRejection? flattenedScopeRejection = DetectFlattenedScopeCreatabilityRejection(
+            request.ProfileRequest.RequestScopeStates,
+            request.ProfileAppliedContext?.StoredScopeStates ?? ImmutableArray<StoredScopeState>.Empty,
+            flattenedScopeTableScopes
+        );
+        if (flattenedScopeRejection is not null)
+        {
+            return ProfileMergeOutcome.Reject(flattenedScopeRejection);
+        }
+
         // Per-table accumulators keyed by DbTableName. Pre-seed one builder per
         // TableWritePlan so the walker, root-table merge, and per-separate-table merge can
         // each append into the table's builder. Finalization iterates
@@ -322,6 +342,64 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         return ProfileMergeOutcome.Success(
             new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
+        );
+    }
+
+    /// <summary>
+    /// Detects a flattened (root-table-owned) embedded-object non-collection scope that Core's
+    /// C4 marked non-creatable and that is being newly created (request VisiblePresent, no
+    /// matching visible stored scope). Mirrors the separate-table decider's RejectCreateDenied
+    /// for the flattened case the separate-table / collection paths do not reach. Returns null
+    /// when no such scope is found.
+    /// </summary>
+    internal static ProfileCreatabilityRejection? DetectFlattenedScopeCreatabilityRejection(
+        IReadOnlyList<RequestScopeState> requestScopeStates,
+        IReadOnlyList<StoredScopeState> storedScopeStates,
+        IReadOnlySet<string> tableScopes
+    )
+    {
+        RequestScopeState? denied = requestScopeStates.FirstOrDefault(requestScope =>
+            IsNonCreatableFlattenedScopeCreate(requestScope, storedScopeStates, tableScopes)
+        );
+
+        return denied is null
+            ? null
+            : new ProfileCreatabilityRejection(
+                denied.Address.JsonScope,
+                $"Profile forbids creation of new visible scope '{denied.Address.JsonScope}'."
+            );
+    }
+
+    private static bool IsNonCreatableFlattenedScopeCreate(
+        RequestScopeState requestScope,
+        IReadOnlyList<StoredScopeState> storedScopeStates,
+        IReadOnlySet<string> tableScopes
+    )
+    {
+        string scope = requestScope.Address.JsonScope;
+
+        // Root creatability is enforced via RootResourceCreatable; scopes with their own table
+        // via the separate-table decider; scopes nested in collections per-item by the walker.
+        // Only flattened (root-table-owned) non-collection scopes reach this enforcement.
+        if (
+            scope == "$"
+            || !requestScope.Address.AncestorCollectionInstances.IsEmpty
+            || tableScopes.Contains(scope)
+        )
+        {
+            return false;
+        }
+
+        // Only a newly created, visible, non-creatable scope is denied.
+        if (requestScope.Visibility != ProfileVisibilityKind.VisiblePresent || requestScope.Creatable)
+        {
+            return false;
+        }
+
+        // A visible stored scope means this is an update/preserve, not a create.
+        return !storedScopeStates.Any(stored =>
+            stored.Visibility == ProfileVisibilityKind.VisiblePresent
+            && ScopeInstanceAddressComparer.ScopeInstanceAddressEquals(stored.Address, requestScope.Address)
         );
     }
 

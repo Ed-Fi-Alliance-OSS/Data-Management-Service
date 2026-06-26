@@ -212,4 +212,49 @@ public abstract class CreationRequiredMemberResolverTests
             _result.HiddenByProfile.Should().Contain("entryDate");
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  Implicitly-visible identity members are not reported as hidden, while
+    //  hidden non-identity required members still are
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Identity_And_NonIdentity_Required_Members : CreationRequiredMemberResolverTests
+    {
+        private CreationRequiredMemberResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            CompiledScopeDescriptor rootScope = ProfileTestFixtures.SharedFixtureScopes[0];
+
+            // schoolReference is a resource identity reference (implicitly visible) and
+            // entryDate is a non-identity required member. The IncludeOnly profile lists
+            // only studentReference, so both schoolReference and entryDate are hidden.
+            List<string> effectiveSchemaRequired = ["studentReference", "schoolReference", "entryDate"];
+            ScopeMemberFilter filter = new(
+                MemberSelection.IncludeOnly,
+                new HashSet<string> { "studentReference" }
+            );
+
+            _result = CreationRequiredMemberResolver.Resolve(
+                rootScope,
+                effectiveSchemaRequired,
+                filter,
+                implicitlyVisibleMembers: new HashSet<string> { "schoolReference" }
+            );
+        }
+
+        [Test]
+        public void It_should_not_report_the_implicitly_visible_identity_member_as_hidden()
+        {
+            _result.HiddenByProfile.Should().NotContain("schoolReference");
+        }
+
+        [Test]
+        public void It_should_still_report_the_hidden_non_identity_required_member()
+        {
+            _result.HiddenByProfile.Should().Contain("entryDate");
+        }
+    }
 }

@@ -243,7 +243,9 @@ public static class ProfileDefinitions
     // ================================================================================
     // WRITE FILTERING PROFILES
     // These profiles have restricted WriteContentType for testing write-side filtering.
-    // Fields not allowed by the write profile are silently stripped from the request.
+    // Hidden members not allowed by the write profile are silently stripped from the
+    // request; submitted collection items that fail a profile value filter are rejected
+    // as data-validation failures, not silently stripped.
     // ================================================================================
 
     /// <summary>
@@ -287,8 +289,9 @@ public static class ProfileDefinitions
 
     /// <summary>
     /// Profile for School with collection item filter on WriteContentType.
-    /// Only allows writing grade levels matching "Ninth grade" descriptor.
-    /// Other grade levels will be silently stripped from the request.
+    /// Only allows writing grade levels matching the "Ninth grade" descriptor.
+    /// A submitted grade level that does not match the filter is rejected as a
+    /// data-validation failure (400 data-validation-failed), not silently stripped.
     /// </summary>
     public const string SchoolWriteGradeLevelFilterName = "E2E-Test-School-Write-GradeLevelFilter";
 
@@ -332,9 +335,11 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
-    /// Profile for School with WriteContentType that excludes the required educationOrganizationCategories collection.
-    /// Uses Property element (not Collection element) to fully exclude the collection.
-    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// Profile for School whose WriteContentType names the required educationOrganizationCategories
+    /// collection in a Property rule. Valid profile XML uses a Collection element for collection
+    /// members; naming an array in a Property rule is a defensive/edge construction that exercises
+    /// the creatability validator's flat required-member check rather than proper runtime collection
+    /// visibility. POST requests with this profile should fail with a data-policy-enforced error.
     /// </summary>
     public const string SchoolWriteExcludeRequiredCollectionName =
         "E2E-Test-School-Write-ExcludeRequiredCollection";
@@ -388,7 +393,9 @@ public static class ProfileDefinitions
 
     /// <summary>
     /// Profile for School with WriteContentType that has a CollectionRule on the required gradeLevels collection.
-    /// The collection is filtered (not excluded), so POST requests should succeed.
+    /// The collection is filtered (not excluded), so the collection remains creatable and a POST whose
+    /// submitted grade levels all match the filter succeeds. A submitted grade level that does
+    /// not match the filter is rejected as a data-validation failure, not silently stripped.
     /// </summary>
     public const string SchoolWriteRequiredCollectionWithRuleName =
         "E2E-Test-School-Write-RequiredCollectionWithRule";

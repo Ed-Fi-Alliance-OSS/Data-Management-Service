@@ -4,12 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -24,6 +26,78 @@ public class ArrayUniquenessValidationMiddlewareTests
     internal static ArrayUniquenessValidationMiddleware Middleware()
     {
         return new ArrayUniquenessValidationMiddleware(NullLogger.Instance);
+    }
+
+    /// <summary>
+    /// Builds a relational writable-profile request: ParsedBody holds the raw submitted body and a
+    /// BackendProfileWriteContext carries the profile-shaped writable body. The middleware must
+    /// validate array-uniqueness constraints against the shaped body so that submitted data hidden
+    /// by the profile is accepted and ignored rather than rejected.
+    /// </summary>
+    internal static async Task<(
+        RequestInfo RequestInfo,
+        bool NextCalled
+    )> CreateProfileContextAndCaptureNextAsync(
+        ApiSchemaDocuments apiSchema,
+        string rawJsonBody,
+        string shapedJsonBody,
+        string endpointName
+    )
+    {
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: rawJsonBody,
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
+        );
+
+        RequestInfo requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+        {
+            ApiSchemaDocuments = apiSchema,
+            PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new(endpointName),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
+        );
+
+        requestInfo.ParsedBody = JsonNode.Parse(rawJsonBody)!;
+
+        requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: JsonNode.Parse(shapedJsonBody)!,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "TestProfile",
+            CompiledScopeCatalog: [],
+            StoredStateProjectionInvoker: null!
+        );
+
+        var nextCalled = false;
+
+        await Middleware()
+            .Execute(
+                requestInfo,
+                () =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        return (requestInfo, nextCalled);
     }
 
     internal static async Task<RequestInfo> CreateRequestInfoAndExecute(
@@ -281,6 +355,131 @@ public class ArrayUniquenessValidationMiddlewareTests
                     "validationErrors":{"$.gradeLevels":["The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Writable_Profile_Hides_A_Constrained_Array_With_Duplicates
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(["$.gradeLevels[*].gradeLevelDescriptor"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            // Raw submitted body has duplicate gradeLevels, but the writable profile hides the
+            // gradeLevels collection, so the shaped write body omits it.
+            const string rawBody = """
+                {
+                  "schoolId":255901001,
+                  "nameOfInstitution":"School Test",
+                  "gradeLevels": [
+                      { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" },
+                      { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" }
+                   ]
+                }
+                """;
+
+            const string shapedBody = """
+                {
+                  "schoolId":255901001,
+                  "nameOfInstitution":"School Test"
+                }
+                """;
+
+            (_requestInfo, _nextCalled) = await CreateProfileContextAndCaptureNextAsync(
+                apiSchema,
+                rawBody,
+                shapedBody,
+                "schools"
+            );
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_validation_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Writable_Profile_Keeps_A_Constrained_Array_With_Duplicates
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(["$.gradeLevels[*].gradeLevelDescriptor"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            // The writable profile keeps gradeLevels visible, and the shaped write body still
+            // carries the duplicate descriptors; the constraint must still reject the request.
+            const string body = """
+                {
+                  "schoolId":255901001,
+                  "nameOfInstitution":"School Test",
+                  "gradeLevels": [
+                      { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" },
+                      { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" }
+                   ]
+                }
+                """;
+
+            (_requestInfo, _nextCalled) = await CreateProfileContextAndCaptureNextAsync(
+                apiSchema,
+                body,
+                body,
+                "schools"
+            );
+        }
+
+        [Test]
+        public void It_does_not_continue_to_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicated_descriptor()
+        {
+            _requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("same identifying values");
         }
     }
 

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -23,7 +24,41 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        (string errorKey, string message)? validationError = ValidateUniqueReferences(requestInfo);
+        // DocumentInfo is extracted from the raw submitted body, but a writable profile
+        // may hide submitted reference collections that the shaper strips from the write body.
+        // Validate duplicate references against the profile-shaped reference arrays so hidden
+        // submitted collections are accepted and ignored. Non-profile writes keep using the raw
+        // DocumentInfo extracted earlier in the pipeline.
+        IReadOnlyList<DocumentReferenceArray> referenceArrays;
+        if (requestInfo.BackendProfileWriteContext is not null)
+        {
+            try
+            {
+                (_, DocumentReferenceArray[] shapedReferenceArrays) =
+                    requestInfo.ResourceSchema.ExtractReferences(
+                        ProfileWriteValidationBody.Effective(requestInfo),
+                        logger,
+                        ReferenceExtractionMode.RelationalWriteValidation
+                    );
+                referenceArrays = shapedReferenceArrays;
+            }
+            catch (ReferenceExtractionValidationException ex)
+            {
+                // Mirror ExtractDocumentInfoMiddleware's relational handling so a malformed shaped
+                // reference surfaces the same data-validation response rather than throwing.
+                requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+                    ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            }
+        }
+        else
+        {
+            referenceArrays = requestInfo.DocumentInfo.DocumentReferenceArrays;
+        }
+
+        (string errorKey, string message)? validationError = ValidateUniqueReferences(referenceArrays);
         if (validationError.HasValue)
         {
             var (errorKey, message) = validationError.Value;
@@ -48,9 +83,11 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     /// Validates all document reference arrays have unique ReferentialIds
     /// </summary>
     /// <returns>A validation error tuple if duplicates are found, null otherwise</returns>
-    private static (string errorKey, string message)? ValidateUniqueReferences(RequestInfo requestInfo)
+    private static (string errorKey, string message)? ValidateUniqueReferences(
+        IReadOnlyList<DocumentReferenceArray> documentReferenceArrays
+    )
     {
-        foreach (var referenceArray in requestInfo.DocumentInfo.DocumentReferenceArrays)
+        foreach (var referenceArray in documentReferenceArrays)
         {
             if (referenceArray.DocumentReferences.Length > 1)
             {

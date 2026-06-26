@@ -45,7 +45,8 @@ public sealed class WritableRequestShaper(
     string profileName,
     string resourceName,
     string method,
-    string operation
+    string operation,
+    IReadOnlyList<string> resourceIdentityJsonPaths
 )
 {
     // -----------------------------------------------------------------------
@@ -218,22 +219,19 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
-            else
+            else if (
+                TryBuildIdentitySurface($"{requestJsonPath}.{memberName}", memberValue, out JsonNode? surface)
+            )
             {
-                // Client submitted a hidden scalar member — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: classifier.GetScopeKind(jsonScope),
-                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
-                        forbiddenCanonicalMemberPaths: [memberName]
-                    )
-                );
+                // A hidden member that carries resource identity is
+                // implicitly preserved as the minimum identity surface, matching
+                // legacy ODS. Unrelated members of the reference are still dropped.
+                output[memberName] = surface;
             }
+            // Any other hidden submitted scalar member is accepted and
+            // stripped (omitted from the shaped body), not a ForbiddenSubmittedData
+            // failure. Existing stored values are preserved on PUT via stored-side
+            // metadata.
         }
 
         // Emit states for child non-collection scopes not encountered during the walk
@@ -281,22 +279,12 @@ public sealed class WritableRequestShaper(
         }
         else
         {
-            if (visibility == ProfileVisibilityKind.Hidden)
-            {
-                // Client submitted data for a hidden scope — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: ScopeKind.NonCollection,
-                        requestJsonPaths: [$"{requestJsonPath}"],
-                        forbiddenCanonicalMemberPaths: []
-                    )
-                );
-            }
+            // A hidden submitted non-collection scope is accepted and
+            // stripped (not written, no ForbiddenSubmittedData failure). The Hidden
+            // RequestScopeState emitted above lets the backend preserve stored values.
+            // No identity surface is reconstructed here (unlike the scalar-member path):
+            // resource identity is root-anchored, so an identity leaf never resides under
+            // a hidden scope — see TryBuildIdentitySurface remarks.
             // Scope is absent or hidden — recursively emit states for descendant
             // non-collection scopes that cannot be encountered during the walk.
             EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
@@ -331,27 +319,16 @@ public sealed class WritableRequestShaper(
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
-            if (visibility == ProfileVisibilityKind.Hidden)
-            {
-                // Client submitted data for a hidden collection — emit category-3 failure
-                validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
-                        profileName: profileName,
-                        resourceName: resourceName,
-                        method: method,
-                        operation: operation,
-                        jsonScope: jsonScope,
-                        scopeKind: ScopeKind.Collection,
-                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
-                        forbiddenCanonicalMemberPaths: []
-                    )
-                );
-            }
-            else if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            if (visibility == ProfileVisibilityKind.VisibleAbsent)
             {
                 // If VisibleAbsent, emit the array key with empty array to match expectations
                 output[memberName] = new JsonArray();
             }
+            // A hidden submitted collection is accepted and stripped (not
+            // written, no ForbiddenSubmittedData failure). Stored rows are preserved
+            // on PUT via stored-side metadata. No identity surface is reconstructed for
+            // collection items: resource identity is root-anchored and collection-item
+            // identity is not a resource identityJsonPath — see TryBuildIdentitySurface.
             return;
         }
 
@@ -365,17 +342,23 @@ public sealed class WritableRequestShaper(
 
             if (!classifier.PassesCollectionItemFilter(jsonScope, item))
             {
-                // Item fails value filter — create ForbiddenSubmittedData failure
+                // A submitted collection item that fails the profile value
+                // filter remains an immediate validation failure, but is typed so the
+                // API layer maps it to data-validation-failed (not data-policy-enforced).
+                // PassesCollectionItemFilter only returns false when a filter exists,
+                // so GetCollectionItemFilter is non-null here.
+                CollectionItemFilter itemFilter = classifier.GetCollectionItemFilter(jsonScope)!;
                 validationFailures.Add(
-                    ProfileFailures.ForbiddenSubmittedData(
+                    ProfileFailures.CollectionValueFilterViolation(
                         profileName: profileName,
                         resourceName: resourceName,
                         method: method,
                         operation: operation,
                         jsonScope: jsonScope,
-                        scopeKind: ScopeKind.Collection,
                         requestJsonPaths: [$"{requestJsonPath}.{memberName}[{i}]"],
-                        forbiddenCanonicalMemberPaths: []
+                        filterPropertyName: itemFilter.PropertyName,
+                        filterMode: itemFilter.FilterMode,
+                        filterValues: itemFilter.Values
                     )
                 );
                 continue;
@@ -478,21 +461,8 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
-                else
-                {
-                    validationFailures.Add(
-                        ProfileFailures.ForbiddenSubmittedData(
-                            profileName: profileName,
-                            resourceName: resourceName,
-                            method: method,
-                            operation: operation,
-                            jsonScope: jsonScope,
-                            scopeKind: ScopeKind.Collection,
-                            requestJsonPaths: [$"{itemRequestJsonPath}.{itemMemberName}"],
-                            forbiddenCanonicalMemberPaths: [itemMemberName]
-                        )
-                    );
-                }
+                // A hidden submitted member inside a visible collection item
+                // is accepted and stripped, not a ForbiddenSubmittedData failure.
             }
 
             // Emit states for child non-collection scopes absent from this item
@@ -571,21 +541,14 @@ public sealed class WritableRequestShaper(
             }
             else
             {
-                if (visibility == ProfileVisibilityKind.Hidden)
-                {
-                    validationFailures.Add(
-                        ProfileFailures.ForbiddenSubmittedData(
-                            profileName: profileName,
-                            resourceName: resourceName,
-                            method: method,
-                            operation: operation,
-                            jsonScope: extScope,
-                            scopeKind: ScopeKind.NonCollection,
-                            requestJsonPaths: [$"{requestJsonPath}._ext.{extName}"],
-                            forbiddenCanonicalMemberPaths: []
-                        )
-                    );
-                }
+                // A hidden submitted extension scope is accepted and
+                // stripped (omitted from the shaped body, no ForbiddenSubmittedData
+                // failure). The Hidden RequestScopeState emitted above lets the backend
+                // preserve stored extension data on PUT. This does not change invalid
+                // extension names, unsupported extension profile usage, or extension
+                // collection value-filter failures. No identity surface is reconstructed
+                // under a hidden extension: resource identity is root-anchored, so an
+                // identity leaf never resides here — see TryBuildIdentitySurface remarks.
                 // Extension scope is absent or hidden — emit descendant states
                 EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }
@@ -704,5 +667,121 @@ public sealed class WritableRequestShaper(
             MemberSelection.IncludeAll => true,
             _ => true,
         };
+    }
+
+    // -----------------------------------------------------------------------
+    //  Identity preservation
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds the minimum resource-identity surface for a hidden member at the
+    /// given request JSON path, matching legacy ODS behavior where identity
+    /// members/references are implicitly included even when a writable profile
+    /// hides them.
+    /// </summary>
+    /// <remarks>
+    /// Returns true and emits a value when <paramref name="memberPath"/> is itself
+    /// a resource identity path (the member is an identity scalar — the submitted
+    /// value is cloned), or when it is a strict ancestor of one or more identity
+    /// paths (the member is a container such as a reference object — a new object
+    /// is reconstructed carrying only the identity leaf descendants found in the
+    /// submitted value). Unrelated members are not preserved. Returns false when
+    /// the member does not participate in resource identity.
+    /// <para>
+    /// Boundary: identity preservation covers root resource identity
+    /// members/references only. It is invoked solely from the scalar-member path of
+    /// <see cref="ShapeScopeMembers"/>; hidden non-collection scopes, collections, and
+    /// extensions are stripped without identity reconstruction. This is correct because
+    /// resource <c>identityJsonPaths</c> are root-anchored and carry no array indices
+    /// (mirrored in <c>CreatabilityAnalyzer</c>, which applies the implicit-visibility
+    /// identity exemption only to the root scope), so an identity leaf never resides
+    /// under a hidden object/collection/extension shape. Collection-item identity is a
+    /// distinct concept and is not a resource <c>identityJsonPath</c>.
+    /// </para>
+    /// </remarks>
+    private bool TryBuildIdentitySurface(string memberPath, JsonNode? submittedValue, out JsonNode? surface)
+    {
+        surface = null;
+
+        if (resourceIdentityJsonPaths.Count == 0)
+        {
+            return false;
+        }
+
+        // The member itself is an identity scalar — preserve the submitted value.
+        if (resourceIdentityJsonPaths.Contains(memberPath))
+        {
+            surface = submittedValue?.DeepClone();
+            return true;
+        }
+
+        // Otherwise collect the identity leaves nested under this member (e.g. the
+        // member is a reference object and "schoolId" is the identity leaf below it).
+        string descendantPrefix = $"{memberPath}.";
+        List<string> relativeLeafPaths =
+        [
+            .. resourceIdentityJsonPaths
+                .Where(identityPath => identityPath.StartsWith(descendantPrefix, StringComparison.Ordinal))
+                .Select(identityPath => identityPath[descendantPrefix.Length..]),
+        ];
+
+        if (relativeLeafPaths.Count == 0 || submittedValue is not JsonObject submittedObject)
+        {
+            return false;
+        }
+
+        var reconstructed = new JsonObject();
+
+        // Count visits every leaf (no short-circuit), copying each one present in the
+        // submitted value into the reconstructed surface; a non-zero count means at
+        // least one identity leaf was preserved.
+        int preservedLeafCount = relativeLeafPaths.Count(relativeLeafPath =>
+            TryCopyIdentityLeaf(submittedObject, relativeLeafPath, reconstructed)
+        );
+
+        if (preservedLeafCount == 0)
+        {
+            return false;
+        }
+
+        surface = reconstructed;
+        return true;
+    }
+
+    /// <summary>
+    /// Navigates <paramref name="source"/> along the dot-separated
+    /// <paramref name="relativeLeafPath"/> and, when the leaf is present, copies it
+    /// into <paramref name="target"/> at the same nested location, creating
+    /// intermediate objects as needed. Returns true when a leaf was copied.
+    /// </summary>
+    private static bool TryCopyIdentityLeaf(JsonObject source, string relativeLeafPath, JsonObject target)
+    {
+        string[] segments = relativeLeafPath.Split('.');
+
+        JsonNode? cursor = source;
+        foreach (string segment in segments)
+        {
+            if (
+                cursor is not JsonObject currentObject
+                || !currentObject.TryGetPropertyValue(segment, out cursor)
+            )
+            {
+                return false;
+            }
+        }
+
+        JsonObject targetCursor = target;
+        for (int i = 0; i < segments.Length - 1; i++)
+        {
+            if (targetCursor[segments[i]] is not JsonObject childObject)
+            {
+                childObject = new JsonObject();
+                targetCursor[segments[i]] = childObject;
+            }
+            targetCursor = childObject;
+        }
+
+        targetCursor[segments[^1]] = cursor?.DeepClone();
+        return true;
     }
 }

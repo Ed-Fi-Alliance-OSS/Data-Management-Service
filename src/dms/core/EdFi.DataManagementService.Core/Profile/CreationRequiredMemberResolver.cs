@@ -45,10 +45,17 @@ public static class CreationRequiredMemberResolver
     /// The writable profile's member filter for this scope, from
     /// <see cref="ProfileVisibilityClassifier.GetMemberFilter"/>.
     /// </param>
+    /// <param name="implicitlyVisibleMembers">
+    /// Top-level member names that are implicitly visible regardless of the profile
+    /// filter — resource identity members/references that the shaper preserves. These
+    /// are never reported as hidden, matching legacy ODS where identity members are
+    /// implicitly included. Null or empty disables the exemption.
+    /// </param>
     public static CreationRequiredMemberResult Resolve(
         CompiledScopeDescriptor scope,
         IReadOnlyList<string> effectiveSchemaRequiredMembers,
-        ScopeMemberFilter memberFilter
+        ScopeMemberFilter memberFilter,
+        IReadOnlySet<string>? implicitlyVisibleMembers = null
     )
     {
         // 1. Start with effective schema required members
@@ -81,10 +88,17 @@ public static class CreationRequiredMemberResolver
             }
         }
 
-        // Determine which creation-required members are hidden by the profile
+        // Determine which creation-required members are hidden by the profile.
+        // Resource identity members/references are implicitly visible (the
+        // shaper preserves them), so they are never reported as hidden for creatability.
         ImmutableArray<string>.Builder hiddenBuilder = ImmutableArray.CreateBuilder<string>();
         foreach (string member in creationRequired)
         {
+            if (implicitlyVisibleMembers is not null && implicitlyVisibleMembers.Contains(member))
+            {
+                continue;
+            }
+
             if (!MemberPathVisibility.IsVisible(memberFilter, member))
             {
                 hiddenBuilder.Add(member);
