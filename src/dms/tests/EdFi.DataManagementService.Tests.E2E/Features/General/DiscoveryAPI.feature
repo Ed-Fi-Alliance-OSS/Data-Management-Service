@@ -308,6 +308,11 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Profiles"
                     },
                     {
+                      "name": "Sample-StudentAcademicRecord-Multiple-Extensions-IncludeOnly",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/Sample-StudentAcademicRecord-Multiple-Extensions-IncludeOnly/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
                       "name": "Sample-StudentAcademicRecord-Multiple-Extensions-ExcludeOnly",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/Sample-StudentAcademicRecord-Multiple-Extensions-ExcludeOnly/resources-spec.json",
                       "prefix": "Profiles"

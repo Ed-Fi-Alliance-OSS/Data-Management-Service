@@ -260,9 +260,6 @@ Feature: Profile Extension Filtering
 
         @relational-backend
         @relational-ci-shard-2
-        # DMS-1233: Quarantined until profile extension names are normalized to the
-        # schema extension key during profile write processing.
-        @ignore
         Scenario: 09 Extension Excluded write profile applies write payload to extension members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Excluded" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Excluded" for resource "Staff" with body
