@@ -440,6 +440,130 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return true;
     }
 
+    /// <summary>
+    /// Recursive walk emitting a failure for any extensions container that holds two
+    /// rules whose names are equal case-insensitively. Such rules collapse to the same
+    /// schema key during canonicalization and would otherwise throw when the cached
+    /// ExtensionRulesByName dictionary is built. Reported as <see cref="ValidationSeverity.Error"/>
+    /// at every level regardless of <see cref="MemberSelection"/>.
+    /// </summary>
+    private static List<ValidationFailure> CollectDuplicateExtensionNameFailures(
+        ContentTypeDefinition contentType,
+        ValidationContext context
+    )
+    {
+        var failures = new List<ValidationFailure>();
+
+        AddDuplicateExtensionNameFailures(contentType.Extensions, context, failures);
+        foreach (var obj in contentType.Objects)
+        {
+            WalkObjectForDuplicateExtensions(obj, context, failures);
+        }
+        foreach (var collection in contentType.Collections)
+        {
+            WalkCollectionForDuplicateExtensions(collection, context, failures);
+        }
+        foreach (var extension in contentType.Extensions)
+        {
+            WalkExtensionForDuplicateExtensions(extension, context, failures);
+        }
+
+        return failures;
+    }
+
+    private static void WalkObjectForDuplicateExtensions(
+        ObjectRule objectRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
+        AddDuplicateExtensionNameFailures(objectRule.Extensions, childContext, failures);
+        foreach (var nested in objectRule.NestedObjects ?? [])
+        {
+            WalkObjectForDuplicateExtensions(nested, childContext, failures);
+        }
+        foreach (var collection in objectRule.Collections ?? [])
+        {
+            WalkCollectionForDuplicateExtensions(collection, childContext, failures);
+        }
+        foreach (var extension in objectRule.Extensions ?? [])
+        {
+            WalkExtensionForDuplicateExtensions(extension, childContext, failures);
+        }
+    }
+
+    private static void WalkCollectionForDuplicateExtensions(
+        CollectionRule collectionRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}{collectionRule.Name}[].");
+        AddDuplicateExtensionNameFailures(collectionRule.Extensions, childContext, failures);
+        foreach (var nested in collectionRule.NestedObjects ?? [])
+        {
+            WalkObjectForDuplicateExtensions(nested, childContext, failures);
+        }
+        foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
+        {
+            WalkCollectionForDuplicateExtensions(nestedCollection, childContext, failures);
+        }
+        foreach (var extension in collectionRule.Extensions ?? [])
+        {
+            WalkExtensionForDuplicateExtensions(extension, childContext, failures);
+        }
+    }
+
+    private static void WalkExtensionForDuplicateExtensions(
+        ExtensionRule extensionRule,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        var childContext = context.WithPathPrefix($"{context.PathPrefix}_ext.{extensionRule.Name}.");
+        foreach (var obj in extensionRule.Objects ?? [])
+        {
+            WalkObjectForDuplicateExtensions(obj, childContext, failures);
+        }
+        foreach (var collection in extensionRule.Collections ?? [])
+        {
+            WalkCollectionForDuplicateExtensions(collection, childContext, failures);
+        }
+    }
+
+    private static void AddDuplicateExtensionNameFailures(
+        IReadOnlyList<ExtensionRule>? extensions,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (extensions is null || extensions.Count < 2)
+        {
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+#pragma warning disable S3267 // Loop tracks first-seen names while emitting failures; a LINQ rewrite would obscure intent.
+        foreach (var extension in extensions)
+        {
+            if (!seen.Add(extension.Name))
+            {
+                failures.Add(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        context.ProfileName,
+                        context.ResourceName,
+                        $"{context.PathPrefix}_ext.{extension.Name}",
+                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type is declared more than once; "
+                            + "extension names are matched to the schema key case-insensitively, so duplicates collapse to the same key."
+                    )
+                );
+            }
+        }
+#pragma warning restore S3267
+    }
+
     private static List<ValidationFailure> ValidateContentTypeMembers(
         ContentTypeDefinition contentType,
         JsonObject schemaProperties,
@@ -463,6 +587,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // member-selection pruning. Schema validation below skips server-gen
         // names so the pre-pass is the single source of those failures.
         var failures = CollectServerGeneratedNameFailures(contentType, baseContext);
+
+        // Reject sibling extension rules that collapse to the same schema key
+        // (e.g. "sample" and "Sample"). Extension names are matched to the schema
+        // key case-insensitively, and the cached ExtensionRulesByName dictionaries
+        // are built with ToDictionary, so without this duplicates would throw at
+        // navigation time instead of surfacing as profile validation feedback.
+        failures.AddRange(CollectDuplicateExtensionNameFailures(contentType, baseContext));
 
         failures.AddRange(
             contentType.MemberSelection switch
@@ -804,11 +935,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            if (extension.MemberSelection == MemberSelection.IncludeAll)
-            {
-                continue;
-            }
-
+            // Validate extension existence for every member selection, including
+            // IncludeAll. Unlike objects/collections (which remain in the profile as
+            // harmless no-ops when their name is unknown), an unmatched extension rule
+            // is dropped during canonicalization, so without this check an unknown
+            // IncludeAll extension would vanish with no validation feedback (DMS-1233).
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 

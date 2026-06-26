@@ -1818,6 +1818,114 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void Validate_should_error_for_unknown_extension_under_include_all_parent()
+        {
+            // Arrange — an IncludeAll extension under an IncludeAll parent must still be
+            // existence-checked, because canonicalization would otherwise drop it silently.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "DoesNotExist",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — clear feedback (error) rather than a silent drop.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_error_for_duplicate_extension_names_differing_only_by_case()
+        {
+            // Arrange — sample and Sample both resolve to the schema key sample and would
+            // collapse to a duplicate key in ExtensionRulesByName at runtime.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [
+                    new ExtensionRule("sample", MemberSelection.IncludeAll, null, null, null, null),
+                    new ExtensionRule("Sample", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — rejected with feedback rather than throwing during navigation.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f => f.Severity == ValidationSeverity.Error && f.Message.Contains("more than once"));
+        }
+
+        [Test]
+        public void Validate_should_resolve_extension_name_to_non_lowercase_schema_key()
+        {
+            // Arrange — schema key is camelCase sampleStaff (not all-lowercase). The canonical
+            // key must come from the schema, so a differently-cased authored name resolves.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sampleStaff", "field");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extensionRule = new ExtensionRule(
+                Name: "samplestaff",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                Objects: null,
+                Collections: null
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [extensionRule]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — samplestaff resolves to schema key sampleStaff; no missing-extension failure.
+            result.IsValid.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
         public void Validate_should_return_error_for_nested_object_named_link()
         {
             // Arrange — schema has schoolReference.schoolId; profile defines a nested object named "link"

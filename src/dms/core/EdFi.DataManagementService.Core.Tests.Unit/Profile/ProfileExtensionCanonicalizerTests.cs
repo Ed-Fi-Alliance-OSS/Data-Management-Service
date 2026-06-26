@@ -277,6 +277,34 @@ public class ProfileExtensionCanonicalizerTests
         }
 
         [Test]
+        public void Canonicalize_uses_schema_key_casing_not_lowercase()
+        {
+            // Arrange — schema key is camelCase sampleStaff. The canonical key must come from
+            // the schema/project endpoint name, not blind lowercasing, so an authored
+            // samplestaff must become sampleStaff (not stay lowercase).
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents)
+                .Returns(CreateSchemaWithRootExtension("Staff", "sampleStaff", "field"));
+
+            var writeContentType = ContentTypeWithExtension(
+                MemberSelection.ExcludeOnly,
+                Extension("samplestaff")
+            );
+            var definition = new ProfileDefinition(
+                "TestProfile",
+                [new ResourceProfile("Staff", null, null, writeContentType)]
+            );
+
+            // Act
+            ProfileDefinition result = ProfileExtensionCanonicalizer.Canonicalize(
+                definition,
+                _effectiveApiSchemaProvider
+            );
+
+            // Assert — the schema's exact casing is preserved.
+            result.Resources[0].WriteContentType!.Extensions.Single().Name.Should().Be("sampleStaff");
+        }
+
+        [Test]
         public void Canonicalize_returns_same_instance_when_already_canonical()
         {
             // Arrange — extension already uses the schema key, so nothing should be rewritten.
