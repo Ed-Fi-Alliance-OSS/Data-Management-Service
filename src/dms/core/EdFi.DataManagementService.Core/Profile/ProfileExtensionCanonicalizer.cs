@@ -31,12 +31,20 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// having to be schema-aware.
 /// </para>
 /// <para>
-/// An extension rule whose name matches no schema extension key is dropped from the
-/// canonicalized definition. Such a rule only survives load when its parent is
-/// <c>ExcludeOnly</c>/<c>IncludeAll</c> (a genuinely unknown extension under
+/// Resolution is <em>location-aware</em>: each extension rule is matched against the
+/// <c>_ext.properties</c> keys of the schema node at the rule's own position in the
+/// profile tree (root, or inside a specific object/collection/extension), mirroring how
+/// <see cref="ProfileDataValidator"/> navigates. A resource-wide key set would let a root
+/// rule that only resolves at a nested location survive and emit an unresolved root
+/// <c>$._ext.&lt;key&gt;</c> scope — reintroducing the same runtime 500 this change removes.
+/// </para>
+/// <para>
+/// An extension rule whose name matches no schema extension key <em>at its location</em>
+/// is dropped from the canonicalized definition. Such a rule only survives load when its
+/// parent is <c>ExcludeOnly</c>/<c>IncludeAll</c> (a genuinely unknown extension under
 /// <c>IncludeOnly</c> is a validation error that drops the whole profile). Excluding a
-/// non-existent extension is a no-op, and dropping the rule prevents an unresolved
-/// runtime scope from being emitted for it.
+/// non-existent extension is a no-op, and dropping the rule prevents an unresolved runtime
+/// scope from being emitted for it.
 /// </para>
 /// </remarks>
 internal static class ProfileExtensionCanonicalizer
@@ -63,18 +71,18 @@ internal static class ProfileExtensionCanonicalizer
         for (int i = 0; i < definition.Resources.Count; i++)
         {
             ResourceProfile resourceProfile = definition.Resources[i];
-            IReadOnlyDictionary<string, string> extensionKeys = BuildExtensionKeyMap(
+            JsonObject? rootProperties = FindResourceInsertProperties(
                 resourceProfile.ResourceName,
                 projectSchemas
             );
 
             ContentTypeDefinition? canonicalRead = CanonicalizeContentType(
                 resourceProfile.ReadContentType,
-                extensionKeys
+                rootProperties
             );
             ContentTypeDefinition? canonicalWrite = CanonicalizeContentType(
                 resourceProfile.WriteContentType,
-                extensionKeys
+                rootProperties
             );
 
             if (
@@ -100,17 +108,14 @@ internal static class ProfileExtensionCanonicalizer
     }
 
     /// <summary>
-    /// Builds a case-insensitive map of extension key (any casing) to the canonical
-    /// schema key for the named resource, gathered from every <c>_ext.properties</c>
-    /// object anywhere in the resource's <c>jsonSchemaForInsert</c>.
+    /// Resolves the <c>properties</c> object of the named resource's <c>jsonSchemaForInsert</c>,
+    /// which is the schema node the root content type members navigate against.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> BuildExtensionKeyMap(
+    private static JsonObject? FindResourceInsertProperties(
         string resourceName,
         ProjectSchema[] projectSchemas
     )
     {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
         foreach (ProjectSchema projectSchema in projectSchemas)
         {
             JsonNode? resourceNode = projectSchema.FindResourceSchemaNodeByResourceName(
@@ -118,49 +123,74 @@ internal static class ProfileExtensionCanonicalizer
             );
             if (resourceNode?["jsonSchemaForInsert"] is JsonObject jsonSchemaForInsert)
             {
-                CollectExtensionKeys(jsonSchemaForInsert, map);
-                break;
+                return jsonSchemaForInsert["properties"] as JsonObject;
             }
         }
 
-        return map;
+        return null;
     }
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  Schema navigation helpers
+    // ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>The <c>_ext.properties</c> object at the current schema location, or null.</summary>
+    private static JsonObject? ExtensionPropertiesAt(JsonObject? schemaProperties) =>
+        (schemaProperties?["_ext"] as JsonObject)?["properties"] as JsonObject;
+
+    /// <summary>The <c>properties</c> object of a named member's schema node, or null.</summary>
+    private static JsonObject? MemberProperties(JsonObject? schemaProperties, string memberName) =>
+        (schemaProperties?[memberName] as JsonObject)?["properties"] as JsonObject;
+
+    /// <summary>The <c>items.properties</c> object of a named collection's schema node, or null.</summary>
+    private static JsonObject? CollectionItemProperties(
+        JsonObject? schemaProperties,
+        string collectionName
+    ) =>
+        ((schemaProperties?[collectionName] as JsonObject)?["items"] as JsonObject)?["properties"]
+        as JsonObject;
 
     /// <summary>
-    /// Recursively scans a JSON schema node for <c>_ext.properties</c> objects, adding
-    /// each extension key to <paramref name="map"/> (keyed by itself for canonical lookup).
+    /// Matches <paramref name="name"/> against the extension keys at <paramref name="extProperties"/>
+    /// case-insensitively (exact ordinal match preferred). Returns false when no key matches.
     /// </summary>
-    private static void CollectExtensionKeys(JsonNode? node, Dictionary<string, string> map)
+    private static bool TryResolveExtensionKey(
+        JsonObject? extProperties,
+        string name,
+        out string canonicalKey
+    )
     {
-        if (node is JsonObject obj)
-        {
-            if (obj["_ext"] is JsonObject extNode && extNode["properties"] is JsonObject extProperties)
-            {
-#pragma warning disable S3267 // Populating a dictionary in place; a LINQ rewrite would not improve clarity.
-                foreach (var extension in extProperties)
-                {
-                    map[extension.Key] = extension.Key;
-                }
-#pragma warning restore S3267
-            }
+        canonicalKey = name;
 
-            foreach (var property in obj)
-            {
-                CollectExtensionKeys(property.Value, map);
-            }
-        }
-        else if (node is JsonArray array)
+        if (extProperties is null)
         {
-            foreach (JsonNode? item in array)
-            {
-                CollectExtensionKeys(item, map);
-            }
+            return false;
         }
+
+        if (extProperties.ContainsKey(name))
+        {
+            return true;
+        }
+
+        var match = extProperties.FirstOrDefault(property =>
+            property.Key.Equals(name, StringComparison.OrdinalIgnoreCase)
+        );
+        if (match.Key is null)
+        {
+            return false;
+        }
+
+        canonicalKey = match.Key;
+        return true;
     }
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  Tree canonicalization (schema-location-aware)
+    // ───────────────────────────────────────────────────────────────────────
 
     private static ContentTypeDefinition? CanonicalizeContentType(
         ContentTypeDefinition? contentType,
-        IReadOnlyDictionary<string, string> extensionKeys
+        JsonObject? schemaProperties
     )
     {
         if (contentType is null)
@@ -168,14 +198,14 @@ internal static class ProfileExtensionCanonicalizer
             return null;
         }
 
-        IReadOnlyList<ObjectRule> objects = CanonicalizeObjects(contentType.Objects, extensionKeys);
+        IReadOnlyList<ObjectRule> objects = CanonicalizeObjects(contentType.Objects, schemaProperties);
         IReadOnlyList<CollectionRule> collections = CanonicalizeCollections(
             contentType.Collections,
-            extensionKeys
+            schemaProperties
         );
         IReadOnlyList<ExtensionRule> extensions = CanonicalizeExtensions(
             contentType.Extensions,
-            extensionKeys
+            schemaProperties
         );
 
         if (
@@ -197,7 +227,7 @@ internal static class ProfileExtensionCanonicalizer
 
     private static IReadOnlyList<ObjectRule> CanonicalizeObjects(
         IReadOnlyList<ObjectRule>? objects,
-        IReadOnlyDictionary<string, string> extensionKeys
+        JsonObject? schemaProperties
     )
     {
         if (objects is null || objects.Count == 0)
@@ -209,7 +239,10 @@ internal static class ProfileExtensionCanonicalizer
 
         for (int i = 0; i < objects.Count; i++)
         {
-            ObjectRule canonical = CanonicalizeObject(objects[i], extensionKeys);
+            ObjectRule canonical = CanonicalizeObject(
+                objects[i],
+                MemberProperties(schemaProperties, objects[i].Name)
+            );
             if (!ReferenceEquals(canonical, objects[i]))
             {
                 rewritten ??= [.. objects];
@@ -220,20 +253,17 @@ internal static class ProfileExtensionCanonicalizer
         return rewritten ?? objects;
     }
 
-    private static ObjectRule CanonicalizeObject(
-        ObjectRule rule,
-        IReadOnlyDictionary<string, string> extensionKeys
-    )
+    private static ObjectRule CanonicalizeObject(ObjectRule rule, JsonObject? schemaProperties)
     {
         IReadOnlyList<ObjectRule>? nestedObjects = rule.NestedObjects is null
             ? null
-            : CanonicalizeObjects(rule.NestedObjects, extensionKeys);
+            : CanonicalizeObjects(rule.NestedObjects, schemaProperties);
         IReadOnlyList<CollectionRule>? collections = rule.Collections is null
             ? null
-            : CanonicalizeCollections(rule.Collections, extensionKeys);
+            : CanonicalizeCollections(rule.Collections, schemaProperties);
         IReadOnlyList<ExtensionRule>? extensions = rule.Extensions is null
             ? null
-            : CanonicalizeExtensions(rule.Extensions, extensionKeys);
+            : CanonicalizeExtensions(rule.Extensions, schemaProperties);
 
         if (
             ReferenceEquals(nestedObjects, rule.NestedObjects)
@@ -254,7 +284,7 @@ internal static class ProfileExtensionCanonicalizer
 
     private static IReadOnlyList<CollectionRule> CanonicalizeCollections(
         IReadOnlyList<CollectionRule>? collections,
-        IReadOnlyDictionary<string, string> extensionKeys
+        JsonObject? schemaProperties
     )
     {
         if (collections is null || collections.Count == 0)
@@ -266,7 +296,10 @@ internal static class ProfileExtensionCanonicalizer
 
         for (int i = 0; i < collections.Count; i++)
         {
-            CollectionRule canonical = CanonicalizeCollection(collections[i], extensionKeys);
+            CollectionRule canonical = CanonicalizeCollection(
+                collections[i],
+                CollectionItemProperties(schemaProperties, collections[i].Name)
+            );
             if (!ReferenceEquals(canonical, collections[i]))
             {
                 rewritten ??= [.. collections];
@@ -277,20 +310,17 @@ internal static class ProfileExtensionCanonicalizer
         return rewritten ?? collections;
     }
 
-    private static CollectionRule CanonicalizeCollection(
-        CollectionRule rule,
-        IReadOnlyDictionary<string, string> extensionKeys
-    )
+    private static CollectionRule CanonicalizeCollection(CollectionRule rule, JsonObject? itemProperties)
     {
         IReadOnlyList<ObjectRule>? nestedObjects = rule.NestedObjects is null
             ? null
-            : CanonicalizeObjects(rule.NestedObjects, extensionKeys);
+            : CanonicalizeObjects(rule.NestedObjects, itemProperties);
         IReadOnlyList<CollectionRule>? nestedCollections = rule.NestedCollections is null
             ? null
-            : CanonicalizeCollections(rule.NestedCollections, extensionKeys);
+            : CanonicalizeCollections(rule.NestedCollections, itemProperties);
         IReadOnlyList<ExtensionRule>? extensions = rule.Extensions is null
             ? null
-            : CanonicalizeExtensions(rule.Extensions, extensionKeys);
+            : CanonicalizeExtensions(rule.Extensions, itemProperties);
 
         if (
             ReferenceEquals(nestedObjects, rule.NestedObjects)
@@ -310,12 +340,13 @@ internal static class ProfileExtensionCanonicalizer
     }
 
     /// <summary>
-    /// Rewrites each extension rule name to its canonical schema key, recurses into the
-    /// rule's own objects/collections, and drops rules whose name matches no schema key.
+    /// Rewrites each extension rule name to its canonical schema key — resolved against the
+    /// <c>_ext.properties</c> at <paramref name="schemaProperties"/> (this rule's location) —
+    /// recurses into the rule's own objects/collections, and drops rules that do not resolve here.
     /// </summary>
     private static IReadOnlyList<ExtensionRule> CanonicalizeExtensions(
         IReadOnlyList<ExtensionRule>? extensions,
-        IReadOnlyDictionary<string, string> extensionKeys
+        JsonObject? schemaProperties
     )
     {
         if (extensions is null || extensions.Count == 0)
@@ -323,25 +354,27 @@ internal static class ProfileExtensionCanonicalizer
             return extensions ?? [];
         }
 
+        JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
         List<ExtensionRule>? rewritten = null;
 
         for (int i = 0; i < extensions.Count; i++)
         {
             ExtensionRule rule = extensions[i];
 
-            if (!extensionKeys.TryGetValue(rule.Name, out string? canonicalName))
+            if (!TryResolveExtensionKey(extProperties, rule.Name, out string canonicalName))
             {
-                // Unknown extension: drop it so no unresolved runtime scope is emitted.
+                // Unmatched at this location: drop it so no unresolved runtime scope is emitted.
                 rewritten ??= [.. extensions.Take(i)];
                 continue;
             }
 
+            JsonObject? extChildProperties = MemberProperties(extProperties, canonicalName);
             IReadOnlyList<ObjectRule>? objects = rule.Objects is null
                 ? null
-                : CanonicalizeObjects(rule.Objects, extensionKeys);
+                : CanonicalizeObjects(rule.Objects, extChildProperties);
             IReadOnlyList<CollectionRule>? collections = rule.Collections is null
                 ? null
-                : CanonicalizeCollections(rule.Collections, extensionKeys);
+                : CanonicalizeCollections(rule.Collections, extChildProperties);
 
             bool nameChanged = !string.Equals(rule.Name, canonicalName, StringComparison.Ordinal);
             bool childrenChanged =

@@ -227,6 +227,31 @@ public class ProfileExtensionCanonicalizerTests
         }
 
         [Test]
+        public void Canonicalize_drops_root_extension_rule_when_extension_only_exists_nested()
+        {
+            // Arrange — the sample extension exists ONLY on staffPets[*]._ext, not at the root.
+            // A root-level extension rule must not survive, or it would emit an unresolved
+            // root $._ext.sample scope at runtime (the DMS-1233 500).
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents)
+                .Returns(CreateSchemaWithCollectionExtension("Staff", "staffPets", "sample"));
+
+            var writeContentType = ContentTypeWithExtension(MemberSelection.ExcludeOnly, Extension("Sample"));
+            var definition = new ProfileDefinition(
+                "TestProfile",
+                [new ResourceProfile("Staff", null, null, writeContentType)]
+            );
+
+            // Act
+            ProfileDefinition result = ProfileExtensionCanonicalizer.Canonicalize(
+                definition,
+                _effectiveApiSchemaProvider
+            );
+
+            // Assert — the root rule is dropped because the root location has no _ext.sample.
+            result.Resources[0].WriteContentType!.Extensions.Should().BeEmpty();
+        }
+
+        [Test]
         public void Canonicalize_rewrites_both_read_and_write_content_types()
         {
             // Arrange
