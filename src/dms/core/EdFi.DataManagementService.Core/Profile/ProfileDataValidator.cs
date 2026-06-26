@@ -440,130 +440,6 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return true;
     }
 
-    /// <summary>
-    /// Recursive walk emitting a failure for any extensions container that holds two
-    /// rules whose names are equal case-insensitively. Such rules collapse to the same
-    /// schema key during canonicalization and would otherwise throw when the cached
-    /// ExtensionRulesByName dictionary is built. Reported as <see cref="ValidationSeverity.Error"/>
-    /// at every level regardless of <see cref="MemberSelection"/>.
-    /// </summary>
-    private static List<ValidationFailure> CollectDuplicateExtensionNameFailures(
-        ContentTypeDefinition contentType,
-        ValidationContext context
-    )
-    {
-        var failures = new List<ValidationFailure>();
-
-        AddDuplicateExtensionNameFailures(contentType.Extensions, context, failures);
-        foreach (var obj in contentType.Objects)
-        {
-            WalkObjectForDuplicateExtensions(obj, context, failures);
-        }
-        foreach (var collection in contentType.Collections)
-        {
-            WalkCollectionForDuplicateExtensions(collection, context, failures);
-        }
-        foreach (var extension in contentType.Extensions)
-        {
-            WalkExtensionForDuplicateExtensions(extension, context, failures);
-        }
-
-        return failures;
-    }
-
-    private static void WalkObjectForDuplicateExtensions(
-        ObjectRule objectRule,
-        ValidationContext context,
-        List<ValidationFailure> failures
-    )
-    {
-        var childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
-        AddDuplicateExtensionNameFailures(objectRule.Extensions, childContext, failures);
-        foreach (var nested in objectRule.NestedObjects ?? [])
-        {
-            WalkObjectForDuplicateExtensions(nested, childContext, failures);
-        }
-        foreach (var collection in objectRule.Collections ?? [])
-        {
-            WalkCollectionForDuplicateExtensions(collection, childContext, failures);
-        }
-        foreach (var extension in objectRule.Extensions ?? [])
-        {
-            WalkExtensionForDuplicateExtensions(extension, childContext, failures);
-        }
-    }
-
-    private static void WalkCollectionForDuplicateExtensions(
-        CollectionRule collectionRule,
-        ValidationContext context,
-        List<ValidationFailure> failures
-    )
-    {
-        var childContext = context.WithPathPrefix($"{context.PathPrefix}{collectionRule.Name}[].");
-        AddDuplicateExtensionNameFailures(collectionRule.Extensions, childContext, failures);
-        foreach (var nested in collectionRule.NestedObjects ?? [])
-        {
-            WalkObjectForDuplicateExtensions(nested, childContext, failures);
-        }
-        foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
-        {
-            WalkCollectionForDuplicateExtensions(nestedCollection, childContext, failures);
-        }
-        foreach (var extension in collectionRule.Extensions ?? [])
-        {
-            WalkExtensionForDuplicateExtensions(extension, childContext, failures);
-        }
-    }
-
-    private static void WalkExtensionForDuplicateExtensions(
-        ExtensionRule extensionRule,
-        ValidationContext context,
-        List<ValidationFailure> failures
-    )
-    {
-        var childContext = context.WithPathPrefix($"{context.PathPrefix}_ext.{extensionRule.Name}.");
-        foreach (var obj in extensionRule.Objects ?? [])
-        {
-            WalkObjectForDuplicateExtensions(obj, childContext, failures);
-        }
-        foreach (var collection in extensionRule.Collections ?? [])
-        {
-            WalkCollectionForDuplicateExtensions(collection, childContext, failures);
-        }
-    }
-
-    private static void AddDuplicateExtensionNameFailures(
-        IReadOnlyList<ExtensionRule>? extensions,
-        ValidationContext context,
-        List<ValidationFailure> failures
-    )
-    {
-        if (extensions is null || extensions.Count < 2)
-        {
-            return;
-        }
-
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-#pragma warning disable S3267 // Loop tracks first-seen names while emitting failures; a LINQ rewrite would obscure intent.
-        foreach (var extension in extensions)
-        {
-            if (!seen.Add(extension.Name))
-            {
-                failures.Add(
-                    new ValidationFailure(
-                        ValidationSeverity.Error,
-                        context.ProfileName,
-                        context.ResourceName,
-                        $"{context.PathPrefix}_ext.{extension.Name}",
-                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type is declared more than once; "
-                            + "extension names are matched to the schema key case-insensitively, so duplicates collapse to the same key."
-                    )
-                );
-            }
-        }
-#pragma warning restore S3267
-    }
-
     private static List<ValidationFailure> ValidateContentTypeMembers(
         ContentTypeDefinition contentType,
         JsonObject schemaProperties,
@@ -588,18 +464,13 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // names so the pre-pass is the single source of those failures.
         var failures = CollectServerGeneratedNameFailures(contentType, baseContext);
 
-        // Reject sibling extension rules that collapse to the same schema key
-        // (e.g. "sample" and "Sample"). Extension names are matched to the schema
-        // key case-insensitively, and the cached ExtensionRulesByName dictionaries
-        // are built with ToDictionary, so without this duplicates would throw at
-        // navigation time instead of surfacing as profile validation feedback.
-        failures.AddRange(CollectDuplicateExtensionNameFailures(contentType, baseContext));
-
-        // Reject extension rules whose name does not exist in the schema at their
-        // location, regardless of member selection. Canonicalization drops such rules
-        // wherever they appear, so this is the single source of unknown-extension
-        // feedback and prevents a nested unknown extension from disappearing silently.
-        failures.AddRange(CollectUnknownExtensionFailures(contentType, schemaProperties, baseContext));
+        // Resolve every extension rule against the schema at its own location, regardless
+        // of member selection (canonicalization walks the whole tree and drops unmatched
+        // rules, so this is the single source of extension feedback). Unknown extensions
+        // get the missing-reference severity (IncludeOnly error, otherwise warning); two
+        // rules that resolve to the same schema key would throw when ExtensionRulesByName
+        // is built, so that collision is always an error.
+        failures.AddRange(CollectExtensionResolutionFailures(contentType, schemaProperties, baseContext));
 
         failures.AddRange(
             contentType.MemberSelection switch
@@ -763,35 +634,37 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     }
 
     /// <summary>
-    /// Resolves an extension namespace node from the schema's <c>_ext.properties</c> by
-    /// matching <paramref name="extensionName"/> case-insensitively. Returns the matching
-    /// schema node, or null when no extension key matches. Prefers an exact (ordinal) match
-    /// to keep behavior stable when distinct keys differ only by case.
+    /// Resolves the canonical schema extension key for <paramref name="extensionName"/> from
+    /// the schema's <c>_ext.properties</c>, matching case-insensitively. Returns the matching
+    /// key (in the schema's casing), or null when no extension key matches. Prefers an exact
+    /// (ordinal) match to keep behavior stable when distinct keys differ only by case.
     /// </summary>
-    private static JsonObject? ResolveExtensionSchemaNode(JsonObject? extProperties, string extensionName)
+    private static string? ResolveExtensionKey(JsonObject? extProperties, string extensionName)
     {
         if (extProperties is null)
         {
             return null;
         }
 
-        if (extProperties[extensionName] is JsonObject exactMatch)
+        if (extProperties.ContainsKey(extensionName))
         {
-            return exactMatch;
+            return extensionName;
         }
 
-        foreach (var property in extProperties)
-        {
-            if (
-                property.Key.Equals(extensionName, StringComparison.OrdinalIgnoreCase)
-                && property.Value is JsonObject node
-            )
-            {
-                return node;
-            }
-        }
+        var match = extProperties.FirstOrDefault(property =>
+            property.Key.Equals(extensionName, StringComparison.OrdinalIgnoreCase)
+        );
+        return match.Key;
+    }
 
-        return null;
+    /// <summary>
+    /// Resolves the extension namespace node from the schema's <c>_ext.properties</c> for
+    /// <paramref name="extensionName"/>, matching case-insensitively, or null when no key matches.
+    /// </summary>
+    private static JsonObject? ResolveExtensionSchemaNode(JsonObject? extProperties, string extensionName)
+    {
+        string? key = ResolveExtensionKey(extProperties, extensionName);
+        return key is null ? null : extProperties?[key] as JsonObject;
     }
 
     /// <summary>The <c>_ext.properties</c> object at the current schema location, or null.</summary>
@@ -811,18 +684,24 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         as JsonObject;
 
     /// <summary>
-    /// Reports a failure for every extension rule whose name does not resolve to an extension
-    /// key in the schema's <c>_ext.properties</c> at that rule's own location — at the root and
-    /// inside objects, collections, and extensions. This runs regardless of member selection
-    /// because canonicalization drops an unmatched extension rule wherever it appears (including
-    /// under IncludeAll branches that the member-selection validation short-circuits); without
-    /// this an unknown extension would silently disappear with no validation feedback. The
-    /// traversal mirrors the canonicalizer so the two agree on exactly which rules are unknown.
-    /// Severity follows the existing missing-reference contract of the enclosing container:
-    /// IncludeOnly is an error, ExcludeOnly/IncludeAll a warning (the rule is then dropped by
-    /// canonicalization, so the profile still loads without an unresolved runtime scope).
+    /// Resolves every extension rule against the schema's <c>_ext.properties</c> at that rule's
+    /// own location — at the root and inside objects, collections, and extensions — regardless of
+    /// member selection. Canonicalization walks the whole tree and drops any unmatched extension
+    /// rule (including under IncludeAll branches that member-selection validation short-circuits),
+    /// so this is the single source of extension feedback and the traversal mirrors it. Two kinds
+    /// of failure are produced:
+    /// <list type="bullet">
+    /// <item>An extension whose name does not resolve to a schema key: severity follows the
+    /// enclosing container's missing-reference contract (IncludeOnly error, otherwise warning),
+    /// and canonicalization drops the rule so the profile loads without an unresolved scope.</item>
+    /// <item>Two sibling rules that resolve to the <em>same</em> schema key (e.g. "sample" and
+    /// "Sample"): always an error, because both survive canonicalization and the cached
+    /// ExtensionRulesByName dictionary would throw on the duplicate key.</item>
+    /// </list>
+    /// Unresolved names are never treated as duplicates: each is dropped, so case-variant unknown
+    /// names keep the missing-reference severity rather than being rejected as a collision.
     /// </summary>
-    private static List<ValidationFailure> CollectUnknownExtensionFailures(
+    private static List<ValidationFailure> CollectExtensionResolutionFailures(
         ContentTypeDefinition contentType,
         JsonObject schemaProperties,
         ValidationContext context
@@ -830,7 +709,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
 
-        CheckExtensionsExistAndRecurse(
+        CheckExtensions(
             contentType.Extensions,
             schemaProperties,
             context,
@@ -839,11 +718,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         );
         foreach (var obj in contentType.Objects)
         {
-            WalkObjectForUnknownExtensions(obj, schemaProperties, context, failures);
+            WalkObjectExtensions(obj, schemaProperties, context, failures);
         }
         foreach (var collection in contentType.Collections)
         {
-            WalkCollectionForUnknownExtensions(collection, schemaProperties, context, failures);
+            WalkCollectionExtensions(collection, schemaProperties, context, failures);
         }
 
         return failures;
@@ -859,15 +738,16 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             ? ValidationSeverity.Error
             : ValidationSeverity.Warning;
 
-    private static void CheckExtensionsExistAndRecurse(
+    private static void CheckExtensions(
         IReadOnlyList<ExtensionRule> extensions,
         JsonObject? schemaProperties,
         ValidationContext context,
-        ValidationSeverity severity,
+        ValidationSeverity missingSeverity,
         List<ValidationFailure> failures
     )
     {
         JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
+        HashSet<string>? resolvedKeys = null;
 
         foreach (var extension in extensions)
         {
@@ -877,12 +757,14 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            JsonObject? extensionNode = ResolveExtensionSchemaNode(extProperties, extension.Name);
-            if (extensionNode is null)
+            string? canonicalKey = ResolveExtensionKey(extProperties, extension.Name);
+            if (canonicalKey is null)
             {
+                // Unknown name: missing-reference severity. Not a duplicate — an unmatched rule
+                // is dropped by canonicalization, so case-variant unknown names cannot collide.
                 failures.Add(
                     new ValidationFailure(
-                        severity,
+                        missingSeverity,
                         context.ProfileName,
                         context.ResourceName,
                         $"{context.PathPrefix}_ext.{extension.Name}",
@@ -892,29 +774,44 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            // Resolved: recurse into the extension's own objects/collections for deeper
-            // unknown extensions, at the extension's child schema location.
-            JsonObject? extensionProperties = extensionNode["properties"] as JsonObject;
+            resolvedKeys ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!resolvedKeys.Add(canonicalKey))
+            {
+                // Two sibling rules resolve to the same schema key: both survive canonicalization
+                // and ExtensionRulesByName would throw on the duplicate key, so this is an error.
+                failures.Add(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        context.ProfileName,
+                        context.ResourceName,
+                        $"{context.PathPrefix}_ext.{extension.Name}",
+                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type resolves to schema extension key "
+                            + $"'{canonicalKey}', which is already used by another extension rule at the same level; extension names are "
+                            + "matched to the schema key case-insensitively, so these collapse to the same key."
+                    )
+                );
+                continue;
+            }
+
+            // Resolved and unique: recurse into the extension's own objects/collections at the
+            // extension's child schema location.
+            JsonObject? extensionProperties =
+                (extProperties?[canonicalKey] as JsonObject)?["properties"] as JsonObject;
             ValidationContext childContext = context.WithPathPrefix(
                 $"{context.PathPrefix}_ext.{extension.Name}."
             );
             foreach (var nestedObject in extension.Objects ?? [])
             {
-                WalkObjectForUnknownExtensions(nestedObject, extensionProperties, childContext, failures);
+                WalkObjectExtensions(nestedObject, extensionProperties, childContext, failures);
             }
             foreach (var nestedCollection in extension.Collections ?? [])
             {
-                WalkCollectionForUnknownExtensions(
-                    nestedCollection,
-                    extensionProperties,
-                    childContext,
-                    failures
-                );
+                WalkCollectionExtensions(nestedCollection, extensionProperties, childContext, failures);
             }
         }
     }
 
-    private static void WalkObjectForUnknownExtensions(
+    private static void WalkObjectExtensions(
         ObjectRule objectRule,
         JsonObject? schemaProperties,
         ValidationContext context,
@@ -931,7 +828,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         if (objectRule.Extensions is not null)
         {
-            CheckExtensionsExistAndRecurse(
+            CheckExtensions(
                 objectRule.Extensions,
                 objectProperties,
                 childContext,
@@ -941,15 +838,15 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
         foreach (var nested in objectRule.NestedObjects ?? [])
         {
-            WalkObjectForUnknownExtensions(nested, objectProperties, childContext, failures);
+            WalkObjectExtensions(nested, objectProperties, childContext, failures);
         }
         foreach (var collection in objectRule.Collections ?? [])
         {
-            WalkCollectionForUnknownExtensions(collection, objectProperties, childContext, failures);
+            WalkCollectionExtensions(collection, objectProperties, childContext, failures);
         }
     }
 
-    private static void WalkCollectionForUnknownExtensions(
+    private static void WalkCollectionExtensions(
         CollectionRule collectionRule,
         JsonObject? schemaProperties,
         ValidationContext context,
@@ -968,7 +865,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
 
         if (collectionRule.Extensions is not null)
         {
-            CheckExtensionsExistAndRecurse(
+            CheckExtensions(
                 collectionRule.Extensions,
                 itemProperties,
                 childContext,
@@ -978,11 +875,11 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         }
         foreach (var nested in collectionRule.NestedObjects ?? [])
         {
-            WalkObjectForUnknownExtensions(nested, itemProperties, childContext, failures);
+            WalkObjectExtensions(nested, itemProperties, childContext, failures);
         }
         foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
         {
-            WalkCollectionForUnknownExtensions(nestedCollection, itemProperties, childContext, failures);
+            WalkCollectionExtensions(nestedCollection, itemProperties, childContext, failures);
         }
     }
 

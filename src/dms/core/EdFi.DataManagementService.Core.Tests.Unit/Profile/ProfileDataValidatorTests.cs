@@ -2158,11 +2158,51 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert — rejected with feedback rather than throwing during navigation.
+            // Assert — both resolve to schema key "sample", so the collision is rejected with an
+            // error rather than throwing during navigation.
             result.HasErrors.Should().BeTrue();
             result
                 .Failures.Should()
-                .Contain(f => f.Severity == ValidationSeverity.Error && f.Message.Contains("more than once"));
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error && f.Message.Contains("collapse to the same key")
+                );
+        }
+
+        [Test]
+        public void Validate_should_warn_not_error_for_unresolved_case_variant_extensions_under_exclude_only()
+        {
+            // Arrange — Foo and foo are both unknown (schema only has sample). Neither resolves,
+            // so canonicalization drops both; they must keep the ExcludeOnly missing-reference
+            // contract (warnings) rather than be rejected as a duplicate collision.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.ExcludeOnly,
+                [],
+                [],
+                [],
+                [
+                    new ExtensionRule("Foo", MemberSelection.IncludeAll, null, null, null, null),
+                    new ExtensionRule("foo", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — two missing-reference warnings (one per unresolved name), no error, and no
+            // duplicate-collision failure.
+            result.HasErrors.Should().BeFalse();
+            result.HasWarnings.Should().BeTrue();
+            result.Failures.Should().HaveCount(2);
+            result.Failures.Should().OnlyContain(f => f.Severity == ValidationSeverity.Warning);
+            result.Failures.Should().Contain(f => f.MemberName == "_ext.Foo");
+            result.Failures.Should().Contain(f => f.MemberName == "_ext.foo");
+            result.Failures.Should().NotContain(f => f.Message.Contains("collapse to the same key"));
         }
 
         [Test]
