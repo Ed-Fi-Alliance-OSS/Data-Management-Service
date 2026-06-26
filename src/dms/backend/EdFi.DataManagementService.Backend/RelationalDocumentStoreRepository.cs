@@ -139,9 +139,12 @@ public sealed class RelationalDocumentStoreRepository(
         // Restrict resolution to the references/descriptors still present in the shaped body so
         // hidden ones are accepted and ignored rather than resolved/written or rejected as
         // unresolved. Identity references preserved by the shaper remain present and are retained.
-        // Security elements need no equivalent filtering: they derive only from identity/reference
-        // members the shaper preserves, and proposed authorization is computed from the shaped
-        // write plan, so profile-hidden submitted data cannot influence the authorization decision.
+        // Security extraction is still raw: DocumentSecurityElements and AuthorizationPathways are
+        // built from ParsedBody in the API pipeline, so they can include profile-hidden submitted
+        // security fields. The relational write path does not consume those raw structures for
+        // write authorization or persistence; proposed authorization is computed from selectedBody
+        // and the shaped write plan. If a future relational guardrail consumes DocumentSecurityElements,
+        // it must first apply the same shaped-body boundary.
         var documentReferences = ResolveProfileShapedReferences(
             profileWriteContext,
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
