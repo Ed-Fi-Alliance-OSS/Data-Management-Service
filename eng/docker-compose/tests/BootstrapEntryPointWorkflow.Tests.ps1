@@ -664,6 +664,44 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
         }
     }
 
+    Context "MSSQL datastore engine compose selection (DMS-1238)" {
+        It "start-local-dms.ps1 declares a -DatabaseEngine parameter validated to postgresql/mssql" {
+            $params = Get-DeclaredScriptParameters -Path (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            )
+            $params | Should -Contain "DatabaseEngine"
+
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+            $startScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]'
+        }
+
+        It "start-local-dms.ps1 always includes postgresql.yml (CMS + identity stay on PostgreSQL)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*"postgresql\.yml"'
+        }
+
+        It "start-local-dms.ps1 composes mssql.yml only under the mssql engine guard" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'if \(\$DatabaseEngine -eq "mssql"\)\s*\{[^}]*\$files \+= @\("-f", "mssql\.yml"\)'
+        }
+
+        It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'if \(\$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+        }
+    }
+
     Context "Published InfraOnly claims-ready gate" {
         It "start-published-dms.ps1 imports and runs the claims-ready gate after CMS auth metadata setup" {
             $startScript = Get-Content -LiteralPath (

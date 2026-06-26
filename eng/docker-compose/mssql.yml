@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# SQL Server tier for the DMS datastore. This is the MSSQL counterpart to postgresql.yml.
+# It is additive: the local MSSQL stack runs this container for the DMS relational backend
+# AND keeps dms-postgresql for the Configuration Service + self-contained identity, which
+# have no MSSQL backend implementation. start-local-dms.ps1 -DatabaseEngine mssql composes
+# both files. Image and sqlcmd path match the CI integration-test container
+# (mcr.microsoft.com/mssql/server:2022-latest, /opt/mssql-tools18/bin/sqlcmd).
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: dms-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      # Developer Edition, matching CI (MSSQL_PID=Developer).
+      MSSQL_PID: ${MSSQL_PID:-Developer}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Abcdefgh1!}
+      MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-4096}
+    volumes:
+      - dms-mssql:/var/opt/mssql
+    ports:
+      - '127.0.0.1:${MSSQL_PORT:-1433}:1433'
+    networks:
+      - dms
+    restart: always
+    hostname: dms-mssql
+    healthcheck:
+      # $$ defers expansion to the container shell so the password is read from the
+      # container environment rather than interpolated by docker compose. sqlcmd 18
+      # requires -C (trust server certificate) for the self-signed dev certificate.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" -C -b || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+networks:
+  dms:
+    external: true
+
+volumes:
+  dms-mssql:

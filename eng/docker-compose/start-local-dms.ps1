@@ -150,7 +150,16 @@ param (
     # .env.ds<NN> overlay is composed onto -EnvironmentFile so the stack runs that data standard.
     # Omit for the default (DS 5.2) behavior driven entirely by the base environment file.
     [string]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    # Database engine for the DMS datastore. "postgresql" (default) uses postgresql.yml.
+    # "mssql" composes mssql.yml alongside postgresql.yml — the Configuration Service and
+    # self-contained identity have no MSSQL backend and remain on PostgreSQL — and runs the
+    # relational backend with no Debezium CDC (Kafka is PostgreSQL-only and omitted).
+    # See mssql.yml and .env.mssql.relational.
+    [ValidateSet("postgresql", "mssql")]
+    [string]
+    $DatabaseEngine = "postgresql"
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -198,6 +207,7 @@ $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $IdentityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
+Write-Output "Database Engine $DatabaseEngine"
 if($IdentityProvider -eq "keycloak")
 {
     $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
@@ -250,10 +260,23 @@ if ($usePostgresqlTmpfs) {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @("-f", "local-dms.yml")
+# The MSSQL datastore tier is additive: postgresql.yml stays for the Configuration Service
+# and self-contained identity (which have no MSSQL backend), and mssql.yml hosts the DMS
+# relational datastore.
+if ($DatabaseEngine -eq "mssql") {
+    $files += @("-f", "mssql.yml")
+}
 
+$files += @(
+    "-f",
+    "local-dms.yml"
+)
+
+# Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
+# -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
+# from SQL and registers no connector, so Kafka is omitted.
 $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-if ($enableKafkaInfrastructure) {
+if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
     $files += @("-f", "kafka.yml")
 }
 
@@ -262,7 +285,7 @@ if ($IdentityProvider -eq "keycloak") {
     $files += @("-f", "keycloak.yml")
 }
 
-if ($EnableKafkaUI) {
+if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
     $files += @("-f", "kafka-ui.yml")
 }
 
@@ -350,6 +373,36 @@ else {
         }
     }
 
+    function Wait-MssqlReady {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Password,
+
+            [int]
+            $MaxAttempts = 40
+        )
+
+        # SQL Server can take 30+ seconds to accept connections on a cold start. Poll sqlcmd
+        # the same way the CI start-mssql-test-container action does, so the schema provision
+        # phase that follows always finds a reachable server.
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $Password -Q "SELECT 1" -C -b *> $null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Output "SQL Server is ready."
+                return
+            }
+
+            Start-Sleep -Seconds 3
+        }
+
+        throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
@@ -391,6 +444,24 @@ else {
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
     }
+
+    if ($DatabaseEngine -eq "mssql") {
+        Write-Output "Starting SQL Server..."
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs mssql
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start SQL Server. Exit code $LASTEXITCODE"
+        }
+
+        $mssqlSaPassword =
+            if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
+                "Abcdefgh1!"
+            }
+            else {
+                $envValues.MSSQL_SA_PASSWORD
+            }
+        Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+    }
+
     Start-Sleep 20
 
     if ($InfraOnly) {
@@ -417,12 +488,15 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
         }
 
-        if ($enableKafkaInfrastructure) {
+        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka infrastructure..."
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
             }
+        }
+        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "mssql") {
+            Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         if ($EnableKafkaUI) {

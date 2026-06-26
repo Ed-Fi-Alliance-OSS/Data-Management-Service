@@ -56,6 +56,7 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
+MSSQL_PORT=15433
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
@@ -1366,7 +1367,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $connectionString | Should -Not -Match "host=localhost"
         }
 
-        It "rejects MSSQL-style connection strings with an actionable error" {
+        It "provisions MSSQL-style connection strings with --dialect mssql and host-side translation" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -1381,15 +1382,59 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                     [pscustomobject]@{
                         id = 1
                         name = "MsSql"
-                        connectionString = 'Server=mssql-host;Initial Catalog=db1;User Id=sa;Password=foo;'
+                        connectionString = 'Server=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;TrustServerCertificate=true;'
                         dataStoreContexts = @()
                     }
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
-                Should -Throw -ExpectedMessage "*Only PostgreSQL provisioning is supported*"
-            Test-Path -LiteralPath $capturePath | Should -BeFalse
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            # SchemaTools is invoked with the mssql dialect, auto-detected from the connection string.
+            $captured | Should -Contain "--dialect"
+            $captured | Should -Contain "mssql"
+            $captured | Should -Not -Contain "pgsql"
+
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            # The Docker-internal server is translated to the host-side mapped MSSQL_PORT...
+            $connectionString | Should -Match "localhost,15433"
+            $connectionString | Should -Not -Match "dms-mssql"
+            # ...while the database, user, and other stored options survive verbatim.
+            $connectionString | Should -Match "Database=db1"
+            $connectionString | Should -Match "User Id=sa"
+            $connectionString | Should -Match "TrustServerCertificate=true"
+        }
+
+        It "preserves an external (non-Docker) MSSQL server without translation" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "ExternalMsSql"
+                        connectionString = 'Server=managed-mssql.example.com,1433;Database=ext_db;User Id=ops;Password=ops_pass;TrustServerCertificate=true;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "mssql"
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "managed-mssql.example.com,1433"
+            $connectionString | Should -Match "Database=ext_db"
+            $connectionString | Should -Not -Match "localhost"
         }
 
         It "carries SSL and timeout options through the host-side translation" {
@@ -1565,6 +1610,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
+MSSQL_PORT=15433
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
@@ -2009,7 +2055,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
-                Should -Throw -ExpectedMessage "*missing a host key*"
+                Should -Throw -ExpectedMessage "*missing both a PostgreSQL 'host' key and any SQL Server key*"
         }
     }
 
@@ -2296,6 +2342,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
+MSSQL_PORT=15433
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
@@ -2347,6 +2394,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
+MSSQL_PORT=15433
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
@@ -2396,6 +2444,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
+MSSQL_PORT=15433
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained

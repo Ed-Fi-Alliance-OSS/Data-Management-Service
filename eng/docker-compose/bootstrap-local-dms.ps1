@@ -199,7 +199,14 @@ param(
     # IDE workflow: base URL of an IDE-hosted DMS process to health-wait. Valid only with
     # -InfraOnly; rejected without it. Not forwarded to the initial start-local-dms.ps1 infra
     # invocation. When -LoadSeedData is also set, forwarded to load-dms-seed-data.ps1.
-    [string]$DmsBaseUrl
+    [string]$DmsBaseUrl,
+
+    # Database engine for the DMS datastore. "mssql" composes mssql.yml alongside postgresql.yml
+    # and runs the relational backend; the Configuration Service and self-contained identity stay
+    # on PostgreSQL (no MSSQL backend). Forwarded to start-local-dms.ps1 and
+    # configure-local-data-store.ps1. Use with -EnvironmentFile ./.env.mssql.relational.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql"
 )
 
 $ErrorActionPreference = "Stop"
