@@ -147,6 +147,11 @@ internal static class TrackedChangeTriggerBodyEmitter
                 return ResolveDescriptorJoin(column, tableInfo);
 
             case TrackedChangeColumnRole.PersonDocumentId:
+                if (IsDirectSelfPersonDocumentId(column))
+                {
+                    return ResolveScalar(column, tableInfo, sourceTableModel);
+                }
+
                 return ResolvePersonJoin(column, tableInfo);
 
             default:
@@ -156,6 +161,11 @@ internal static class TrackedChangeTriggerBodyEmitter
                 );
         }
     }
+
+    private static bool IsDirectSelfPersonDocumentId(TrackedChangeColumnInfo column) =>
+        column.PersonJoinName is null
+        && column.CanonicalStorageColumn is { } canonicalColumn
+        && canonicalColumn.Equals(new DbColumnName("DocumentId"));
 
     private static TrackedChangeValueSource ResolveScalar(
         TrackedChangeColumnInfo column,

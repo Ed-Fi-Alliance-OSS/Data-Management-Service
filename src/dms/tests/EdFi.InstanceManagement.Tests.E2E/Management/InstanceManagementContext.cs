@@ -103,6 +103,11 @@ public class InstanceManagementContext
     public Dictionary<string, string> DescriptorLocations { get; } = new();
 
     /// <summary>
+    /// Newest change versions captured during a scenario (variableName -> value), for delta assertions.
+    /// </summary>
+    public Dictionary<string, long> CapturedChangeVersions { get; } = new();
+
+    /// <summary>
     /// Last HTTP response for assertions
     /// </summary>
     public HttpResponseMessage? LastResponse { get; set; }
@@ -144,6 +149,7 @@ public class InstanceManagementContext
         ConfigToken = null;
         DmsToken = null;
         DescriptorLocations.Clear();
+        CapturedChangeVersions.Clear();
         LastResponse = null;
         DmsClient?.Dispose();
         DmsClient = null;

@@ -30,6 +30,7 @@ internal sealed record RelationalTrackedChangeQueryRequest(
     ChangeVersionRange ChangeVersionRange,
     TraceId TraceId,
     RelationalAuthorizationContext AuthorizationContext,
+    IReadOnlyList<AuthorizationStrategyEvaluator> AuthorizationStrategyEvaluators,
     MappingSet MappingSet,
     ConcreteResourceModel ResourceModel,
     TrackedChangeTableInfo TrackedChangeTable

@@ -246,6 +246,67 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
 }
 
 /// <summary>
+/// Test fixture for tracked-change derivation over top-level person resources.
+/// </summary>
+[TestFixture]
+public class Given_Top_Level_Person_Resources_For_Tracked_Change_Derivation
+{
+    private DerivedRelationalModelSet _set = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _set = TrackedChangeDerivationTestHelpers.BuildSet(
+            ConstraintDerivationTestSchemaBuilder.BuildTopLevelPersonProjectSchema()
+        );
+    }
+
+    /// <summary>
+    /// It should derive an authorization-only self person DocumentId value column for each core top-level
+    /// person resource.
+    /// </summary>
+    [TestCase("Student", "Old_Student_DocumentId", "New_Student_DocumentId", "$.studentUniqueId")]
+    [TestCase("Staff", "Old_Staff_DocumentId", "New_Staff_DocumentId", "$.staffUniqueId")]
+    [TestCase("Contact", "Old_Contact_DocumentId", "New_Contact_DocumentId", "$.contactUniqueId")]
+    public void It_should_derive_self_person_document_id_columns(
+        string sourceTableName,
+        string oldColumnName,
+        string newColumnName,
+        string sourcePath
+    )
+    {
+        var table = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, sourceTableName);
+        var column = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(table, oldColumnName);
+
+        column.NewColumnName.Value.Should().Be(newColumnName);
+        column.Role.Should().Be(TrackedChangeColumnRole.PersonDocumentId);
+        column.Origin.Should().Be(TrackedChangeColumnOrigin.SecurableElement);
+        column.SourceJsonPath.Should().Be(sourcePath);
+        column.CanonicalStorageColumn.Should().Be(new DbColumnName("DocumentId"));
+        column.PersonJoinName.Should().BeNull();
+        column.ScalarType.Kind.Should().Be(ScalarKind.Int64);
+        column.IsOldColumnNullable.Should().BeFalse();
+        column.IsNewColumnNullable.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// It should not add a table-level person join for a resource's own person identity path.
+    /// </summary>
+    [TestCase("Student")]
+    [TestCase("Staff")]
+    [TestCase("Contact")]
+    public void It_should_not_add_person_joins_for_self_person_document_id_columns(string sourceTableName)
+    {
+        var table = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, sourceTableName);
+
+        table.PersonJoins.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture for tracked-change derivation over a descriptor-only project.
 /// </summary>
 [TestFixture]

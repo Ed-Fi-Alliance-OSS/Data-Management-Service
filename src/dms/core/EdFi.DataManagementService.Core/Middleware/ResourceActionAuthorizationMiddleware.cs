@@ -226,11 +226,19 @@ internal class ResourceActionAuthorizationMiddleware(
         return true;
     }
 
+    private const string ReadChangesActionName = "ReadChanges";
+
     /// <summary>
-    /// Gets the action name for the given requestInfo.
+    /// Gets the action name for the request. Tracked-change Change Query requests (/deletes and
+    /// /keyChanges) authorize against the dedicated ReadChanges action rather than Read.
     /// </summary>
     private static string GetActionName(RequestInfo requestInfo)
     {
+        if (requestInfo.ChangeQueryOperation is not null)
+        {
+            return ReadChangesActionName;
+        }
+
         return _methodToActionNameMapping[requestInfo.Method];
     }
 

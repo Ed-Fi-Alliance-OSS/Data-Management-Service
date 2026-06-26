@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
@@ -43,7 +44,10 @@ public abstract class RelationalChangeQueryRepositoryTestBase
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
 
-        return new RelationalChangeQueryRepository(commandExecutor);
+        return new RelationalChangeQueryRepository(
+            commandExecutor,
+            DefaultRelationalParameterConfigurator.Instance
+        );
     }
 }
 
@@ -161,6 +165,7 @@ file sealed record TestTrackedChangeQueryRequest(
     ChangeVersionRange ChangeVersionRange,
     TraceId TraceId,
     RelationalAuthorizationContext AuthorizationContext,
+    IReadOnlyList<AuthorizationStrategyEvaluator> AuthorizationStrategyEvaluators,
     MappingSet MappingSet,
     ConcreteResourceModel ResourceModel,
     TrackedChangeTableInfo TrackedChangeTable
@@ -754,7 +759,10 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             async ct => await _dataSource.OpenConnectionAsync(ct),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
-        var repository = new RelationalChangeQueryRepository(commandExecutor);
+        var repository = new RelationalChangeQueryRepository(
+            commandExecutor,
+            DefaultRelationalParameterConfigurator.Instance
+        );
         var request = new TestTrackedChangeQueryRequest(
             ResourceInfo: resourceInfo,
             Operation: operation,
@@ -767,6 +775,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             ChangeVersionRange: changeVersionRange ?? new ChangeVersionRange(0, long.MaxValue),
             TraceId: traceId,
             AuthorizationContext: new RelationalAuthorizationContext([]),
+            AuthorizationStrategyEvaluators: [],
             MappingSet: _mappingSet,
             ResourceModel: resourceModel,
             TrackedChangeTable: trackedTable
@@ -1073,6 +1082,921 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     descriptorUri.ToLowerInvariant()
                 ),
             ])
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ReadChanges authorization (DMS-1188 / DMS-1197)
+    //
+    // These tests exercise RelationalChangeQueryRepository's authorization path: the repository runs
+    // ReadChangesAuthorizationPlanner against the resource's configured ReadChanges strategies, emits
+    // SQL predicates over the tracked-change Old_* columns + auth views, and filters rows BEFORE
+    // paging/totalCount. Rows and auth-view backing data are seeded directly (the tracked-change and
+    // auth tables accept direct inserts) so each scenario controls exactly which rows are authorized.
+    //
+    // The auth EdOrg hierarchy table is auth.EducationOrganizationIdToEducationOrganizationId
+    // (Source/Target columns); the *IncludingDeletes people views union live association arms with
+    // tracked_changes_edfi association arms over the same hierarchy, so a person can be made
+    // authorized purely by seeding a tracked StudentSchoolAssociation/responsibility arm + a hierarchy
+    // tuple — no live person/association rows are required.
+    // ──────────────────────────────────────────────────────────────────────
+
+    private const long AuthClaimEdOrgId = 255901001L;
+    private const long AuthOtherEdOrgId = 255999999L;
+    private const long AuthThirdEdOrgId = 255888888L;
+    private const long AuthDirectOnlyEdOrgId = 255777777L;
+    private const string AuthNamespacePrefix = "uri://ed-fi.org/";
+    private const string CrisisTypeDescriptorDiscriminator = "Ed-Fi:CrisisTypeDescriptor";
+    private const string NonMedicalImmunizationExemptionDescriptorDiscriminator =
+        "Ed-Fi:NonMedicalImmunizationExemptionDescriptor";
+
+    private static readonly QualifiedResourceName DisciplineActionResource = new("Ed-Fi", "DisciplineAction");
+    private static readonly QualifiedResourceName StudentHealthResource = new("Ed-Fi", "StudentHealth");
+    private static readonly QualifiedResourceName SurveyResource = new("Ed-Fi", "Survey");
+    private static readonly QualifiedResourceName CrisisTypeDescriptorResource = new(
+        "Ed-Fi",
+        "CrisisTypeDescriptor"
+    );
+    private static readonly QualifiedResourceName NonMedicalImmunizationExemptionDescriptorResource = new(
+        "Ed-Fi",
+        "NonMedicalImmunizationExemptionDescriptor"
+    );
+
+    // ── EdOrg-only ────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_returns_the_edorg_row_for_an_authorized_claim_and_hides_it_for_others()
+    {
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-EdOrg", AuthClaimEdOrgId);
+
+        TrackedChangeQueryResult authorized = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+        TrackedChangeQueryResult unauthorized = await QueryAcademicWeekDeletesAsync(
+            [AuthOtherEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        authorized.Items.Should().ContainSingle();
+        authorized.Items[0]!["keyValues"]!["weekIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Auth-Week-EdOrg");
+        unauthorized.Items.Should().BeEmpty();
+    }
+
+    // DMS-1188 fail-closed: an authenticated client with ZERO claim EdOrg ids hitting a
+    // relationship-based ReadChanges strategy must get an EMPTY result (no rows, no exception) — not a
+    // 500. Previously the planner threw building the claim parameterization; the fix emits a
+    // match-nothing relationship predicate. The same seeded row is returned for a real claim, proving
+    // the empty result is the authorization filter at work, not missing data.
+    [Test]
+    public async Task ReadChanges_returns_empty_for_a_relationship_strategy_with_no_claim_edorg_ids()
+    {
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-NoClaims", AuthClaimEdOrgId);
+
+        TrackedChangeQueryResult noClaims = await QueryAcademicWeekDeletesAsync(
+            [],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+        TrackedChangeQueryResult withClaim = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        noClaims.AuthorizationFailure.Should().BeNull();
+        noClaims.Items.Should().BeEmpty();
+        withClaim.Items.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ReadChanges_authorizes_an_edorg_row_through_a_hierarchy_ancestor()
+    {
+        // Claim is the SEA ancestor; the deleted row's EdOrg is the descendant School. The hierarchy
+        // tuple (ancestor -> descendant) is what grants access, proving the predicate joins through
+        // the auth view rather than matching the raw id.
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthOtherEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-Ancestor", AuthOtherEdOrgId);
+
+        TrackedChangeQueryResult viaAncestor = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+        TrackedChangeQueryResult viaDescendant = await QueryAcademicWeekDeletesAsync(
+            [AuthOtherEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        viaAncestor.Items.Should().ContainSingle();
+        // The descendant claim also authorizes the row directly, even without a hierarchy self-tuple.
+        viaDescendant.Items.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ReadChanges_authorizes_an_edorg_row_by_direct_claim_without_hierarchy_self_tuple()
+    {
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-Direct", AuthDirectOnlyEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekDeletesAsync(
+            [AuthDirectOnlyEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["weekIdentifier"]!.GetValue<string>().Should().Be("Auth-Week-Direct");
+    }
+
+    // ── EdOrg-only inverted ───────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_authorizes_inverted_edorg_using_the_swapped_hierarchy_direction()
+    {
+        // Inverted matches the tracked Old_ EdOrg column against SourceEducationOrganizationId and the
+        // claim against TargetEducationOrganizationId — the reverse of the normal direction. Seed an
+        // asymmetric tuple so the two directions disagree.
+        await InsertAuthEdOrgTupleAsync(source: AuthClaimEdOrgId, target: AuthOtherEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-Inverted", AuthClaimEdOrgId);
+
+        TrackedChangeQueryResult inverted = await QueryAcademicWeekDeletesAsync(
+            [AuthOtherEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+        );
+        TrackedChangeQueryResult normal = await QueryAcademicWeekDeletesAsync(
+            [AuthOtherEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        // Inverted: row.Old_School_SchoolId (AuthClaimEdOrgId) == Source, claim (AuthOtherEdOrgId) == Target → match.
+        inverted.Items.Should().ContainSingle();
+        // Normal with the same claim would require Target == AuthClaimEdOrgId for claim AuthOtherEdOrgId → no match.
+        normal.Items.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task ReadChanges_authorizes_inverted_edorg_by_direct_claim_without_hierarchy_self_tuple()
+    {
+        await InsertAcademicWeekTombstoneAsync("Auth-Week-Inverted-Direct", AuthDirectOnlyEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekDeletesAsync(
+            [AuthDirectOnlyEdOrgId],
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["weekIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Auth-Week-Inverted-Direct");
+    }
+
+    // ── Relationships with EdOrgs and people (including deletes) ───────────
+
+    [Test]
+    public async Task ReadChanges_filters_a_person_resource_by_relationships_with_edorgs_and_people()
+    {
+        const long authorizedStudentDocId = 920001L;
+        const long unauthorizedStudentDocId = 920002L;
+
+        // Authorize one student via the tracked-SSA arm of the IncludingDeletes view. Both StudentHealth
+        // rows carry the same Old_EducationOrganization id (EdOrg-authorized for the claim), but the
+        // strategy AND-composes its subjects, so a row must clear BOTH the EdOrg and the person check.
+        // Only the row for the authorized student satisfies both; the other is hidden.
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertTrackedStudentSchoolAssociationAsync(AuthClaimEdOrgId, authorizedStudentDocId);
+
+        await InsertStudentHealthTombstoneAsync(AuthClaimEdOrgId, authorizedStudentDocId);
+        await InsertStudentHealthTombstoneAsync(AuthClaimEdOrgId, unauthorizedStudentDocId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            StudentHealthResource,
+            [AuthClaimEdOrgId],
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be($"STU{authorizedStudentDocId}");
+
+        TrackedChangeQueryResult unauthorized = await QueryDeletesAsync(
+            StudentHealthResource,
+            [AuthOtherEdOrgId],
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+        );
+        unauthorized.Items.Should().BeEmpty();
+    }
+
+    // ── Relationships with students only (including deletes) ──────────────
+
+    [Test]
+    public async Task ReadChanges_filters_a_person_resource_by_relationships_with_students_only()
+    {
+        const long authorizedStudentDocId = 921001L;
+        const long unauthorizedStudentDocId = 921002L;
+
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertTrackedStudentSchoolAssociationAsync(AuthClaimEdOrgId, authorizedStudentDocId);
+
+        await InsertDisciplineActionTombstoneAsync("DA-Students-1", authorizedStudentDocId);
+        await InsertDisciplineActionTombstoneAsync("DA-Students-2", unauthorizedStudentDocId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            DisciplineActionResource,
+            [AuthClaimEdOrgId],
+            "RelationshipsWithStudentsOnlyIncludingDeletes"
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["disciplineActionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("DA-Students-1");
+    }
+
+    // ── Relationships with students only through responsibility (incl. deletes) ──
+
+    [Test]
+    public async Task ReadChanges_filters_a_person_resource_by_students_only_through_responsibility()
+    {
+        const long authorizedStudentDocId = 922001L;
+        const long unauthorizedStudentDocId = 922002L;
+
+        // The DeletedResponsibility view's tracked arm joins
+        // tracked_changes_edfi.StudentEducationOrganizationResponsibilityAssociation on the EdOrg id.
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertTrackedStudentResponsibilityAssociationAsync(AuthClaimEdOrgId, authorizedStudentDocId);
+
+        await InsertDisciplineActionTombstoneAsync("DA-Resp-1", authorizedStudentDocId);
+        await InsertDisciplineActionTombstoneAsync("DA-Resp-2", unauthorizedStudentDocId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            DisciplineActionResource,
+            [AuthClaimEdOrgId],
+            "RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["disciplineActionIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("DA-Resp-1");
+    }
+
+    // ── NamespaceBased (resource) ─────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_filters_a_namespace_based_resource_by_prefix_and_hides_mismatches()
+    {
+        await InsertSurveyTombstoneAsync("Survey-Match", AuthNamespacePrefix + "survey/match");
+        await InsertSurveyTombstoneAsync("Survey-Mismatch", "uri://other.org/survey");
+        await InsertSurveyTombstoneAsync("Survey-Empty", "");
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            SurveyResource,
+            claimEdOrgIds: [],
+            namespacePrefixes: [AuthNamespacePrefix],
+            strategies: [AuthorizationStrategyNameConstants.NamespaceBased]
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["surveyIdentifier"]!.GetValue<string>().Should().Be("Survey-Match");
+    }
+
+    // ── NamespaceBased (descriptor exception) ─────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_filters_a_descriptor_by_namespace_prefix_and_discriminator()
+    {
+        await InsertDescriptorTombstoneAsync(
+            CrisisTypeDescriptorDiscriminator,
+            AuthNamespacePrefix + "CrisisTypeDescriptor",
+            "Lockdown-Match"
+        );
+        await InsertDescriptorTombstoneAsync(
+            CrisisTypeDescriptorDiscriminator,
+            "uri://other.org/CrisisTypeDescriptor",
+            "Lockdown-Mismatch"
+        );
+        // A descriptor of a different type with a matching namespace must be excluded by Discriminator.
+        await InsertDescriptorTombstoneAsync(
+            "Ed-Fi:GradeLevelDescriptor",
+            AuthNamespacePrefix + "GradeLevelDescriptor",
+            "Tenth grade"
+        );
+
+        TrackedChangeQueryResult result = await QueryCrisisTypeDescriptorDeletesAsync(
+            namespacePrefixes: [AuthNamespacePrefix]
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["codeValue"]!.GetValue<string>().Should().Be("Lockdown-Match");
+    }
+
+    [Test]
+    public async Task ReadChanges_filters_the_nonmedical_immunization_exemption_descriptor_exception_by_namespace_prefix()
+    {
+        await InsertDescriptorTombstoneAsync(
+            NonMedicalImmunizationExemptionDescriptorDiscriminator,
+            AuthNamespacePrefix + "NonMedicalImmunizationExemptionDescriptor",
+            "Religious"
+        );
+        await InsertDescriptorTombstoneAsync(
+            NonMedicalImmunizationExemptionDescriptorDiscriminator,
+            "uri://other.org/NonMedicalImmunizationExemptionDescriptor",
+            "Medical"
+        );
+
+        TrackedChangeQueryResult result = await QueryDescriptorDeletesAsync(
+            NonMedicalImmunizationExemptionDescriptorResource,
+            namespacePrefixes: [AuthNamespacePrefix],
+            traceId: new TraceId("pg-readchanges-nonmedical-immunization-descriptor")
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["codeValue"]!.GetValue<string>().Should().Be("Religious");
+    }
+
+    // ── NoFurtherAuthorizationRequired ────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_returns_all_rows_for_no_further_authorization_required()
+    {
+        await InsertAcademicWeekTombstoneAsync("NFR-A", AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("NFR-B", AuthOtherEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekDeletesAsync(
+            [AuthOtherEdOrgId],
+            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+        );
+
+        result.Items.Should().HaveCount(2);
+    }
+
+    // ── Unsupported strategy → SecurityConfiguration (500) ────────────────
+
+    [Test]
+    public async Task ReadChanges_returns_security_configuration_failure_for_an_unsupported_strategy()
+    {
+        await InsertAcademicWeekTombstoneAsync("Unsupported", AuthClaimEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+
+        result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>();
+        result.Items.Should().BeEmpty();
+    }
+
+    // ── NamespaceBased with no prefixes → NamespaceNoPrefixesConfigured (403) ──
+
+    [Test]
+    public async Task ReadChanges_returns_no_prefixes_failure_when_namespace_based_has_no_prefixes()
+    {
+        await InsertSurveyTombstoneAsync("NoPrefix", AuthNamespacePrefix + "survey");
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            SurveyResource,
+            claimEdOrgIds: [],
+            namespacePrefixes: [],
+            strategies: [AuthorizationStrategyNameConstants.NamespaceBased]
+        );
+
+        result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured>();
+        result.Items.Should().BeEmpty();
+    }
+
+    // ── Paging + totalCount with predicates applied before paging ─────────
+
+    [Test]
+    public async Task ReadChanges_applies_authorization_before_paging_and_total_count()
+    {
+        const int authorizedCount = 5;
+        const int unauthorizedCount = 3;
+
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        for (int i = 0; i < authorizedCount; i++)
+        {
+            await InsertAcademicWeekTombstoneAsync($"Paged-Auth-{i:D2}", AuthClaimEdOrgId);
+        }
+        for (int i = 0; i < unauthorizedCount; i++)
+        {
+            await InsertAcademicWeekTombstoneAsync($"Paged-Unauth-{i:D2}", AuthOtherEdOrgId);
+        }
+
+        TrackedChangeQueryResult page = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            strategies: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            limit: 2,
+            offset: 0,
+            totalCount: true
+        );
+
+        // totalCount reflects only authorized rows (predicate inside the filtered subquery).
+        page.TotalCount.Should().Be(authorizedCount);
+        // The page is capped at the limit and contains only authorized week identifiers.
+        page.Items.Should().HaveCount(2);
+        page.Items.Should()
+            .OnlyContain(item =>
+                item!["keyValues"]!["weekIdentifier"]!.GetValue<string>().StartsWith("Paged-Auth-")
+            );
+
+        TrackedChangeQueryResult secondPage = await QueryAcademicWeekDeletesAsync(
+            [AuthClaimEdOrgId],
+            strategies: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            limit: 2,
+            offset: 4,
+            totalCount: true
+        );
+
+        secondPage.TotalCount.Should().Be(authorizedCount);
+        secondPage.Items.Should().ContainSingle();
+    }
+
+    // ── KeyChanges authorization ─────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_filters_keychanges_before_paging_and_total_count()
+    {
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertAcademicWeekKeyChangeAsync(
+            "KeyChange-Authorized-Old",
+            "KeyChange-Authorized-New",
+            AuthClaimEdOrgId
+        );
+        await InsertAcademicWeekKeyChangeAsync(
+            "KeyChange-Unauthorized-Old",
+            "KeyChange-Unauthorized-New",
+            AuthOtherEdOrgId
+        );
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekKeyChangesAsync(
+            [AuthClaimEdOrgId],
+            [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly],
+            totalCount: true
+        );
+
+        result.TotalCount.Should().Be(1L);
+        result.Items.Should().ContainSingle();
+        JsonObject item = result.Items[0]!.AsObject();
+        item["oldKeyValues"]!["weekIdentifier"]!.GetValue<string>().Should().Be("KeyChange-Authorized-Old");
+        item["newKeyValues"]!["weekIdentifier"]!.GetValue<string>().Should().Be("KeyChange-Authorized-New");
+    }
+
+    [Test]
+    public async Task ReadChanges_returns_security_configuration_failure_for_keychanges_unsupported_strategy()
+    {
+        await InsertAcademicWeekKeyChangeAsync(
+            "KeyChange-Unsupported-Old",
+            "KeyChange-Unsupported-New",
+            AuthClaimEdOrgId
+        );
+
+        TrackedChangeQueryResult result = await QueryAcademicWeekKeyChangesAsync(
+            [AuthClaimEdOrgId],
+            [AuthorizationStrategyNameConstants.OwnershipBased],
+            totalCount: true
+        );
+
+        result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>();
+        result.TotalCount.Should().BeNull();
+        result.Items.Should().BeEmpty();
+    }
+
+    // ── Strategy composition ──────────────────────────────────────────────
+
+    [Test]
+    public async Task ReadChanges_ORs_multiple_relationship_strategies()
+    {
+        await InsertAuthEdOrgTupleAsync(source: AuthClaimEdOrgId, target: AuthOtherEdOrgId);
+        await InsertAuthEdOrgTupleAsync(source: AuthThirdEdOrgId, target: AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Composition-Normal", AuthOtherEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("Composition-Inverted", AuthThirdEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            AcademicWeekResource,
+            [AuthClaimEdOrgId],
+            namespacePrefixes: [],
+            strategies:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            ]
+        );
+
+        result.Items.Should().HaveCount(2);
+        result
+            .Items.Select(item => item!["keyValues"]!["weekIdentifier"]!.GetValue<string>())
+            .Should()
+            .BeEquivalentTo("Composition-Normal", "Composition-Inverted");
+    }
+
+    [Test]
+    public async Task ReadChanges_keeps_NoFurtherAuthorizationRequired_noop_when_combined_with_relationship_strategy()
+    {
+        await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("NoFurther-With-Relationship-Authorized", AuthClaimEdOrgId);
+        await InsertAcademicWeekTombstoneAsync("NoFurther-With-Relationship-Unauthorized", AuthOtherEdOrgId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            AcademicWeekResource,
+            [AuthClaimEdOrgId],
+            namespacePrefixes: [],
+            strategies:
+            [
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            ]
+        );
+
+        result.Items.Should().ContainSingle();
+        result.Items[0]!["keyValues"]!["weekIdentifier"]!
+            .GetValue<string>()
+            .Should()
+            .Be("NoFurther-With-Relationship-Authorized");
+    }
+
+    // ── Authorization query helpers ───────────────────────────────────────
+
+    private Task<TrackedChangeQueryResult> QueryAcademicWeekDeletesAsync(
+        long[] claimEdOrgIds,
+        string strategies,
+        int limit = 25,
+        int offset = 0,
+        bool totalCount = false
+    ) =>
+        QueryDeletesAsync(
+            AcademicWeekResource,
+            claimEdOrgIds,
+            namespacePrefixes: [],
+            strategies: [strategies],
+            limit: limit,
+            offset: offset,
+            totalCount: totalCount
+        );
+
+    private Task<TrackedChangeQueryResult> QueryAcademicWeekKeyChangesAsync(
+        IReadOnlyList<long> claimEdOrgIds,
+        IReadOnlyList<string> strategies,
+        bool totalCount
+    )
+    {
+        ConcreteResourceModel resourceModel = ResolveResourceModel(AcademicWeekResource);
+        TrackedChangeTableInfo trackedTable = _mappingSet.Model.TrackedChangeTablesInNameOrder.Single(x =>
+            x.SourceTable == resourceModel.RelationalModel.Root.Table
+        );
+
+        return QueryTrackedChangesWithAuthorizationAsync(
+            ChangeQueryEndpointOperation.KeyChanges,
+            _academicWeekResourceInfo,
+            resourceModel,
+            trackedTable,
+            claimEdOrgIds,
+            namespacePrefixes: [],
+            strategies,
+            limit: 25,
+            offset: 0,
+            totalCount,
+            changeVersionRange: new ChangeVersionRange(0, long.MaxValue),
+            traceId: new TraceId("pg-readchanges-keychanges-academicweek")
+        );
+    }
+
+    private Task<TrackedChangeQueryResult> QueryCrisisTypeDescriptorDeletesAsync(
+        IReadOnlyList<string> namespacePrefixes
+    ) =>
+        QueryDescriptorDeletesAsync(
+            CrisisTypeDescriptorResource,
+            namespacePrefixes,
+            new TraceId("pg-readchanges-crisis-descriptor")
+        );
+
+    private Task<TrackedChangeQueryResult> QueryDescriptorDeletesAsync(
+        QualifiedResourceName descriptorResource,
+        IReadOnlyList<string> namespacePrefixes,
+        TraceId traceId
+    )
+    {
+        ConcreteResourceModel resourceModel = ResolveResourceModel(DescriptorResource);
+        TrackedChangeTableInfo trackedTable = _mappingSet.Model.TrackedChangeTablesInNameOrder.Single(x =>
+            x.Kind is TrackedChangeTableKind.SharedDescriptor
+        );
+        ResourceInfo resourceInfo = ResolveResourceInfo(descriptorResource);
+
+        return QueryTrackedChangesWithAuthorizationAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            resourceInfo,
+            resourceModel,
+            trackedTable,
+            claimEdOrgIds: [],
+            namespacePrefixes: namespacePrefixes,
+            strategies: [AuthorizationStrategyNameConstants.NamespaceBased],
+            limit: 25,
+            offset: 0,
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(0, long.MaxValue),
+            traceId
+        );
+    }
+
+    private Task<TrackedChangeQueryResult> QueryDeletesAsync(
+        QualifiedResourceName resource,
+        long[] claimEdOrgIds,
+        params string[] strategies
+    ) => QueryDeletesAsync(resource, claimEdOrgIds, [], strategies);
+
+    private Task<TrackedChangeQueryResult> QueryDeletesAsync(
+        QualifiedResourceName resource,
+        IReadOnlyList<long> claimEdOrgIds,
+        IReadOnlyList<string> namespacePrefixes,
+        IReadOnlyList<string> strategies,
+        int limit = 25,
+        int offset = 0,
+        bool totalCount = false
+    )
+    {
+        ConcreteResourceModel resourceModel = ResolveResourceModel(resource);
+        TrackedChangeTableInfo trackedTable = _mappingSet.Model.TrackedChangeTablesInNameOrder.Single(x =>
+            x.SourceTable == resourceModel.RelationalModel.Root.Table
+        );
+        ResourceInfo resourceInfo = ResolveResourceInfo(resource);
+
+        return QueryTrackedChangesWithAuthorizationAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            resourceInfo,
+            resourceModel,
+            trackedTable,
+            claimEdOrgIds,
+            namespacePrefixes,
+            strategies,
+            limit,
+            offset,
+            totalCount,
+            changeVersionRange: new ChangeVersionRange(0, long.MaxValue),
+            traceId: new TraceId($"pg-readchanges-{resource.ResourceName}")
+        );
+    }
+
+    private async Task<TrackedChangeQueryResult> QueryTrackedChangesWithAuthorizationAsync(
+        ChangeQueryEndpointOperation operation,
+        ResourceInfo resourceInfo,
+        ConcreteResourceModel resourceModel,
+        TrackedChangeTableInfo trackedTable,
+        IReadOnlyList<long> claimEdOrgIds,
+        IReadOnlyList<string> namespacePrefixes,
+        IReadOnlyList<string> strategies,
+        int limit,
+        int offset,
+        bool totalCount,
+        ChangeVersionRange changeVersionRange,
+        TraceId traceId
+    )
+    {
+        var commandExecutor = new PostgresqlRelationalCommandExecutor(
+            async ct => await _dataSource.OpenConnectionAsync(ct),
+            NullLogger<PostgresqlRelationalCommandExecutor>.Instance
+        );
+        var repository = new RelationalChangeQueryRepository(
+            commandExecutor,
+            DefaultRelationalParameterConfigurator.Instance
+        );
+        var request = new TestTrackedChangeQueryRequest(
+            ResourceInfo: resourceInfo,
+            Operation: operation,
+            PaginationParameters: new PaginationParameters(
+                Limit: limit,
+                Offset: offset,
+                TotalCount: totalCount,
+                MaximumPageSize: MaximumPageSize
+            ),
+            ChangeVersionRange: changeVersionRange,
+            TraceId: traceId,
+            AuthorizationContext: new RelationalAuthorizationContext(claimEdOrgIds, namespacePrefixes),
+            AuthorizationStrategyEvaluators:
+            [
+                .. strategies.Select(name => new AuthorizationStrategyEvaluator(
+                    name,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+            MappingSet: _mappingSet,
+            ResourceModel: resourceModel,
+            TrackedChangeTable: trackedTable
+        );
+
+        return await repository.QueryTrackedChanges(request);
+    }
+
+    private ConcreteResourceModel ResolveResourceModel(QualifiedResourceName resource) =>
+        _mappingSet.Model.ConcreteResourcesInNameOrder.Single(x => x.RelationalModel.Resource == resource);
+
+    private ResourceInfo ResolveResourceInfo(QualifiedResourceName resource)
+    {
+        (ProjectSchema projectSchema, ResourceSchema resourceSchema) = GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "ed-fi",
+            resource.ResourceName
+        );
+        return CreateResourceInfo(projectSchema, resourceSchema);
+    }
+
+    // ── Authorization seed helpers ────────────────────────────────────────
+
+    private async Task InsertAuthEdOrgTupleAsync(long source, long target)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId"
+                ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+            VALUES (@source, @target)
+            ON CONFLICT DO NOTHING;
+            """,
+            new NpgsqlParameter("source", source),
+            new NpgsqlParameter("target", target)
+        );
+    }
+
+    private long _nextAuthChangeVersion = 100_000L;
+
+    private long NextAuthChangeVersion() => _nextAuthChangeVersion++;
+
+    private async Task InsertAcademicWeekTombstoneAsync(string weekIdentifier, long oldSchoolId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."AcademicWeek"
+                ("Old_School_SchoolId", "New_School_SchoolId", "Old_WeekIdentifier", "New_WeekIdentifier",
+                 "Id", "ChangeVersion")
+            VALUES (@oldSchoolId, NULL, @weekIdentifier, NULL, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("oldSchoolId", oldSchoolId),
+            new NpgsqlParameter("weekIdentifier", weekIdentifier),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertAcademicWeekKeyChangeAsync(
+        string oldWeekIdentifier,
+        string newWeekIdentifier,
+        long oldSchoolId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."AcademicWeek"
+                ("Old_School_SchoolId", "New_School_SchoolId", "Old_WeekIdentifier", "New_WeekIdentifier",
+                 "Id", "ChangeVersion")
+            VALUES (@oldSchoolId, @newSchoolId, @oldWeekIdentifier, @newWeekIdentifier, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("oldSchoolId", oldSchoolId),
+            new NpgsqlParameter("newSchoolId", oldSchoolId),
+            new NpgsqlParameter("oldWeekIdentifier", oldWeekIdentifier),
+            new NpgsqlParameter("newWeekIdentifier", newWeekIdentifier),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertSurveyTombstoneAsync(string surveyIdentifier, string oldNamespace)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."Survey"
+                ("Old_Namespace", "New_Namespace", "Old_SurveyIdentifier", "New_SurveyIdentifier",
+                 "Id", "ChangeVersion")
+            VALUES (@oldNamespace, NULL, @surveyIdentifier, NULL, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("oldNamespace", oldNamespace),
+            new NpgsqlParameter("surveyIdentifier", surveyIdentifier),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertDescriptorTombstoneAsync(
+        string discriminator,
+        string oldNamespace,
+        string oldCodeValue
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."Descriptor"
+                ("Old_Namespace", "New_Namespace", "Old_CodeValue", "New_CodeValue", "Discriminator",
+                 "Id", "ChangeVersion")
+            VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @discriminator, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("oldNamespace", oldNamespace),
+            new NpgsqlParameter("oldCodeValue", oldCodeValue),
+            new NpgsqlParameter("discriminator", discriminator),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertTrackedStudentSchoolAssociationAsync(long oldSchoolId, long oldStudentDocId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation"
+                ("Old_EntryDate", "New_EntryDate", "Old_SchoolId_Unified", "New_SchoolId_Unified",
+                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
+                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+            VALUES (@entryDate, NULL, @oldSchoolId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL,
+                    @id, @changeVersion);
+            """,
+            new NpgsqlParameter("entryDate", new DateOnly(2025, 8, 1)),
+            new NpgsqlParameter("oldSchoolId", oldSchoolId),
+            new NpgsqlParameter("studentUniqueId", $"STU{oldStudentDocId}"),
+            new NpgsqlParameter("oldStudentDocId", oldStudentDocId),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertTrackedStudentResponsibilityAssociationAsync(
+        long oldEdOrgId,
+        long oldStudentDocId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation"
+                ("Old_BeginDate", "New_BeginDate",
+                 "Old_EducationOrganization_EducationOrganizationId", "New_EducationOrganization_EducationOrganizationId",
+                 "Old_ResponsibilityDescriptor_Namespace", "New_ResponsibilityDescriptor_Namespace",
+                 "Old_ResponsibilityDescriptor_CodeValue", "New_ResponsibilityDescriptor_CodeValue",
+                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
+                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+            VALUES (@beginDate, NULL, @oldEdOrgId, NULL, @respNamespace, NULL, @respCodeValue, NULL,
+                    @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("beginDate", new DateOnly(2025, 8, 1)),
+            new NpgsqlParameter("oldEdOrgId", oldEdOrgId),
+            new NpgsqlParameter("respNamespace", "uri://ed-fi.org/ResponsibilityDescriptor"),
+            new NpgsqlParameter("respCodeValue", "Educational"),
+            new NpgsqlParameter("studentUniqueId", $"STU{oldStudentDocId}"),
+            new NpgsqlParameter("oldStudentDocId", oldStudentDocId),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertStudentHealthTombstoneAsync(long oldEdOrgId, long oldStudentDocId)
+    {
+        // StudentHealth tracks only its identity/securable columns (EducationOrganization id + the
+        // Student natural key + denormalized Student_DocumentId); AsOfDate is not tracked.
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."StudentHealth"
+                ("Old_EducationOrganization_EducationOrganizationId", "New_EducationOrganization_EducationOrganizationId",
+                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
+                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+            VALUES (@oldEdOrgId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("oldEdOrgId", oldEdOrgId),
+            new NpgsqlParameter("studentUniqueId", $"STU{oldStudentDocId}"),
+            new NpgsqlParameter("oldStudentDocId", oldStudentDocId),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
+        );
+    }
+
+    private async Task InsertDisciplineActionTombstoneAsync(
+        string disciplineActionIdentifier,
+        long oldStudentDocId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "tracked_changes_edfi"."DisciplineAction"
+                ("Old_DisciplineActionIdentifier", "New_DisciplineActionIdentifier",
+                 "Old_DisciplineDate", "New_DisciplineDate",
+                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
+                 "Old_ResponsibilitySchool_SchoolId", "New_ResponsibilitySchool_SchoolId",
+                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+            VALUES (@identifier, NULL, @disciplineDate, NULL, @studentUniqueId, NULL, @schoolId, NULL,
+                    @oldStudentDocId, NULL, @id, @changeVersion);
+            """,
+            new NpgsqlParameter("identifier", disciplineActionIdentifier),
+            new NpgsqlParameter("disciplineDate", new DateOnly(2025, 3, 1)),
+            new NpgsqlParameter("studentUniqueId", $"STU{oldStudentDocId}"),
+            new NpgsqlParameter("schoolId", AuthClaimEdOrgId),
+            new NpgsqlParameter("oldStudentDocId", oldStudentDocId),
+            new NpgsqlParameter("id", Guid.NewGuid()),
+            new NpgsqlParameter("changeVersion", NextAuthChangeVersion())
         );
     }
 }

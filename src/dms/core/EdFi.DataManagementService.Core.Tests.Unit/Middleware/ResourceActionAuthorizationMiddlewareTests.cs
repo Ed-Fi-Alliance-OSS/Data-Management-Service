@@ -82,6 +82,26 @@ public class ResourceActionAuthorizationMiddlewareTests
         );
     }
 
+    internal static IPipelineStep MiddlewareCoreReadChanges(string action, params string[] strategies)
+    {
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            .Returns([
+                new ClaimSet(
+                    Name: "SIS-Vendor",
+                    ResourceClaims:
+                    [
+                        new ResourceClaim(
+                            $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                            action,
+                            [.. strategies.Select(static s => new AuthorizationStrategy(s))]
+                        ),
+                    ]
+                ),
+            ]);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance, true);
+    }
+
     internal static RequestInfo CreateRequestInfo(
         RequestMethod requestMethod,
         string path,
@@ -1269,5 +1289,106 @@ public class ResourceActionAuthorizationMiddlewareTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class GivenTrackedChangeGetWithReadChangesClaim : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools/deletes");
+            _requestInfo.ChangeQueryOperation = ChangeQueryEndpointOperation.Deletes;
+            await MiddlewareCoreReadChanges("ReadChanges", "NoFurtherAuthorizationRequired")
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_does_not_set_a_failure_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_resolves_the_ReadChanges_strategies()
+        {
+            _requestInfo.ResourceActionAuthStrategies.Should().Contain("NoFurtherAuthorizationRequired");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class GivenTrackedChangeGetWithoutReadChangesClaim : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools/deletes");
+            _requestInfo.ChangeQueryOperation = ChangeQueryEndpointOperation.Deletes;
+            await MiddlewareCoreReadChanges("Read", "NoFurtherAuthorizationRequired")
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_responds_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        }
+
+        [Test]
+        public void It_returns_the_ReadChanges_action_denied_problem_details()
+        {
+            AssertExpectedReadChangesActionDeniedResponse(_requestInfo.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class GivenTrackedChangeKeyChangesGetWithoutReadChangesClaim
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools/keyChanges");
+            _requestInfo.ChangeQueryOperation = ChangeQueryEndpointOperation.KeyChanges;
+            await MiddlewareCoreReadChanges("Read", "NoFurtherAuthorizationRequired")
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_responds_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        }
+
+        [Test]
+        public void It_returns_the_ReadChanges_action_denied_problem_details()
+        {
+            AssertExpectedReadChangesActionDeniedResponse(_requestInfo.FrontendResponse);
+        }
+    }
+
+    private static void AssertExpectedReadChangesActionDeniedResponse(IFrontendResponse response)
+    {
+        response.ContentType.Should().Be("application/problem+json");
+
+        JsonObject body = response.Body!.AsObject();
+        body["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:security:authorization:access-denied:action");
+        body["title"]!.GetValue<string>().Should().Be("Authorization Denied");
+        body["status"]!.GetValue<int>().Should().Be(403);
+        body["detail"]!.GetValue<string>().Should().Be("Access to the resource could not be authorized.");
+        body["correlationId"]!.GetValue<string>().Should().Be("traceId");
+        body["errors"]!
+            .AsArray()
+            .Select(error => error!.GetValue<string>())
+            .Should()
+            .Equal(
+                "The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'ReadChanges' action on one of the following resource claims: School"
+            );
     }
 }

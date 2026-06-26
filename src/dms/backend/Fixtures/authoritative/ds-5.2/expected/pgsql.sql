@@ -8449,6 +8449,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Contact"
 (
     "Old_ContactUniqueId" varchar(32) NOT NULL,
     "New_ContactUniqueId" varchar(32) NULL,
+    "Old_Contact_DocumentId" bigint NOT NULL,
+    "New_Contact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9356,6 +9358,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Staff"
 (
     "Old_StaffUniqueId" varchar(32) NOT NULL,
     "New_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9566,6 +9570,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 (
     "Old_StudentUniqueId" varchar(32) NOT NULL,
     "New_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -40472,11 +40478,13 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Contact" (
             "Old_ContactUniqueId",
+            "Old_Contact_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."ContactUniqueId",
+            OLD."DocumentId",
             doc."DocumentUuid",
             doc."ContentVersion"
         FROM "dms"."Document" doc
@@ -40507,13 +40515,17 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Contact" (
             "Old_ContactUniqueId",
+            "Old_Contact_DocumentId",
             "New_ContactUniqueId",
+            "New_Contact_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."ContactUniqueId",
+            OLD."DocumentId",
             NEW."ContactUniqueId",
+            NEW."DocumentId",
             doc."DocumentUuid",
             _stampedContentVersion
         FROM "dms"."Document" doc
@@ -53983,11 +53995,13 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Staff" (
             "Old_StaffUniqueId",
+            "Old_Staff_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."StaffUniqueId",
+            OLD."DocumentId",
             doc."DocumentUuid",
             doc."ContentVersion"
         FROM "dms"."Document" doc
@@ -54018,13 +54032,17 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Staff" (
             "Old_StaffUniqueId",
+            "Old_Staff_DocumentId",
             "New_StaffUniqueId",
+            "New_Staff_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."StaffUniqueId",
+            OLD."DocumentId",
             NEW."StaffUniqueId",
+            NEW."DocumentId",
             doc."DocumentUuid",
             _stampedContentVersion
         FROM "dms"."Document" doc
@@ -56709,11 +56727,13 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
             "Old_StudentUniqueId",
+            "Old_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."StudentUniqueId",
+            OLD."DocumentId",
             doc."DocumentUuid",
             doc."ContentVersion"
         FROM "dms"."Document" doc
@@ -56744,13 +56764,17 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
             "Old_StudentUniqueId",
+            "Old_Student_DocumentId",
             "New_StudentUniqueId",
+            "New_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
         SELECT
             OLD."StudentUniqueId",
+            OLD."DocumentId",
             NEW."StudentUniqueId",
+            NEW."DocumentId",
             doc."DocumentUuid",
             _stampedContentVersion
         FROM "dms"."Document" doc

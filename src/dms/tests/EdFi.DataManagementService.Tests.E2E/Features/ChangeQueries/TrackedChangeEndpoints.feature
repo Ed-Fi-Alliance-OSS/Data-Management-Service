@@ -559,6 +559,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   And the response body path "0.id" should equal request variable "deletedSsaId"
                   And the response body path "0.keyValues.studentUniqueId" should have value "11"
                   And the response body path "0.keyValues.schoolId" should have value "1255901001"
+                  And the response body path "0.keyValues.entryDate" should have value "2023-08-01"
 
             @relational-backend
             @relational-ci-shard-3
@@ -612,3 +613,212 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                       """
                       []
                       """
+
+        Rule: ReadChanges authorization filters and gates the deletes response
+
+            # These scenarios upload purpose-built claim sets whose ReadChanges action declares the
+            # authorization strategy under test, then authorize a client and exercise /deletes.
+            # ReadChanges authorization is applied as a SQL filter on the tracked-change rows, so a
+            # caller scoped to the wrong education organization or namespace sees an empty page
+            # (HTTP 200, total-count 0) rather than a 403 — except for the two configuration-error
+            # cases (unsupported strategy => 500, NamespaceBased with no prefixes => 403).
+
+            @relational-backend
+            @relational-ci-shard-3
+            @ResetClaimsetsAfterScenario
+            @reset-data-before-scenario
+            Scenario: 15 RelationshipsWithEdOrgs ReadChanges shows a deleted association to an authorized education organization and hides it from others
+                # Seed and delete the association under a broad no-further-auth client.
+                Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901001"
+                  And the system has these "schools"
+                      | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                      | 255901001 | Tracked Auth SSA School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  And the system has these "students"
+                      | studentUniqueId | firstName | lastSurname | birthDate  |
+                      | "21"            | Tracked   | Auth        | 2008-01-01 |
+                 When a POST request is made to "/ed-fi/studentSchoolAssociations" with
+                      """
+                      {
+                        "entryDate": "2023-08-01",
+                        "schoolReference": {
+                          "schoolId": 255901001
+                        },
+                        "studentReference": {
+                          "studentUniqueId": "21"
+                        },
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                      }
+                      """
+                 Then it should respond with 201
+                 When the resulting id is stored in the "authSsaId" variable
+                 When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{authSsaId}"
+                 Then it should respond with 204
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "authSsaChangeVersion"
+                # Grant a claim set whose StudentSchoolAssociation ReadChanges uses RelationshipsWithEdOrgsOnly.
+                Given a claim set is uploaded to CMS that grants "StudentSchoolAssociation" access to "E2E-ReadChangesEdOrgClaimSet" using authorization strategy "RelationshipsWithEdOrgsOnly"
+                  And the claim set upload to CMS should be successful
+                # An authorized client (matching education organization) sees the deleted association.
+                Given the claimSet "E2E-ReadChangesEdOrgClaimSet" is authorized with educationOrganizationIds "255901001"
+                 When a GET request is made to "/ed-fi/studentSchoolAssociations/deletes?minChangeVersion={authSsaChangeVersion}&maxChangeVersion={authSsaChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 1
+                      }
+                      """
+                  And total of records should be 1
+                  And the response body path "0.id" should equal request variable "authSsaId"
+                  And the response body path "0.keyValues.schoolId" should have value "255901001"
+                # A client authorized for a different education organization sees nothing.
+                Given the claimSet "E2E-ReadChangesEdOrgClaimSet" is authorized with educationOrganizationIds "255901999"
+                 When a GET request is made to "/ed-fi/studentSchoolAssociations/deletes?minChangeVersion={authSsaChangeVersion}&maxChangeVersion={authSsaChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 0
+                      }
+                      """
+                  And total of records should be 0
+                  And the response body is
+                      """
+                      []
+                      """
+
+            @relational-backend
+            @relational-ci-shard-3
+            @ResetClaimsetsAfterScenario
+            @reset-data-before-scenario
+            Scenario: 16 NamespaceBased ReadChanges shows a deleted descriptor to a matching namespace and hides it from a non-matching namespace
+                # Grant a claim set whose CrisisTypeDescriptor actions all use NamespaceBased.
+                Given a claim set is uploaded to CMS that grants "CrisisTypeDescriptor" access to "E2E-ReadChangesNamespaceClaimSet" using authorization strategy "NamespaceBased"
+                  And the claim set upload to CMS should be successful
+                # Create and delete the descriptor under a matching namespace prefix.
+                Given the claimSet "E2E-ReadChangesNamespaceClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+                 When a POST request is made to "/ed-fi/crisisTypeDescriptors" with
+                      """
+                      {
+                        "codeValue": "Tracked Crisis Type",
+                        "namespace": "uri://ed-fi.org/CrisisTypeDescriptor",
+                        "shortDescription": "Tracked Crisis Type"
+                      }
+                      """
+                 Then it should respond with 201
+                 When the resulting id is stored in the "crisisDescriptorId" variable
+                 When a DELETE request is made to "/ed-fi/crisisTypeDescriptors/{crisisDescriptorId}"
+                 Then it should respond with 204
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "crisisDeleteChangeVersion"
+                # The matching namespace prefix sees the deleted descriptor.
+                 When a GET request is made to "/ed-fi/crisisTypeDescriptors/deletes?minChangeVersion={crisisDeleteChangeVersion}&maxChangeVersion={crisisDeleteChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 1
+                      }
+                      """
+                  And total of records should be 1
+                  And the response body path "0.id" should equal request variable "crisisDescriptorId"
+                  And the response body path "0.keyValues.namespace" should have value "uri://ed-fi.org/CrisisTypeDescriptor"
+                  And the response body path "0.keyValues.codeValue" should have value "Tracked Crisis Type"
+                # A client whose namespace prefix does not match sees nothing.
+                Given the claimSet "E2E-ReadChangesNamespaceClaimSet" is authorized with namespacePrefixes "uri://other.org"
+                 When a GET request is made to "/ed-fi/crisisTypeDescriptors/deletes?minChangeVersion={crisisDeleteChangeVersion}&maxChangeVersion={crisisDeleteChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 0
+                      }
+                      """
+                  And total of records should be 0
+                  And the response body is
+                      """
+                      []
+                      """
+
+            @relational-backend
+            @relational-ci-shard-3
+            @ResetClaimsetsAfterScenario
+            @reset-data-before-scenario
+            Scenario: 17 NoFurtherAuthorizationRequired ReadChanges returns descriptor deletes regardless of the caller's authorization scope
+                # Grant a claim set whose GradeLevelDescriptor actions all use NoFurtherAuthorizationRequired,
+                # then authorize a client whose namespace prefix would otherwise exclude the descriptor.
+                Given a claim set is uploaded to CMS that grants "GradeLevelDescriptor" access to "E2E-ReadChangesNoFurtherAuthClaimSet" using authorization strategy "NoFurtherAuthorizationRequired"
+                  And the claim set upload to CMS should be successful
+                Given the claimSet "E2E-ReadChangesNoFurtherAuthClaimSet" is authorized with namespace "uri://other.org" and educationOrganizationIds "255901999"
+                 When a POST request is made to "/ed-fi/gradeLevelDescriptors" with
+                      """
+                      {
+                        "codeValue": "Tracked NFA Delete Descriptor",
+                        "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+                        "shortDescription": "Tracked NFA Delete Descriptor"
+                      }
+                      """
+                 Then it should respond with 201
+                 When the resulting id is stored in the "nfaDescriptorId" variable
+                 When a DELETE request is made to "/ed-fi/gradeLevelDescriptors/{nfaDescriptorId}"
+                 Then it should respond with 204
+                 When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+                 Then it should respond with 200
+                  And the response body path "newestChangeVersion" is stored in request variable "nfaDeleteChangeVersion"
+                 When a GET request is made to "/ed-fi/gradeLevelDescriptors/deletes?minChangeVersion={nfaDeleteChangeVersion}&maxChangeVersion={nfaDeleteChangeVersion}&totalCount=true"
+                 Then it should respond with 200
+                  And the response headers include
+                      """
+                      {
+                        "total-count": 1
+                      }
+                      """
+                  And total of records should be 1
+                  And the response body path "0.id" should equal request variable "nfaDescriptorId"
+                  And the response body path "0.keyValues.namespace" should have value "uri://ed-fi.org/GradeLevelDescriptor"
+                  And the response body path "0.keyValues.codeValue" should have value "Tracked NFA Delete Descriptor"
+
+            @relational-backend
+            @relational-ci-shard-3
+            @ResetClaimsetsAfterScenario
+            @reset-data-before-scenario
+            Scenario: 18 ReadChanges configured with an unsupported authorization strategy returns a security configuration ProblemDetails
+                Given a claim set is uploaded to CMS that grants "School" access to "E2E-ReadChangesUnsupportedStrategyClaimSet" using authorization strategy "OwnershipBased"
+                  And the claim set upload to CMS should be successful
+                Given the claimSet "E2E-ReadChangesUnsupportedStrategyClaimSet" is authorized with educationOrganizationIds ""
+                 When a GET request is made to "/ed-fi/schools/deletes"
+                 Then it should respond with 500
+                  And the response headers include
+                      """
+                      {
+                          "content-type": "application/problem+json"
+                      }
+                      """
+                  And the response body has a non-empty correlationId
+                  And the response body is
+                      """
+                      {
+                          "type": "urn:ed-fi:api:system:configuration:security",
+                          "title": "Security Configuration Error",
+                          "status": 500,
+                          "detail": "A security configuration problem was detected. The request cannot be authorized.",
+                          "correlationId": null,
+                          "validationErrors": {},
+                          "errors": [
+                              "Could not find authorization strategy implementations for the following strategy names: 'OwnershipBased'."
+                          ]
+                      }
+                      """
+
+            # NOTE: The "NamespaceBased ReadChanges with a client that has no namespace prefixes => 403"
+            # failure path is verified at the integration level
+            # (RelationalChangeQueryRepositoryTests.ReadChanges_returns_no_prefixes_failure_when_namespace_based_has_no_prefixes)
+            # and at the unit level
+            # (NamespaceAuthorizationFailureResponseTests.It_renders_the_no_prefixes_configured_problem_details).
+            # It is intentionally NOT reproduced here because the E2E client-provisioning path cannot
+            # create a client with zero namespace prefixes: CMS vendor creation enforces a non-empty
+            # NamespacePrefixes (FluentValidation NotEmpty on VendorInsertCommand.NamespacePrefixes), and
+            # the JWT namespacePrefixes claim is derived from that vendor value. A scenario authorizing
+            # with namespacePrefixes "" fails at vendor creation, not at the /deletes authorization check.

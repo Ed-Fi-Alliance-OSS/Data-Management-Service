@@ -35,42 +35,35 @@ internal static class NamespacePrefixParameterizationPreflight
         out SecurityConfigurationFailureDiagnostic[] securityConfigurationDiagnostics
     )
     {
-        // A null/empty prefix cannot be parameterized into a LIKE predicate; the factory throws a generic
-        // ArgumentException for it. Map it to a controlled security-configuration failure here so an
-        // invalid claim-set configuration fails closed instead of surfacing as an uncontrolled 500.
-        if (namespacePrefixes.Any(string.IsNullOrEmpty))
-        {
-            parameterization = null!;
-            securityConfigurationMessage =
-                NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix;
-            securityConfigurationDiagnostics =
-                AuthorizationSecurityConfigurationDiagnostics.ForNamespacePrefixParameterization(
-                    AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidNamespacePrefix
-                );
-            return false;
-        }
-
-        try
-        {
-            parameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            NamespacePrefixParameterizationFactory.TryCreate(
                 dialect,
                 namespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-            securityConfigurationMessage = string.Empty;
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName,
+                out parameterization,
+                out securityConfigurationMessage,
+                out NamespacePrefixParameterizationFailureKind? failureKind
+            )
+        )
+        {
             securityConfigurationDiagnostics = [];
             return true;
         }
-        catch (NamespacePrefixLimitExceededException ex)
+
+        string diagnosticFailureKind = failureKind switch
         {
-            parameterization = null!;
-            securityConfigurationMessage =
-                NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount);
-            securityConfigurationDiagnostics =
-                AuthorizationSecurityConfigurationDiagnostics.ForNamespacePrefixParameterization(
-                    AuthorizationSecurityConfigurationDiagnostics.NamespacePrefixCapExceeded
-                );
-            return false;
-        }
+            NamespacePrefixParameterizationFailureKind.InvalidNamespacePrefix =>
+                AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidNamespacePrefix,
+            NamespacePrefixParameterizationFailureKind.PrefixCapExceeded =>
+                AuthorizationSecurityConfigurationDiagnostics.NamespacePrefixCapExceeded,
+            _ => throw new InvalidOperationException(
+                $"Unsupported namespace prefix parameterization failure kind '{failureKind}'."
+            ),
+        };
+        securityConfigurationDiagnostics =
+            AuthorizationSecurityConfigurationDiagnostics.ForNamespacePrefixParameterization(
+                diagnosticFailureKind
+            );
+        return false;
     }
 }

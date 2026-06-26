@@ -416,6 +416,40 @@ public class InstanceSetupStepDefinitions(
         }
     }
 
+    [Given("tenant {string} has an application for district {string} with claim set {string}")]
+    [When("tenant {string} has an application for district {string} with claim set {string}")]
+    public async Task GivenTenantHasApplicationForDistrictWithClaimSet(
+        string tenantName,
+        string districtId,
+        string claimSetName
+    )
+    {
+        var tenantClient = context.ConfigClientsByTenant[tenantName];
+        var vendorId = context.VendorIdsByTenant[tenantName];
+
+        var tenantDataStoreIds = context
+            .DataStoreIdToTenant.Where(kvp => kvp.Value == tenantName)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        var edOrgIds = new[] { int.Parse(districtId) };
+
+        var application = await tenantClient.CreateApplicationAsync(
+            new ApplicationRequest(
+                vendorId,
+                $"District {districtId} {claimSetName} App",
+                claimSetName,
+                edOrgIds,
+                [.. tenantDataStoreIds]
+            )
+        );
+
+        // Overwrite this tenant's stored credentials so a subsequent
+        // "authenticated to DMS with credentials for tenant" picks up this claim set.
+        context.ApplicationIdsByTenant[tenantName] = application.Id;
+        context.CredentialsByTenant[tenantName] = (application.Key, application.Secret);
+    }
+
     /// <summary>
     /// Maps route qualifiers to database index based on known test data configuration.
     /// </summary>
