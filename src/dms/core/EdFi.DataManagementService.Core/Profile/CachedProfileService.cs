@@ -741,8 +741,19 @@ internal class CachedProfileService(
                             );
                         }
 
-                        profilesByName[parseResult.Definition.ProfileName] = parseResult.Definition;
-                        nameById[profileResponse.Id] = parseResult.Definition.ProfileName;
+                        // Normalize extension rule names to the schema extension keys so the
+                        // profile runtime (scope discovery, navigation, request/stored shaping,
+                        // read projection) agrees with the schema-derived _ext member casing.
+                        // Validation has already passed at this point, so any surviving
+                        // extension rule either matches a schema key or is a warning-tolerated
+                        // unknown that the canonicalizer drops (DMS-1233).
+                        ProfileDefinition canonicalDefinition = ProfileExtensionCanonicalizer.Canonicalize(
+                            parseResult.Definition,
+                            effectiveApiSchemaProvider
+                        );
+
+                        profilesByName[canonicalDefinition.ProfileName] = canonicalDefinition;
+                        nameById[profileResponse.Id] = canonicalDefinition.ProfileName;
                     }
 
                     logger.LogDebug(

@@ -105,15 +105,34 @@ public class CachedProfileServiceTests
                 .Returns(ProfileValidationResult.Success);
         }
 
+        // The service canonicalizes extension names against the schema after validation,
+        // so the provider must expose a non-null ApiSchemaDocuments. These profiles have
+        // no extensions, so canonicalization is a no-op.
+        var schemaProvider = effectiveApiSchemaProvider ?? A.Fake<IEffectiveApiSchemaProvider>();
+        if (effectiveApiSchemaProvider is null)
+        {
+            A.CallTo(() => schemaProvider.Documents).Returns(CreateMinimalApiSchemaDocuments());
+        }
+
         return new CachedProfileService(
             cmsProvider,
             validator,
-            effectiveApiSchemaProvider ?? A.Fake<IEffectiveApiSchemaProvider>(),
+            schemaProvider,
             cache ?? CreateHybridCache(),
             new CacheSettings { ProfileCacheExpirationSeconds = 1800 },
             NullLogger<CachedProfileService>.Instance
         );
     }
+
+    private static ApiSchemaDocuments CreateMinimalApiSchemaDocuments() =>
+        new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Student")
+            .WithEndResource()
+            .WithStartResource("School")
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
 
     [TestFixture]
     public class Given_No_Profiles_Assigned : CachedProfileServiceTests
