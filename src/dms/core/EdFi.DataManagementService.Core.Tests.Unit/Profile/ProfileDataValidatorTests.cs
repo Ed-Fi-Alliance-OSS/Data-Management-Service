@@ -1301,14 +1301,14 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert
+            // Assert — the unknown extension is reported once, as an error, by the
+            // mode-independent unknown-extension pre-pass.
             result.IsValid.Should().BeFalse();
             result.HasErrors.Should().BeTrue();
             result.Failures.Should().HaveCount(1);
             result.Failures[0].Severity.Should().Be(ValidationSeverity.Error);
-            result.Failures[0].MemberName.Should().Be("SampleExtension");
-            result.Failures[0].Message.Should().Contain("cannot be validated");
-            result.Failures[0].Message.Should().Contain("no _ext property");
+            result.Failures[0].MemberName.Should().Be("_ext.SampleExtension");
+            result.Failures[0].Message.Should().Contain("does not exist");
         }
 
         [Test]
@@ -1707,7 +1707,7 @@ public class ProfileDataValidatorTests
         public void Validate_should_resolve_mixed_case_extension_name_to_schema_key()
         {
             // Arrange — schema exposes the extension under the lower-case project key sample
-            // while the profile authors it as Sample, per DMS-1233.
+            // while the profile authors it as Sample.
             var validator = new ProfileDataValidator(_logger);
             _apiSchemaDocuments = CreateSchemaWithExtension("Student", "sample", "sampleField");
             A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
@@ -1773,13 +1773,13 @@ public class ProfileDataValidatorTests
                 .Failures.Should()
                 .ContainSingle(f =>
                     f.Severity == ValidationSeverity.Error
-                    && f.MemberName == "Nonexistent"
+                    && f.MemberName == "_ext.Nonexistent"
                     && f.Message.Contains("does not exist")
                 );
         }
 
         [Test]
-        public void Validate_should_warn_for_unknown_extension_under_exclude_only_parent()
+        public void Validate_should_error_for_unknown_extension_under_exclude_only_parent()
         {
             // Arrange — schema only has the sample extension, profile excludes an unknown one.
             var validator = new ProfileDataValidator(_logger);
@@ -1807,13 +1807,14 @@ public class ProfileDataValidatorTests
             // Act
             var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
 
-            // Assert — unknown extension under ExcludeOnly is a warning (profile still loads).
-            result.HasErrors.Should().BeFalse();
-            result.HasWarnings.Should().BeTrue();
+            // Assert — an unknown extension reference is always an error: canonicalization drops
+            // the rule, so a tolerant warning would let it disappear silently rather than give
+            // feedback. Member-level exclusions remain tolerant; whole-extension references do not.
+            result.HasErrors.Should().BeTrue();
             result
                 .Failures.Should()
                 .ContainSingle(f =>
-                    f.Severity == ValidationSeverity.Warning && f.MemberName == "Nonexistent"
+                    f.Severity == ValidationSeverity.Error && f.MemberName == "_ext.Nonexistent"
                 );
         }
 
@@ -1853,7 +1854,54 @@ public class ProfileDataValidatorTests
                 .Failures.Should()
                 .Contain(f =>
                     f.Severity == ValidationSeverity.Error
-                    && f.MemberName == "DoesNotExist"
+                    && f.MemberName == "_ext.DoesNotExist"
+                    && f.Message.Contains("does not exist")
+                );
+        }
+
+        [Test]
+        public void Validate_should_error_for_unknown_extension_nested_in_include_all_object()
+        {
+            // Arrange — an unknown extension nested inside an IncludeAll object under an
+            // IncludeAll parent. The member-selection validation short-circuits on IncludeAll,
+            // so only the mode-independent unknown-extension pre-pass can surface this; without
+            // it the rule would be dropped by canonicalization with no feedback.
+            var validator = new ProfileDataValidator(_logger);
+            _apiSchemaDocuments = CreateSchemaWithReferenceObject("Student", "schoolReference", "schoolId");
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var objectRule = new ObjectRule(
+                Name: "schoolReference",
+                MemberSelection: MemberSelection.IncludeAll,
+                LogicalSchema: null,
+                Properties: null,
+                NestedObjects: null,
+                Collections: null,
+                Extensions:
+                [
+                    new ExtensionRule("DoesNotExist", MemberSelection.IncludeAll, null, null, null, null),
+                ]
+            );
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [objectRule],
+                Collections: [],
+                Extensions: []
+            );
+            var resourceProfile = new ResourceProfile("Student", null, contentType, null);
+            var profileDefinition = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            // Act
+            var result = validator.Validate(profileDefinition, _effectiveApiSchemaProvider);
+
+            // Assert — nested unknown extension is reported with its full path.
+            result.HasErrors.Should().BeTrue();
+            result
+                .Failures.Should()
+                .Contain(f =>
+                    f.Severity == ValidationSeverity.Error
+                    && f.MemberName == "schoolReference._ext.DoesNotExist"
                     && f.Message.Contains("does not exist")
                 );
         }

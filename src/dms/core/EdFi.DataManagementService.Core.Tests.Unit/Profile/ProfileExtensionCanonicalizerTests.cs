@@ -231,7 +231,7 @@ public class ProfileExtensionCanonicalizerTests
         {
             // Arrange — the sample extension exists ONLY on staffPets[*]._ext, not at the root.
             // A root-level extension rule must not survive, or it would emit an unresolved
-            // root $._ext.sample scope at runtime (the DMS-1233 500).
+            // root $._ext.sample scope at runtime (the runtime 500).
             A.CallTo(() => _effectiveApiSchemaProvider.Documents)
                 .Returns(CreateSchemaWithCollectionExtension("Staff", "staffPets", "sample"));
 

@@ -745,8 +745,8 @@ internal class CachedProfileService(
                         // profile runtime (scope discovery, navigation, request/stored shaping,
                         // read projection) agrees with the schema-derived _ext member casing.
                         // Validation has already passed at this point, so any surviving
-                        // extension rule either matches a schema key or is a warning-tolerated
-                        // unknown that the canonicalizer drops (DMS-1233).
+                        // extension rule matches a schema key; unknown extensions are rejected
+                        // during validation, and the canonicalizer drops any that remain.
                         ProfileDefinition canonicalDefinition = ProfileExtensionCanonicalizer.Canonicalize(
                             parseResult.Definition,
                             effectiveApiSchemaProvider

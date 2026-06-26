@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Profile;
 
 /// <summary>
 /// Rewrites profile extension rule names to the API schema's extension keys so the
-/// rest of the profile runtime agrees with the schema-derived JSON shape (DMS-1233).
+/// rest of the profile runtime agrees with the schema-derived JSON shape.
 /// </summary>
 /// <remarks>
 /// <para>

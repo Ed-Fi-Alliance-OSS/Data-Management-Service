@@ -595,6 +595,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // navigation time instead of surfacing as profile validation feedback.
         failures.AddRange(CollectDuplicateExtensionNameFailures(contentType, baseContext));
 
+        // Reject extension rules whose name does not exist in the schema at their
+        // location, regardless of member selection. Canonicalization drops such rules
+        // wherever they appear, so this is the single source of unknown-extension
+        // feedback and prevents a nested unknown extension from disappearing silently.
+        failures.AddRange(CollectUnknownExtensionFailures(contentType, schemaProperties, baseContext));
+
         failures.AddRange(
             contentType.MemberSelection switch
             {
@@ -788,6 +794,166 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         return null;
     }
 
+    /// <summary>The <c>_ext.properties</c> object at the current schema location, or null.</summary>
+    private static JsonObject? ExtensionPropertiesAt(JsonObject? schemaProperties) =>
+        (schemaProperties?["_ext"] as JsonObject)?["properties"] as JsonObject;
+
+    /// <summary>The <c>properties</c> object of a named member's schema node, or null.</summary>
+    private static JsonObject? MemberSchemaProperties(JsonObject? schemaProperties, string memberName) =>
+        (schemaProperties?[memberName] as JsonObject)?["properties"] as JsonObject;
+
+    /// <summary>The <c>items.properties</c> object of a named collection's schema node, or null.</summary>
+    private static JsonObject? CollectionItemSchemaProperties(
+        JsonObject? schemaProperties,
+        string collectionName
+    ) =>
+        ((schemaProperties?[collectionName] as JsonObject)?["items"] as JsonObject)?["properties"]
+        as JsonObject;
+
+    /// <summary>
+    /// Reports an error for every extension rule whose name does not resolve to an extension
+    /// key in the schema's <c>_ext.properties</c> at that rule's own location — at the root and
+    /// inside objects, collections, and extensions. This runs regardless of member selection
+    /// because canonicalization drops an unmatched extension rule wherever it appears (including
+    /// under IncludeAll branches that the member-selection validation short-circuits); without
+    /// this an unknown extension would silently disappear with no validation feedback. The
+    /// traversal mirrors the canonicalizer so the two agree on exactly which rules are unknown.
+    /// </summary>
+    private static List<ValidationFailure> CollectUnknownExtensionFailures(
+        ContentTypeDefinition contentType,
+        JsonObject schemaProperties,
+        ValidationContext context
+    )
+    {
+        var failures = new List<ValidationFailure>();
+
+        CheckExtensionsExistAndRecurse(contentType.Extensions, schemaProperties, context, failures);
+        foreach (var obj in contentType.Objects)
+        {
+            WalkObjectForUnknownExtensions(obj, schemaProperties, context, failures);
+        }
+        foreach (var collection in contentType.Collections)
+        {
+            WalkCollectionForUnknownExtensions(collection, schemaProperties, context, failures);
+        }
+
+        return failures;
+    }
+
+    private static void CheckExtensionsExistAndRecurse(
+        IReadOnlyList<ExtensionRule> extensions,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        JsonObject? extProperties = ExtensionPropertiesAt(schemaProperties);
+
+        foreach (var extension in extensions)
+        {
+            // Server-generated extension names are rejected by the dedicated pre-pass.
+            if (ServerGeneratedFieldNames.Contains(extension.Name))
+            {
+                continue;
+            }
+
+            JsonObject? extensionNode = ResolveExtensionSchemaNode(extProperties, extension.Name);
+            if (extensionNode is null)
+            {
+                failures.Add(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        context.ProfileName,
+                        context.ResourceName,
+                        $"{context.PathPrefix}_ext.{extension.Name}",
+                        $"Extension '{extension.Name}' in {context.ContentTypeName} content type does not exist in resource '{context.ResourceName}'."
+                    )
+                );
+                continue;
+            }
+
+            // Resolved: recurse into the extension's own objects/collections for deeper
+            // unknown extensions, at the extension's child schema location.
+            JsonObject? extensionProperties = extensionNode["properties"] as JsonObject;
+            ValidationContext childContext = context.WithPathPrefix(
+                $"{context.PathPrefix}_ext.{extension.Name}."
+            );
+            foreach (var nestedObject in extension.Objects ?? [])
+            {
+                WalkObjectForUnknownExtensions(nestedObject, extensionProperties, childContext, failures);
+            }
+            foreach (var nestedCollection in extension.Collections ?? [])
+            {
+                WalkCollectionForUnknownExtensions(
+                    nestedCollection,
+                    extensionProperties,
+                    childContext,
+                    failures
+                );
+            }
+        }
+    }
+
+    private static void WalkObjectForUnknownExtensions(
+        ObjectRule objectRule,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (ServerGeneratedFieldNames.Contains(objectRule.Name))
+        {
+            return;
+        }
+
+        JsonObject? objectProperties = MemberSchemaProperties(schemaProperties, objectRule.Name);
+        ValidationContext childContext = context.WithPathPrefix($"{context.PathPrefix}{objectRule.Name}.");
+
+        if (objectRule.Extensions is not null)
+        {
+            CheckExtensionsExistAndRecurse(objectRule.Extensions, objectProperties, childContext, failures);
+        }
+        foreach (var nested in objectRule.NestedObjects ?? [])
+        {
+            WalkObjectForUnknownExtensions(nested, objectProperties, childContext, failures);
+        }
+        foreach (var collection in objectRule.Collections ?? [])
+        {
+            WalkCollectionForUnknownExtensions(collection, objectProperties, childContext, failures);
+        }
+    }
+
+    private static void WalkCollectionForUnknownExtensions(
+        CollectionRule collectionRule,
+        JsonObject? schemaProperties,
+        ValidationContext context,
+        List<ValidationFailure> failures
+    )
+    {
+        if (ServerGeneratedFieldNames.Contains(collectionRule.Name))
+        {
+            return;
+        }
+
+        JsonObject? itemProperties = CollectionItemSchemaProperties(schemaProperties, collectionRule.Name);
+        ValidationContext childContext = context.WithPathPrefix(
+            $"{context.PathPrefix}{collectionRule.Name}[]."
+        );
+
+        if (collectionRule.Extensions is not null)
+        {
+            CheckExtensionsExistAndRecurse(collectionRule.Extensions, itemProperties, childContext, failures);
+        }
+        foreach (var nested in collectionRule.NestedObjects ?? [])
+        {
+            WalkObjectForUnknownExtensions(nested, itemProperties, childContext, failures);
+        }
+        foreach (var nestedCollection in collectionRule.NestedCollections ?? [])
+        {
+            WalkCollectionForUnknownExtensions(nestedCollection, itemProperties, childContext, failures);
+        }
+    }
+
     private static List<ValidationFailure> ValidateExtensionRule(
         ExtensionRule extension,
         JsonObject schemaProperties,
@@ -801,40 +967,17 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             return failures;
         }
 
-        if (!schemaProperties.ContainsKey("_ext"))
-        {
-            failures.Add(
-                new ValidationFailure(
-                    context.Severity,
-                    context.ProfileName,
-                    context.ResourceName,
-                    extension.Name,
-                    $"Extension '{extension.Name}' in {context.ContentTypeName} content type cannot be validated - resource has no _ext property."
-                )
-            );
-            return failures;
-        }
-
-        var extNode = schemaProperties["_ext"] as JsonObject;
-        var extProperties = extNode?["properties"] as JsonObject;
-        // Resolve the extension namespace case-insensitively. Profile XML preserves the
-        // authored extension name (e.g. "Sample"), but the schema exposes the extension
-        // payload under the project endpoint key (e.g. "sample"). A case-sensitive lookup
-        // would treat a validly-cased-differently extension as missing (DMS-1233).
-        var extensionSchemaNode = ResolveExtensionSchemaNode(extProperties, extension.Name);
-        var extensionProperties = extensionSchemaNode?["properties"] as JsonObject;
+        // Existence of the extension namespace is validated independently of member
+        // selection by CollectUnknownExtensionFailures, which walks every extension rule
+        // in the tree (the same traversal canonicalization uses to drop unmatched rules).
+        // Here we only validate the members of an extension that resolves; an unresolved
+        // extension has no members to check and is reported by that pre-pass.
+        var extProperties = ExtensionPropertiesAt(schemaProperties);
+        var extensionProperties =
+            ResolveExtensionSchemaNode(extProperties, extension.Name)?["properties"] as JsonObject;
 
         if (extensionProperties is null)
         {
-            failures.Add(
-                new ValidationFailure(
-                    context.Severity,
-                    context.ProfileName,
-                    context.ResourceName,
-                    extension.Name,
-                    $"Extension '{extension.Name}' in {context.ContentTypeName} content type does not exist in resource '{context.ResourceName}'."
-                )
-            );
             return failures;
         }
 
@@ -935,11 +1078,9 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
                 continue;
             }
 
-            // Validate extension existence for every member selection, including
-            // IncludeAll. Unlike objects/collections (which remain in the profile as
-            // harmless no-ops when their name is unknown), an unmatched extension rule
-            // is dropped during canonicalization, so without this check an unknown
-            // IncludeAll extension would vanish with no validation feedback (DMS-1233).
+            // Validate the members of resolved extensions under an IncludeAll parent.
+            // Existence of unknown extensions is reported separately by
+            // CollectUnknownExtensionFailures, which runs regardless of member selection.
             failures.AddRange(ValidateExtensionRule(extension, schemaProperties, context));
         }
 
