@@ -327,7 +327,7 @@ public class ProfileStepDefinitions(
 
             IAPIResponse response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
 
             string responseBody = await response.TextAsync();
@@ -589,7 +589,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -620,7 +620,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -656,7 +656,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -697,7 +697,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -740,7 +740,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -771,7 +771,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -807,7 +807,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -1711,7 +1711,7 @@ public class ProfileStepDefinitions(
         SetCurrentApiResponse(
             await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!
         );
 
@@ -1738,7 +1738,7 @@ public class ProfileStepDefinitions(
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PostAsync(
                     url,
-                    new() { Data = body, Headers = seedHeaders }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = seedHeaders }
                 )!
             );
 

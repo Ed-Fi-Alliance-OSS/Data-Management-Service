@@ -293,7 +293,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(dataUrl);
                 var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                     dataUrl,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
                 )!;
                 _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
@@ -421,7 +421,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PostAsync(
                     url,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -471,7 +471,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
@@ -501,7 +501,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = headers }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(await _apiResponse.TextAsync());
@@ -543,7 +543,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -568,7 +568,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+                new()
+                {
+                    DataByte = System.Text.Encoding.UTF8.GetBytes(body),
+                    Headers = GetHeadersWithIfMatch(ifMatch),
+                }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
@@ -593,7 +597,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.PutAsync(
                     url,
-                    new() { Data = body, Headers = GetHeaders() }
+                    new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
@@ -632,7 +636,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(body);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = GetHeaders() }
+                new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
 
