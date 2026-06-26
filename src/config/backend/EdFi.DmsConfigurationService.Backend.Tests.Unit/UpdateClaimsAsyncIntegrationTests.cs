@@ -230,5 +230,76 @@ public class UpdateClaimsAsyncIntegrationTests
             Assert.That(failure.ErrorMessage, Is.EqualTo("Invalid operation during claims update"));
             Assert.That(failure.Exception, Is.TypeOf<InvalidOperationException>());
         }
+
+        [Test]
+        public async Task It_should_seed_resource_claim_metadata_from_the_new_hierarchy()
+        {
+            // Arrange - a loader wired with a ResourceClaim metadata repository (PostgreSQL path)
+            var resourceClaimMetadataRepository = A.Fake<IResourceClaimMetadataRepository>();
+            IReadOnlyList<ResourceClaimMetadataSeed>? seededClaims = null;
+            A.CallTo(() =>
+                    resourceClaimMetadataRepository.SeedResourceClaims(
+                        A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                    )
+                )
+                .Invokes((IReadOnlyList<ResourceClaimMetadataSeed> seeds) => seededClaims = seeds)
+                .Returns(2);
+
+            var loader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+                _claimsProvider,
+                _claimSetRepository,
+                _claimsHierarchyRepository,
+                _claimsTableValidator,
+                _claimsDocumentRepository,
+                _logger,
+                resourceClaimMetadataRepository
+            );
+
+            var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test", "isSystemReserved": false }]""");
+            var hierarchyJson = JsonNode.Parse(
+                """
+                [
+                    {
+                        "name": "http://ed-fi.org/identity/claims/domains/customTest",
+                        "claims": [
+                            { "name": "http://ed-fi.org/identity/claims/ed-fi/customTestChild" }
+                        ]
+                    }
+                ]
+                """
+            );
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
+
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
+                .Returns(new ClaimsDocumentUpdateResult.Success(0, 1, true));
+
+            // Act
+            var result = await loader.UpdateClaimsAsync(claimsNodes);
+
+            // Assert - the reload/upload path seeds metadata for every claim in the new hierarchy,
+            // so ResourceClaim-backed projections stay consistent (the initial-load path does the same).
+            Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
+            A.CallTo(() =>
+                    resourceClaimMetadataRepository.SeedResourceClaims(
+                        A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+            Assert.That(seededClaims, Is.Not.Null);
+            var seededClaimNames = new List<string>();
+            foreach (var seed in seededClaims!)
+            {
+                seededClaimNames.Add(seed.ClaimName);
+            }
+            Assert.That(
+                seededClaimNames,
+                Does.Contain("http://ed-fi.org/identity/claims/domains/customTest")
+            );
+            Assert.That(
+                seededClaimNames,
+                Does.Contain("http://ed-fi.org/identity/claims/ed-fi/customTestChild")
+            );
+        }
     }
 }

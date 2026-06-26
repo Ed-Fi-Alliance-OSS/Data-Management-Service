@@ -347,6 +347,14 @@ public class ClaimsDataLoader(
         {
             logger.LogInformation("Updating claims data in database");
 
+            // Reload/upload replaces the claim sets and hierarchy wholesale. Seed any
+            // resource-claim metadata introduced by the new hierarchy first (insert-missing,
+            // idempotent) so ResourceClaim-backed projections — which require every hierarchy
+            // claim to resolve to a ResourceClaim row — stay consistent. Initial load seeds the
+            // same way; without this the upload/reload paths leave new claims without metadata.
+            // No-op on the MSSQL backend (no registered repository).
+            await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
+
             ClaimsDocumentUpdateResult result = await claimsDocumentRepository.ReplaceClaimsDocument(
                 claimsNodes
             );
@@ -375,6 +383,11 @@ public class ClaimsDataLoader(
                     $"Unexpected result type: {result.GetType().Name}"
                 ),
             };
+        }
+        catch (DatabaseOperationException ex)
+        {
+            logger.LogError(ex, "Database error during claims update");
+            return new ClaimsDataLoadResult.DatabaseFailure(ex.Message);
         }
         catch (JsonException ex)
         {
