@@ -179,6 +179,16 @@ function Get-KeySecret() {
     .PARAMETER MaxBufferedTasks
         Max concurrent tasks buffered (-t flag). Default 50.
 
+    .PARAMETER AllowUnresolvedReferences
+        Treat the load as successful when its only failures are HTTP 409 unresolved-reference errors
+        (up to MaxToleratedUnresolvedReferences). Used for the populated template load: DS 6.1
+        interleaves educator-preparation records into core sample files, so a few records reference
+        educator-prep entities that the template intentionally excludes. Any other failure still fails.
+
+    .PARAMETER MaxToleratedUnresolvedReferences
+        Cap on tolerated unresolved-reference failures when -AllowUnresolvedReferences is set (default
+        50); a larger count signals an over-broad exclusion and fails the load.
+
     .EXAMPLE
         Invoke-BulkLoad -BaseUrl "http://api.local" -Key "abc" -Secret "123" -SampleDataDirectory "C:\Data" -Paths $paths -ForceReloadMetadata -SkipXmlValidation
 #>
@@ -214,7 +224,11 @@ function Invoke-BulkLoad {
 
         [int]$MaxSimultaneousRequests = 500,
 
-        [int]$MaxBufferedTasks = 50
+        [int]$MaxBufferedTasks = 50,
+
+        [switch]$AllowUnresolvedReferences,
+
+        [int]$MaxToleratedUnresolvedReferences = 50
     )
 
     if ($ForceReloadData) {
@@ -247,11 +261,43 @@ function Invoke-BulkLoad {
     Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($options -join ' ')"
     $host.UI.RawUI.ForegroundColor = $previousColor
 
-    & dotnet $BulkLoadClientPaths.bulkLoadClientExe @options
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "BulkLoad failed with exit code $LASTEXITCODE"
-        exit $LASTEXITCODE
+    # Tee the loader output to a log so a non-zero exit can be classified by failure type.
+    $bulkLoadLog = Join-Path ([System.IO.Path]::GetTempPath()) ("bulkload-" + [System.Guid]::NewGuid().ToString('N') + ".log")
+    & dotnet $BulkLoadClientPaths.bulkLoadClientExe @options 2>&1 | Tee-Object -FilePath $bulkLoadLog
+    $bulkLoadExitCode = $LASTEXITCODE
+
+    if ($bulkLoadExitCode -ne 0) {
+        # A populated template intentionally omits educator-preparation data, but DS 6.1 interleaves
+        # educator-prep records into otherwise-core sample files (e.g. StudentAssessmentSample.xml has
+        # assessments for educator-prep students defined in the excluded Candidate.xml). Those few
+        # stragglers fail with HTTP 409 unresolved-reference because the entity they point at was
+        # excluded. With -AllowUnresolvedReferences, tolerate ONLY that case (and only a small,
+        # capped number) so any real failure — 403/500/validation/etc. — still fails the build.
+        $tolerated = $false
+        if ($AllowUnresolvedReferences) {
+            $failureLines = @(
+                Select-String -Path $bulkLoadLog -Pattern ' - (4\d\d|5\d\d) - \{' |
+                    Select-Object -ExpandProperty Line
+            )
+            $fatalFailures = @($failureLines | Where-Object { $_ -notmatch 'unresolved-reference' })
+            $unresolvedReferenceCount = @($failureLines | Where-Object { $_ -match 'unresolved-reference' }).Count
+
+            if (
+                $fatalFailures.Count -eq 0 -and
+                $unresolvedReferenceCount -gt 0 -and
+                $unresolvedReferenceCount -le $MaxToleratedUnresolvedReferences
+            ) {
+                Write-Warning "BulkLoad reported $unresolvedReferenceCount unresolved-reference (409) failures and no other errors. These are the expected stragglers from records that reference excluded educator-preparation data; treating the load as successful."
+                $tolerated = $true
+            }
+        }
+
+        if (-not $tolerated) {
+            Write-Error "BulkLoad failed with exit code $bulkLoadExitCode"
+            exit $bulkLoadExitCode
+        }
     }
+
     Write-Host
     Write-Host "BulkLoad executed successfully" -ForegroundColor Green -NoNewline
     Write-Host
@@ -684,6 +730,91 @@ function Get-EducationOrganizationIdsFromSampleData {
     return @($ids | Sort-Object)
 }
 
+<#
+.SYNOPSIS
+    Returns the bulky educator-preparation sample file names to omit from a populated template load.
+
+.DESCRIPTION
+    In Data Standard 6.1 the TPDM model folded into core, so the v6.1.0 sample set adds a large
+    educator-preparation data set the DS 5.2 populated template never carried — e.g.
+    ProfessionalDevelopment.xml (~30 MB), Candidate.xml (~16 MB), PerformanceEvaluation.xml (~8 MB),
+    plus the smaller "*-EdPrep" interchange variants. A populated *template* should stay comparable
+    to DS 5.2, so these are excluded. AssessmentMetadata-EdPrep.xml is deliberately KEPT: it is
+    self-contained, namespace-authorized assessment metadata that core StudentAssessment sample data
+    references, so excluding it would orphan those references. Returns an empty set for sample data
+    with no educator-prep files (e.g. DS 5.2), making the filter a no-op.
+
+.PARAMETER SourceDirectory
+    Directory of populated sample data files to inspect.
+#>
+function Get-EducatorPreparationSampleFileNames {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    $keep = @('AssessmentMetadata-EdPrep.xml')
+
+    $standaloneEpdmFiles = @(
+        'Candidate.xml',
+        'Path.xml',
+        'PerformanceEvaluation.xml',
+        'ProfessionalDevelopment.xml',
+        'RecruitmentAndStaffing.xml'
+    )
+
+    $edPrepVariants = @(
+        Get-ChildItem -Path $SourceDirectory -Filter '*-EdPrep.xml' -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name |
+            Where-Object { $_ -notin $keep }
+    )
+
+    return @(
+        $standaloneEpdmFiles + $edPrepVariants |
+            Where-Object { Test-Path -Path (Join-Path $SourceDirectory $_) -PathType Leaf } |
+            Sort-Object -Unique
+    )
+}
+
+<#
+.SYNOPSIS
+    Returns a populated sample directory with the educator-preparation files removed.
+
+.DESCRIPTION
+    The BulkLoadClient loads every file in its target directory, so excluding files means pointing
+    the load at a filtered copy. Copies the source directory into a fresh temporary directory minus
+    the files from Get-EducatorPreparationSampleFileNames; the original checkout is left untouched.
+    Returns the original directory unchanged when there is nothing to exclude (e.g. DS 5.2).
+
+.PARAMETER SourceDirectory
+    Directory of populated sample data files to filter.
+#>
+function New-EducatorPreparationFilteredSampleDirectory {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    $excludedFiles = Get-EducatorPreparationSampleFileNames -SourceDirectory $SourceDirectory
+    if ($excludedFiles.Count -eq 0) {
+        return $SourceDirectory
+    }
+
+    $destination = Join-Path ([System.IO.Path]::GetTempPath()) ("populated-sample-core-" + [System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+
+    Get-ChildItem -Path $SourceDirectory -File |
+        Where-Object { $excludedFiles -notcontains $_.Name } |
+        ForEach-Object { Copy-Item -Path $_.FullName -Destination (Join-Path $destination $_.Name) -Force }
+
+    Write-Host "Excluded $($excludedFiles.Count) educator-preparation sample file(s) from the populated load:" -ForegroundColor Yellow
+    foreach ($excluded in $excludedFiles) {
+        Write-Host "  - $excluded"
+    }
+
+    return $destination
+}
+
 enum TemplateType {
     Minimal
     Populated
@@ -839,13 +970,17 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        # The sandbox loads the full populated sample set, and most resources are authorized by
-        # relationship to the caller's claimed education organizations (RelationshipsWithEdOrgsOnly).
-        # Scope the sandbox to every edorg the sample data defines so the whole set authorizes —
-        # in DS 6.1 this is what lets the folded-in Educator Preparation Provider hierarchy (its own
-        # schools/LEAs/post-secondary institutions, disjoint from the Grand Bend district) load.
+        # Keep the populated template comparable to DS 5.2: drop the bulky DS 6.1 educator-preparation
+        # data set (ProfessionalDevelopment/Candidate/PerformanceEvaluation/etc.) while keeping the
+        # AssessmentMetadata-EdPrep assessments that core StudentAssessment sample data references.
+        # No-op for sample data with no educator-prep files (DS 5.2). See Get-EducatorPreparationSampleFileNames.
+        $populatedSampleDataDirectory = New-EducatorPreparationFilteredSampleDirectory -SourceDirectory $PopulatedSampleDataDirectory
+
+        # The sandbox authorizes most resources by relationship to its claimed education organizations
+        # (RelationshipsWithEdOrgsOnly), so scope it to every edorg the loaded (filtered) sample data
+        # defines rather than the default district pair.
         $sandboxEducationOrganizationIds = @(
-            Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $PopulatedSampleDataDirectory
+            Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $populatedSampleDataDirectory
         )
 
         $sandboxParams = @{
@@ -865,14 +1000,18 @@ function Build-Template {
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
+        # DS 6.1 interleaves educator-prep records into core sample files, so a few kept records
+        # reference educator-prep entities that this filtered load intentionally excludes. Tolerate
+        # those unresolved-reference 409s (only); any other failure still fails the build.
         Invoke-BulkLoad -BaseUrl $DmsUrl `
             -Key $sandboxApp.Key `
             -Secret $sandboxApp.Secret `
-            -SampleDataDirectory $PopulatedSampleDataDirectory `
+            -SampleDataDirectory $populatedSampleDataDirectory `
             -Extension $Extension `
             -BulkLoadClientPaths $bulkLoadClientPaths `
             -ForceReloadData `
-            -ForceReloadMetadata
+            -ForceReloadMetadata `
+            -AllowUnresolvedReferences
     }
 
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
