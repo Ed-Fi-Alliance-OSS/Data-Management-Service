@@ -11,6 +11,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
 - PostgreSQL and MSSQL remain supported datastore engines for the relational backend.
 - `AppSettings:Datastore` will still be needed to select the database engine (`postgresql` or `mssql`).
 - `AppSettings:UseRelationalBackend`, `USE_RELATIONAL_BACKEND`, `AppSettings__UseRelationalBackend`, and the `relational-backend` E2E category/filter lane exist only because the relational backend was optional. These should be removed everywhere.
+- DMS `DeployDatabaseOnStartup` exists only for legacy DMS schema provisioning and should be removed entirely, not redefined as relational startup provisioning. CMS `DeployDatabaseOnStartup` remains in scope for the Configuration Service only.
 - There are no migration concerns.
 
 ## Phase 1: Inventory And Guardrails
@@ -32,7 +33,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
    - CI job "Run Old PostgreSQL Integration Tests"
    - Docker image copies/publishes of old backend or installer artifacts that only exist for legacy schema setup
 
-3. Historical design notes should be left untouched but runtime code, tests, CI, Docker, docs, and developer instructions should not keep active legacy-backend guidance.
+3. Historical design notes should be left untouched. Do not edit historical/archive/design-note documents as part of this work; runtime code, tests, CI, Docker, active docs, and developer instructions should not keep active legacy-backend guidance.
 
 ## Phase 2: Move Required PostgreSQL Infrastructure Out Of Old.Postgresql
 
@@ -110,14 +111,15 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
    - remove all `/app/Installer` Docker, package, build, CI, and script plumbing
    - standardize all relational database provisioning on the existing `SchemaTools ddl provision` flow, or thin script wrappers around that flow
 
-3. Remove DMS legacy direct-start database setup switches:
+3. Remove DMS database setup-on-startup behavior entirely:
 
    - `NEED_DATABASE_SETUP`
    - `DMS_DEPLOY_DATABASE_ON_STARTUP`
    - `AppSettings:DeployDatabaseOnStartup`
    - `AppSettings__DeployDatabaseOnStartup`
+   - DMS frontend `DeployDatabaseOnStartup` app-setting properties, validators, startup phases, and `InitializeDatabase`/`IDatabaseDeploy` runtime wiring
 
-   Scope this cleanup to DMS legacy provisioning. The Configuration Service also has an `AppSettings:DeployDatabaseOnStartup` setting for CMS database deployment; do not remove that CMS setting or its documentation as part of removing the DMS legacy backend.
+   Scope this cleanup to DMS provisioning only. The Configuration Service also has an `AppSettings:DeployDatabaseOnStartup` setting for CMS database deployment; do not remove that CMS setting or its documentation as part of removing the DMS legacy backend.
 
 4. Update `src/dms/run.sh` to stop invoking `/app/Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql`.
 
@@ -143,7 +145,7 @@ The old PostgreSQL deployer creates the legacy `dms.document` schema. It must no
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`
    - Pester tests under `eng/docker-compose/tests`
 
-8. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with `SchemaTools ddl provision` checks, especially `dms."EffectiveSchema"` and generated resource tables.
+8. For route-context or instance-management E2E setup, replace `dms.document` schema checks and dumps with generated relational DDL provisioning checks, especially `dms."EffectiveSchema"` and generated resource tables. Reuse and generalize the existing `eng/docker-compose/provision-relational-e2e-database.ps1` / `SchemaTools ddl provision` helper path so DMS E2E and Instance Management E2E do not drift.
 
 ## Phase 4A: Remove Legacy Document-Store CDC And Kafka Plumbing
 
@@ -156,7 +158,7 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - default connector registration in `eng/docker-compose/setup-connectors.ps1`
    - connector setup branches and comments in `eng/docker-compose/start-local-dms.ps1`, `eng/docker-compose/start-published-dms.ps1`, and `eng/docker-compose/start-all-services.ps1`
 
-2. Remove or quarantine Kafka E2E scenarios and helpers that assert the legacy document topic or payload shape until relational CDC is implemented:
+2. Disable or quarantine Kafka E2E scenarios and helpers that assert the legacy document topic or payload shape until relational CDC is implemented. Do not delete these files when they can be cleanly excluded from active test execution or made inactive with a clear pending-relational-CDC note:
 
    - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/KafkaMessaging.feature`
    - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/KafkaMessageCollector.cs`
@@ -167,7 +169,7 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Management/KafkaTopicHelper.cs`
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/StepDefinitions/InstanceKafkaStepDefinitions.cs`
 
-3. Update instance-management Debezium helpers that hard-code legacy table lists and publication names:
+3. Disable or quarantine instance-management Debezium helpers that hard-code legacy table lists and publication names. Keep the source when possible, but remove it from active setup/test execution until relational CDC exists:
 
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Infrastructure/DebeziumConnectorClient.cs`
    - `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Infrastructure/PostgresReplicationCleanup.cs`
@@ -200,7 +202,7 @@ The current CDC/Debezium/Kafka path is tied to the legacy document-store schema 
    - make write/delete request contracts relational-only; `MappingSet` should be non-nullable anywhere relational processing requires it
    - remove `GetTokenInfoHandler` fallback behavior that depends on `ITokenInfoEducationOrganizationLookup`; require the relational token-info lookup registration instead
    - remove the legacy read-profile filtering path; delete or simplify `ProfileFilteringMiddleware` branches that only exist to distinguish relational requests by `MappingSet is not null`
-   - replace optional `GetService<IChangeQueryRepository>` branches with required relational registrations or explicit relational unsupported handling
+   - keep explicit unsupported behavior for datastores/features that still lack change-query support; do not treat missing `IChangeQueryRepository` as a legacy-backend selector
 
 4. Make startup validation unconditional:
 
@@ -270,8 +272,9 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
    - make `eng/docker-compose/.env.e2e` the default relational E2E environment
    - remove `USE_RELATIONAL_BACKEND=true`
-   - keep or rename `RELATIONAL_E2E_DATABASE_NAME` to a neutral name such as `E2E_DATABASE_NAME`
-   - remove or rename `.env.e2e.relational`, `.env.smoke.relational`, and `.env.template.relational` after workflow references are updated
+   - rename `RELATIONAL_E2E_DATABASE_NAME` to `E2E_DATABASE_NAME`
+   - rename relational env files to neutral names after workflow references are updated; for example `.env.e2e.relational` becomes `.env.e2e`, `.env.smoke.relational` becomes `.env.smoke`, and `.env.template.relational` becomes `.env.template`
+   - if a neutral target file already exists, overwrite it with the relational version and remove the obsolete legacy version after all references move
 
 8. Update E2E helpers:
 
@@ -284,11 +287,11 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
    - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` so it no longer relies on the legacy backend by omission; the DMS container must start with the same always-relational runtime path as the rest of DMS E2E
    - remove the one-shot `Installer/EdFi.DataManagementService.Backend.Installer.dll` call and all `dms.document` verification, schema dump, and schema replay logic
-   - replace the per-instance database setup with `SchemaTools ddl provision` for each route-context database, verifying `dms."EffectiveSchema"` and expected generated resource tables instead of `dms.document`
+   - replace the per-instance database setup with the same generalized `SchemaTools ddl provision` helper path used by DMS E2E, run once for each route-context database, verifying `dms."EffectiveSchema"` and expected generated resource tables instead of `dms.document`
    - update `.env.routeContext.e2e` or replace it with a neutral relational route-context E2E env file; it must not depend on `USE_RELATIONAL_BACKEND`, `NEED_DATABASE_SETUP`, or `DMS_DEPLOY_DATABASE_ON_STARTUP`
    - update `build-dms.ps1 InstanceE2ETest` to call the relational route-context provisioning flow and restart DMS when needed to clear cached database state
    - update `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md` so it describes relational setup and clearly excludes legacy installer/database setup
-   - remove or quarantine Instance Management Kafka topic-per-instance scenarios until relational CDC/Kafka support exists
+   - disable or quarantine Instance Management Kafka topic-per-instance scenarios until relational CDC/Kafka support exists; keep the files when they can be cleanly excluded from active execution
 
 ## Phase 7: Remove Old Project References And Files
 
@@ -339,7 +342,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
 
 ## Phase 9: Update Documentation
 
-1. Update developer docs and setup instructions:
+1. Update active developer docs and setup instructions:
 
    - `AGENTS.md`
    - `README.md`
@@ -349,6 +352,8 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - `docs/RELATIONAL-BACKEND.md`
    - `docs/CONFIGURATION.md`
    - `eng/docker-compose/README.md`
+
+   Do not edit historical/archive/design-note documents as part of documentation cleanup.
 
 2. Remove instructions that tell developers to choose a legacy or relational E2E lane. E2E documentation should state that all DMS E2E tests run against the relational backend because it is the only DMS backend.
 
@@ -363,7 +368,11 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - `Category!=relational-backend`
    - `NEED_DATABASE_SETUP`
    - `DMS_DEPLOY_DATABASE_ON_STARTUP`
+   - `AppSettings:DeployDatabaseOnStartup`
    - `AppSettings__DeployDatabaseOnStartup`
+   - `RELATIONAL_E2E_DATABASE_NAME`
+   - `.env.smoke.relational`
+   - `.env.template.relational`
 
 4. Document the new default E2E command, for example:
 
@@ -385,17 +394,18 @@ All DMS E2E tests now run against the relational backend because it is the only 
    dotnet csharpier format src/dms
    ```
 
-2. Run static searches. Runtime code, tests, CI, Docker, and docs should have no active references to removed legacy plumbing:
+2. Run static searches. Runtime code, tests, CI, Docker, and active docs should have no active references to removed legacy plumbing:
 
    ```bash
    rg -n "Old\.Postgresql|EdFi\.DataManagementService\.Old\.Postgresql" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "UseRelationalBackend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
-   rg -n "NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|Backend\.Installer|dms\.document|edfi\.dms\.document|to_debezium" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
+   rg -n "NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|DeployDatabaseOnStartup|Backend\.Installer|dms\.document|edfi\.dms\.document|to_debezium" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
+   rg -n "RELATIONAL_E2E_DATABASE_NAME|\.env\.e2e\.relational|\.env\.smoke\.relational|\.env\.template\.relational" src/dms eng .github build-dms.ps1 docs README.md GETTING_STARTED.md AGENTS.md
    rg -n "MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>" src/dms
    rg -n "Test-DmsDocumentTablePresent|Installer/EdFi\.DataManagementService\.Backend\.Installer\.dll|dms\.document|to_debezium" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose build-dms.ps1
    ```
 
-   Any remaining matches should be either intentionally historical or renamed/reworked.
+   Do not edit historical documents to satisfy these searches. CMS `DeployDatabaseOnStartup` matches are expected and must remain. Remaining active DMS matches should be renamed, removed, disabled, or otherwise reworked.
 
 3. Build:
 
@@ -458,12 +468,14 @@ All DMS E2E tests now run against the relational backend because it is the only 
 - `EdFi.DataManagementService.Old.Postgresql` and `EdFi.DataManagementService.Old.Postgresql.Tests.Integration` are deleted.
 - No project or solution references old PostgreSQL projects.
 - No runtime code can select the legacy backend.
-- Core handlers and middleware no longer fall back to legacy request types, legacy token-info lookups, nullable-`MappingSet` backend selection, or optional relational service branches.
+- Core handlers and middleware no longer fall back to legacy request types, legacy token-info lookups, or nullable-`MappingSet` backend selection. Change-query endpoints may keep explicit unsupported behavior for datastores/features that lack support.
 - No Docker or build script flag can enable or disable the relational backend.
+- DMS `DeployDatabaseOnStartup` behavior and settings are removed entirely; CMS database deployment settings remain untouched.
 - No deleted legacy installer artifact is published, copied into Docker images, or packaged in the frontend NuGet output.
 - E2E tests, build filters, workflows, and docs no longer use `@relational-backend` or bare `relational-backend`; shard tags are either removed or renamed to backend-neutral tags.
+- Relational E2E environment names are neutralized now: `RELATIONAL_E2E_DATABASE_NAME` is renamed to `E2E_DATABASE_NAME`, relational env-file names are renamed to neutral names, and any neutral-file collision is resolved by overwriting with the relational version.
 - Instance Management E2E tests provision route-context databases with `SchemaTools ddl provision` and no longer use `Backend.Installer`, `dms.document`, or legacy CDC/Kafka assumptions.
 - CI no longer runs old PostgreSQL integration tests.
 - DMS startup always wires relational document store, relational query handler, mapping initialization, fingerprint validation, resource-key validation, and relational authorization lookup.
-- Legacy document-store CDC/Debezium/Kafka configuration is removed or explicitly disabled; docs state that relational CDC/Kafka support is pending a separate implementation.
+- Legacy document-store CDC/Debezium/Kafka configuration is removed or explicitly disabled; Kafka scenarios and helpers are disabled/quarantined rather than deleted when that is practical; docs state that relational CDC/Kafka support is pending a separate implementation.
 - Documentation describes a single DMS backend path and the required `SchemaTools ddl provision` workflow.
