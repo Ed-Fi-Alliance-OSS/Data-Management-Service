@@ -239,17 +239,12 @@ internal static class IdentityProjectionResolver
         // identity fields. Order the field-name-matched binding first — the same rule that names abstract
         // identity columns — with a deterministic tie-break, so callers that take the representative member
         // (SelectIdentityElementColumn) produce a source independent of binding order.
-        return identityBindingsForPath
-            .OrderBy(ib =>
-                string.Equals(
-                    BuildReferenceIdentityFieldBaseName(binding.ReferenceObjectPath, ib.ReferenceJsonPath),
-                    BuildIdentityPartBaseName(ib.IdentityJsonPath),
-                    StringComparison.Ordinal
-                )
-                    ? 0
-                    : 1
+        return OrderByRepresentativeReferenceBinding(
+                identityBindingsForPath,
+                binding.ReferenceObjectPath,
+                ib => ib.ReferenceJsonPath,
+                ib => ib.IdentityJsonPath
             )
-            .ThenBy(ib => ib.IdentityJsonPath.Canonical, StringComparer.Ordinal)
             .Select(ib => ib.Column)
             .ToArray();
     }

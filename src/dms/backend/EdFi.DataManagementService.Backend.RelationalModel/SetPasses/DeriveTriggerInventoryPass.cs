@@ -608,17 +608,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         IReadOnlyList<ReferenceIdentityBinding> candidates
     )
     {
-        return candidates
-            .OrderBy(ib =>
-                string.Equals(
-                    BuildReferenceIdentityFieldBaseName(referenceObjectPath, ib.ReferenceJsonPath),
-                    BuildIdentityPartBaseName(ib.IdentityJsonPath),
-                    StringComparison.Ordinal
-                )
-                    ? 0
-                    : 1
+        return OrderByRepresentativeReferenceBinding(
+                candidates,
+                referenceObjectPath,
+                ib => ib.ReferenceJsonPath,
+                ib => ib.IdentityJsonPath
             )
-            .ThenBy(ib => ib.IdentityJsonPath.Canonical, StringComparer.Ordinal)
             .First();
     }
 

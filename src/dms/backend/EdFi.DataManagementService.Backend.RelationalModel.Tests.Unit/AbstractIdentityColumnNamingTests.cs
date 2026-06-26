@@ -44,3 +44,74 @@ public class Given_Building_An_Abstract_Identity_Column_Name
         name.Should().Be("ProgramTypeDescriptor_DescriptorId");
     }
 }
+
+/// <summary>
+/// Direct unit coverage for the shared representative-binding selection rule
+/// (<c>RelationalModelSetSchemaHelpers.IsReferenceFieldNameMatched</c> /
+/// <c>OrderByRepresentativeReferenceBinding</c>). These are the linchpin shared by abstract identity column
+/// naming, abstract identity maintenance triggers, and identity projection, so the rule is pinned directly
+/// rather than only transitively through derivation fixtures.
+/// </summary>
+[TestFixture]
+public class Given_Selecting_A_Representative_Reference_Binding
+{
+    [Test]
+    public void It_should_match_when_reference_field_name_equals_identity_field_name()
+    {
+        RelationalModelSetSchemaHelpers
+            .IsReferenceFieldNameMatched(
+                JsonPathExpressionCompiler.Compile("$.programReference"),
+                JsonPathExpressionCompiler.Compile("$.programReference.programName"),
+                JsonPathExpressionCompiler.Compile("$.programName")
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_should_not_match_when_reference_field_name_differs_from_identity_field_name()
+    {
+        RelationalModelSetSchemaHelpers
+            .IsReferenceFieldNameMatched(
+                JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                JsonPathExpressionCompiler.Compile("$.localEducationAgencyId")
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_should_order_field_matched_binding_first_then_ordinal_by_identity_path()
+    {
+        var referenceObjectPath = JsonPathExpressionCompiler.Compile("$.schoolReference");
+        var bindings = new[]
+        {
+            (
+                Reference: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                Identity: JsonPathExpressionCompiler.Compile("$.stateEducationAgencyId")
+            ),
+            (
+                Reference: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                Identity: JsonPathExpressionCompiler.Compile("$.localEducationAgencyId")
+            ),
+            (
+                Reference: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                Identity: JsonPathExpressionCompiler.Compile("$.schoolId")
+            ),
+        };
+
+        var ordered = RelationalModelSetSchemaHelpers
+            .OrderByRepresentativeReferenceBinding(
+                bindings,
+                referenceObjectPath,
+                binding => binding.Reference,
+                binding => binding.Identity
+            )
+            .Select(binding => binding.Identity.Canonical)
+            .ToArray();
+
+        // Field-matched ($.schoolId) leads; the rest follow ordinal by identity path.
+        ordered.Should().Equal("$.schoolId", "$.localEducationAgencyId", "$.stateEducationAgencyId");
+    }
+}

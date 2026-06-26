@@ -611,14 +611,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
                 candidates.Add(
                     new ReferenceConventionColumnCandidate(
+                        refBinding.ReferenceObjectPath,
                         identityBinding.ReferenceJsonPath,
                         identityBinding.IdentityJsonPath,
-                        conventionColumn,
-                        BuildReferenceIdentityFieldBaseName(
-                            refBinding.ReferenceObjectPath,
-                            identityBinding.ReferenceJsonPath
-                        ),
-                        BuildIdentityPartBaseName(identityBinding.IdentityJsonPath)
+                        conventionColumn
                     )
                 );
             }
@@ -634,52 +630,54 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         IReadOnlyList<ReferenceConventionColumnCandidate> candidates
     )
     {
+        // Pick the representative binding with the same field-name-matched-first, ordinal tiebreak used by
+        // the abstract identity maintenance trigger and identity projection, so the abstract column is named
+        // after the same binding those consumers project from. All candidates share one ReferenceObjectPath
+        // (the matched binding's owning reference), so any candidate carries the correct path for the rule.
+        var representative = OrderByRepresentativeReferenceBinding(
+                candidates,
+                candidates[0].ReferenceObjectPath,
+                static candidate => candidate.ReferenceJsonPath,
+                static candidate => candidate.IdentityJsonPath
+            )
+            .First();
+
         var distinctConventionColumns = candidates
             .Select(static candidate => candidate.ConventionColumn.Value)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        if (distinctConventionColumns.Length == 1)
+        // When candidates disagree on the convention column, the choice is only well-defined when the
+        // representative is the field-name-matched binding. No field match plus divergent columns is the
+        // genuinely ambiguous shape real Ed-Fi schemas never produce, so fail fast.
+        if (
+            distinctConventionColumns.Length > 1
+            && !IsReferenceFieldNameMatched(
+                representative.ReferenceObjectPath,
+                representative.ReferenceJsonPath,
+                representative.IdentityJsonPath
+            )
+        )
         {
-            return candidates[0].ConventionColumn;
-        }
-
-        var fieldMatchedCandidates = candidates
-            .Where(static candidate =>
-                string.Equals(
-                    candidate.ReferenceFieldBaseName,
-                    candidate.IdentityPartBaseName,
-                    StringComparison.Ordinal
+            var candidateDetails = string.Join(
+                ", ",
+                candidates.Select(candidate =>
+                    $"'{candidate.ReferenceJsonPath.Canonical}' -> "
+                    + $"'{candidate.IdentityJsonPath.Canonical}' = '{candidate.ConventionColumn.Value}'"
                 )
-            )
-            .ToArray();
+            );
 
-        var distinctFieldMatchedConventionColumns = fieldMatchedCandidates
-            .Select(static candidate => candidate.ConventionColumn.Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        if (distinctFieldMatchedConventionColumns.Length == 1)
-        {
-            return fieldMatchedCandidates[0].ConventionColumn;
+            throw new InvalidOperationException(
+                $"Abstract identity path '{identityPath.Canonical}' for resource "
+                    + $"'{FormatResource(abstractResource)}' matched duplicate reference identity bindings on "
+                    + $"member '{FormatResource(member.Resource)}' with ambiguous convention columns: "
+                    + $"{candidateDetails}. Duplicate ReferenceJsonPath bindings must resolve by matching "
+                    + "the reference field name to one target identity field, or by producing the same "
+                    + "convention column."
+            );
         }
 
-        var candidateDetails = string.Join(
-            ", ",
-            candidates.Select(candidate =>
-                $"'{candidate.ReferenceJsonPath.Canonical}' -> "
-                + $"'{candidate.IdentityJsonPath.Canonical}' = '{candidate.ConventionColumn.Value}'"
-            )
-        );
-
-        throw new InvalidOperationException(
-            $"Abstract identity path '{identityPath.Canonical}' for resource "
-                + $"'{FormatResource(abstractResource)}' matched duplicate reference identity bindings on "
-                + $"member '{FormatResource(member.Resource)}' with ambiguous convention columns: "
-                + $"{candidateDetails}. Duplicate ReferenceJsonPath bindings must resolve by matching "
-                + "the reference field name to one target identity field, or by producing the same "
-                + "convention column."
-        );
+        return representative.ConventionColumn;
     }
 
     /// <summary>
@@ -1211,11 +1209,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     /// Captures one reference identity binding that can name an abstract identity column.
     /// </summary>
     private sealed record ReferenceConventionColumnCandidate(
+        JsonPathExpression ReferenceObjectPath,
         JsonPathExpression ReferenceJsonPath,
         JsonPathExpression IdentityJsonPath,
-        DbColumnName ConventionColumn,
-        string ReferenceFieldBaseName,
-        string IdentityPartBaseName
+        DbColumnName ConventionColumn
     );
 
     /// <summary>

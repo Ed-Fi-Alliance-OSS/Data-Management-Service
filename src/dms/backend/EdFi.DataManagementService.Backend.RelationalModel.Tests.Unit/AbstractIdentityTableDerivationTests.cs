@@ -2071,6 +2071,206 @@ public class Given_Abstract_Identity_Path_Mixing_Reference_And_Scalar_Members
 }
 
 /// <summary>
+/// Test fixture for an abstract identity path supplied through grouped duplicate reference bindings where
+/// NO binding is field-name-matched (the reference field name matches neither key-unified target identity
+/// field), so the candidate convention columns diverge with no field-matched representative. Abstract
+/// identity naming must fail fast rather than silently pick one. This is the pathological shape real Ed-Fi
+/// schemas never produce; it directly exercises the ambiguous-convention-column guard.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Path_With_Ambiguous_Grouped_Reference_Bindings
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when grouped reference bindings yield divergent convention columns with no
+    /// field-name-matched representative.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_grouped_reference_bindings_have_ambiguous_convention_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("ambiguous convention columns");
+        _exception.Message.Should().Contain("$.schoolReference.schoolId");
+    }
+
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["AmbiguousCarrier"] = new JsonObject
+                {
+                    ["resourceName"] = "AmbiguousCarrier",
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["ambiguousMembers"] = BuildMemberSchema(),
+                ["schools"] = BuildTargetSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// AmbiguousMember: subclass of AmbiguousCarrier whose single reference field $.schoolReference.schoolId
+    /// feeds two key-unified target identity fields, neither named schoolId — so no candidate is
+    /// field-name-matched.
+    /// </summary>
+    private static JsonObject BuildMemberSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "AmbiguousMember",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "AmbiguousCarrier",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.localEducationAgencyId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.stateEducationAgencyId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                    },
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["equalityConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+                ["required"] = new JsonArray { "schoolReference" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// School: target whose two identity fields are key-unified by an equality constraint, so one reference
+    /// field can feed both.
+    /// </summary>
+    private static JsonObject BuildTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.localEducationAgencyId", "$.stateEducationAgencyId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["LocalEducationAgencyId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.localEducationAgencyId",
+                },
+                ["StateEducationAgencyId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.stateEducationAgencyId",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.localEducationAgencyId",
+                    ["targetJsonPath"] = "$.stateEducationAgencyId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+                    ["stateEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+                },
+                ["required"] = new JsonArray("localEducationAgencyId", "stateEducationAgencyId"),
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test type abstract identity table test schema builder.
 /// </summary>
 internal static class AbstractIdentityTableTestSchemaBuilder

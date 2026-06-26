@@ -307,6 +307,53 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Determines whether a reference identity binding's reference-relative field name matches its target
+    /// identity field name. This is the primary key of the deterministic representative-binding tiebreak
+    /// shared by abstract identity column naming, abstract identity maintenance triggers, and identity
+    /// projection: when key unification fans one reference field onto several target identity fields, the
+    /// field-name-matched binding is preferred so every consumer selects the same binding.
+    /// </summary>
+    internal static bool IsReferenceFieldNameMatched(
+        JsonPathExpression referenceObjectPath,
+        JsonPathExpression referenceJsonPath,
+        JsonPathExpression identityJsonPath
+    )
+    {
+        return string.Equals(
+            BuildReferenceIdentityFieldBaseName(referenceObjectPath, referenceJsonPath),
+            BuildIdentityPartBaseName(identityJsonPath),
+            StringComparison.Ordinal
+        );
+    }
+
+    /// <summary>
+    /// Orders items carrying a reference identity binding by the shared representative-binding tiebreak:
+    /// field-name-matched bindings first, then ordinal by the target identity JSONPath. Centralizes the rule
+    /// so abstract identity column naming, abstract identity maintenance triggers, and identity projection
+    /// cannot diverge on which binding represents a key-unified group. The identity-path tiebreak is ordinal
+    /// by construction; callers must not substitute a culture-sensitive comparison.
+    /// </summary>
+    internal static IOrderedEnumerable<T> OrderByRepresentativeReferenceBinding<T>(
+        IEnumerable<T> items,
+        JsonPathExpression referenceObjectPath,
+        Func<T, JsonPathExpression> referenceJsonPathSelector,
+        Func<T, JsonPathExpression> identityJsonPathSelector
+    )
+    {
+        return items
+            .OrderBy(item =>
+                IsReferenceFieldNameMatched(
+                    referenceObjectPath,
+                    referenceJsonPathSelector(item),
+                    identityJsonPathSelector(item)
+                )
+                    ? 0
+                    : 1
+            )
+            .ThenBy(item => identityJsonPathSelector(item).Canonical, StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Builds the physical column name for a plain-scalar or direct-descriptor abstract identity column.
     /// Used only when the identity path is not reference-backed (no document reference binding exists
     /// for this path on the concrete members). Reference-backed abstract identity columns are named by
