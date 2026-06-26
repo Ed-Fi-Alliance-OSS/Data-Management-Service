@@ -164,23 +164,35 @@ from a running stack of that version, not hand-written. Known surfaces:
 **Structural difference, not just a version string (DS 6.1 example):** in DS 6.1 the **TPDM
 model is folded into core** — there is no separate TPDM extension. So a 6.1 `/metadata/xsd`
 response has **no `tpdm` entry** and there is **no `/metadata/xsd/tpdm/...` files endpoint**,
-whereas 5.2 lists TPDM as a distinct extension. Enabling 6.1 E2E therefore means *rewriting*
-these expectations for 6.1, not search-replacing `5.2.0` → `6.1.0`. This is part of the staged
-PR-E2E work (it lands when DS 6.1 joins the E2E lane).
+whereas 5.2 lists TPDM as a distinct extension. Enabling 6.1 E2E therefore meant *rewriting*
+these expectations for 6.1, not search-replacing `5.2.0` → `6.1.0`. Those 6.1 expectations are now
+authored as `@StandardVersion-6_1` scenario variants alongside the 5.2 ones — captured from a
+running 6.1 stack — with the two TPDM scenarios (and the TPDM data model in the Discovery root)
+dropped.
 
-### Per-PR E2E scope — DS 6.1 is staged (decision)
+### Per-PR E2E scope — DS 6.1 version-coupled lane
 
-The every-change (per-PR) relational E2E lane stays **DS 5.2** for now: `on-dms-pullrequest.yml`
-runs `build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e.relational'` (no `-DataStandardVersion`),
-sharded but single-version. DS 6.1 is exercised by the **scheduled / package-build** lanes (the
-populated-template product matrix) rather than on every PR, so the slow, occasionally-flaky per-PR
-lane is not doubled before 6.1 is otherwise proven.
+The every-change (per-PR) relational E2E lane runs **DS 5.2** as the full sharded suite
+(`on-dms-pullrequest.yml` → `run-e2e-tests`: four shards, `-EnvironmentFile './.env.e2e.relational'`,
+no `-DataStandardVersion`). DS 6.1 is covered per-PR by a **dedicated, lean lane**
+(`run-e2e-tests-ds61`) that brings up a 6.1 stack (`-DataStandardVersion 6.1`) and runs **only the
+version-coupled scenarios** — the `@StandardVersion-6_1`-tagged XSDMetadata and Discovery-root
+variants:
 
-Turning the per-PR lane on for 6.1 later is a small, contained change — add a `standard_version`
-dimension to the E2E matrix and pass `-DataStandardVersion 6.1` (`build-dms.ps1` now composes the
-`.env.ds<NN>` overlay consistently across provisioning, seed, configure, and startup). The gating
-prerequisite is **not** the wiring — it is authoring the version-coupled expectations above against
-a running 6.1 stack.
+```
+build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e.relational' -DataStandardVersion 6.1 \
+  -TestFilter 'Category=@relational-backend&Category=@StandardVersion-6_1'
+```
+
+Those scenarios carry **no shard tag**, so the 5.2 shard lanes (which filter on a
+`@relational-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
+version-independent suite. Both lanes gate the PR through `relational-e2e-summary`.
+
+This keeps per-PR cost contained: the version-coupled scenarios are exactly what differs between
+versions, while **full DS 6.1 E2E coverage runs in the scheduled smoke test** rather than on every
+PR — so the slow, occasionally-flaky relational suite is not doubled. The version-coupled scenarios
+are version-selected purely by category tags (`@StandardVersion-<NN>`), not by separate stacks per
+shard: a future version adds its own `@StandardVersion-<NN>` variants and a sibling lane.
 
 ## Adding a Data Standard version
 
@@ -207,6 +219,12 @@ Adding a version is the same set of small edits regardless of which version:
    that env file in `build-populated-template.yml`'s `environment_file` allowlist. The SDK legs need
    no template env file — they start DMS via the `.env.ds<NN>` overlay (a non-default version requires
    a `data_standard_version` value in the leg so the overlay is applied).
+6. **Version-coupled E2E.** Author the version's `@StandardVersion-<NN>` scenario variants for the
+   version-coupled features (`XSDMetadata.feature`, `DiscoveryAPI.feature`) — captured from a running
+   stack of that version, not hand-written — and add a per-PR lane that runs them with
+   `-DataStandardVersion <N.N>` and
+   `-TestFilter 'Category=@relational-backend&Category=@StandardVersion-<NN>'` (see *Per-PR E2E scope*
+   above). Give the variants **no** shard category so the default-version shard lanes skip them.
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing

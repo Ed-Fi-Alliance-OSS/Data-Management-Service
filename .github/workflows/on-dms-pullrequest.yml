@@ -1044,20 +1044,172 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  # Dedicated per-PR DS 6.1 relational E2E lane. DS 5.2 is the default and runs the full suite across the
+  # four shards above; for DS 6.1 we run only the version-coupled scenarios (XSD metadata + Discovery root,
+  # tagged @StandardVersion-6_1) against a 6.1 stack. Those scenarios carry no shard tag, so the DS 5.2
+  # shard lanes never pick them up. Full DS 6.1 coverage runs in the scheduled smoke test workflow. The
+  # filter has no shard, so RunE2E writes the suffix-less TRX (EdFi.DataManagementService.Tests.E2E.relational.trx).
+  run-e2e-tests-ds61:
+    name: Run PostgreSQL Relational E2E (DS 6.1, version-coupled)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+
+      - name: Add Kafka hostname to /etc/hosts
+        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
+
+      - name: Run DS 6.1 Relational E2E (version-coupled scenarios)
+        id: relational_e2e
+        if: success()
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
+        run: |
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -DataStandardVersion 6.1 -TestFilter 'Category=@relational-backend&Category=@StandardVersion-6_1'
+
+      - name: Export Relational Docker Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/relational-ds61"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
+          }
+        shell: pwsh
+
+      - name: Upload Relational Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: postgresql-self-contained-relational-ds61-test-logs
+          path: |
+            ${{ github.workspace }}/logs/relational-ds61
+          retention-days: 10
+
+      - name: Upload Relational Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: always() && hashFiles('TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx') != ''
+        with:
+          name: E2E Test Results (self-contained, relational, DS 6.1)
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Summarize Relational Test Timings
+        if: always()
+        run: |
+          ./eng/ci/summarize-test-timings.ps1 `
+            -Path "./TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx" `
+            -OutputDirectory "./TestResults/test-timings/relational-self-contained-ds61" `
+            -SuiteName "Relational E2E (DS 6.1, version-coupled)" `
+            -AppendToGitHubStepSummary
+
+      - name: Upload Relational Timing Artifacts
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        if: always()
+        with:
+          name: test-timings-relational-self-contained-ds61
+          path: |
+            TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+            TestResults/test-timings/relational-self-contained-ds61/**
+          if-no-files-found: ignore
+          retention-days: 30
+
   relational-e2e-summary:
     name: relational-e2e-summary
     runs-on: ubuntu-latest
-    needs: run-e2e-tests
+    needs: [run-e2e-tests, run-e2e-tests-ds61]
     if: always()
     steps:
       - name: Check relational E2E matrix result
         shell: pwsh
         run: |
           if ("${{ needs.run-e2e-tests.result }}" -ne "success") {
-            throw "One or more relational E2E matrix jobs failed."
+            throw "One or more relational E2E (DS 5.2) matrix jobs failed."
           }
 
-          Write-Host "All relational E2E matrix jobs passed."
+          if ("${{ needs.run-e2e-tests-ds61.result }}" -ne "success") {
+            throw "The relational E2E (DS 6.1, version-coupled) job failed."
+          }
+
+          Write-Host "All relational E2E jobs passed (DS 5.2 shards + DS 6.1 version-coupled)."
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
