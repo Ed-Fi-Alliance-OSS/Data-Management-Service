@@ -126,14 +126,25 @@ Workflows that build per-version artifacts select the version through a per-work
   > TPDM folded into core). Each version gets its own standalone template env file,
   > referenced from the matrix `include` entry — it is **not** the dev `.env.ds<NN>` overlay.
 
-- **SDK** (`Pkg EdFi.Api.Sdk.yml`, `Pkg EdFi.Api.TestSdk.yml`) and **Minimal
-  template** (`EdFi.Api.Minimal.Template.PostgreSQL.yml`) are currently
-  single-version (`5.2.0`), with the version held in each file's top-level `env`
-  block. These workflows are flat, self-contained job graphs whose provenance job
-  reads the build job's `hash-code` output; GitHub Actions does not correlate matrix
-  legs across jobs for outputs, so matrixing them safely requires first extracting a
-  reusable workflow (mirroring `build-populated-template.yml`) and matrixing the thin
-  caller. That refactor is deferred to a dedicated, separately-validated change.
+- **SDK** (`Pkg EdFi.Api.Sdk.yml`, `Pkg EdFi.Api.TestSdk.yml`) and **Minimal template**
+  (`EdFi.Api.Minimal.Template.PostgreSQL.yml`) follow the same pattern: each is now a thin
+  matrix caller over a per-lane reusable workflow (`build-sdk-package.yml`,
+  `build-minimal-template.yml`), with one `include` entry per Data Standard version
+  (`5.2.0` and `6.1.0`). Extracting the reusable workflow first is what makes matrixing
+  safe — these lanes' provenance job reads the build job's `hash-code` output, and GitHub
+  Actions does not correlate matrix legs across jobs for outputs, so a flat job graph would
+  feed the wrong leg's hash to provenance once a second version is added. The reusable
+  workflow keeps each leg's build → SBOM → provenance pipeline self-contained, and each leg
+  uses a distinct package name and provenance file so artifacts never collide.
+  - The **Minimal template** `6.1.0` leg reuses the `.env.template.relational.ds61` template
+    env file (Core only).
+  - The **SDK** lanes generate each package from the OpenAPI document a running DMS serves,
+    so the `6.1.0` leg starts DMS with `-DataStandardVersion 6.1` (the `.env.ds61` overlay)
+    and names the package `…Standard.6.1.0`; the `5.2.0` leg keeps the base `.env.e2e`
+    behavior.
+  - These lanes are tag/release/`workflow_dispatch`-triggered (not exercised on PRs), so the
+    `6.1.0` legs are validated by dispatch (`publish_package` defaults off) before release —
+    the same gate the populated-template `6.1.0` leg uses.
 
 ## Version-coupled tests and special handling
 
@@ -188,12 +199,14 @@ Adding a version is the same set of small edits regardless of which version:
 4. **Security metadata.** Add `Claims/Standards/ds<NN>/Claims.json` (authored from the
    ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
    change is needed — the embedded-resource glob picks it up.
-5. **CI.** Add an `include` entry to the `standard_version` matrix in
-   `EdFi.Api.Populated.Template.PostgreSQL.yml` (and, once validated, `scheduled-smoke-test.yml`),
-   add the version's standalone template env file (its product schema surface — Core + TPDM for
-   5.2, Core only for 6.1) referenced by that entry, and allow that env file in
-   `build-populated-template.yml`'s `environment_file` allowlist. (The SDK and Minimal lanes
-   follow once their reusable-workflow extraction lands.)
+5. **CI.** Add an `include` entry to the `standard_version` matrix in each per-version lane —
+   `EdFi.Api.Populated.Template.PostgreSQL.yml`, `EdFi.Api.Minimal.Template.PostgreSQL.yml`, and
+   the SDK callers `Pkg EdFi.Api.Sdk.yml` / `Pkg EdFi.Api.TestSdk.yml` (and, once validated,
+   `scheduled-smoke-test.yml`). Add the version's standalone template env file (its product schema
+   surface — Core + TPDM for 5.2, Core only for 6.1), referenced by the template entries, and allow
+   that env file in `build-populated-template.yml`'s `environment_file` allowlist. The SDK legs need
+   no template env file — they start DMS via the `.env.ds<NN>` overlay (a non-default version requires
+   a `data_standard_version` value in the leg so the overlay is applied).
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing
