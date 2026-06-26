@@ -193,6 +193,95 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     }
 
     [Test]
+    public async Task Given_a_resource_claim_repository_It_should_seed_resource_claims_from_the_loaded_hierarchy()
+    {
+        // Arrange - empty the ResourceClaim table so any rows present after the load came from the
+        // version-selected Claims.json hierarchy, not the static 0009 seed (ClearClaimsTablesAsync,
+        // run in [SetUp], does not touch ResourceClaim).
+        await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
+        {
+            await arrangeConnection.ExecuteAsync("DELETE FROM dmscs.ResourceClaim");
+        }
+
+        var claimsDocumentRepository = new ClaimsDocumentRepository(
+            Options.Create(Configuration.DatabaseOptions.Value),
+            NullLogger<ClaimsDocumentRepository>.Instance
+        );
+        var loaderWithSeeding = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+            _claimsProvider,
+            _claimSetRepository,
+            _claimsHierarchyRepository,
+            _claimsTableValidator,
+            claimsDocumentRepository,
+            NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance,
+            new ResourceClaimMetadataRepository(
+                Options.Create(Configuration.DatabaseOptions.Value),
+                NullLogger<ResourceClaimMetadataRepository>.Instance
+            )
+        );
+
+        // Act
+        var result = await loaderWithSeeding.LoadInitialClaimsAsync();
+
+        // Assert - the production load path derived resource claims from the hierarchy and inserted them.
+        Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
+
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        var resourceClaimCount = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM dmscs.ResourceClaim"
+        );
+        Assert.That(resourceClaimCount, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public async Task Given_resource_claims_already_seeded_It_should_insert_only_missing_rows()
+    {
+        // Arrange - synthetic claim names absent from the static 0009 seed, cleared up front so the
+        // assertion is independent of prior runs against the shared test database.
+        const string testClaimPrefix = "http://ed-fi.org/identity/claims/test/";
+        var likeFilter = new { Prefix = $"{testClaimPrefix}%" };
+        await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
+        {
+            await arrangeConnection.ExecuteAsync(
+                "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+                likeFilter
+            );
+        }
+
+        var repository = new ResourceClaimMetadataRepository(
+            Options.Create(Configuration.DatabaseOptions.Value),
+            NullLogger<ResourceClaimMetadataRepository>.Instance
+        );
+        var seeds = new List<ResourceClaimMetadataSeed>
+        {
+            new("integrationSeedA", $"{testClaimPrefix}integrationSeedA"),
+            new("integrationSeedB", $"{testClaimPrefix}integrationSeedB"),
+        };
+
+        // Act - seed the same set twice.
+        var firstInserted = await repository.SeedResourceClaims(seeds);
+        var secondInserted = await repository.SeedResourceClaims(seeds);
+
+        // Assert - the first call inserts both rows; the second inserts none
+        // (ON CONFLICT (ClaimName) DO NOTHING), so existing rows are never duplicated.
+        Assert.That(firstInserted, Is.EqualTo(2));
+        Assert.That(secondInserted, Is.EqualTo(0));
+
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        var count = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            likeFilter
+        );
+        Assert.That(count, Is.EqualTo(2));
+
+        // Cleanup the synthetic rows so the shared test database is left clean.
+        await connection.ExecuteAsync(
+            "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            likeFilter
+        );
+    }
+
+    [Test]
     public async Task Given_populated_tables_It_should_return_AlreadyLoaded()
     {
         // Arrange - Load data first time
