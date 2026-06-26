@@ -16,9 +16,10 @@ packages that your packages depend on. As a result:
   there is no committed record of what versions were previously resolved.
 
 The goal is to lock the full dependency graph — direct **and** transitive — at
-exact versions, enforce that lock everywhere it is restored (PR CI **and** the
-Docker image builds), and keep it automatically up to date when Dependabot bumps
-a direct dependency.
+exact versions, enforce that lock at the points that produce or gate shipped
+artifacts — the PR `verify-lock-files` gate (§2), the source Docker image builds
+(§3), and the release/publish package build (`BuildAndPublish -LockedMode`) — and
+keep it automatically up to date when Dependabot bumps a direct dependency.
 
 > [!NOTE]
 > "Automatically up to date" refers to the lock _files_: the auto-regeneration
@@ -64,16 +65,26 @@ fast if a committed lock file is out of sync with the `.csproj` /
 without regenerating. No `paths:` change is needed: lock files live under
 `src/dms/**` / `src/config/**`, which the existing filters already match.
 
-### 3. Locked mode in the Docker image builds
+### 3. Locked mode in the source Docker image builds
 
-The published images are the security-critical artifact, so they are built from
-the committed lock graph too. [`src/dms/Dockerfile`](../src/dms/Dockerfile) and
-[`src/config/Dockerfile`](../src/config/Dockerfile) copy each project's
-`packages.lock.json` alongside its `.csproj` and pass `--locked-mode` to every
-`dotnet restore`.
+[`src/dms/Dockerfile`](../src/dms/Dockerfile) and
+[`src/config/Dockerfile`](../src/config/Dockerfile) build the images from source —
+they back PR CI, the E2E/integration stacks, the nightly run, and SDK packaging.
+Each copies every project's `packages.lock.json` alongside its `.csproj` and passes
+`--locked-mode` to every `dotnet restore`, so a source-built image comes from the
+committed lock graph.
+
+> [!NOTE]
+> The **published** release images are built separately, by
+> [`src/dms/Nuget.Dockerfile`](../src/dms/Nuget.Dockerfile) /
+> [`src/config/Nuget.Dockerfile`](../src/config/Nuget.Dockerfile) in
+> [`on-prerelease.yml`](../.github/workflows/on-prerelease.yml), which download the
+> already-published `EdFi.Api` package rather than restoring from source. Their lock
+> is enforced upstream — at the `BuildAndPublish -LockedMode` package build that
+> produced that package — not by an in-image `--locked-mode` restore.
 
 > [!IMPORTANT]
-> **Maintenance hotspot:** each Dockerfile's `packages.lock.json` COPY list must
+> **Maintenance hotspot:** each source Dockerfile's `packages.lock.json` COPY list must
 > mirror its `.csproj` COPY list. A future `<ProjectReference>` change can pull a
 > new project into the restore closure; if its lock file is not also copied, the
 > in-image `--locked-mode` restore breaks.
@@ -175,8 +186,9 @@ dotnet restore src/config/EdFi.DmsConfigurationService.sln --force-evaluate
 ```
 
 Local `Restore` (without `--locked-mode`) stays non-locked so day-to-day builds
-consult the lock files without forcing a regenerate step; CI and the Docker
-builds are the enforcement points.
+consult the lock files without forcing a regenerate step; the PR `verify-lock-files`
+gate, the release/publish package build, and the source Docker builds are the
+enforcement points.
 
 > [!NOTE]
 > Lock files are normally OS-independent. If a Linux `--locked-mode` run (the CI

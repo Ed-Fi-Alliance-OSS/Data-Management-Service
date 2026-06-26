@@ -66,8 +66,9 @@ param(
     $Configuration = "Debug",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
-    # packages.lock.json is out of sync. Release and scheduled CI pass this so the published
-    # packages are built from the committed lock graph; local builds leave it off (see
+    # packages.lock.json is out of sync. The release/publish build passes this so published
+    # packages come from the committed lock graph; the PR `verify-lock-files` gate enforces lock
+    # consistency separately. Ordinary build/test jobs and local builds leave it off (see
     # docs/NUGET-LOCK-FILES.md).
     [switch]
     $LockedMode,

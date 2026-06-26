@@ -30,18 +30,37 @@ $LockFileAreas = @(
 )
 
 BeforeAll {
-    # Returns the sorted, unique set of project directories whose COPY source matches the given
-    # file pattern. [^\s]+ stops at whitespace, so a COPY destination (e.g. "./frontend/X/") never
-    # matches -- only source specs ending in the pattern do.
+    # Returns the sorted, unique set of project directories whose COPY *source* argument ends in
+    # the given file pattern. Parses actual COPY instructions line by line: only logical lines whose
+    # instruction keyword is COPY are considered, flag tokens (--from=, --chmod=, ...) are dropped,
+    # and the final operand (the COPY destination) is excluded. A comment, a RUN command, or a
+    # destination path that merely contains a matching fragment therefore cannot be mistaken for a
+    # copied source. Assumes the shell (space-separated) COPY form, which both Dockerfiles use.
     function Get-CopySourceDir {
         param(
             [Parameter(Mandatory)][string] $DockerfileContent,
             [Parameter(Mandatory)][string] $FilePattern
         )
 
-        [regex]::Matches($DockerfileContent, "([^\s]+)/$FilePattern") |
-            ForEach-Object { $_.Groups[1].Value.TrimStart("./") } |
-            Sort-Object -Unique
+        # Join backslash line-continuations so a multi-line COPY is one logical instruction.
+        $logicalLines = ($DockerfileContent -replace '\\\r?\n', ' ') -split '\r?\n'
+
+        $dirs = foreach ($line in $logicalLines) {
+            $tokens = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
+            if ($tokens.Count -eq 0 -or $tokens[0] -ine 'COPY') { continue }
+
+            # Drop the COPY keyword and any --flag options, then drop the final operand (the
+            # destination); what remains are the source arguments.
+            $operands = @($tokens | Select-Object -Skip 1 | Where-Object { $_ -notlike '--*' })
+            if ($operands.Count -lt 2) { continue }
+
+            foreach ($source in $operands[0..($operands.Count - 2)]) {
+                $match = [regex]::Match($source, "^(.+)/$FilePattern`$")
+                if ($match.Success) { $match.Groups[1].Value.TrimStart("./") }
+            }
+        }
+
+        $dirs | Sort-Object -Unique
     }
 
     # Extracts the Directory.Build.props here-string that the build script feeds to
