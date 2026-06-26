@@ -23,7 +23,8 @@ Unsupported `ReadChanges` strategies are treated as unavailable authorization st
 - `RelationshipsWithEdOrgsAndPeopleIncludingDeletes` uses the `EducationOrganizationIdToStudentDocumentIdIncludingDeletes`, `EducationOrganizationIdToContactDocumentIdIncludingDeletes`, or `EducationOrganizationIdToStaffDocumentIdIncludingDeletes` view as appropriate.
 - `RelationshipsWithStudentsOnlyIncludingDeletes` uses the student including-deletes view.
 - `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes` uses `EducationOrganizationIdToStudentDocumentIdDeletedResponsibility`.
-- People authorization predicates use denormalized old/new person `DocumentId` values from tracked-change tables rather than joining intermediate resources.
+- People authorization predicates use denormalized old person `DocumentId` values from tracked-change tables rather than joining intermediate resources.
+- `/keyChanges` authorization is based on old-side values, matching ODS behavior. `New_*` person `DocumentId` values are tracked for key-change completeness but are not used for `ReadChanges` authorization.
 - Multiple relationship-based authorization strategies compose with OR semantics.
 - Multiple authorization strategies compose with the semantics defined in `auth.md`, including AND composition with `NamespaceBased` and no-op composition with `NoFurtherAuthorizationRequired` when `27-no-further-and-namespace-readchanges-authorization.md` is implemented.
 - Authorization predicates apply before paging and `totalCount`.
