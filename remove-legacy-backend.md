@@ -14,7 +14,7 @@ After this work, the relational backend is the only DMS runtime backend path. Th
 - DMS `DeployDatabaseOnStartup` exists only for legacy DMS schema provisioning and should be removed entirely, not redefined as relational startup provisioning. CMS `DeployDatabaseOnStartup` remains in scope for the Configuration Service only.
 - Keep DMS provisioning-script responsibilities separate: `eng/docker-compose/provision-dms-schema.ps1` remains the CMS-selected target provisioning helper, while the renamed `eng/docker-compose/provision-e2e-database.ps1` owns explicit E2E database reset/provisioning.
 - Do not add compatibility shims, type forwarders, old namespace aliases, or runtime switches to preserve the deleted backend surface. Update callers to the remaining relational backend APIs directly.
-- MSSQL remains a supported relational runtime datastore. MSSQL relational provisioning is handled by `SchemaTools ddl provision --dialect mssql` for manual/integration use; do not add new MSSQL Docker/E2E automation as part of this cleanup unless an existing path already requires it.
+- MSSQL remains a supported relational runtime datastore. MSSQL relational provisioning is handled by `SchemaTools ddl provision --dialect mssql` for manual/integration use; do not add new MSSQL Docker/E2E automation as part of this cleanup.
 - There are no migration concerns.
 
 ## Phase 1: Inventory And Guardrails
@@ -258,7 +258,7 @@ All DMS E2E tests now run against the relational backend because it is the only 
    - `@relational-ci-shard-3` becomes `@e2e-ci-shard-3`
    - `@relational-ci-shard-4` becomes `@e2e-ci-shard-4`
 
-   Apply the same rename to NUnit filters, workflow matrix commands, guardrail tests, docs, and generated Reqnroll category references. Update `.feature` files first, then regenerate or clean generated artifacts. Do not hand-edit ignored/generated `.feature.cs` files; if any generated `.feature.cs` files are committed, regenerate them with the repo's Reqnroll generator and include the resulting changes.
+   Apply the same rename to NUnit filters, workflow matrix commands, guardrail tests, docs, and generated Reqnroll category references. Update `.feature` files but not the generated `.feature.cs` artifacts.
 
 5. Rename feature files whose names encode the old lane if they are no longer relational-only variants:
 
