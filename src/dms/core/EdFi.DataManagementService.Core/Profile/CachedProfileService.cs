@@ -741,8 +741,21 @@ internal class CachedProfileService(
                             );
                         }
 
-                        profilesByName[parseResult.Definition.ProfileName] = parseResult.Definition;
-                        nameById[profileResponse.Id] = parseResult.Definition.ProfileName;
+                        // Normalize extension rule names to the schema extension keys so the
+                        // profile runtime (scope discovery, navigation, request/stored shaping,
+                        // read projection) agrees with the schema-derived _ext member casing.
+                        // Validation has produced no errors at this point: an IncludeOnly
+                        // reference to an unknown extension is an error that already dropped the
+                        // profile, while ExcludeOnly/IncludeAll references to an unknown extension
+                        // are warnings, so such rules can still be present here and the
+                        // canonicalizer drops any that do not resolve to a schema key.
+                        ProfileDefinition canonicalDefinition = ProfileExtensionCanonicalizer.Canonicalize(
+                            parseResult.Definition,
+                            effectiveApiSchemaProvider
+                        );
+
+                        profilesByName[canonicalDefinition.ProfileName] = canonicalDefinition;
+                        nameById[profileResponse.Id] = canonicalDefinition.ProfileName;
                     }
 
                     logger.LogDebug(
