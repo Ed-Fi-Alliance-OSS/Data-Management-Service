@@ -301,5 +301,66 @@ public class UpdateClaimsAsyncIntegrationTests
                 Does.Contain("http://ed-fi.org/identity/claims/ed-fi/customTestChild")
             );
         }
+
+        private static IEnumerable<TestCaseData> FailedReplaceResults()
+        {
+            yield return new TestCaseData(
+                new ClaimsDocumentUpdateResult.DatabaseFailure("Database error occurred"),
+                typeof(ClaimsDataLoadResult.DatabaseFailure)
+            ).SetName("DatabaseFailure");
+            yield return new TestCaseData(
+                new ClaimsDocumentUpdateResult.ValidationFailure(new[] { "invalid claim set" }),
+                typeof(ClaimsDataLoadResult.ValidationFailure)
+            ).SetName("ValidationFailure");
+            yield return new TestCaseData(
+                new ClaimsDocumentUpdateResult.MultiUserConflict(),
+                typeof(ClaimsDataLoadResult.DatabaseFailure)
+            ).SetName("MultiUserConflict");
+        }
+
+        [TestCaseSource(nameof(FailedReplaceResults))]
+        public async Task It_does_not_seed_resource_claim_metadata_when_the_replace_fails(
+            ClaimsDocumentUpdateResult failedReplaceResult,
+            Type expectedResultType
+        )
+        {
+            // Arrange - loader wired with a ResourceClaim metadata repository (the PostgreSQL path).
+            var resourceClaimMetadataRepository = A.Fake<IResourceClaimMetadataRepository>();
+            var loader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+                _claimsProvider,
+                _claimSetRepository,
+                _claimsHierarchyRepository,
+                _claimsTableValidator,
+                _claimsDocumentRepository,
+                _logger,
+                resourceClaimMetadataRepository
+            );
+
+            var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test", "isSystemReserved": false }]""");
+            var hierarchyJson = JsonNode.Parse(
+                """[{ "name": "http://ed-fi.org/identity/claims/domains/customTest", "claims": [] }]"""
+            );
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
+
+            // The claims-document replace fails / rolls back in its own transaction.
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
+                .Returns(failedReplaceResult);
+
+            // Act
+            var result = await loader.UpdateClaimsAsync(claimsNodes);
+
+            // Assert - the failure is surfaced (never reported as Success)...
+            Assert.That(result, Is.TypeOf(expectedResultType));
+
+            // ...and because seeding runs only AFTER a successful replace, ResourceClaim metadata is
+            // never seeded for a document that was not applied - so a failed/rolled-back replace cannot
+            // orphan dmscs.ResourceClaim rows.
+            A.CallTo(() =>
+                    resourceClaimMetadataRepository.SeedResourceClaims(
+                        A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 }
