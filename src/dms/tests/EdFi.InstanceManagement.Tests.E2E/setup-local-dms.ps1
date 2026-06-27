@@ -200,7 +200,22 @@ try {
     Write-Host "`nDeploying DMS schema to main database..." -ForegroundColor Cyan
 
     Import-Module ./env-utility.psm1 -Force
-    $routeContextEnvValues = ReadValuesFromEnvFile "./.env.routeContext.e2e"
+    # Read provisioning settings from the SAME data-standard-resolved env the stack started with, not
+    # the raw base file, so a non-default -DataStandardVersion (e.g. 6.1) is honored here too. With no
+    # -DataStandardVersion this resolves to ./.env.routeContext.e2e unchanged (DS 5.2 default).
+    #
+    # Note the schema the one-shot Installer deploys below is the legacy / relational-disabled
+    # document-store schema, which is identical across data standard versions: the Installer takes only
+    # a connection string and reads no ApiSchema (run.sh downloads the per-version ApiSchema separately,
+    # for the running frontend). So there is no per-version relational DDL to thread into the Installer;
+    # the running stack already serves the correct versioned ApiSchema against these version-independent
+    # databases. Resolving the env here keeps provisioning consistent with startup and robust if a future
+    # overlay adds a value this step reads.
+    $baseRouteContextEnv = (Resolve-Path "./.env.routeContext.e2e").Path
+    $resolvedRouteContextEnvFile = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $baseRouteContextEnv
+    $routeContextEnvValues = ReadValuesFromEnvFile $resolvedRouteContextEnvFile
     $postgresPassword = Get-EnvValue -EnvValues $routeContextEnvValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
     $adminConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=$postgresPassword;database=edfi_datamanagementservice;"
 
