@@ -362,5 +362,57 @@ public class UpdateClaimsAsyncIntegrationTests
                 )
                 .MustNotHaveHappened();
         }
+
+        [Test]
+        public async Task It_returns_DatabaseFailure_when_seeding_fails_after_a_successful_replace()
+        {
+            // Arrange - loader wired with a ResourceClaim metadata repository (the PostgreSQL path).
+            var resourceClaimMetadataRepository = A.Fake<IResourceClaimMetadataRepository>();
+            var loader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+                _claimsProvider,
+                _claimSetRepository,
+                _claimsHierarchyRepository,
+                _claimsTableValidator,
+                _claimsDocumentRepository,
+                _logger,
+                resourceClaimMetadataRepository
+            );
+
+            var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test", "isSystemReserved": false }]""");
+            var hierarchyJson = JsonNode.Parse(
+                """[{ "name": "http://ed-fi.org/identity/claims/domains/customTest", "claims": [] }]"""
+            );
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
+
+            // The claims document applies cleanly...
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
+                .Returns(new ClaimsDocumentUpdateResult.Success(0, 1, true));
+
+            // ...but the post-commit ResourceClaim seed throws.
+            A.CallTo(() =>
+                    resourceClaimMetadataRepository.SeedResourceClaims(
+                        A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                    )
+                )
+                .Throws(new DatabaseOperationException("seed failed"));
+
+            // Act
+            var result = await loader.UpdateClaimsAsync(claimsNodes);
+
+            // Assert - the document was applied, but the loader surfaces the seed failure as
+            // DatabaseFailure (not Success) so the idempotent load can be re-run rather than silently
+            // serving 404-prone claims.
+            Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.DatabaseFailure>());
+
+            // The replace ran (document applied) and seeding was attempted exactly once.
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    resourceClaimMetadataRepository.SeedResourceClaims(
+                        A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
     }
 }
