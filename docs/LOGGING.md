@@ -1,12 +1,11 @@
-# Logging Policy
-
-This section describes the logging policy in the Ed-Fi API source
-code. In general, this policy seeks to balance the goals of providing sufficient
-information for an administrator to understand the health of the system and
-understand user interaction with the system with the equally important goals of
-protecting sensitive data and avoiding excessive log storage size.
+# Logging in the Ed-Fi API
 
 ## Logging Principles
+
+These principles seek to balance the goals of providing sufficient information
+for an administrator to understand the health of the system and understand user
+interaction with the system with the equally important goals of protecting
+sensitive data and avoiding excessive log storage size.
 
 * Use structured logging for integration into log-monitoring applications
   (LogStash, Splunk, CloudWatch, etc.).
@@ -23,7 +22,7 @@ protecting sensitive data and avoiding excessive log storage size.
   debug message, use the utility `IsDebugEnabled` and `IsInfoEnabled` functions
   first before executing that logic.
 
-## Log Levels
+### Log Levels
 
 The DMS applications will utilize the following levels when logging messages.
 These levels help the reader to understand if any remedial action is needed, and
@@ -79,26 +78,26 @@ they allow the administrator to tune the amount of data being logged.
 > _content_. In many cases, this will be sufficient to understand why a request
 > failed.
 
-## Examples
+### Examples
 
 These examples are general guidelines and not 100% exhaustive.
 
-### Fatal
+#### Fatal
 
 * Missing required configuration information
 * Out of memory or disk space
 
-### Error
+#### Error
 
 * Unhandled null reference
 * Database connection / transaction failure after exhausting retry attempts
 
-### Warning
+#### Warning
 
 * A database connection / transaction failure occurred, but was recovered with
   an automatic retry
 
-### Informational
+#### Informational
 
 * Received an HTTP request
   * URL
@@ -116,7 +115,7 @@ These examples are general guidelines and not 100% exhaustive.
 * Process startup and shutdown
 * Database created
 
-### Debug
+#### Debug
 
 * Received an HTTP request → add anonymized payload
   * Replace potentially sensitive string and numeric data with `null` before
@@ -137,3 +136,83 @@ These examples are general guidelines and not 100% exhaustive.
 * About to connect to a service or run through an interesting algorithm
 * Received information back from a service
   * Metadata only
+
+## Logging Configuration
+
+### Framework
+
+DMS uses **Serilog 4.x** as its logging framework. The frontend startup code
+creates a Serilog logger from `appsettings.json`, clears the default
+`Microsoft.Extensions.Logging` providers, and adds Serilog back into the host
+logging pipeline. Configuration is driven by `Serilog.Settings.Configuration`.
+
+### Default Sinks
+
+Two sinks are active by default:
+
+| Sink        | Details                                    |
+| ----------- | ------------------------------------------ |
+| **File**    | `./logs/.log`, rolls daily. Template: `{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{NewLine}{Exception}` |
+| **Console** | Template: `{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3} {Message:lj}{Exception}{NewLine}` |
+
+> [!WARNING]
+> Only the two built-in sinks (Console, File) are available. Adding
+> Elasticsearch, Seq, Splunk, Datadog, etc. requires recompiling with the
+> appropriate NuGet packages.
+>
+> Design document [Runtime Serilog Sink Plugin
+> Loading](../reference/design/serilog-plugin-loading.md) describes a proposal
+> for avoiding recompile.
+
+### Key Configuration Settings
+
+| Key                                 | Default                                       | Purpose                                   |
+| ----------------------------------- | --------------------------------------------- | ----------------------------------------- |
+| `Serilog:MinimumLevel:Default`      | `Information`                                 | Global log level                          |
+| `Serilog:WriteTo`                   | File + Console                                | Sink list                                 |
+| `Serilog:Using`                     | `[Serilog.Sinks.File, Serilog.Sinks.Console]` | Assembly references for sinks             |
+| `AppSettings:MaskRequestBodyInLogs` | `true`                                        | Mask request body values at `DEBUG` level |
+| `AppSettings:CorrelationIdHeader`   | `""`                                         | Optional header name used to override the request trace ID |
+
+> [!NOTE]
+> `Enrich.FromLogContext()` is added in code when the Serilog logger is built;
+> there is no default `Serilog:Enrich` entry in the shipped appsettings.
+
+### Overriding Configuration at Runtime
+
+All Serilog settings can be overridden without recompiling, in ascending order
+of precedence:
+
+1. `appsettings.json` (base configuration)
+2. `appsettings.{Environment}.json` (e.g., `appsettings.Production.json`)
+3. Environment variables (double-underscore as path separator)
+4. Command-line arguments
+
+**Example — `appsettings.Production.json`:**
+
+```json
+{
+  "Serilog": {
+    "MinimumLevel": { "Default": "Debug" },
+    "WriteTo": [
+      { "Name": "Console" }
+    ]
+  },
+  "AppSettings": {
+    "MaskRequestBodyInLogs": false
+  }
+}
+```
+
+**Example — environment variables:**
+
+```bash
+Serilog__MinimumLevel__Default=Debug
+Serilog__WriteTo__0__Args__path=/var/log/dms/app.log
+AppSettings__MaskRequestBodyInLogs=false
+```
+
+> [!NOTE]
+> Configuration reload on file change is disabled to work around a .NET
+> file-watcher issue on Linux. A process restart is required to pick up
+> configuration changes.
