@@ -1003,9 +1003,14 @@ function Build-Template {
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
-        # DS 6.1 interleaves educator-prep records into core sample files, so a few kept records
-        # reference educator-prep entities that this filtered load intentionally excludes. Tolerate
-        # those unresolved-reference 409s (only); any other failure still fails the build.
+        # New-EducatorPreparationFilteredSampleDirectory only returns a different directory when it
+        # actually excluded educator-prep files, which happens for DS 6.1 and never for DS 5.2 (which
+        # has none). Only that filtered DS 6.1 load can leave a few kept records pointing at excluded
+        # educator-prep entities (unresolved-reference 409s), so tolerate those ONLY then. DS 5.2 (and
+        # any version with nothing filtered) stays strict, so its release validation is not weakened:
+        # any non-zero BulkLoad exit fails the build.
+        $educatorPrepFiltered = $populatedSampleDataDirectory -ne $PopulatedSampleDataDirectory
+
         Invoke-BulkLoad -BaseUrl $DmsUrl `
             -Key $sandboxApp.Key `
             -Secret $sandboxApp.Secret `
@@ -1014,7 +1019,7 @@ function Build-Template {
             -BulkLoadClientPaths $bulkLoadClientPaths `
             -ForceReloadData `
             -ForceReloadMetadata `
-            -AllowUnresolvedReferences
+            -AllowUnresolvedReferences:$educatorPrepFiltered
     }
 
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
