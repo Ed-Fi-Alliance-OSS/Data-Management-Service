@@ -272,27 +272,23 @@ function Invoke-BulkLoad {
         # assessments for educator-prep students defined in the excluded Candidate.xml). Those few
         # stragglers fail with HTTP 409 unresolved-reference because the entity they point at was
         # excluded. With -AllowUnresolvedReferences, tolerate ONLY that case (and only a small,
-        # capped number) so any real failure — 403/500/validation/etc. — still fails the build.
-        $tolerated = $false
-        if ($AllowUnresolvedReferences) {
-            $failureLines = @(
-                Select-String -Path $bulkLoadLog -Pattern ' - (4\d\d|5\d\d) - \{' |
-                    Select-Object -ExpandProperty Line
-            )
-            $fatalFailures = @($failureLines | Where-Object { $_ -notmatch 'unresolved-reference' })
-            $unresolvedReferenceCount = @($failureLines | Where-Object { $_ -match 'unresolved-reference' }).Count
+        # capped number) so any real failure - 403/500/validation/etc. - still fails the build.
+        #
+        # Stream the (possibly very large) log for HTTP 4xx/5xx failure lines only, then classify them
+        # via Get-BulkLoadFailureClassification (which is unit-tested in isolation).
+        $failureLines = @(
+            Select-String -Path $bulkLoadLog -Pattern ' - (4\d\d|5\d\d) - \{' |
+                Select-Object -ExpandProperty Line
+        )
+        $classification = Get-BulkLoadFailureClassification `
+            -FailureLines $failureLines `
+            -AllowUnresolvedReferences:$AllowUnresolvedReferences `
+            -MaxToleratedUnresolvedReferences $MaxToleratedUnresolvedReferences
 
-            if (
-                $fatalFailures.Count -eq 0 -and
-                $unresolvedReferenceCount -gt 0 -and
-                $unresolvedReferenceCount -le $MaxToleratedUnresolvedReferences
-            ) {
-                Write-Warning "BulkLoad reported $unresolvedReferenceCount unresolved-reference (409) failures and no other errors. These are the expected stragglers from records that reference excluded educator-preparation data; treating the load as successful."
-                $tolerated = $true
-            }
+        if ($classification.Tolerated) {
+            Write-Warning "BulkLoad reported $($classification.UnresolvedReferenceCount) unresolved-reference (409) failures and no other errors (cap $MaxToleratedUnresolvedReferences). These are the expected stragglers from records that reference excluded educator-preparation data; treating the load as successful."
         }
-
-        if (-not $tolerated) {
+        else {
             Write-Error "BulkLoad failed with exit code $bulkLoadExitCode"
             exit $bulkLoadExitCode
         }
@@ -301,6 +297,59 @@ function Invoke-BulkLoad {
     Write-Host
     Write-Host "BulkLoad executed successfully" -ForegroundColor Green -NoNewline
     Write-Host
+}
+
+<#
+.SYNOPSIS
+    Classifies a failed BulkLoad's HTTP 4xx/5xx failure lines to decide whether the non-zero exit is
+    tolerable (treated as success).
+
+.DESCRIPTION
+    A non-zero BulkLoad exit is tolerable ONLY when ALL of the following hold:
+      * -AllowUnresolvedReferences was requested (the populated DS 6.1 filtered-load case); and
+      * every parsed failure line is an HTTP 409 unresolved-reference (no other 4xx/5xx failure); and
+      * the unresolved-reference count is greater than zero and within MaxToleratedUnresolvedReferences.
+    Any fatal (non-unresolved-reference) failure, zero unresolved references, an over-threshold count,
+    or -AllowUnresolvedReferences being absent (e.g. DS 5.2 release validation) makes the load NOT
+    tolerable, so the build fails. Extracted from Invoke-BulkLoad so the decision is unit-testable.
+
+.PARAMETER FailureLines
+    The HTTP 4xx/5xx failure lines already parsed from the BulkLoad log (Invoke-BulkLoad streams the log
+    with Select-String so the full, possibly very large, log is never loaded into memory here).
+
+.PARAMETER AllowUnresolvedReferences
+    Opts into tolerating unresolved-reference-only failures. Absent => strict (nothing is tolerated).
+
+.PARAMETER MaxToleratedUnresolvedReferences
+    Inclusive upper bound on tolerated unresolved-reference failures (default 50). A larger count signals
+    an over-broad exclusion and is not tolerated.
+#>
+function Get-BulkLoadFailureClassification {
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$FailureLines,
+
+        [switch]$AllowUnresolvedReferences,
+
+        [int]$MaxToleratedUnresolvedReferences = 50
+    )
+
+    $fatalFailures = @($FailureLines | Where-Object { $_ -notmatch 'unresolved-reference' })
+    $unresolvedReferenceCount = @($FailureLines | Where-Object { $_ -match 'unresolved-reference' }).Count
+
+    $tolerated = (
+        $AllowUnresolvedReferences.IsPresent -and
+        $fatalFailures.Count -eq 0 -and
+        $unresolvedReferenceCount -gt 0 -and
+        $unresolvedReferenceCount -le $MaxToleratedUnresolvedReferences
+    )
+
+    return [pscustomobject]@{
+        Tolerated                = $tolerated
+        UnresolvedReferenceCount = $unresolvedReferenceCount
+        FatalFailureCount        = $fatalFailures.Count
+    }
 }
 
 <#

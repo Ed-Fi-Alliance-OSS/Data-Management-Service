@@ -247,3 +247,90 @@ Describe "New-EducatorPreparationFilteredSampleDirectory" {
         ($kept -join ',') | Should -Be (@('AssessmentMetadata-EdPrep.xml', 'Student.xml', 'StudentAssessmentSample.xml') -join ',')
     }
 }
+
+Describe "Get-BulkLoadFailureClassification" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+
+        # Synthetic BulkLoad failure lines in the shape the loader emits (' - <code> - {'). Only the
+        # presence/absence of the 'unresolved-reference' marker matters to the classifier; the caller
+        # pre-filters the log to 4xx/5xx lines before passing them in.
+        function script:New-UnresolvedReferenceLine {
+            param([int]$Id = 1)
+            " - 409 - {detail: unresolved-reference; missing dependency $Id}"
+        }
+        function script:New-FatalFailureLine {
+            param([int]$Code = 403)
+            " - $Code - {detail: fatal failure (access-denied / server error)}"
+        }
+
+        # The classifier is not exported, so reach it via InModuleScope (matching the other helpers here).
+        function script:Invoke-Classification {
+            param([string[]]$FailureLines = @(), [switch]$AllowUnresolvedReferences, [int]$Max = 50)
+            InModuleScope Template-Management -Parameters @{
+                lines = [string[]]$FailureLines
+                allow = [bool]$AllowUnresolvedReferences
+                max   = $Max
+            } {
+                param($lines, $allow, $max)
+                Get-BulkLoadFailureClassification -FailureLines ([string[]]$lines) -AllowUnresolvedReferences:$allow -MaxToleratedUnresolvedReferences $max
+            }
+        }
+    }
+
+    It "tolerates unresolved-reference-only failures within the cap" {
+        $lines = @((New-UnresolvedReferenceLine 1), (New-UnresolvedReferenceLine 2), (New-UnresolvedReferenceLine 3))
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeTrue
+        $result.UnresolvedReferenceCount | Should -Be 3
+        $result.FatalFailureCount | Should -Be 0
+    }
+
+    It "tolerates exactly at the cap boundary" {
+        $lines = @(1..4 | ForEach-Object { New-UnresolvedReferenceLine $_ })
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 4
+        $result.Tolerated | Should -BeTrue
+        $result.UnresolvedReferenceCount | Should -Be 4
+    }
+
+    It "does NOT tolerate when any fatal (non-unresolved-reference) failure is present" {
+        $lines = @((New-UnresolvedReferenceLine 1), (New-UnresolvedReferenceLine 2), (New-FatalFailureLine 403))
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeFalse
+        $result.FatalFailureCount | Should -Be 1
+    }
+
+    It "does NOT tolerate a fatal 5xx failure" {
+        $lines = @((New-FatalFailureLine 500))
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeFalse
+        $result.FatalFailureCount | Should -Be 1
+    }
+
+    It "does NOT tolerate unresolved references over the cap" {
+        $lines = @(1..5 | ForEach-Object { New-UnresolvedReferenceLine $_ })
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 4
+        $result.Tolerated | Should -BeFalse
+        $result.UnresolvedReferenceCount | Should -Be 5
+    }
+
+    It "does NOT tolerate when there are no parsed failures" {
+        $result = Invoke-Classification -FailureLines @() -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeFalse
+        $result.UnresolvedReferenceCount | Should -Be 0
+    }
+
+    It "stays strict (DS 5.2) when -AllowUnresolvedReferences is not set" {
+        # Even an all-unresolved-reference set must fail when tolerance was not opted into.
+        $lines = @((New-UnresolvedReferenceLine 1), (New-UnresolvedReferenceLine 2))
+        $result = Invoke-Classification -FailureLines $lines -Max 50
+        $result.Tolerated | Should -BeFalse
+    }
+}
