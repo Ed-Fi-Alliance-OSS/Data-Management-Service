@@ -335,8 +335,16 @@ function Get-BulkLoadFailureClassification {
         [int]$MaxToleratedUnresolvedReferences = 50
     )
 
-    $fatalFailures = @($FailureLines | Where-Object { $_ -notmatch 'unresolved-reference' })
-    $unresolvedReferenceCount = @($FailureLines | Where-Object { $_ -match 'unresolved-reference' }).Count
+    # A failure is tolerable ONLY when it is an HTTP 409 unresolved-reference. Everything else is fatal:
+    # a non-409 line (even one that happens to contain "unresolved-reference", e.g. a 500), a 409 without
+    # the marker (e.g. a duplicate-key conflict), or any other 4xx/5xx. The caller pre-filters FailureLines
+    # to ' - <code> - {' lines, so matching ' - 409 - {' here pins the HTTP status to 409.
+    $fatalFailures = @($FailureLines | Where-Object {
+            -not ($_ -match ' - 409 - \{' -and $_ -match 'unresolved-reference')
+        })
+    $unresolvedReferenceCount = @($FailureLines | Where-Object {
+            $_ -match ' - 409 - \{' -and $_ -match 'unresolved-reference'
+        }).Count
 
     $tolerated = (
         $AllowUnresolvedReferences.IsPresent -and

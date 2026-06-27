@@ -333,4 +333,22 @@ Describe "Get-BulkLoadFailureClassification" {
         $result = Invoke-Classification -FailureLines $lines -Max 50
         $result.Tolerated | Should -BeFalse
     }
+
+    It "does NOT tolerate a non-409 line even when it contains 'unresolved-reference'" {
+        # Only HTTP 409 unresolved-reference is tolerable; a 500 that merely mentions the marker is fatal.
+        $lines = @(" - 500 - {detail: unresolved-reference surfaced during a server error}")
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeFalse
+        $result.FatalFailureCount | Should -Be 1
+        $result.UnresolvedReferenceCount | Should -Be 0
+    }
+
+    It "does NOT tolerate a 409 that is not an unresolved-reference" {
+        # A 409 without the unresolved-reference marker (e.g. a duplicate-key conflict) is fatal.
+        $lines = @(" - 409 - {detail: identity conflict (duplicate key)}")
+        $result = Invoke-Classification -FailureLines $lines -AllowUnresolvedReferences -Max 50
+        $result.Tolerated | Should -BeFalse
+        $result.FatalFailureCount | Should -Be 1
+        $result.UnresolvedReferenceCount | Should -Be 0
+    }
 }
