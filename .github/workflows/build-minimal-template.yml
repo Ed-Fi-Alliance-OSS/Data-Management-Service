@@ -371,7 +371,7 @@ jobs:
 
       - name: Push Minimal Template Package to Azure
         run: |
-          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+          $artifact = (Get-ChildItem -Name -Include *.nupkg)
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
             NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
