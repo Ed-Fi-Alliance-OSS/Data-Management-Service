@@ -1278,7 +1278,13 @@ function InstanceE2ETests {
         $SkipDockerBuild,
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        # Optional Ed-Fi Data Standard version forwarded to the instance setup script so the
+        # route-context stack AND its database provisioning run on the requested version (e.g. 6.1).
+        # Empty (the default) leaves the DS 5.2 behavior unchanged.
+        [string]
+        $DataStandardVersion
     )
 
     # Instance management tests require the DMS environment to be started with route qualifiers
@@ -1291,10 +1297,10 @@ function InstanceE2ETests {
         Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
         Invoke-Execute {
             if ($SkipDockerBuild) {
-                & $instanceSetupScript -SkipDockerBuild
+                & $instanceSetupScript -SkipDockerBuild -DataStandardVersion $DataStandardVersion
             }
             else {
-                & $instanceSetupScript
+                & $instanceSetupScript -DataStandardVersion $DataStandardVersion
             }
         }
     }
@@ -1499,7 +1505,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
-        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter } }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter -DataStandardVersion $DataStandardVersion } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
