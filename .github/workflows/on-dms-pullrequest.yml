@@ -17,6 +17,10 @@ on:
       - "src/Directory.Packages.props"
       - "src/nuget.config"
       - "src/dms/**"
+      # The DMS E2E lanes (incl. the DS 6.1 version-coupled lane) bring up the Config Service built from
+      # src/config, so config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim seeding)
+      # must still trigger this workflow's DMS + DS 6.1 validation.
+      - "src/config/**"
 
   pull_request:
     branches:
@@ -28,6 +32,10 @@ on:
       - "src/Directory.Packages.props"
       - "src/nuget.config"
       - "src/dms/**"
+      # The DMS E2E lanes (incl. the DS 6.1 version-coupled lane) bring up the Config Service built from
+      # src/config, so config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim seeding)
+      # must still trigger this workflow's DMS + DS 6.1 validation.
+      - "src/config/**"
 
   workflow_dispatch:
 
