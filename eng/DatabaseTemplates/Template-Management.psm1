@@ -1034,6 +1034,14 @@ function Build-Template {
         # data set (ProfessionalDevelopment/Candidate/PerformanceEvaluation/etc.) while keeping the
         # AssessmentMetadata-EdPrep assessments that core StudentAssessment sample data references.
         # No-op for sample data with no educator-prep files (DS 5.2). See Get-EducatorPreparationSampleFileName.
+        #
+        # Decide whether educator-prep filtering applies from the excluded-file set directly (and BEFORE
+        # filtering), using the unit-tested Get-EducatorPreparationSampleFileName helper. Do NOT derive this
+        # by comparing the filtered directory to the $PopulatedSampleDataDirectory parameter: PowerShell
+        # variable names are case-insensitive, so $populatedSampleDataDirectory and $PopulatedSampleDataDirectory
+        # are the SAME variable and would always compare equal (the filtered result is assigned back into the
+        # parameter), which would silently disable tolerance for the DS 6.1 load.
+        $educatorPrepFiltered = @(Get-EducatorPreparationSampleFileName -SourceDirectory $PopulatedSampleDataDirectory).Count -gt 0
         $populatedSampleDataDirectory = New-EducatorPreparationFilteredSampleDirectory -SourceDirectory $PopulatedSampleDataDirectory
 
         # The sandbox authorizes most resources by relationship to its claimed education organizations
@@ -1060,14 +1068,10 @@ function Build-Template {
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
-        # New-EducatorPreparationFilteredSampleDirectory only returns a different directory when it
-        # actually excluded educator-prep files, which happens for DS 6.1 and never for DS 5.2 (which
-        # has none). Only that filtered DS 6.1 load can leave a few kept records pointing at excluded
-        # educator-prep entities (unresolved-reference 409s), so tolerate those ONLY then. DS 5.2 (and
-        # any version with nothing filtered) stays strict, so its release validation is not weakened:
-        # any non-zero BulkLoad exit fails the build.
-        $educatorPrepFiltered = $populatedSampleDataDirectory -ne $PopulatedSampleDataDirectory
-
+        # Only the filtered DS 6.1 load (educator-prep excluded; $educatorPrepFiltered computed above) can
+        # leave a few kept records pointing at excluded educator-prep entities (unresolved-reference 409s),
+        # so tolerate those ONLY then. DS 5.2 (and any version with nothing filtered) stays strict, so its
+        # release validation is not weakened: any non-zero BulkLoad exit fails the build.
         Invoke-BulkLoad -BaseUrl $DmsUrl `
             -Key $sandboxApp.Key `
             -Secret $sandboxApp.Secret `
