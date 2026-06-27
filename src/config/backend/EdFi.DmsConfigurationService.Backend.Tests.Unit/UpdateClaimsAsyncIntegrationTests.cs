@@ -316,6 +316,10 @@ public class UpdateClaimsAsyncIntegrationTests
                 new ClaimsDocumentUpdateResult.MultiUserConflict(),
                 typeof(ClaimsDataLoadResult.DatabaseFailure)
             ).SetName("MultiUserConflict");
+            yield return new TestCaseData(
+                new ClaimsDocumentUpdateResult.UnexpectedFailure("unexpected error"),
+                typeof(ClaimsDataLoadResult.UnexpectedFailure)
+            ).SetName("UnexpectedFailure");
         }
 
         [TestCaseSource(nameof(FailedReplaceResults))]
