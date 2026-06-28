@@ -27,7 +27,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var result = await RunBuildDmsE2ETest(
             """
             USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
             """,
             "Category!=@relational-backend"
         );
@@ -73,7 +73,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var result = await RunBuildDmsE2ETest(
             """
             USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
             """
         );
 
@@ -94,7 +94,7 @@ public class Given_Build_Dms_E2E_Guardrails
 
         result.ExitCode.Should().NotBe(0);
         result.Output.Should().Contain("Relational E2E environment");
-        result.Output.Should().Contain("RELATIONAL_E2E_DATABASE_NAME");
+        result.Output.Should().Contain("E2E_DATABASE_NAME");
     }
 
     [Test]
@@ -103,7 +103,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var result = await RunBuildDmsE2ETest(
             """
             USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
             """,
             "Category=@relational-backend|FullyQualifiedName~LegacySuite"
         );
@@ -134,7 +134,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var provisioningFunctionContents = ExtractFunctionBody("Invoke-RelationalE2EDatabaseProvisioning");
         var initializeFunctionContents = ExtractFunctionBody("Initialize-RelationalE2EDatabase");
 
-        provisioningFunctionContents.Should().Contain("./provision-relational-e2e-database.ps1");
+        provisioningFunctionContents.Should().Contain("./provision-e2e-database.ps1");
         initializeFunctionContents
             .Should()
             .Contain("Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
@@ -150,7 +150,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var result = await RunBuildDmsE2ETest(
             """
             USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
             """,
             "Category=@relational-backend&Category=@relational-ci-shard-2"
         );

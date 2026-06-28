@@ -72,3 +72,10 @@
 - Decision: did not run BuildAndPublish because SetDMSAssemblyInfo rewrites Directory.Build.props; used parser check plus publish-path inspection, then ran build-dms.ps1 Build Release for script/solution feedback.
 - Files changed: build-dms.ps1, tasks.json, progress.txt.
 - Verification: required rg over build-dms.ps1 returned no matches; PowerShell parser check passed; inspected Invoke-Publish; pwsh ./build-dms.ps1 Build -Configuration Release passed with known Reqnroll missing feature warning only.
+
+2026-06-28 - completed E2E Provisioning: neutral E2E database helper / remove-legacy-backend.md Phase 4.2
+- Renamed provision-relational-e2e-database.ps1 to provision-e2e-database.ps1; helper now reads E2E_DATABASE_NAME and supports explicit -DatabaseName for route-context databases.
+- Kept env-file names and build-dms relational lane function names for later dedicated tasks; updated direct build, workflow, docs, RestClient, env key, and unit-test references.
+- Files changed: provision-e2e-database.ps1, build-dms.ps1, .env*.relational keys, template workflows, DMS unit guardrails, docs/README/AGENTS/RestClient, tasks.json.
+- Verification: no old helper/key refs by rg; PowerShell parser checks passed; csharpier on changed C#; SchemaPackageUtility Pester passed; DMS Tests.Unit Release passed 40.
+- Notes: full Docker E2E setup not run in this loop.

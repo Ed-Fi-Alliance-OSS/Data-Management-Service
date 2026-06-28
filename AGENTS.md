@@ -45,7 +45,7 @@ The `relational-backend` test category only selects tests; it does not configure
 For relational-backend E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path instead of manually running `setup-local-dms.ps1` followed by `dotnet test`.
 
 The build script performs required relational-only setup that direct local setup does not:
-- Provisions `RELATIONAL_E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
+- Provisions `E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
 - Sets `AppSettings__DmsInstanceDatabaseName` for the E2E test process.
 - Restarts DMS after relational database reprovisioning to clear cached database state.
 

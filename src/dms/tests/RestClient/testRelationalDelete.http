@@ -64,7 +64,7 @@ Authorization: bearer {{configToken}}
 
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
 # The connection string MUST target the dedicated relational database provisioned by
-# provision-relational-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
+# provision-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
 # @name createDataStore
 POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json

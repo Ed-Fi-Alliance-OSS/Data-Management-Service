@@ -185,7 +185,7 @@
       "Run Pester tests under `eng/docker-compose/tests` that cover provisioning scripts.",
       "Run a DMS E2E setup path through `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when local Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docker Compose",

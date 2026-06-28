@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Unit;
 
 [TestFixture]
-public partial class Given_Relational_Provisioning_Helper
+public partial class Given_E2E_Provisioning_Helper
 {
     private string _scriptContents = null!;
 
@@ -22,7 +22,7 @@ public partial class Given_Relational_Provisioning_Helper
             repositoryRoot.FullName,
             "eng",
             "docker-compose",
-            "provision-relational-e2e-database.ps1"
+            "provision-e2e-database.ps1"
         );
 
         _scriptContents = File.ReadAllText(scriptPath);
@@ -42,14 +42,29 @@ public partial class Given_Relational_Provisioning_Helper
     }
 
     [Test]
-    public async Task It_fails_fast_when_the_relational_database_matches_the_bootstrap_database_name()
+    public async Task It_fails_fast_when_the_e2e_database_name_is_missing()
     {
         var result = await RunProvisioningHelper(
             """
             POSTGRES_PORT=5435
             POSTGRES_PASSWORD=abcdefgh1!
             POSTGRES_DB_NAME=edfi_datamanagementservice
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice
+            """
+        );
+
+        result.ExitCode.Should().NotBe(0);
+        result.NormalizedOutput.Should().Contain("Required environment value 'E2E_DATABASE_NAME'");
+    }
+
+    [Test]
+    public async Task It_fails_fast_when_the_e2e_database_matches_the_bootstrap_database_name()
+    {
+        var result = await RunProvisioningHelper(
+            """
+            POSTGRES_PORT=5435
+            POSTGRES_PASSWORD=abcdefgh1!
+            POSTGRES_DB_NAME=edfi_datamanagementservice
+            E2E_DATABASE_NAME=edfi_datamanagementservice
             """
         );
 
@@ -59,14 +74,32 @@ public partial class Given_Relational_Provisioning_Helper
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_bootstrap_connection_string_targets_the_relational_database()
+    public async Task It_accepts_an_explicit_database_name_without_the_environment_key()
+    {
+        var result = await RunProvisioningHelper(
+            """
+            POSTGRES_PORT=5435
+            POSTGRES_PASSWORD=abcdefgh1!
+            POSTGRES_DB_NAME=route_context_one
+            """,
+            "route_context_one"
+        );
+
+        result.ExitCode.Should().NotBe(0);
+        result.NormalizedOutput.Should().Contain("E2E database 'route_context_one'");
+        result.NormalizedOutput.Should().Contain("must be dedicated");
+        result.NormalizedOutput.Should().NotContain("Required environment value 'E2E_DATABASE_NAME'");
+    }
+
+    [Test]
+    public async Task It_fails_fast_when_a_bootstrap_connection_string_targets_the_e2e_database()
     {
         var result = await RunProvisioningHelper(
             """
             POSTGRES_PORT=5435
             POSTGRES_PASSWORD=abcdefgh1!
             POSTGRES_DB_NAME=edfi_datamanagementservice
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
+            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
             DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_relational;NoResetOnClose=true;
             """
         );
@@ -76,14 +109,14 @@ public partial class Given_Relational_Provisioning_Helper
     }
 
     [Test]
-    public async Task It_fails_fast_when_the_relational_database_targets_a_system_database()
+    public async Task It_fails_fast_when_the_e2e_database_targets_a_system_database()
     {
         var result = await RunProvisioningHelper(
             """
             POSTGRES_PORT=5435
             POSTGRES_PASSWORD=abcdefgh1!
             POSTGRES_DB_NAME=edfi_datamanagementservice
-            RELATIONAL_E2E_DATABASE_NAME=postgres
+            E2E_DATABASE_NAME=postgres
             """
         );
 
@@ -92,18 +125,21 @@ public partial class Given_Relational_Provisioning_Helper
         result.NormalizedOutput.Should().Contain("postgres");
     }
 
-    private async Task<ScriptResult> RunProvisioningHelper(string environmentFileContents)
+    private async Task<ScriptResult> RunProvisioningHelper(
+        string environmentFileContents,
+        string? databaseName = null
+    )
     {
         var repositoryRoot = FindRepositoryRoot();
         var scriptPath = Path.Combine(
             repositoryRoot.FullName,
             "eng",
             "docker-compose",
-            "provision-relational-e2e-database.ps1"
+            "provision-e2e-database.ps1"
         );
         var environmentFilePath = Path.Combine(
             Path.GetTempPath(),
-            $"relational-provisioning-helper-{Guid.NewGuid():N}.env"
+            $"e2e-provisioning-helper-{Guid.NewGuid():N}.env"
         );
 
         await File.WriteAllTextAsync(environmentFilePath, environmentFileContents);
@@ -128,9 +164,12 @@ public partial class Given_Relational_Provisioning_Helper
             // -Command prelude: stop on errors, set PlainText rendering, and use NormalView for
             // errors so ConciseView's pipe-prefix line wrapping does not break substring assertions.
             startInfo.ArgumentList.Add("-Command");
+            var databaseNameArgument = databaseName is null
+                ? string.Empty
+                : $" -DatabaseName '{databaseName}'";
             startInfo.ArgumentList.Add(
                 $"$ErrorActionPreference='Stop'; $PSStyle.OutputRendering='PlainText'; $ErrorView='NormalView'; "
-                    + $"& '{scriptPath}' -EnvironmentFile '{environmentFilePath}' -Configuration Release"
+                    + $"& '{scriptPath}' -EnvironmentFile '{environmentFilePath}' -Configuration Release{databaseNameArgument}"
             );
 
             using var process = Process.Start(startInfo);
