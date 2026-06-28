@@ -276,7 +276,7 @@ exit $ExitCode
 
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
-                $params | Should -Contain "SkipConnectorSetup"
+                $params | Should -Not -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
@@ -2305,7 +2305,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
     }
 
     Context "connector setup" {
-        It "start-all-services.ps1 does not register the connector before the DMS schema exists" {
+        It "start-all-services.ps1 starts PostgreSQL without legacy connector setup guidance" {
             $scriptPath = Join-Path $script:sourceDockerComposeRoot "start-all-services.ps1"
 
             $tokens = $null
@@ -2323,16 +2323,13 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*setup-connectors.ps1" })
             $connectorInvocations | Should -BeNullOrEmpty
 
-            # The deferral guidance must still tell the developer how to register it afterward.
             $sourceText = Get-Content -LiteralPath $scriptPath -Raw
-            $sourceText | Should -Match 'deferred'
-            $sourceText | Should -Match 'setup-connectors\.ps1'
+            $sourceText | Should -Not -Match 'setup-connectors\.ps1'
+            $sourceText | Should -Not -Match 'kafka\.yml'
+            $sourceText | Should -Not -Match 'dms\.document'
 
-            # Removing the connector call removed the only command that previously surfaced a Docker
-            # startup failure, so the up path must check $LASTEXITCODE and throw instead of printing
-            # success guidance over a failed `docker compose up`.
             $sourceText | Should -Match '\$LASTEXITCODE -ne 0'
-            $sourceText | Should -Match 'Failed to start PostgreSQL and Kafka services'
+            $sourceText | Should -Match 'Failed to start PostgreSQL service'
         }
 
         It "builds connector JSON with a structurally escaped password" {
@@ -2401,16 +2398,12 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $content | Should -Match 'psql -v ON_ERROR_STOP=1'
         }
 
-        It "skips the default connector until per-instance databases and connectors are ready" {
+        It "does not pass the removed connector skip flag to start-local-dms.ps1" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            # Instance Management E2E creates the per-instance schemas later in this setup script.
-            # The default connector targets the main database's to_debezium publication, so
-            # start-local-dms.ps1 must not register it before this harness has provisioned the
-            # databases and the tests create instance-specific connectors.
             $content | Should -Match 'start-local-dms\.ps1'
-            $content | Should -Match 'SkipConnectorSetup'
+            $content | Should -Not -Match 'SkipConnectorSetup'
         }
     }
 }

@@ -79,3 +79,11 @@
 - Files changed: provision-e2e-database.ps1, build-dms.ps1, .env*.relational keys, template workflows, DMS unit guardrails, docs/README/AGENTS/RestClient, tasks.json.
 - Verification: no old helper/key refs by rg; PowerShell parser checks passed; csharpier on changed C#; SchemaPackageUtility Pester passed; DMS Tests.Unit Release passed 40.
 - Notes: full Docker E2E setup not run in this loop.
+
+2026-06-28 - completed Docker Compose: remove start-script legacy setup assumptions / remove-legacy-backend.md Phase 4.7
+- Removed automatic legacy Debezium connector registration/skip plumbing from start-local-dms.ps1 and start-published-dms.ps1; deleted -SkipConnectorSetup from start scripts and InstanceManagement caller.
+- start-all-services.ps1 now starts PostgreSQL only and no longer prints legacy connector deferral guidance.
+- Updated docker-compose Pester guardrails to assert no automatic setup-connectors path or SkipConnectorSetup contract.
+- Files changed: docker-compose start scripts, docker-compose Pester tests, InstanceManagement setup-local-dms.ps1, tasks.json.
+- Verification: task rg shows only hidden env-file USE_RELATIONAL_BACKEND refs for later env task plus valid provision-dms-schema phase guidance; PowerShell parser checks passed; BootstrapSchemaDeploymentSafety and BootstrapSchemaAndSecuritySelection Pester passed 154.
+- Notes: full compose startup not run; Docker available, but startup depends on local image/runtime state and would mutate the developer stack.
