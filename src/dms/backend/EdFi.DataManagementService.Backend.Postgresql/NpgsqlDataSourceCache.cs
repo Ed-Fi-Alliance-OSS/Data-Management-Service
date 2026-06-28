@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Old.Postgresql;
+namespace EdFi.DataManagementService.Backend.Postgresql;
 
 /// <summary>
 /// Singleton cache for NpgsqlDataSource instances keyed by connection string.

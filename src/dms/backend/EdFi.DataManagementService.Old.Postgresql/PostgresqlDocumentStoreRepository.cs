@@ -6,6 +6,7 @@
 using System.Data;
 using System.Diagnostics;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Old.Postgresql.Operation;

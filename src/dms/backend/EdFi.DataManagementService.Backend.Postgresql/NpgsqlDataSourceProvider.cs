@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Old.Postgresql;
+namespace EdFi.DataManagementService.Backend.Postgresql;
 
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request

@@ -28,7 +28,7 @@
       "Run: `rg -n \"using EdFi\\\\.DataManagementService\\\\.Old\\\\.Postgresql|Old\\\\.Postgresql\" src/dms/backend src/dms/frontend src/dms/tests` and confirm no active imports remain for the moved infrastructure.",
       "Run: `dotnet build src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/EdFi.DataManagementService.Backend.Postgresql.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Infrastructure",
