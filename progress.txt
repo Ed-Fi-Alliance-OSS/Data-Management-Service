@@ -8,3 +8,10 @@
 - Solution/project targets: src/dms/EdFi.DataManagementService.sln, src/dms/EdFi.DataManagementService-Docker.sln, Backend.Installer csproj, Backend.Postgresql csproj, Backend/Core test project references and InternalsVisibleTo entries.
 - Historical/design notes out of scope: reference/design/** matches exist but are treated as archive/design-note material unless a later task explicitly includes them.
 - Verification: all three task rg commands exited 0. Broad active-reference search is large, mostly E2E feature tags.
+
+2026-06-28 - completed PostgreSQL Infrastructure: move Npgsql data-source cache/provider / remove-legacy-backend.md Phase 2.1
+- Moved NpgsqlDataSourceCache and NpgsqlDataSourceProvider into Backend.Postgresql namespace/project; added Hosting.Abstractions package for IHostApplicationLifetime.
+- Removed Backend.Postgresql project reference to Old.Postgresql. Old.Postgresql temporarily references Backend.Postgresql so legacy project compiles until deletion task.
+- Updated relational PostgreSQL project/tests to import Backend.Postgresql for moved types; remaining Old.Postgresql hits are legacy project/frontend/adapter/deployer work for later tasks.
+- Files changed: Backend.Postgresql provider/cache/csproj and consumers, Backend.Postgresql integration tests, provider/cache unit tests, legacy PostgreSQL compile imports/project refs.
+- Verification: csharpier format; rg NpgsqlDataSource; rg Old.Postgresql inspected; dotnet build Backend.Postgresql Release; dotnet build Old.Postgresql Release; dotnet test Backend.Tests.Unit Release --no-restore --no-build; dotnet build Backend.Postgresql.Tests.Integration Release.

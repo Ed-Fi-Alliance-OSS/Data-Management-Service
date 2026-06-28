@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using System.Threading;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;

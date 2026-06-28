@@ -6,6 +6,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

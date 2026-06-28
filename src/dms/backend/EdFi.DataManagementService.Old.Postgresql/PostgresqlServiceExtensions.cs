@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Old.Postgresql.Operation;
