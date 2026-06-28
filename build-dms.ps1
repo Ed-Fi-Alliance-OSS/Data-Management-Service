@@ -1186,14 +1186,6 @@ function Wait-ForPostgreSQL {
     }
 }
 
-# Setup-InstanceManagementDatabases function removed
-# This is now handled by start-local-dms.ps1 -AddDataStore
-# which creates databases, runs migrations, and sets up Kafka connectors
-
-# Setup-InstanceKafkaConnectors function removed
-# This is now handled by start-local-dms.ps1 -AddDataStore
-# which creates Kafka connectors via setup-data-store-kafka-connectors.ps1
-
 function RunInstanceE2E {
     param (
         [string]
@@ -1253,14 +1245,13 @@ function InstanceE2ETests {
         $DataStandardVersion
     )
 
-    # Instance management tests require the DMS environment to be started with route qualifiers
+    # Instance management tests require route qualifiers and three explicitly provisioned route-context databases.
     Write-Host "Setting up instance management E2E tests..." -ForegroundColor Cyan
 
-    # Start the Docker environment with route qualifiers using the instance management setup script
     $instanceSetupScript = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
 
     if (Test-Path $instanceSetupScript) {
-        Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
+        Write-Host "Starting Docker environment and relational route-context provisioning..." -ForegroundColor Cyan
         Invoke-Execute {
             if ($SkipDockerBuild) {
                 & $instanceSetupScript -SkipDockerBuild -DataStandardVersion $DataStandardVersion
@@ -1274,17 +1265,16 @@ function InstanceE2ETests {
         throw "Instance Management setup script not found at: $instanceSetupScript"
     }
 
-    # Wait for config service to have all clients registered
+    # Wait for config service to have all clients registered.
     Invoke-Step { Wait-ForConfigServiceAndClientRegistration }
 
-    # Restart DMS so it can authenticate with the registered clients
-    Invoke-Step { Restart-DmsContainer }
+    # The setup script provisions route-context databases after DMS starts; restart to clear cached database state.
+    Invoke-Step { Restart-DmsContainer -Reason "clear cached route-context database state after relational provisioning" }
 
     Write-Host "`nInstance E2E setup complete!" -ForegroundColor Green
     Write-Host "Infrastructure was created by setup-local-dms.ps1:" -ForegroundColor Cyan
-    Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
+    Write-Host "  - 3 PostgreSQL route-context databases provisioned with relational DMS schema" -ForegroundColor Gray
 
-    # Run the instance management E2E tests
     Invoke-Step { RunInstanceE2E -TestFilter $TestFilter }
 
     Write-Host "`nTests complete!" -ForegroundColor Green

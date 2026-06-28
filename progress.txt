@@ -112,3 +112,10 @@
 - Set local-dms.yml AppSettings__UseRelationalBackend true so Instance setup starts the current core relational path until later flag-removal task deletes the setting.
 - Files changed: InstanceManagement setup-local-dms.ps1, eng/docker-compose/local-dms.yml, tasks.json, progress.txt.
 - Verification: PowerShell parser passed; task rg shows setup script EffectiveSchema/provision refs and only Debezium dms.document leftovers for later CDC task; teardown + setup built images and provisioned all three DBs; rerun setup -SkipDockerBuild recreated DMS with AppSettings__UseRelationalBackend=true and reprovisioned all route DBs; direct psql confirmed 1 EffectiveSchema row plus School/Student tables in each DB; git diff --check passed.
+
+2026-06-28 - completed Instance Management E2E: build-dms InstanceE2ETest route-context flow / remove-legacy-backend.md Phase 4.8
+- build-dms InstanceE2ETest now describes setup-local-dms.ps1 as relational route-context provisioning, removes stale AddDataStore/Kafka connector comments, and restarts DMS with explicit cache-reset reason after DB reprovisioning.
+- Decision: kept build script delegating to setup-local-dms.ps1; that script owns per-route provision-e2e-database.ps1 calls and verification. No new legacy env var clearing refs added to Instance flow.
+- Files changed: build-dms.ps1, tasks.json, progress.txt.
+- Verification: task rg shows remaining UseRelationalBackend matches only in DMS E2ETest/build-script lane logic for later tasks; PowerShell parser passed; git diff --check passed.
+- E2E: full ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild provisioned all three route DBs and restarted DMS, then failed 6 legacy @kafka document-topic scenarios (41 passed) owned by upcoming Kafka/Debezium deletion task; filtered ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -TestFilter "Category!=kafka" passed 40/40.
