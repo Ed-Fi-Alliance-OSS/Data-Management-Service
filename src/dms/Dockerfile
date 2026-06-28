@@ -22,7 +22,6 @@ COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj backend/EdFi.Data
 COPY backend/EdFi.DataManagementService.Backend.Plans/*.csproj backend/EdFi.DataManagementService.Backend.Plans/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Plans/
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/*.csproj backend/EdFi.DataManagementService.Backend.RelationalModel/packages.lock.json ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Old.Postgresql/*.csproj backend/EdFi.DataManagementService.Old.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj clis/EdFi.DataManagementService.ApiSchemaDownloader/packages.lock.json ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode && \
@@ -38,7 +37,6 @@ COPY backend/EdFi.DataManagementService.Backend.Mssql/ ./backend/EdFi.DataManage
 COPY backend/EdFi.DataManagementService.Backend.Plans/ ./backend/EdFi.DataManagementService.Backend.Plans/
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/ ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Old.Postgresql/ ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 ARG VERSION=""

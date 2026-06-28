@@ -59,3 +59,10 @@
 - Build-loop fix: Old.Postgresql.Tests.Integration OneTimeSetUp now skips after deployer removal instead of referencing deleted Deploy.DatabaseDeploy; old project deletion remains later task.
 - Files changed: src/dms/EdFi.DataManagementService.sln, src/dms/Dockerfile, frontend nuspec, InstanceManagement setup script, old PostgreSQL integration DatabaseTestBase, deleted installer project files, tasks.json.
 - Verification: rg Backend.Installer/EdFi.DataManagementService.Backend.Installer over src/dms returned no matches; dotnet csharpier format DatabaseTestBase.cs; dotnet build src/dms/EdFi.DataManagementService.sln -c Release passed with existing Reqnroll missing feature warning.
+
+2026-06-28 - completed Installer Removal: remove legacy backend installer startup and Docker image plumbing / remove-legacy-backend.md Phase 4.2
+- Removed remaining Old.Postgresql Dockerfile copy steps from DMS image build; run.sh already had no installer invocation.
+- Decision: keep Dockerfile source copies limited to active frontend/core/backend/CLI projects so image build no longer needs deleted or legacy backend source.
+- Files changed: src/dms/Dockerfile, tasks.json.
+- Verification: rg installer/old-project patterns over run.sh/Dockerfile returned no matches; docker buildx build --load DMS image passed; docker run inspection confirmed /app/Installer absent.
+- Notes: first image inspection used unsupported BusyBox find -printf after confirming absence; reran clean ls-based inspection successfully.
