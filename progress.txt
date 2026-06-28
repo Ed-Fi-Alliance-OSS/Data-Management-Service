@@ -119,3 +119,10 @@
 - Files changed: build-dms.ps1, tasks.json, progress.txt.
 - Verification: task rg shows remaining UseRelationalBackend matches only in DMS E2ETest/build-script lane logic for later tasks; PowerShell parser passed; git diff --check passed.
 - E2E: full ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild provisioned all three route DBs and restarted DMS, then failed 6 legacy @kafka document-topic scenarios (41 passed) owned by upcoming Kafka/Debezium deletion task; filtered ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -TestFilter "Category!=kafka" passed 40/40.
+
+2026-06-28 - completed Instance Management E2E: delete Kafka/Debezium legacy document-store helpers / remove-legacy-backend.md Phase 4A
+- Deleted Instance Kafka topic feature/steps/collector/config/helper/message files plus Debezium connector client, replication cleanup, Kafka admin client, infrastructure manager, and DI hook.
+- Decision: no shared non-CDC code remained in those helpers; tenant/instance setup now only creates CMS records and uses pre-provisioned relational route DBs.
+- Removed Kafka collector/infrastructure state from context/cleanup/setup, removed Confluent.Kafka package and Kafka appsettings/test constants, and scrubbed local README/setup text that referenced deleted helper surface.
+- Files changed: InstanceManagement E2E feature/step/hook/infra/management files, csproj, appsettings, README, setup-local-dms.ps1, tasks.json, progress.txt.
+- Verification: task rg returned no matches; csharpier format; PowerShell parser check passed for setup-local-dms.ps1; dotnet build InstanceManagement E2E Release passed; full ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild passed 40/40; git diff --check passed.

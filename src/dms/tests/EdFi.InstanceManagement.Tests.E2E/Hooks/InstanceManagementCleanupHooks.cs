@@ -26,24 +26,6 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
         }
     }
 
-    [AfterScenario("@kafka", Order = 500)]
-    public void CleanupKafkaCollector()
-    {
-        if (context.KafkaCollector != null)
-        {
-            _logger?.LogInformation("Cleaning up Kafka message collector");
-
-            // Log final diagnostics before disposal
-            _logger?.LogInformation(
-                "Final Kafka message count: {MessageCount}",
-                context.KafkaCollector.MessageCount
-            );
-            context.KafkaCollector.LogDiagnostics();
-
-            // Disposal will happen in context.Reset()
-        }
-    }
-
     [AfterScenario("@InstanceCleanup", Order = 1000)]
     public async Task CleanupInstanceResources()
     {
@@ -57,21 +39,6 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
 
         try
         {
-            // Teardown Kafka/Debezium infrastructure for all instances first
-            if (context.InfrastructureManager != null)
-            {
-                _logger?.LogInformation("Tearing down Kafka/Debezium infrastructure");
-                try
-                {
-                    await context.InfrastructureManager.TeardownAllAsync();
-                    _logger?.LogInformation("Infrastructure teardown completed");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Failed to teardown infrastructure");
-                }
-            }
-
             // Clean up per-tenant resources
             foreach (var tenantName in context.TenantNames)
             {
@@ -190,7 +157,11 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogWarning(ex, "Failed to delete legacy instance {DataStoreId}", dataStoreId);
+                        _logger?.LogWarning(
+                            ex,
+                            "Failed to delete legacy instance {DataStoreId}",
+                            dataStoreId
+                        );
                     }
                 }
 

@@ -8,7 +8,7 @@
     Sets up the Ed-Fi DMS local Docker environment for Instance Management E2E testing
 .DESCRIPTION
     This script starts the Docker stack and provisions the 3 route-context test databases.
-    Tenant, instance, and Kafka infrastructure creation is handled by the tests themselves.
+    Tenant and instance creation is handled by the tests themselves.
 
     Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
@@ -159,7 +159,7 @@ try {
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
-    Write-Host "NOTE: Tenant, instance, and Kafka infrastructure will be created by tests" -ForegroundColor Yellow
+    Write-Host "NOTE: Tenant and instance records will be created by tests" -ForegroundColor Yellow
     Write-Host ""
 
     Write-Output "Using file-based schema packages from .env.routeContext.e2e for E2E (non-bootstrap compatibility path)."
@@ -243,8 +243,6 @@ try {
     foreach ($db in $databases) {
         Write-Host "  - $db" -ForegroundColor Gray
     }
-    Write-Host ""
-    Write-Host "Kafka topics and Debezium connectors will be created by tests." -ForegroundColor Yellow
     Write-Host ""
     Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan
 }
