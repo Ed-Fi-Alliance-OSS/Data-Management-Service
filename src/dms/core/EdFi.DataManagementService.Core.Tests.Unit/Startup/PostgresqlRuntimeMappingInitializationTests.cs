@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 using EdFi.DataManagementService.Core;
@@ -16,7 +17,6 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
-using EdFi.DataManagementService.Old.Postgresql;
 using EdFi.DataManagementService.Old.Postgresql.Startup;
 using FakeItEasy;
 using FluentAssertions;
@@ -189,6 +189,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         services.AddSingleton<IResourceKeySeedProvider, ResourceKeySeedProvider>();
         var configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
         services.AddPostgresqlDatastore(configuration);
+        services.AddSingleton<IBackendMappingInitializer, TestRelationalBackendMappingInitializer>();
         services.AddSingleton(dataStoreProvider);
         services.AddSingleton(databaseMetadataReader);
 
@@ -1190,12 +1191,11 @@ public class PostgresqlRuntimeMappingInitializationTests
                     configuration.GetSection("DeadlockRetry"),
                     false
                 )
-                .AddPostgresqlDatastore(configuration)
-                .AddPostgresqlQueryHandler();
+                .AddPostgresqlDatastore(configuration);
         }
 
         [Test]
-        public void It_replaces_the_core_no_op_backend_initializer()
+        public void It_leaves_backend_mapping_initializer_composition_to_the_frontend()
         {
             var initializerDescriptors = _services
                 .Where(descriptor => descriptor.ServiceType == typeof(IBackendMappingInitializer))
@@ -1203,38 +1203,85 @@ public class PostgresqlRuntimeMappingInitializationTests
 
             initializerDescriptors.Should().ContainSingle();
             initializerDescriptors[0]
-                .ImplementationType!.Name.Should()
-                .Be("PostgresqlBackendMappingInitializer");
+                .ImplementationType.Should()
+                .BeAssignableTo<NoOpBackendMappingInitializer>();
         }
 
         [Test]
-        public void It_keeps_the_legacy_postgresql_datastore_and_query_handler_registrations()
+        public void It_registers_only_relational_safe_postgresql_datastore_services()
         {
             _services
                 .Should()
                 .Contain(descriptor =>
-                    descriptor.ServiceType == typeof(IDocumentStoreRepository)
-                    && descriptor.ImplementationType == typeof(PostgresqlDocumentStoreRepository)
-                    && descriptor.Lifetime == ServiceLifetime.Scoped
+                    descriptor.ServiceType == typeof(MappingSetCompiler)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
                 );
 
             _services
                 .Should()
                 .Contain(descriptor =>
-                    descriptor.ServiceType == typeof(IQueryHandler)
-                    && descriptor.ImplementationType == typeof(PostgresqlDocumentStoreRepository)
-                    && descriptor.Lifetime == ServiceLifetime.Scoped
+                    descriptor.ServiceType == typeof(IMappingPackStore)
+                    && descriptor.ImplementationType == typeof(NoOpMappingPackStore)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
                 );
 
             _services
                 .Should()
                 .Contain(descriptor =>
+                    descriptor.ServiceType == typeof(IRuntimeMappingSetCompiler)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
+                );
+
+            _services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType == typeof(IMappingSetProvider)
+                    && descriptor.ImplementationType == typeof(MappingSetProvider)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
+                );
+
+            _services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType == typeof(NpgsqlDataSourceCache)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
+                );
+
+            _services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType == typeof(NpgsqlDataSourceProvider)
+                    && descriptor.Lifetime == ServiceLifetime.Scoped
+                );
+
+            _services
+                .Should()
+                .NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository));
+
+            _services
+                .Should()
+                .NotContain(descriptor => descriptor.ServiceType == typeof(IAuthorizationRepository));
+
+            _services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueryHandler));
+
+            _services
+                .Should()
+                .NotContain(descriptor =>
                     descriptor.ServiceType == typeof(ITokenInfoEducationOrganizationLookup)
-                    && descriptor.ImplementationType
-                        == typeof(AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter)
-                    && descriptor.Lifetime == ServiceLifetime.Scoped
                 );
         }
+    }
+}
+
+file sealed class TestRelationalBackendMappingInitializer(
+    IMappingSetProvider mappingSetProvider,
+    IRuntimeMappingSetCompiler runtimeMappingSetCompiler
+) : IBackendMappingInitializer
+{
+    public async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        var key = runtimeMappingSetCompiler.GetCurrentKey();
+        _ = await mappingSetProvider.GetOrCreateAsync(key, cancellationToken).ConfigureAwait(false);
     }
 }
 
