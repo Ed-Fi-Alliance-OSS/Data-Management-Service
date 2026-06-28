@@ -247,7 +247,7 @@
       "Run: `rg --hidden -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|Test-DmsDocumentTablePresent|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|EffectiveSchema|provision-e2e-database\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose/.env.routeContext.e2e`",
       "Run Instance Management local setup when Docker dependencies are available and confirm each route-context database has `dms.\"EffectiveSchema\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Instance Management E2E",
