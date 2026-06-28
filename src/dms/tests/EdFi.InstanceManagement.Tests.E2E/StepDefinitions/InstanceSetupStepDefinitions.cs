@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.InstanceManagement.Tests.E2E.Configuration;
-using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using EdFi.InstanceManagement.Tests.E2E.Models;
 using FluentAssertions;
@@ -13,10 +12,7 @@ using Reqnroll;
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class InstanceSetupStepDefinitions(
-    InstanceManagementContext context,
-    InstanceInfrastructureManager infrastructureManager
-)
+public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 {
     public ConfigServiceClient? _configClient;
     private InstanceResponse? _lastCreatedInstance;
@@ -308,9 +304,6 @@ public class InstanceSetupStepDefinitions(
     [Given("tenant {string} is set up with a vendor and instances:")]
     public async Task GivenTenantIsSetUpWithVendorAndInstances(string tenantName, Table table)
     {
-        // Store the infrastructure manager in context for cleanup
-        context.InfrastructureManager = infrastructureManager;
-
         // Get or create the tenant client
         var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
 
@@ -344,7 +337,6 @@ public class InstanceSetupStepDefinitions(
 
             var dbIndex = GetDatabaseIndexForRoute(districtId, schoolYear);
             var connectionString = TestConstants.GetConnectionString(dbIndex);
-            var databaseName = TestConstants.GetDatabaseName(dbIndex);
 
             var instance = await tenantClient.CreateInstanceAsync(
                 new InstanceRequest(
@@ -355,7 +347,6 @@ public class InstanceSetupStepDefinitions(
             );
 
             context.DataStoreIds.Add(instance.Id);
-            context.DataStoreIdToDatabaseName[instance.Id] = databaseName;
             context.DataStoreIdToTenant[instance.Id] = tenantName;
             context.RouteQualifierToDataStoreId[route] = instance.Id;
 
@@ -374,9 +365,6 @@ public class InstanceSetupStepDefinitions(
                     ContextValue: schoolYear
                 )
             );
-
-            // Setup Kafka topic and Debezium connector
-            await infrastructureManager.SetupInstanceInfrastructureAsync(instance.Id, databaseName);
         }
     }
 

@@ -27,17 +27,6 @@ public static class TestConstants
     public const string Database3ConnectionString =
         "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;";
 
-    // Kafka infrastructure
-    public const string KafkaBootstrapServers = "localhost:9092";
-    public const string KafkaBootstrapServersInternal = "dms-kafka1:9092";
-    public const string KafkaConnectUrl = "http://localhost:8083/connectors";
-
-    // PostgreSQL (for replication slot cleanup)
-    public const string PostgresHost = "localhost";
-    public const int PostgresPort = 5435;
-    public const string PostgresUser = "postgres";
-    public const string PostgresPassword = "abcdefgh1!";
-
     /// <summary>
     /// Get database name by index (1-based)
     /// </summary>
