@@ -52,3 +52,10 @@
 - Removed stale MSSQL Deploy/Scripts folder include. Existing docs already cover SchemaTools ddl provision --dialect mssql.
 - Files changed: Backend Deploy contracts deleted, Backend.Mssql deploy file/csproj, Old.Postgresql deploy file, Backend.Tests.Unit deploy tests, Backend.Installer Program/csproj, tasks.json.
 - Verification: csharpier format; required rg; dotnet test Backend.Tests.Unit Release passed 1800; dotnet test Backend.Postgresql.Tests.Integration Release passed 662 after starting Docker Desktop and recreating stale dms-postgresql container; dotnet build Backend.Installer Release.
+
+2026-06-28 - completed Installer Removal: delete Backend.Installer project / remove-legacy-backend.md Phase 4.2
+- Deleted src/dms/backend/EdFi.DataManagementService.Backend.Installer and removed main solution GUID/config blocks via dotnet sln remove; Docker solution had no installer entry.
+- Removed src/dms references that would point at deleted installer output: Dockerfile copy/restore/publish/copy, frontend nuspec Installer payload, InstanceManagement setup one-shot installer invocation.
+- Build-loop fix: Old.Postgresql.Tests.Integration OneTimeSetUp now skips after deployer removal instead of referencing deleted Deploy.DatabaseDeploy; old project deletion remains later task.
+- Files changed: src/dms/EdFi.DataManagementService.sln, src/dms/Dockerfile, frontend nuspec, InstanceManagement setup script, old PostgreSQL integration DatabaseTestBase, deleted installer project files, tasks.json.
+- Verification: rg Backend.Installer/EdFi.DataManagementService.Backend.Installer over src/dms returned no matches; dotnet csharpier format DatabaseTestBase.cs; dotnet build src/dms/EdFi.DataManagementService.sln -c Release passed with existing Reqnroll missing feature warning.

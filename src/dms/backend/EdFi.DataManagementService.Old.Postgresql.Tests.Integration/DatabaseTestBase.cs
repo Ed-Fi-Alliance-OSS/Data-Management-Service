@@ -23,7 +23,7 @@ public abstract class DatabaseTestBase
     [OneTimeSetUp]
     public void OneTimeSetup()
     {
-        new Deploy.DatabaseDeploy().DeployDatabase(_connectionString);
+        Assert.Ignore("Old PostgreSQL integration tests are disabled after DMS deployer removal.");
     }
 
     [SetUp]
