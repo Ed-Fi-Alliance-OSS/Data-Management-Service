@@ -138,7 +138,7 @@
       "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|/app/Installer|Backend\\\\.Installer|Old\\\\.Postgresql\" src/dms/run.sh src/dms/Dockerfile`",
       "Build the DMS Docker image and inspect that `/app/Installer` is absent."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Installer Removal",
