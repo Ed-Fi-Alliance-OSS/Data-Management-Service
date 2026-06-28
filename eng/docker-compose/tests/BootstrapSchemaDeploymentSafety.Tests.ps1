@@ -42,6 +42,7 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "env-utility.psm1",
                 "configure-local-data-store.ps1",
                 "provision-dms-schema.ps1",
+                "provision-e2e-database.ps1",
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1"
             )) {
@@ -68,6 +69,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 EnvFile = $envFile
                 ConfigureScript = Join-Path $dockerComposeRoot "configure-local-data-store.ps1"
                 ProvisionScript = Join-Path $dockerComposeRoot "provision-dms-schema.ps1"
+                E2EProvisionScript = Join-Path $dockerComposeRoot "provision-e2e-database.ps1"
                 WrapperScript = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
             }
         }
@@ -259,6 +261,34 @@ exit $ExitCode
             $params.Count | Should -Be 3
         }
 
+        It "provision-e2e-database.ps1 exposes neutral reset and provision parameters" {
+            $params = Get-DeclaredScriptParameters -Path $script:repo.E2EProvisionScript
+
+            $params | Should -Contain "EnvironmentFile"
+            $params | Should -Contain "DatabaseName"
+            $params | Should -Contain "Configuration"
+            $params | Should -Contain "PostgresContainerName"
+            $params | Should -Not -Contain "SchemaToolPath"
+            $params | Should -Not -Contain "DataStoreId"
+            $params | Should -Not -Contain "SchoolYear"
+            $params.Count | Should -Be 4
+        }
+
+        It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
+            $content = Get-Content -LiteralPath $script:repo.E2EProvisionScript -Raw
+            $oldHelperNamePattern = "provision-relational" + "-e2e-database"
+            $oldDatabaseNamePattern = "RELATIONAL" + "_E2E_DATABASE_NAME"
+
+            $content | Should -Match "E2E_DATABASE_NAME"
+            $content | Should -Match "Reset-E2EDatabase"
+            $content | Should -Match '"ddl"'
+            $content | Should -Match '"provision"'
+            $content | Should -Match '"--create-database"'
+            $content | Should -Match 'if \(\[string\]::IsNullOrWhiteSpace\(\$DatabaseName\)\)'
+            $content | Should -Not -Match $oldHelperNamePattern
+            $content | Should -Not -Match $oldDatabaseNamePattern
+        }
+
         It "wrapper entry script exposes configure flags without exposing direct data-store selectors" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
 
@@ -280,6 +310,22 @@ exit $ExitCode
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
+            }
+        }
+
+        It "start scripts do not reference removed installer or setup plumbing" {
+            $installerPathPattern = "/app/" + "Installer"
+            $installerProjectPattern = "Backend" + "\.Installer"
+            $setupFlagPattern = "NEED" + "_DATABASE_SETUP"
+            $deployFlagPattern = "DMS" + "_DEPLOY_DATABASE_ON_STARTUP"
+
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1", "start-all-services.ps1")) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
+
+                $content | Should -Not -Match $installerPathPattern
+                $content | Should -Not -Match $installerProjectPattern
+                $content | Should -Not -Match $setupFlagPattern
+                $content | Should -Not -Match $deployFlagPattern
             }
         }
 

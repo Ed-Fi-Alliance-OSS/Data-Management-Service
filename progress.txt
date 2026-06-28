@@ -99,3 +99,9 @@
 - Decision: kept old PostgreSQL CI job matches out of scope for this task; owned by later CI single-backend task.
 - Files changed: tasks.json, progress.txt.
 - Verification: installer-specific rg over nuspec/.github/eng had no matches; dotnet publish API and ApiSchemaDownloader Release passed; dotnet pack to /tmp succeeded; package top-level payloads are DataManagementService and ApiSchemaDownloader, with no Installer/Old.Postgresql matches.
+
+2026-06-28 - completed Docker Compose: Pester guardrails for neutral E2E provisioning / remove-legacy-backend.md Phase 4.7
+- Added BootstrapSchemaDeploymentSafety coverage for provision-e2e-database.ps1 params, E2E_DATABASE_NAME reset/provision behavior, SchemaTools ddl provision, and no old helper/key names.
+- Added start-script guardrail for absence of removed installer/setup plumbing without reintroducing legacy static-search hits.
+- Files changed: eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1, tasks.json, progress.txt.
+- Verification: task rg over eng/docker-compose/tests shows only provision-e2e-database guardrails; Invoke-Pester BootstrapSchemaDeploymentSafety.Tests.ps1 passed 95; git diff --check passed.
