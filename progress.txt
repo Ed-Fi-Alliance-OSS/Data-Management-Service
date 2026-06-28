@@ -15,3 +15,10 @@
 - Updated relational PostgreSQL project/tests to import Backend.Postgresql for moved types; remaining Old.Postgresql hits are legacy project/frontend/adapter/deployer work for later tasks.
 - Files changed: Backend.Postgresql provider/cache/csproj and consumers, Backend.Postgresql integration tests, provider/cache unit tests, legacy PostgreSQL compile imports/project refs.
 - Verification: csharpier format; rg NpgsqlDataSource; rg Old.Postgresql inspected; dotnet build Backend.Postgresql Release; dotnet build Old.Postgresql Release; dotnet test Backend.Tests.Unit Release --no-restore --no-build; dotnet build Backend.Postgresql.Tests.Integration Release.
+
+2026-06-28 - completed PostgreSQL Infrastructure: relational-safe AddPostgresqlDatastore / remove-legacy-backend.md Phase 2.2
+- Added Backend.Postgresql PostgresqlServiceExtensions.AddPostgresqlDatastore with MappingPacks binding, MappingSetCompiler, NoOpMappingPackStore, Pgsql RuntimeMappingSetCompiler, IMappingSetProvider, NpgsqlDataSourceCache, NpgsqlDataSourceProvider.
+- Removed AddPostgresqlDatastore from Old.Postgresql; kept legacy AddPostgresqlQueryHandler for later runtime-wiring removal, no datastore forwarding shim.
+- Core startup mapping tests now register a file-local relational initializer instead of depending on old PostgreSQL startup initializer; service registration test asserts datastore extension does not register legacy repositories/query/token-info/startup services.
+- Files changed: Backend.Postgresql/PostgresqlServiceExtensions.cs, Old.Postgresql/PostgresqlServiceExtensions.cs, Core.Tests.Unit PostgresqlRuntimeMappingInitializationTests, backend unit duplicate using cleanup, tasks.json.
+- Verification: csharpier format; rg AddPostgresqlDatastore/RuntimeMappingSetCompiler/PgsqlDialectRules; dotnet build Backend.Postgresql Release; dotnet build EdFi.DataManagementService.sln Release; focused Core.Tests.Unit and Backend.Tests.Unit filters pass. Solution build has existing Reqnroll missing feature warning only.

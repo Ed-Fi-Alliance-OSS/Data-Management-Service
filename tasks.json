@@ -43,7 +43,7 @@
       "Run: `rg -n \"AddPostgresqlDatastore|RuntimeMappingSetCompiler|PgsqlDialectRules|RelationalDocumentStoreRepository|IQueryHandler\" src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/frontend`",
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Infrastructure",
