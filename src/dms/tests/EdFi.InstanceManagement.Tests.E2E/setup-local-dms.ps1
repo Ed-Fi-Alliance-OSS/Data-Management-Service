@@ -179,40 +179,7 @@ try {
         Write-Host "  Created database: $db" -ForegroundColor Green
     }
 
-    # Deploy the DMS schema into the main database so it can seed the per-instance test
-    # databases below. This E2E harness is the non-bootstrap transitional path and uses
-    # file-based ApiSchema packages, so it disables the DMS container entrypoint installer above
-    # and provisions the (legacy/relational-disabled) schema itself by running the same
-    # Backend.Installer as a one-shot container on the shared 'dms' network. Without this,
-    # every per-instance request 500s with "relation \"dms.document\" does not exist".
-    Write-Host "`nDeploying DMS schema to main database..." -ForegroundColor Cyan
-
-    Import-Module ./env-utility.psm1 -Force
-    $routeContextEnvValues = ReadValuesFromEnvFile "./.env.routeContext.e2e"
-    $postgresPassword = Get-EnvValue -EnvValues $routeContextEnvValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
-    $adminConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=$postgresPassword;database=edfi_datamanagementservice;"
-
-    # Resolve the locally-built DMS image from the running service container so the installer
-    # runs the exact binaries (including /app/Installer) that the DMS container ships.
-    $dmsImage = docker inspect --format "{{.Config.Image}}" ed-fi-api 2>$null | Select-Object -First 1
-    if ([string]::IsNullOrWhiteSpace($dmsImage)) {
-        throw "Unable to resolve the DMS image from container 'ed-fi-api'. Ensure the DMS stack started successfully."
-    }
-
-    docker run --rm --network dms --entrypoint dotnet $dmsImage `
-        Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c $adminConnectionString
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to deploy DMS schema to the main database. Installer exited with code $LASTEXITCODE."
-    }
-    Write-Host "  Schema deployed to main database" -ForegroundColor Green
-
-    # The installer can exit 0 without producing the expected objects (e.g. a no-op against the
-    # wrong database). Assert the schema actually landed before exporting it, otherwise every
-    # per-instance database would be seeded from an empty dump and the run would 500 at test time.
-    if (-not (Test-DmsDocumentTablePresent -Database "edfi_datamanagementservice")) {
-        throw "Schema verification failed: 'dms.document' is missing from the main database after running the installer."
-    }
-    Write-Host "  Verified dms.document exists in main database" -ForegroundColor Green
+    Write-Host "`nUsing existing main database schema for route-context databases..." -ForegroundColor Cyan
 
     # Export schema from main database
     Write-Host "`nExporting schema from main database..." -ForegroundColor Cyan

@@ -123,7 +123,7 @@
       "Run: `rg -n \"Backend\\\\.Installer|EdFi.DataManagementService.Backend.Installer\" src/dms/EdFi.DataManagementService.sln src/dms/EdFi.DataManagementService-Docker.sln src/dms`",
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Installer Removal",
