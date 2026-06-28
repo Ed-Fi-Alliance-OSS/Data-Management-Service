@@ -6,7 +6,6 @@
 using System.Diagnostics;
 using CommandLine;
 using CommandLine.Text;
-using EdFi.DataManagementService.Backend.Deploy;
 
 namespace EdFi.DataManagementService.Backend.Installer;
 
@@ -18,10 +17,10 @@ public class Options
         Required = true,
         HelpText = "The database engine to deploy. Valid values are 'postgresql' and 'mssql'"
     )]
-    public string? Datastore { get; set; }
+    public string Datastore { get; set; } = string.Empty;
 
     [Option('c', "connectionString", Required = true, HelpText = "The connection string to the database.")]
-    public string? ConnectionString { get; set; }
+    public string ConnectionString { get; set; } = string.Empty;
 }
 
 public static class Program
@@ -35,25 +34,10 @@ public static class Program
         _parseResult
             .WithParsed(runOptions =>
             {
-                switch (runOptions.Datastore)
-                {
-                    case "postgresql":
-                        HandleResult(
-                            new Old.Postgresql.Deploy.DatabaseDeploy().DeployDatabase(
-                                runOptions.ConnectionString!
-                            )
-                        );
-                        break;
-                    case "mssql":
-                        HandleResult(
-                            new Mssql.Deploy.DatabaseDeploy().DeployDatabase(runOptions.ConnectionString!)
-                        );
-                        break;
-                    default:
-                        Console.WriteLine("Invalid database engine specified.");
-                        DisplayHelp(_parseResult);
-                        break;
-                }
+                Console.Error.WriteLine(
+                    $"The DMS backend installer no longer provisions {runOptions.Datastore} databases. Use SchemaTools ddl provision for relational schema provisioning."
+                );
+                Environment.ExitCode = 1;
             })
             .WithNotParsed(_ =>
             {
@@ -64,14 +48,6 @@ public static class Program
         {
             Console.WriteLine("Press enter to continue.");
             Console.ReadLine();
-        }
-    }
-
-    private static void HandleResult(DatabaseDeployResult result)
-    {
-        if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
-        {
-            Console.WriteLine($"Failed to deploy database: {failure.Error.Message}");
         }
     }
 

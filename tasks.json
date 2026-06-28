@@ -108,7 +108,7 @@
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -c Release`",
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj -c Release` if PostgreSQL integration dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Installer Removal",
