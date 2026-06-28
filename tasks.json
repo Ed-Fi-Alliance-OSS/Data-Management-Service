@@ -153,7 +153,7 @@
       "Run: `rg -n \"PublishBackendInstaller|Backend\\\\.Installer|Old\\\\.Postgresql|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll\" build-dms.ps1`",
       "Run the relevant build lane or inspect build output creation when local build dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Installer Removal",
