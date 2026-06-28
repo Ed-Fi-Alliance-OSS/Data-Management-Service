@@ -29,3 +29,11 @@
 - Frontend composition tests now assert no legacy ITokenInfoEducationOrganizationLookup fallback and only relational token-info lookup for PostgreSQL relational branch. Trimmed stale disabled-backend document-store/query-handler assertion instead of restoring removed legacy registrations.
 - Files changed: Old.Postgresql adapter deleted, Backend.Tests.Unit adapter tests deleted, Frontend.AspNetCore.Tests.Unit WebApplicationBuilderExtensionsTests, tasks.json.
 - Verification: csharpier format; rg adapter/token-info registrations; dotnet test Frontend.AspNetCore.Tests.Unit Release; dotnet test Backend.Tests.Unit Release.
+
+2026-06-28 - completed Runtime Wiring: unconditional relational frontend composition / remove-legacy-backend.md Phase 3
+- Removed frontend UseRelationalBackend read/branch, ConfigureQueryHandler, AddPostgresqlQueryHandler path, and frontend Old.Postgresql project/reference usage.
+- PostgreSQL now always wires AddPostgresqlDatastore, AddPostgresqlReferenceResolver, fingerprint/resource-key readers, and relational token-info lookup; MSSQL now always wires relational runtime services/readers/token-info lookup.
+- Registered RelationalDocumentStoreRepository directly as IDocumentStoreRepository and IQueryHandler; kept RelationalBackendMappingInitializer replacement for core NoOp initializer.
+- Removed stale frontend appsettings UseRelationalBackend entries; wider core/config flag removal remains Phase 5.
+- Files changed: WebApplicationBuilderExtensions, frontend csproj/appsettings, WebApplicationBuilderExtensionsTests, tasks.json.
+- Verification: csharpier format; required rg commands; dotnet test Frontend.AspNetCore.Tests.Unit Release; dotnet build EdFi.DataManagementService.sln Release --no-restore (existing Reqnroll missing feature warning only).
