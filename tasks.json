@@ -230,7 +230,7 @@
       "Run: `rg -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|Backend\\\\.Installer|/app/Installer|provision-relational-e2e-database|provision-e2e-database\" eng/docker-compose/tests`",
       "Run the relevant Pester suite under `eng/docker-compose/tests`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Instance Management E2E",
