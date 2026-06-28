@@ -116,17 +116,14 @@ try {
     $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
-    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
     try {
         # .env.routeContext.e2e carries the file-based ApiSchema package settings. Process
         # env values win over docker compose --env-file entries, so clear stale overrides
         # left by teardown or earlier bootstrap runs and let the env file provide
-        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES. Keep the DMS entrypoint
-        # installer off because this harness provisions the main database explicitly below.
+        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
         $env:USE_API_SCHEMA_PATH = $null
         $env:API_SCHEMA_PATH = $null
         $env:SCHEMA_PACKAGES = $null
-        $env:NEED_DATABASE_SETUP = "false"
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
@@ -155,11 +152,6 @@ try {
             $env:SCHEMA_PACKAGES = $previousSchemaPackages
         }
 
-        if ($null -eq $previousNeedDatabaseSetup) {
-            $env:NEED_DATABASE_SETUP = $null
-        } else {
-            $env:NEED_DATABASE_SETUP = $previousNeedDatabaseSetup
-        }
     }
 
     if ($LASTEXITCODE -ne 0) {

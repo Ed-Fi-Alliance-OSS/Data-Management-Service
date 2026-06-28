@@ -67,8 +67,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
@@ -613,33 +611,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
     }
 
     # =========================================================================
-    # R6 - Regression D3: NEED_DATABASE_SETUP forced false when manifest present
-    #   The BootstrapSchemaDeploymentSafety suite already checks the conditional
-    #   block text ("if ($bootstrapManifestPresent)"). Here we extend coverage to
-    #   verify the actual assignment ($env:NEED_DATABASE_SETUP = "false") is present
-    #   in that block and NOT in the non-manifest branch.
-    # =========================================================================
-    Context "NEED_DATABASE_SETUP manifest-present lockdown (D3 regression)" {
-        It "start-local-dms.ps1 forces NEED_DATABASE_SETUP to false inside the manifest-present branch" {
-            $startScript = Get-Content -LiteralPath (
-                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
-            ) -Raw
-
-            # The assignment must be inside the if ($bootstrapManifestPresent) region.
-            # The existing test in BootstrapSchemaDeploymentSafety asserts the if-guard text;
-            # this companion assertion verifies the forced-false assignment itself is present.
-            $startScript | Should -Match '\$env:NEED_DATABASE_SETUP\s*=\s*"false"'
-
-            # The non-manifest branch must NOT contain the forced assignment (it defers to env file).
-            # Verify by confirming the forced assignment only appears inside the bootstrapManifestPresent region.
-            # Strategy: the "else" branch for no-manifest starts DMS without any NEED_DATABASE_SETUP override,
-            # and the message for that path says "controlled by the environment file".
-            $startScript | Should -Match 'No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file\.'
-        }
-    }
-
-    # =========================================================================
-    # R7 - Config Service always included (DMS-1153 bootstrap entry-point spec)
+    # R6 - Config Service always included (DMS-1153 bootstrap entry-point spec)
     #   Per the spec, every non-teardown bootstrap run starts Config Service,
     #   including keycloak-backed runs. -EnableConfig is retained for backward
     #   compatibility only and is no longer a meaningful opt-out.

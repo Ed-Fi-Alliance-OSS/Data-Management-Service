@@ -104,7 +104,6 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
-            builder.UseSetting("AppSettings:DeployDatabaseOnStartup", "false");
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");

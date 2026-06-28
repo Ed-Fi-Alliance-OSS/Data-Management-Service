@@ -102,9 +102,8 @@ try {
     # for CMS readiness before returning).
     #
     # This non-bootstrap E2E flow intentionally keeps the full start rather than the
-    # -InfraOnly/-DmsOnly split: -DmsOnly forces NEED_DATABASE_SETUP=false (DMS-1151 phase
-    # contract), but this flow relies on .env.e2e legacy in-container provisioning. The DMS
-    # container restarts until this step lands the data store (non-bootstrap compatibility flow).
+    # -InfraOnly/-DmsOnly split. The DMS container restarts until this step lands the data store
+    # (non-bootstrap compatibility flow).
     ./configure-local-data-store.ps1 -EnvironmentFile $EnvironmentFile
 
     if ($LASTEXITCODE -ne 0) {

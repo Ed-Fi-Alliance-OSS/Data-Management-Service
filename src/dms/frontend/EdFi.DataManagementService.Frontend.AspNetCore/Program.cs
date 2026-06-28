@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Linq;
-using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -158,17 +157,6 @@ if (invalidConfigurationException is null)
         () => InitializeDataStores(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
-        DmsStartupPhases.InitializeDatabase,
-        "Running database startup deployment when enabled.",
-        "Database startup deployment completed or was skipped.",
-        "Database deploy failed during DMS startup.",
-        () =>
-        {
-            InitializeDatabase(app);
-            return Task.CompletedTask;
-        }
-    );
-    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeApiSchemas,
         "Loading API schemas and initializing effective schema metadata.",
         "API schema loading and effective-schema initialization completed successfully.",
@@ -266,82 +254,6 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         return ex;
     }
     return null;
-}
-
-void InitializeDatabase(WebApplication app)
-{
-    var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
-
-    if (appSettings.DeployDatabaseOnStartup)
-    {
-        app.Logger.LogInformation("Running initial database deploy on all data stores");
-        var dataStoreProvider = app.Services.GetRequiredService<IDataStoreProvider>();
-        var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
-        var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
-
-        // Get all loaded tenant keys and deploy to instances for each tenant
-        var loadedTenantKeys = dataStoreProvider.GetLoadedTenantKeys();
-        int totalInstancesDeployed = 0;
-
-        foreach (var tenantKey in loadedTenantKeys)
-        {
-            // Convert empty string back to null for API calls
-            string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
-            var instances = dataStoreProvider.GetAll(tenant);
-
-            if (instances.Count == 0)
-            {
-                app.Logger.LogDebug(
-                    "No instances found for tenant '{Tenant}', skipping",
-                    tenant ?? "(default)"
-                );
-                continue;
-            }
-
-            app.Logger.LogInformation(
-                "Deploying database schema to {InstanceCount} instances for tenant '{Tenant}'",
-                instances.Count,
-                tenant ?? "(default)"
-            );
-
-            foreach (var instance in instances)
-            {
-                app.Logger.LogInformation(
-                    "Deploying database schema to data store '{Name}' (ID: {DataStoreId}) for tenant '{Tenant}'",
-                    instance.Name,
-                    instance.Id,
-                    tenant ?? "(default)"
-                );
-
-                string connectionString =
-                    connectionStringProvider.GetConnectionString(instance.Id, tenant) ?? string.Empty;
-
-                var result = databaseDeploy.DeployDatabase(connectionString);
-
-                if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
-                {
-                    throw new InvalidOperationException(
-                        $"Database deploy failed for data store '{instance.Name}' (ID: {instance.Id}) tenant '{tenant ?? "(default)"}'.",
-                        failure.Error
-                    );
-                }
-
-                app.Logger.LogInformation(
-                    "Successfully deployed database schema to data store '{Name}' (ID: {DataStoreId})",
-                    instance.Name,
-                    instance.Id
-                );
-
-                totalInstancesDeployed++;
-            }
-        }
-
-        app.Logger.LogInformation(
-            "Database deploy completed for {TotalInstanceCount} data stores across {TenantCount} tenants",
-            totalInstancesDeployed,
-            loadedTenantKeys.Count
-        );
-    }
 }
 
 async Task InitializeApiSchemas(WebApplication app)

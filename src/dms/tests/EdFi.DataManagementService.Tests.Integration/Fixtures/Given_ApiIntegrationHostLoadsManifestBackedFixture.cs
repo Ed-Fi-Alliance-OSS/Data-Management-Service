@@ -64,7 +64,6 @@ public sealed class Given_ApiIntegrationHostLoadsManifestBackedFixture
             builder.UseSetting("AppSettings:ApiSchemaPath", hostFixture.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", _startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", "postgresql");
-            builder.UseSetting("AppSettings:DeployDatabaseOnStartup", "false");
             builder.UseSetting("AppSettings:BypassAuthorization", "true");
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");

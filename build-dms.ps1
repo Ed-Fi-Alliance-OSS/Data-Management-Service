@@ -968,38 +968,14 @@ function Start-DockerEnvironment {
                 # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
                 # DMS-1153 and no longer accepts -LoadSeedData.
                 #
-                # This flow is intentionally OUTSIDE the bootstrap-manifest contract (non-bootstrap
-                # compatibility): the -RemoveBootstrap teardown above guarantees no manifest is
-                # staged, so the claims-ready gate is skipped and NEED_DATABASE_SETUP from the env
-                # file provisions the database in-container at DMS startup. The full start (rather
-                # than the -InfraOnly/-DmsOnly split) is required here because -DmsOnly forces
-                # NEED_DATABASE_SETUP=false per the DMS-1151 phase contract, which would leave
-                # this legacy DLL-backed flow unprovisioned. The DMS container restarts until
-                # the configure step below lands the data store (restart: unless-stopped).
+                # This flow is intentionally outside the bootstrap-manifest contract: the
+                # -RemoveBootstrap teardown above guarantees no manifest is staged, so the
+                # claims-ready gate is skipped. The DMS container restarts until the configure
+                # step below lands the data store (restart: unless-stopped).
                 if ($LoadSeedData) {
-                    # The database template must own dms schema creation: the env files used
-                    # here set NEED_DATABASE_SETUP=true, and startup provisioning would create
-                    # an empty dms schema before LoadSeedData runs - setup-database-template.psm1
-                    # skips the restore when the schema already exists, silently leaving an
-                    # unseeded database. Force startup provisioning off for this start (same
-                    # mechanism as the -DmsOnly phase contract); the template restore below
-                    # creates the schema and data, and the DMS container restarts until the
-                    # configure step lands the data store.
-                    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-                    $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-                    $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-                    try {
-                        $env:NEED_DATABASE_SETUP = "false"
-                        $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-                        $env:AppSettings__DeployDatabaseOnStartup = "false"
-                        Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                        }
-                    }
-                    finally {
-                        [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-                        [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-                        [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+                    # The database template owns dms schema creation for this legacy seed path.
+                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                     }
 
                     # Direct-SQL database-template seed path, relocated verbatim from the seed

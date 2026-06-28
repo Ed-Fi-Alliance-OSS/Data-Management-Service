@@ -15,8 +15,7 @@
     Direct invocation is supported for diagnostics and partial-phase orchestration
     (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
     script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
-    schema provisioning will NOT happen here. Legacy direct-start database provisioning
-    remains controlled by the supplied environment file's NEED_DATABASE_SETUP value.
+    schema provisioning will NOT happen here.
 
     See command-boundaries.md Section 3 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -294,25 +293,12 @@ else {
     }
 
     if ($DmsOnly) {
-        Write-Output "Starting published DMS service only with startup database provisioning disabled..."
+        Write-Output "Starting published DMS service only..."
         $dmsServices = @("dms")
         if ($EnableSwaggerUI) {
             $dmsServices += "swagger-ui"
         }
-        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-        try {
-            $env:NEED_DATABASE_SETUP = "false"
-            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            $env:AppSettings__DeployDatabaseOnStartup = "false"
-            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs $dmsServices
-        }
-        finally {
-            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
-        }
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs $dmsServices
 
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to start published DMS service, with exit code $LASTEXITCODE."
@@ -437,29 +423,11 @@ else {
 
     Write-Output "Starting published DMS"
     if ($bootstrapManifestPresent) {
-        # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the
-        # story-aligned bootstrap flow. Force the legacy Backend.Installer entrypoint off
-        # when a bootstrap manifest is present so a stale NEED_DATABASE_SETUP=true value
-        # in the env file or process environment cannot reactivate it. Direct, non-bootstrap
-        # startup remains backward compatible with the env-file NEED_DATABASE_SETUP value.
-        Write-Output "Bootstrap manifest detected; starting published DMS with startup database provisioning disabled."
-        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-        try {
-            $env:NEED_DATABASE_SETUP = "false"
-            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            $env:AppSettings__DeployDatabaseOnStartup = "false"
-            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
-        }
-        finally {
-            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
-        }
+        Write-Output "Bootstrap manifest detected; starting published DMS."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
     }
     else {
-        Write-Output "No bootstrap manifest detected; starting published DMS with database startup provisioning controlled by the environment file."
+        Write-Output "No bootstrap manifest detected; starting published DMS."
         docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
     }
 
