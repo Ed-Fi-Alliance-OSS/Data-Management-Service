@@ -215,7 +215,7 @@
       "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|AppSettings__DeployDatabaseOnStartup|provision-relational-e2e-database|provision-e2e-database\" eng/docker-compose/bootstrap-*.psm1 eng/docker-compose/env-utility.psm1 eng/docker-compose/.env*`",
       "Inspect remaining matches and confirm they are active neutral provisioning references only."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docker Compose",
