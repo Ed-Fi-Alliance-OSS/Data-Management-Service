@@ -105,3 +105,10 @@
 - Added start-script guardrail for absence of removed installer/setup plumbing without reintroducing legacy static-search hits.
 - Files changed: eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1, tasks.json, progress.txt.
 - Verification: task rg over eng/docker-compose/tests shows only provision-e2e-database guardrails; Invoke-Pester BootstrapSchemaDeploymentSafety.Tests.ps1 passed 95; git diff --check passed.
+
+2026-06-28 - completed Instance Management E2E: relational route-context setup / remove-legacy-backend.md Phase 4.8
+- Replaced route DB drop/create + main-db pg_dump replay with provision-e2e-database.ps1 -DatabaseName for the three fixed route-context DBs.
+- Verification now requires dms."EffectiveSchema" singleton plus dms."Document", edfi."School", edfi."Student"; no CMS discovery added.
+- Set local-dms.yml AppSettings__UseRelationalBackend true so Instance setup starts the current core relational path until later flag-removal task deletes the setting.
+- Files changed: InstanceManagement setup-local-dms.ps1, eng/docker-compose/local-dms.yml, tasks.json, progress.txt.
+- Verification: PowerShell parser passed; task rg shows setup script EffectiveSchema/provision refs and only Debezium dms.document leftovers for later CDC task; teardown + setup built images and provisioned all three DBs; rerun setup -SkipDockerBuild recreated DMS with AppSettings__UseRelationalBackend=true and reprovisioned all route DBs; direct psql confirmed 1 EffectiveSchema row plus School/Student tables in each DB; git diff --check passed.

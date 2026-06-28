@@ -7,7 +7,7 @@
 .SYNOPSIS
     Sets up the Ed-Fi DMS local Docker environment for Instance Management E2E testing
 .DESCRIPTION
-    This script starts the Docker stack and creates the 3 test databases.
+    This script starts the Docker stack and provisions the 3 route-context test databases.
     Tenant, instance, and Kafka infrastructure creation is handled by the tests themselves.
 
     Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
@@ -31,24 +31,75 @@ param(
     $DataStandardVersion
 )
 
-function Test-DmsDocumentTablePresent {
+function Get-RequiredRelationRegclass {
     <#
     .SYNOPSIS
-    Returns $true when the dms.document table exists in the given PostgreSQL database. Throws
-    when the existence query itself cannot be run, so a failed psql invocation is never read as
-    "table absent". Used to turn a silently-empty schema deploy into a hard setup failure.
+    Returns the to_regclass value for a required relation. Throws when the query itself fails, so a
+    failed psql invocation is never read as "relation absent".
     #>
     param(
-        [string]
-        $Database
+        [string]$Database,
+        [string]$QualifiedRelationName
     )
 
-    $regclass = (docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('dms.document');" | Out-String).Trim()
+    $regclass = (
+        docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('$QualifiedRelationName');" `
+            | Out-String
+    ).Trim()
+
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to query database '$Database' for the dms.document table (psql exit code $LASTEXITCODE)."
+        throw "Failed to query database '$Database' for relation '$QualifiedRelationName' (psql exit code $LASTEXITCODE)."
     }
 
-    return -not [string]::IsNullOrWhiteSpace($regclass)
+    return $regclass
+}
+
+function Assert-RelationalSchemaProvisioned {
+    param(
+        [string]$Database
+    )
+
+    $effectiveSchemaRowCount = (
+        docker exec dms-postgresql psql -U postgres -d $Database -tAc 'SELECT COUNT(*) FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;' `
+            | Out-String
+    ).Trim()
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query database '$Database' for the dms.EffectiveSchema singleton row (psql exit code $LASTEXITCODE)."
+    }
+
+    if ($effectiveSchemaRowCount -ne "1") {
+        throw "Schema verification failed: expected one dms.EffectiveSchema singleton row in test database '$Database' but found '$effectiveSchemaRowCount'."
+    }
+
+    $requiredRelations = @(
+        @{
+            QualifiedName = '"dms"."EffectiveSchema"'
+            Description = 'dms.EffectiveSchema'
+        },
+        @{
+            QualifiedName = '"dms"."Document"'
+            Description = 'dms.Document'
+        },
+        @{
+            QualifiedName = '"edfi"."School"'
+            Description = 'edfi.School'
+        },
+        @{
+            QualifiedName = '"edfi"."Student"'
+            Description = 'edfi.Student'
+        }
+    )
+
+    foreach ($relation in $requiredRelations) {
+        $regclass = Get-RequiredRelationRegclass `
+            -Database $Database `
+            -QualifiedRelationName $relation.QualifiedName
+
+        if ([string]::IsNullOrWhiteSpace($regclass)) {
+            throw "Schema verification failed: expected relational table '$($relation.Description)' in test database '$Database'."
+        }
+    }
 }
 
 Write-Host @"
@@ -159,8 +210,8 @@ try {
         exit $LASTEXITCODE
     }
 
-    # Create the three test databases
-    Write-Host "`nCreating test databases..." -ForegroundColor Cyan
+    # Provision the three test databases.
+    Write-Host "`nProvisioning route-context test databases..." -ForegroundColor Cyan
 
     $databases = @(
         "edfi_datamanagementservice_d255901_sy2024",
@@ -168,53 +219,21 @@ try {
         "edfi_datamanagementservice_d255902_sy2024"
     )
 
-    # Drop-then-create each database so the run starts from a known-empty state. Failures are
-    # surfaced (no 2>&1 | Out-Null swallowing) so a stale database can never silently mask a
-    # setup problem.
+    $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
+
     foreach ($db in $databases) {
-        docker exec dms-postgresql psql -U postgres -c "DROP DATABASE IF EXISTS $db;"
+        & $provisionE2EDatabaseScript `
+            -EnvironmentFile ./.env.routeContext.e2e `
+            -DatabaseName $db `
+            -Configuration Release
+
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to drop existing database '$db' (psql exit code $LASTEXITCODE)."
+            throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
         }
-        docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create database '$db' (psql exit code $LASTEXITCODE)."
-        }
-        Write-Host "  Created database: $db" -ForegroundColor Green
-    }
 
-    Write-Host "`nUsing existing main database schema for route-context databases..." -ForegroundColor Cyan
-
-    # Export schema from main database
-    Write-Host "`nExporting schema from main database..." -ForegroundColor Cyan
-    $tempSchemaFile = [System.IO.Path]::GetTempFileName()
-    docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > $tempSchemaFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to export schema from the main database. pg_dump exited with code $LASTEXITCODE."
+        Assert-RelationalSchemaProvisioned -Database $db
+        Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
     }
-    if ((Get-Item -LiteralPath $tempSchemaFile).Length -eq 0) {
-        throw "Schema export produced an empty file. The main database schema is missing or pg_dump failed silently."
-    }
-    Write-Host "  Schema exported successfully" -ForegroundColor Green
-
-    # Apply schema to each test database
-    Write-Host "`nApplying schema to test databases..." -ForegroundColor Cyan
-    foreach ($db in $databases) {
-        # ON_ERROR_STOP=1 makes psql abort and return non-zero on the first failed statement,
-        # so a partially-applied schema fails the run immediately instead of being detected only
-        # by the dms.document postcondition below.
-        Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -v ON_ERROR_STOP=1 -U postgres -d $db
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to apply schema to test database '$db' (psql exit code $LASTEXITCODE)."
-        }
-        if (-not (Test-DmsDocumentTablePresent -Database $db)) {
-            throw "Schema verification failed: 'dms.document' is missing from test database '$db' after applying the exported schema."
-        }
-        Write-Host "  Schema applied and verified: $db" -ForegroundColor Green
-    }
-
-    # Clean up temp file
-    Remove-Item $tempSchemaFile -ErrorAction SilentlyContinue
 
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "Setup Complete!" -ForegroundColor Green
