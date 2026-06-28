@@ -37,3 +37,11 @@
 - Removed stale frontend appsettings UseRelationalBackend entries; wider core/config flag removal remains Phase 5.
 - Files changed: WebApplicationBuilderExtensions, frontend csproj/appsettings, WebApplicationBuilderExtensionsTests, tasks.json.
 - Verification: csharpier format; required rg commands; dotnet test Frontend.AspNetCore.Tests.Unit Release; dotnet build EdFi.DataManagementService.sln Release --no-restore (existing Reqnroll missing feature warning only).
+
+2026-06-28 - completed Database Startup: remove DMS setup-on-startup behavior / remove-legacy-backend.md Phase 4.3
+- Removed DMS DeployDatabaseOnStartup frontend setting, InitializeDatabase startup phase, Program.cs IDatabaseDeploy wiring, and DMS appsettings/test overrides.
+- Removed DMS startup provision env vars from run.sh, DMS compose env, env templates, bootstrap wrappers, build script guards, E2E setup comments/overrides, active docs, and RestClient DMS guidance; kept CMS deploy-on-startup env/config unchanged.
+- Updated docker-compose Pester guardrails to assert current startup flow instead of forcing deleted env vars false.
+- Files changed: DMS frontend startup/config, run.sh, build-dms.ps1, eng/docker-compose scripts/env/tests/docs, DMS E2E setup scripts, integration test host overrides, active docs/RestClient, tasks.json.
+- Verification: csharpier format; required rg shows only CMS deploy-on-startup references plus DMS deployer contracts left for next task; dotnet test Frontend.AspNetCore.Tests.Unit Release; Invoke-Pester affected docker-compose suites.
+- Notes: DMS IDatabaseDeploy/DatabaseDeployResult/deploy implementations intentionally remain for next Database Startup task.

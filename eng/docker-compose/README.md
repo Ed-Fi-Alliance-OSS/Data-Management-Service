@@ -239,11 +239,9 @@ or in-repo schema directories that are not published as NuGet packages.
 ```
 
 As of DMS-1153, `start-local-dms.ps1` is infrastructure-lifecycle-only: it no
-longer creates data stores or provisions the DMS schema, and with a bootstrap
-manifest present it disables startup database provisioning. Running it bare
-after staging leaves the stack without a configured instance or provisioned
-schema. Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases
-manually:
+longer creates data stores or provisions the DMS schema. Running it bare after
+staging leaves the stack without a configured instance or provisioned schema.
+Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases manually:
 
 ```pwsh
 ./start-local-dms.ps1 -InfraOnly

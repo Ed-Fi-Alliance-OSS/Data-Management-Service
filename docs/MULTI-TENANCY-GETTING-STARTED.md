@@ -71,13 +71,8 @@ POSTGRES_PASSWORD=abcdefgh1!
 # Main database name (used by Configuration Service)
 POSTGRES_DB_NAME=edfi_datamanagementservice
 
-# Enable automatic database schema deployment for the main database
-NEED_DATABASE_SETUP=true
-
-# IMPORTANT: Enable schema deployment to ALL tenant instance databases on startup
-# With this setting DMS will deploy schema to each instance
-# loaded from the Configuration Service. Otherwise you must do it yourself.
-DMS_DEPLOY_DATABASE_ON_STARTUP=true
+# Provision each tenant instance database explicitly before routing traffic to it.
+# The DMS runtime does not deploy instance schemas during startup.
 ```
 
 ### Complete Example Environment File
@@ -273,16 +268,13 @@ docker restart ed-fi-api
 Wait 30-60 seconds for DMS to restart. During startup, DMS will:
 
 1. Load all tenants and their instances from the Configuration Service
-2. Deploy the database schema to each instance database (if `DMS_DEPLOY_DATABASE_ON_STARTUP=true`)
+2. Initialize API schema, relational mappings, and authentication metadata
 
-Verify instances were loaded and schema was deployed:
+Verify instances were loaded:
 
 ```powershell
 # Check instances were loaded
 docker logs ed-fi-api | Select-String "Successfully fetched"
-
-# Check schema deployment (should see entries for each tenant database)
-docker logs ed-fi-api | Select-String "Deploying database schema"
 ```
 
 You should see:
@@ -347,8 +339,6 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | `DMS_MULTI_TENANCY` | Enable multi-tenancy in DMS | `false` |
 | `DMS_CONFIG_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
 | `ROUTE_QUALIFIER_SEGMENTS` | Comma-separated route qualifiers (e.g., `schoolYear` or `districtId,schoolYear`) | (empty) |
-| `NEED_DATABASE_SETUP` | Deploy schema to the configuration service database on startup | `true` |
-| `DMS_DEPLOY_DATABASE_ON_STARTUP` | Deploy schema to ALL tenant instance databases on startup (required for multi-tenancy) | `false` |
 
 ### API Endpoints
 

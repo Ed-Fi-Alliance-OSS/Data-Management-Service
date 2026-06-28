@@ -11,7 +11,6 @@ public class AppSettings
 {
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
-    public bool DeployDatabaseOnStartup { get; set; }
     public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;

@@ -635,7 +635,7 @@ function Invoke-BootstrapStartupConfiguration {
         # is either invoking the start script directly (legitimate for diagnostics or partial-phase
         # orchestration) or has stepped out of sequence. The warning is informational, not blocking
         # - Story 03 owns the eventual hard contract.
-        Write-Warning "No bootstrap manifest detected at .bootstrap/. The DMS-1151 pre-start phases (prepare -> configure -> provision) have not produced a staged workspace. The bootstrap-(local|published)-dms.ps1 wrapper is the documented entry point; direct invocation of this script is supported only for diagnostic or partial-phase workflows. Bootstrap schema provisioning will NOT be run by this script; legacy direct-start database provisioning remains controlled by the supplied environment file's NEED_DATABASE_SETUP value."
+        Write-Warning "No bootstrap manifest detected at .bootstrap/. The DMS-1151 pre-start phases (prepare -> configure -> provision) have not produced a staged workspace. The bootstrap-(local|published)-dms.ps1 wrapper is the documented entry point; direct invocation of this script is supported only for diagnostic or partial-phase workflows. Bootstrap schema provisioning will NOT be run by this script."
     }
 
     if ($bootstrapMode) {

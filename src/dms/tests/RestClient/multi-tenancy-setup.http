@@ -112,7 +112,7 @@ Authorization: bearer {{configToken}}
 ### Connection string format:
 ###   host={host};port={port};username={user};password={password};database={dbname};
 ###
-### Note: DMS will deploy the schema automatically on startup if NEED_DATABASE_SETUP=true
+### Note: Provision each instance database explicitly before routing traffic to it.
 
 ### Create Instance for Tenant 1 - School Year 2024
 # @name createInstance1_2024
@@ -377,10 +377,9 @@ Tenant: {{tenant2Name}}
 ### ============================================================================
 ### IMPORTANT: After creating instances, restart the DMS container to:
 ### 1. Load all tenants and instances from Configuration Service
-### 2. Deploy database schema to each tenant database (if DMS_DEPLOY_DATABASE_ON_STARTUP=true)
+### 2. Initialize API schema, relational mappings, and authentication metadata
 ###
-### PREREQUISITE: Ensure DMS_DEPLOY_DATABASE_ON_STARTUP=true in your .env file
-### This setting is REQUIRED for multi-tenancy - it deploys schema to all instance databases
+### PREREQUISITE: Ensure each tenant instance database has been provisioned.
 ###
 ### Run this command in your terminal:
 ###   docker restart ed-fi-api
@@ -509,4 +508,3 @@ Tenant: {{tenant1Name}}
 PUT http://localhost:{{configPort}}/v3/applications/{{createApp2.response.body.id}}/reset-credential
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
-

@@ -32,7 +32,6 @@
 #    "AppSettings": {
 #        "AuthenticationService": "http://localhost:8045/realms/edfi/protocol/openid-connect/token",
 #        "Datastore": "postgresql",
-#        "DeployDatabaseOnStartup": true,
 #        "BypassTypeCoercion": "false",
 #        "CorrelationIdHeader": "",
 #        "AllowIdentityUpdateOverrides": "",

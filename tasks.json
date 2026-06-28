@@ -91,7 +91,7 @@
       "Inspect remaining `DeployDatabaseOnStartup` matches and confirm they are CMS-only or historical out-of-scope references.",
       "Run frontend unit tests: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Database Startup",

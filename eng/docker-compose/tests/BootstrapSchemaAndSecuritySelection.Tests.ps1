@@ -1402,7 +1402,6 @@ exit 0
             $envNames = @(
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
-                "NEED_DATABASE_SETUP",
                 "AppSettings__UseApiSchemaPath",
                 "AppSettings__ApiSchemaPath",
                 "SCHEMA_PACKAGES",
@@ -1416,7 +1415,6 @@ exit 0
             try {
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "host=localhost;port=5432;username=postgres"
-                $env:NEED_DATABASE_SETUP = "false"
                 $env:AppSettings__UseApiSchemaPath = "true"
                 $env:AppSettings__ApiSchemaPath = $apiSchemaPath
                 $env:SCHEMA_PACKAGES = '[{"name":"KeptPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
