@@ -58,7 +58,7 @@
       "Run: `rg -n \"AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter|Add(Postgresql|Mssql)RelationalTokenInfoEducationOrganizationLookup|PostgresqlAuthorizationRepository\" src/dms`",
       "Run the frontend unit tests after wiring changes: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Wiring",
