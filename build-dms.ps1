@@ -137,10 +137,8 @@ param(
 $solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $applicationRoot = "$solutionRoot/frontend"
-$backendRoot = "$solutionRoot/backend"
 $clisRoot = "$solutionRoot/clis"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
-$installerProjectName = "EdFi.DataManagementService.Backend.Installer"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
 $packageName = "EdFi.Api"
 $testResults = "$PSScriptRoot/TestResults"
@@ -213,14 +211,6 @@ function PublishApi {
         # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
         # letting publish run a second, unlocked restore that would bypass the lock graph.
         dotnet publish $project -c $Configuration -o $outputPath --nologo --no-restore
-    }
-}
-
-function PublishBackendInstaller {
-    Invoke-Execute {
-        $installerProject = "$backendRoot/$installerProjectName/"
-        $outputPath = "$installerProject/publish"
-        dotnet publish $installerProject -c $Configuration -o $outputPath --nologo --no-restore
     }
 }
 
@@ -1349,7 +1339,6 @@ function Invoke-Publish {
     Write-Output "Building Version ($DMSVersion)"
 
     Invoke-Step { PublishApi }
-    Invoke-Step { PublishBackendInstaller }
     Invoke-Step { PublishCliApiDownloader }
 }
 

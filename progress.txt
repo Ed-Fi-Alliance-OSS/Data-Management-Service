@@ -66,3 +66,9 @@
 - Files changed: src/dms/Dockerfile, tasks.json.
 - Verification: rg installer/old-project patterns over run.sh/Dockerfile returned no matches; docker buildx build --load DMS image passed; docker run inspection confirmed /app/Installer absent.
 - Notes: first image inspection used unsupported BusyBox find -printf after confirming absence; reran clean ls-based inspection successfully.
+
+2026-06-28 - completed Installer Removal: remove build-dms backend installer publish targets / remove-legacy-backend.md Phase 4.6
+- Removed build-dms.ps1 installer project variable, PublishBackendInstaller function, and Invoke-Publish call; publish output now limited to API and schema downloader.
+- Decision: did not run BuildAndPublish because SetDMSAssemblyInfo rewrites Directory.Build.props; used parser check plus publish-path inspection, then ran build-dms.ps1 Build Release for script/solution feedback.
+- Files changed: build-dms.ps1, tasks.json, progress.txt.
+- Verification: required rg over build-dms.ps1 returned no matches; PowerShell parser check passed; inspected Invoke-Publish; pwsh ./build-dms.ps1 Build -Configuration Release passed with known Reqnroll missing feature warning only.
