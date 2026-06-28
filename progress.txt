@@ -87,3 +87,9 @@
 - Files changed: docker-compose start scripts, docker-compose Pester tests, InstanceManagement setup-local-dms.ps1, tasks.json.
 - Verification: task rg shows only hidden env-file USE_RELATIONAL_BACKEND refs for later env task plus valid provision-dms-schema phase guidance; PowerShell parser checks passed; BootstrapSchemaDeploymentSafety and BootstrapSchemaAndSecuritySelection Pester passed 154.
 - Notes: full compose startup not run; Docker available, but startup depends on local image/runtime state and would mutate the developer stack.
+
+2026-06-28 - completed Docker Compose: bootstrap/env utility single backend path / remove-legacy-backend.md Phase 4.7
+- Removed USE_RELATIONAL_BACKEND from hidden relational docker-compose env files; bootstrap modules and env-utility already had no legacy setup variable dependencies.
+- Decision: kept relational env-file names for later E2E environment consolidation task; this task only removes legacy backend/setup variables.
+- Files changed: eng/docker-compose/.env.e2e.relational, .env.smoke.relational, .env.template.relational, tasks.json, progress.txt.
+- Verification: task rg over bootstrap/env utility/.env* has no matches; PowerShell parser check passed for bootstrap-*.psm1 and env-utility.psm1.
