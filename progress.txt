@@ -1,0 +1,10 @@
+2026-06-28 - completed Inventory / remove-legacy-backend.md Phase 1
+- Ran task search contracts, including hidden eng/docker-compose .env* files.
+- Product/runtime targets: src/dms/backend/EdFi.DataManagementService.Old.Postgresql, Backend.Postgresql imports/project reference to Old.Postgresql for NpgsqlDataSource* and reference resolver infrastructure, frontend WebApplicationBuilderExtensions UseRelationalBackend branch, core app settings/middleware/handlers with nullable MappingSet legacy paths, ITokenInfoEducationOrganizationLookup fallback, DMS deploy-on-startup settings/wiring, src/dms/run.sh and Dockerfile installer startup.
+- Tests targets: Old.Postgresql.Tests.Integration, frontend/core/backend unit tests asserting legacy flag/fallback behavior, DMS E2E @relational-backend and @relational-ci-shard tags, E2E guardrail tests, DMS integration fixture overrides, InstanceManagement E2E setup dms.document/installer assumptions, Kafka/Debezium E2E helpers tied to legacy document topics.
+- Docker/scripts targets: build-dms.ps1 backend-lane logic, AppSettings__UseRelationalBackend injection, NEED_DATABASE_SETUP/DMS deploy env handling, Backend.Installer publish path, eng/docker-compose start scripts/bootstrap/env utilities/.env* legacy variables, connector setup and postgresql/data_store connector JSON.
+- CI targets: .github workflows selecting relational-backend lanes or old backend integration/package artifacts.
+- Active docs targets: AGENTS.md, docs/DOCKER.md, docs/RELATIONAL-BACKEND.md, docs/MULTI-TENANCY-GETTING-STARTED.md, docs/CONFIGURATION.md, eng/docker-compose/README.md, RestClient setup examples.
+- Solution/project targets: src/dms/EdFi.DataManagementService.sln, src/dms/EdFi.DataManagementService-Docker.sln, Backend.Installer csproj, Backend.Postgresql csproj, Backend/Core test project references and InternalsVisibleTo entries.
+- Historical/design notes out of scope: reference/design/** matches exist but are treated as archive/design-note material unless a later task explicitly includes them.
+- Verification: all three task rg commands exited 0. Broad active-reference search is large, mostly E2E feature tags.
