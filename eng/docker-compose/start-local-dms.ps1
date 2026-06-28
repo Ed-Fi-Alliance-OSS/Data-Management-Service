@@ -121,12 +121,6 @@ param (
     [Switch]
     $DmsOnly,
 
-    # Skip registering the default Debezium source connector. Used by Instance Management E2E,
-    # which provisions per-data-store databases after startup and creates per-data-store connectors
-    # from the tests.
-    [Switch]
-    $SkipConnectorSetup,
-
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
     [Switch]
@@ -364,29 +358,6 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
-        if ($bootstrapMode) {
-            # Bootstrap mode provisions the redesigned relational schema (dms."Document", "ResourceKey",
-            # etc.) via dms-schema ddl provision. The default Debezium connector targets the legacy
-            # document-store CDC path: publication.name=to_debezium, publication.autocreate.mode=disabled,
-            # and table.include.list=dms.document,dms.educationorganizationhierarchytermslookup. Those
-            # legacy tables and the to_debezium publication are created only by the legacy installer DDL
-            # (0009_Configure_Replication.sql), which bootstrap mode never runs. Registering the default
-            # connector in bootstrap mode would leave it permanently in a FAILED/ERROR state because the
-            # required publication and tables do not exist by design.
-            Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
-        }
-        elseif (-not $SkipConnectorSetup) {
-            # Register the Debezium source connector now that the schema has been provisioned and
-            # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
-            # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
-            # RUNNING state and throws on failure.
-            Write-Output "Running connector setup..."
-            ./setup-connectors.ps1 $EnvironmentFile
-        }
-        else {
-            Write-Output "Skipping default connector setup."
-        }
-
         return
     }
 
@@ -438,17 +409,6 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
         }
-
-        Write-Output "Starting Kafka connector infrastructure..."
-        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-postgresql-source
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to start Kafka connector infrastructure. Exit code $LASTEXITCODE"
-        }
-
-        # Connector registration is intentionally deferred to the -DmsOnly phase. The Debezium
-        # source connector snapshots dms.document on registration; those tables do not exist
-        # until provision-dms-schema.ps1 runs, so registering here would start the connector
-        # task in a failed state. setup-connectors.ps1 runs after schema provisioning completes.
 
         if ($EnableKafkaUI) {
             Write-Output "Starting Kafka UI..."
@@ -529,17 +489,6 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
-    if ($bootstrapMode) {
-        Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
-    }
-    elseif (-not $SkipConnectorSetup) {
-        Write-Output "Running connector setup..."
-        ./setup-connectors.ps1 $EnvironmentFile
-    }
-    else {
-        Write-Output "Skipping default connector setup."
-    }
-
     Start-Sleep 20
 }
 } finally {

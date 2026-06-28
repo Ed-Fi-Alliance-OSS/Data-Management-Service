@@ -200,7 +200,7 @@
       "Run: `rg --hidden -n \"NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|USE_RELATIONAL_BACKEND|Backend\\\\.Installer|/app/Installer|provision-dms-schema\" eng/docker-compose/start-local-dms.ps1 eng/docker-compose/start-published-dms.ps1 eng/docker-compose/start-all-services.ps1 eng/docker-compose/.env*`",
       "Start the local compose stack when Docker dependencies are available and confirm DMS starts without installer or legacy setup logs."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docker Compose",

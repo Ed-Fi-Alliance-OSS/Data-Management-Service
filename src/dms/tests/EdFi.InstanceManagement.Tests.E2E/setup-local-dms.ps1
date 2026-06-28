@@ -17,7 +17,7 @@
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -127,10 +127,10 @@ try {
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup -DataStandardVersion $DataStandardVersion
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
         }
         else {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup -DataStandardVersion $DataStandardVersion
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
         }
     }
     finally {
