@@ -168,7 +168,7 @@
       "Run: `rg -n \"Backend\\\\.Installer|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|Old\\\\.Postgresql\" src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec .github eng`",
       "Build or inspect package artifacts when package dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E Provisioning",

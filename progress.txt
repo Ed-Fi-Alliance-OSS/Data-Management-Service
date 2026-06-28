@@ -93,3 +93,9 @@
 - Decision: kept relational env-file names for later E2E environment consolidation task; this task only removes legacy backend/setup variables.
 - Files changed: eng/docker-compose/.env.e2e.relational, .env.smoke.relational, .env.template.relational, tasks.json, progress.txt.
 - Verification: task rg over bootstrap/env utility/.env* has no matches; PowerShell parser check passed for bootstrap-*.psm1 and env-utility.psm1.
+
+2026-06-28 - completed Installer Removal: package/release artifact definitions / remove-legacy-backend.md Phase 4.6
+- Package/release installer artifact references already removed by earlier installer cleanup; no source/package definition edits needed.
+- Decision: kept old PostgreSQL CI job matches out of scope for this task; owned by later CI single-backend task.
+- Files changed: tasks.json, progress.txt.
+- Verification: installer-specific rg over nuspec/.github/eng had no matches; dotnet publish API and ApiSchemaDownloader Release passed; dotnet pack to /tmp succeeded; package top-level payloads are DataManagementService and ApiSchemaDownloader, with no Installer/Old.Postgresql matches.
