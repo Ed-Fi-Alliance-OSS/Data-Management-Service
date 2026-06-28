@@ -263,7 +263,7 @@
       "Run: `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild` when Docker dependencies are available.",
       "Run existing `instance-management-ci-shard-*` filters during full validation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Instance Management E2E",
