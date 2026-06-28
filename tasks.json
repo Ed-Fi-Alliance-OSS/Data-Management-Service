@@ -75,7 +75,7 @@
       "Run: `rg -n \"RelationalDocumentStoreRepository|RelationalBackendMappingInitializer|AddPostgresqlReferenceResolver|AddMssqlRelationalRuntimeServices\" src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore`",
       "Run: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Database Startup",

@@ -6,7 +6,6 @@
 using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
-using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
@@ -20,7 +19,6 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Old.Postgresql;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -84,7 +82,6 @@ public static class WebApplicationBuilderExtensions
         }
 
         ConfigureDatastore(webAppBuilder, logger);
-        ConfigureQueryHandler(webAppBuilder, logger);
 
         webAppBuilder.Services.AddSingleton<DbHealthCheck>(serviceProvider =>
         {
@@ -189,10 +186,6 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
-        var useRelationalBackend = webAppBuilder
-            .Configuration.GetSection("AppSettings")
-            .GetValue<bool>("UseRelationalBackend");
-
         if (
             string.Equals(
                 webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
@@ -205,17 +198,9 @@ public static class WebApplicationBuilderExtensions
                 "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
             webAppBuilder.Services.AddPostgresqlDatastore(webAppBuilder.Configuration);
-
-            if (useRelationalBackend)
-            {
-                logger.Information("Injecting PostgreSQL relational write runtime services");
-                webAppBuilder.Services.AddPostgresqlReferenceResolver();
-                ReplaceWithRelationalDocumentStoreRepository(webAppBuilder.Services);
-                ReplaceWithRelationalBackendMappingInitializer(webAppBuilder.Services);
-                webAppBuilder.Services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
-            }
-
-            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
+            logger.Information("Injecting PostgreSQL relational write runtime services");
+            webAppBuilder.Services.AddPostgresqlReferenceResolver();
+            webAppBuilder.Services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
                 Backend.Postgresql.PostgresqlDatabaseFingerprintReader
@@ -229,16 +214,9 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
 
-            if (useRelationalBackend)
-            {
-                logger.Information("Injecting MSSQL relational write runtime services");
-                AddMssqlRelationalRuntimeServices(webAppBuilder.Services, webAppBuilder.Configuration);
-                ReplaceWithRelationalDocumentStoreRepository(webAppBuilder.Services);
-                ReplaceWithRelationalBackendMappingInitializer(webAppBuilder.Services);
-                webAppBuilder.Services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
-            }
-
-            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            logger.Information("Injecting MSSQL relational write runtime services");
+            AddMssqlRelationalRuntimeServices(webAppBuilder.Services, webAppBuilder.Configuration);
+            webAppBuilder.Services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
                 Backend.Mssql.MssqlDatabaseFingerprintReader
@@ -248,21 +226,19 @@ public static class WebApplicationBuilderExtensions
                 Backend.Mssql.MssqlResourceKeyRowReader
             >();
         }
-    }
 
-    private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
-    {
-        if (webAppBuilder.Configuration.GetSection("AppSettings").GetValue<bool>("UseRelationalBackend"))
-        {
-            logger.Information(
-                "Injecting relational query handler surface; bypassing legacy query-handler selection"
-            );
-            ReplaceWithRelationalQueryHandler(webAppBuilder.Services);
-            return;
-        }
-
-        logger.Information("Injecting PostgreSQL as the backend query handler");
-        webAppBuilder.Services.AddPostgresqlQueryHandler();
+        logger.Information("Injecting relational document store repository surface");
+        webAppBuilder.Services.AddRelationalRelationshipAuthorizationServices();
+        webAppBuilder.Services.AddScoped<RelationalDocumentStoreRepository>();
+        webAppBuilder.Services.AddScoped<IDocumentStoreRepository>(serviceProvider =>
+            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+        );
+        webAppBuilder.Services.AddScoped<IQueryHandler>(serviceProvider =>
+            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+        );
+        webAppBuilder.Services.Replace(
+            ServiceDescriptor.Singleton<IBackendMappingInitializer, RelationalBackendMappingInitializer>()
+        );
     }
 
     private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)
@@ -313,35 +289,6 @@ public static class WebApplicationBuilderExtensions
         });
         services.TryAddSingleton<IMappingSetProvider, MappingSetProvider>();
         services.AddMssqlReferenceResolver();
-    }
-
-    private static void ReplaceWithRelationalDocumentStoreRepository(IServiceCollection services)
-    {
-        services.AddRelationalRelationshipAuthorizationServices();
-        services.TryAddScoped<RelationalDocumentStoreRepository>();
-        services.Replace(
-            ServiceDescriptor.Scoped<IDocumentStoreRepository>(serviceProvider =>
-                serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-            )
-        );
-    }
-
-    private static void ReplaceWithRelationalQueryHandler(IServiceCollection services)
-    {
-        services.AddRelationalRelationshipAuthorizationServices();
-        services.TryAddScoped<RelationalDocumentStoreRepository>();
-        services.Replace(
-            ServiceDescriptor.Scoped<IQueryHandler>(serviceProvider =>
-                serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-            )
-        );
-    }
-
-    private static void ReplaceWithRelationalBackendMappingInitializer(IServiceCollection services)
-    {
-        services.Replace(
-            ServiceDescriptor.Singleton<IBackendMappingInitializer, RelationalBackendMappingInitializer>()
-        );
     }
 }
 
