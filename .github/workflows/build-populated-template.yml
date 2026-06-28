@@ -148,9 +148,9 @@ jobs:
         run: |
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
-          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
+          $relationalDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
           if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-            throw "RELATIONAL_E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
+            throw "E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
           }
           "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
@@ -226,7 +226,7 @@ jobs:
       - name: Provision relational database
         if: ${{ inputs.use_relational_backend }}
         run: |
-          ./provision-relational-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
         working-directory: eng/docker-compose/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.

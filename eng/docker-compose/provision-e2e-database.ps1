@@ -7,6 +7,8 @@
 param(
     [string]$EnvironmentFile = "./.env.e2e.relational",
 
+    [string]$DatabaseName,
+
     [string]
     [ValidateSet("Debug", "Release")]
     $Configuration = "Release",
@@ -81,7 +83,7 @@ function Assert-SafeDatabaseName {
     }
 
     if ($DatabaseName -iin @("postgres", "template0", "template1")) {
-        throw "Database name '$DatabaseName' is a reserved PostgreSQL system database and cannot be used for relational E2E provisioning."
+        throw "Database name '$DatabaseName' is a reserved PostgreSQL system database and cannot be used for E2E provisioning."
     }
 }
 
@@ -133,21 +135,21 @@ function Get-DatabaseNameFromConnectionString {
     return $null
 }
 
-function Assert-RelationalDatabaseIsDedicated {
+function Assert-E2EDatabaseIsDedicated {
     param(
         [hashtable]$EnvironmentValues,
         [string]$EnvironmentFilePath,
-        [string]$RelationalDatabaseName
+        [string]$E2EDatabaseName
     )
 
-    Assert-SafeDatabaseName -DatabaseName $RelationalDatabaseName
+    Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
 
     $bootstrapDatabaseName = Resolve-EnvironmentValueReference `
         -Value ([string]$EnvironmentValues["POSTGRES_DB_NAME"]) `
         -EnvironmentValues $EnvironmentValues
 
-    if (-not [string]::IsNullOrWhiteSpace($bootstrapDatabaseName) -and $RelationalDatabaseName -ceq $bootstrapDatabaseName) {
-        throw "Relational E2E database '$RelationalDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match POSTGRES_DB_NAME."
+    if (-not [string]::IsNullOrWhiteSpace($bootstrapDatabaseName) -and $E2EDatabaseName -ceq $bootstrapDatabaseName) {
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match POSTGRES_DB_NAME."
     }
 
     foreach ($connectionStringKey in @(
@@ -159,8 +161,8 @@ function Assert-RelationalDatabaseIsDedicated {
             -ConnectionString ([string]$EnvironmentValues[$connectionStringKey]) `
             -EnvironmentValues $EnvironmentValues
 
-        if (-not [string]::IsNullOrWhiteSpace($connectionStringDatabaseName) -and $RelationalDatabaseName -ceq $connectionStringDatabaseName) {
-            throw "Relational E2E database '$RelationalDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
+        if (-not [string]::IsNullOrWhiteSpace($connectionStringDatabaseName) -and $E2EDatabaseName -ceq $connectionStringDatabaseName) {
+            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
         }
     }
 }
@@ -198,7 +200,7 @@ function Wait-ForPostgresql {
     throw "PostgreSQL container '$ContainerName' did not become ready after $MaxAttempts attempts."
 }
 
-function Reset-RelationalDatabase {
+function Reset-E2EDatabase {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$ContainerName,
@@ -208,7 +210,7 @@ function Reset-RelationalDatabase {
 
     Assert-SafeDatabaseName -DatabaseName $DatabaseName
 
-    if (-not $PSCmdlet.ShouldProcess($DatabaseName, "Reset relational PostgreSQL database")) {
+    if (-not $PSCmdlet.ShouldProcess($DatabaseName, "Reset E2E PostgreSQL database")) {
         return
     }
 
@@ -218,13 +220,13 @@ function Reset-RelationalDatabase {
     & docker exec $ContainerName psql -U $PostgresUsername -d postgres -v ON_ERROR_STOP=1 -c $terminateConnectionsSql
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to terminate active connections for relational database '$DatabaseName'."
+        throw "Failed to terminate active connections for E2E database '$DatabaseName'."
     }
 
     & docker exec $ContainerName dropdb -U $PostgresUsername --if-exists $DatabaseName
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to drop relational database '$DatabaseName'."
+        throw "Failed to drop E2E database '$DatabaseName'."
     }
 }
 
@@ -245,7 +247,13 @@ $environmentFilePath = Resolve-ScriptRelativePath $EnvironmentFile
 $environmentValues = Get-EnvironmentValueMap $environmentFilePath
 $postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
 $postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
-$relationalDatabaseName = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "RELATIONAL_E2E_DATABASE_NAME"
+$e2eDatabaseName =
+    if ([string]::IsNullOrWhiteSpace($DatabaseName)) {
+        Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "E2E_DATABASE_NAME"
+    }
+    else {
+        $DatabaseName
+    }
 $postgresUsername =
     if ([string]::IsNullOrWhiteSpace([string]$environmentValues["POSTGRES_USER"])) {
         "postgres"
@@ -263,21 +271,21 @@ $postgresCredential = [System.Management.Automation.PSCredential]::new(
     $securePostgresPassword
 )
 
-Write-Information "Provisioning relational E2E database" -InformationAction Continue
+Write-Information "Provisioning E2E database" -InformationAction Continue
 Write-Information "Environment file: $environmentFilePath" -InformationAction Continue
 Write-Information "PostgreSQL container: $PostgresContainerName" -InformationAction Continue
-Write-Information "Relational database: $relationalDatabaseName" -InformationAction Continue
+Write-Information "E2E database: $e2eDatabaseName" -InformationAction Continue
 Write-Information "Configuration: $Configuration" -InformationAction Continue
 
-Assert-RelationalDatabaseIsDedicated `
+Assert-E2EDatabaseIsDedicated `
     -EnvironmentValues $environmentValues `
     -EnvironmentFilePath $environmentFilePath `
-    -RelationalDatabaseName $relationalDatabaseName
+    -E2EDatabaseName $e2eDatabaseName
 
 Wait-ForPostgresql -ContainerName $PostgresContainerName -PostgresUsername $postgresUsername
 
 $script:ResolvedSchemaDirectory =
-    Join-Path ([System.IO.Path]::GetTempPath()) "dms-relational-e2e-schema-$([Guid]::NewGuid().ToString('N'))"
+    Join-Path ([System.IO.Path]::GetTempPath()) "dms-e2e-schema-$([Guid]::NewGuid().ToString('N'))"
 $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
         -EnvironmentFilePath $environmentFilePath `
         -Configuration $Configuration `
@@ -286,10 +294,10 @@ $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
         -DownloaderDotnetRunArgs @("--no-launch-profile"))
 
 try {
-    Write-Information "Dropping relational database if it exists: $relationalDatabaseName" -InformationAction Continue
-    Reset-RelationalDatabase `
+    Write-Information "Dropping E2E database if it exists: $e2eDatabaseName" -InformationAction Continue
+    Reset-E2EDatabase `
         -ContainerName $PostgresContainerName `
-        -DatabaseName $relationalDatabaseName `
+        -DatabaseName $e2eDatabaseName `
         -PostgresUsername $postgresUsername
 
     $schemaToolsProject = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
@@ -297,9 +305,9 @@ try {
         -ServerHost "127.0.0.1" `
         -Port $postgresPort `
         -Credential $postgresCredential `
-        -DatabaseName $relationalDatabaseName
+        -DatabaseName $e2eDatabaseName
 
-    Write-Information "Running SchemaTools ddl provision for $relationalDatabaseName" -InformationAction Continue
+    Write-Information "Running SchemaTools ddl provision for $e2eDatabaseName" -InformationAction Continue
 
     $provisionArgs = @(
         "run",
@@ -323,10 +331,10 @@ try {
     & dotnet @provisionArgs
 
     if ($LASTEXITCODE -ne 0) {
-        throw "SchemaTools provisioning failed for database '$relationalDatabaseName'."
+        throw "SchemaTools provisioning failed for database '$e2eDatabaseName'."
     }
 
-    Write-Information "Relational E2E database provisioned successfully: $relationalDatabaseName" -InformationAction Continue
+    Write-Information "E2E database provisioned successfully: $e2eDatabaseName" -InformationAction Continue
 }
 finally {
     if (-not [string]::IsNullOrWhiteSpace($script:ResolvedSchemaDirectory) -and (Test-Path $script:ResolvedSchemaDirectory)) {

@@ -463,10 +463,10 @@ function Get-E2ETestEnvironmentContext {
 
     $dataStoreDatabaseName =
         if ($useRelationalBackend) {
-            $relationalDatabaseName = [string]$environmentValues["RELATIONAL_E2E_DATABASE_NAME"]
+            $relationalDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
 
             if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-                throw "Relational E2E environment '$environmentFilePath' requires RELATIONAL_E2E_DATABASE_NAME to be set."
+                throw "Relational E2E environment '$environmentFilePath' requires E2E_DATABASE_NAME to be set."
             }
 
             $relationalDatabaseName
@@ -748,7 +748,7 @@ function Invoke-RelationalE2EDatabaseProvisioning {
     try {
         Push-Location "$PSScriptRoot/eng/docker-compose"
         $provisionOutput = @()
-        ./provision-relational-e2e-database.ps1 `
+        ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
             -Configuration $Configuration 6>&1 |
             Tee-Object -Variable provisionOutput |

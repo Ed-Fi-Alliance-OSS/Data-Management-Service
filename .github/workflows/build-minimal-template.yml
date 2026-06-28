@@ -148,7 +148,7 @@ jobs:
 
       - name: Provision relational database
         run: |
-          ./provision-relational-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
         working-directory: eng/docker-compose/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.

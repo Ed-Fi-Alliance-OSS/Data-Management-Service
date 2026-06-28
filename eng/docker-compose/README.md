@@ -92,7 +92,7 @@ By default, authentication uses the Self-Contained (OpenIddict) identity provide
 
 When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. Because `provision-relational-e2e-database.ps1`
+it can serve requests. Because `provision-e2e-database.ps1`
 provisions inside the running `dms-postgresql` container, the sequence is:
 
 1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
@@ -105,7 +105,7 @@ provisions inside the running `dms-postgresql` container, the sequence is:
 2. Run the provisioning script:
 
    ```pwsh
-   ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational
+   ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational
    ```
 
 3. Restart DMS so cached startup-validation state is discarded:

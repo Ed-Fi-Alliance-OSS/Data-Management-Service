@@ -99,7 +99,7 @@ Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 ### Scripted local provisioning
 
 For the local Docker E2E stack, the helper
-[`provision-relational-e2e-database.ps1`](../eng/docker-compose/provision-relational-e2e-database.ps1)
+[`provision-e2e-database.ps1`](../eng/docker-compose/provision-e2e-database.ps1)
 wraps the above; see [`eng/docker-compose/README.md`](../eng/docker-compose/README.md).
 
 ## 3. Schema-fingerprint validation — how DMS validates schema on first use
