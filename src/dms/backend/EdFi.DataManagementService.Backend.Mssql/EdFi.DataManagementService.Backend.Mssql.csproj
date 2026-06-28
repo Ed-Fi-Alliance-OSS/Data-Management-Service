@@ -11,9 +11,6 @@
         <PackageReference Include="Microsoft.CodeAnalysis" />
     </ItemGroup>
     <ItemGroup>
-        <Folder Include="Deploy\Scripts\" />
-    </ItemGroup>
-    <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
     <ItemGroup>

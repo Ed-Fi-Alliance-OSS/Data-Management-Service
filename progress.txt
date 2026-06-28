@@ -45,3 +45,10 @@
 - Files changed: DMS frontend startup/config, run.sh, build-dms.ps1, eng/docker-compose scripts/env/tests/docs, DMS E2E setup scripts, integration test host overrides, active docs/RestClient, tasks.json.
 - Verification: csharpier format; required rg shows only CMS deploy-on-startup references plus DMS deployer contracts left for next task; dotnet test Frontend.AspNetCore.Tests.Unit Release; Invoke-Pester affected docker-compose suites.
 - Notes: DMS IDatabaseDeploy/DatabaseDeployResult/deploy implementations intentionally remain for next Database Startup task.
+
+2026-06-28 - completed Database Startup: delete DMS deployer contracts/implementations / remove-legacy-backend.md Phase 4.2
+- Deleted IDatabaseDeploy, DatabaseDeployResult, MSSQL DatabaseDeploy, Old.Postgresql DatabaseDeploy, and deployer unit tests.
+- Installer project temporarily retained for next deletion task but no longer references Backend/MSSQL/Old.Postgresql deployer projects; it now exits with SchemaTools provisioning guidance if invoked.
+- Removed stale MSSQL Deploy/Scripts folder include. Existing docs already cover SchemaTools ddl provision --dialect mssql.
+- Files changed: Backend Deploy contracts deleted, Backend.Mssql deploy file/csproj, Old.Postgresql deploy file, Backend.Tests.Unit deploy tests, Backend.Installer Program/csproj, tasks.json.
+- Verification: csharpier format; required rg; dotnet test Backend.Tests.Unit Release passed 1800; dotnet test Backend.Postgresql.Tests.Integration Release passed 662 after starting Docker Desktop and recreating stale dms-postgresql container; dotnet build Backend.Installer Release.
