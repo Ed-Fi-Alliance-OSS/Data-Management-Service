@@ -1,9 +1,16 @@
+---
+jira: DMS-1240
+spike: DMS-911
+epic: DMS-1089
+---
+
 # Design: Replacement for `expandjsonsmt`
 
 > Status: Proposed (DMS-911 spike). This document is the design deliverable for
 > DMS-911 ("Look for an alternative for `expandjsonsmt`"). It records the
-> investigation, the recommended path, and the follow-up implementation tickets.
-> No implementation is in scope for DMS-911 itself.
+> investigation, the recommended path, and the follow-up implementation ticket.
+> No implementation is in scope for DMS-911 itself; the implementation is
+> tracked in DMS-1240.
 
 ## Summary
 
@@ -246,8 +253,9 @@ Test the **desired Ed-Fi contract**, not RedHat parity. Cover:
    converter setting) — the published JSON structure is what matters; Connect
    schema names are stripped and are not part of the contract.
 
-This validation is a prerequisite for ticket 3 — no DMS connector config may
-point at the new class until the contract is validated.
+This validation is a prerequisite for wiring the relational connector
+(DMS-1232) — no DMS connector config may point at the new class until the
+contract is validated.
 
 ## Affected files
 
@@ -265,58 +273,41 @@ point at the new class until the contract is validated.
 Proposed class path: `org.edfi.kafka.connect.transforms.ExpandJson$Value`
 (matches the existing Ed-Fi transform package). Config key stays `sourceFields`.
 
-## Follow-up implementation tickets
+## Follow-up implementation ticket
 
-> Ordering reflects the cross-repo dependency: the SMT is built and
-> contract-validated first, the image is published second, and the relational
-> connector wiring (owned by DMS-1232) comes last.
-
-### 1. Build an Ed-Fi-owned minimal expand-JSON SMT
-
-A small, generic, public transform in `org.edfi.kafka.connect.transforms` for
-root-level JSON-object-field expansion.
+A single ticket covers the work, all in `Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect`:
+build the SMT, contract-validate it, remove the RedHat download, and publish the
+image. These land together in one repo and PR — building the SMT and removing
+the download are inseparable, and the image publish is the repo's CI release on
+merge.
 
 Acceptance criteria:
-- Public transform class; loads under Kafka Connect 4.x (and the current 3.x
-  runtime); compile target verified against the image JDK.
+- Public transform class in `org.edfi.kafka.connect.transforms` loads under
+  Kafka Connect 4.x (and the current 3.x runtime); compile target verified
+  against the image JDK.
 - Built on Connect JSON / Jackson; **no BSON dependency**.
-- Generic: expands the fields named in `sourceFields`; contains no
-  DMS-specific table/column knowledge.
-- `sourceFields` config key, documented.
-- **Contract validated** per the Contract-validation section (prerequisite for
-  ticket 3).
-- Unit tests cover each contract case.
+- Generic: expands the fields named in `sourceFields`; contains no DMS-specific
+  table/column knowledge. `sourceFields` config key, documented.
+- **Contract validated** per the Contract-validation section, with unit tests
+  per case.
+- `kafka/Dockerfile` no longer downloads `expandjsonsmt`; the published image
+  ships the Ed-Fi transform, starts cleanly, and has no build-time dependency on
+  the RedHat GitHub release.
 - Attribution: if any RedHat or joshuagrisham code is incorporated, retain its
-  Apache-2.0 notices and record the derivation in `NOTICES.md`; if clean-room,
-  note the inspiration without a license obligation. (Blocking before publish.)
+  Apache-2.0 notices and record the derivation in `NOTICES.md` (blocking before
+  publish); if clean-room, note the inspiration without a license obligation.
+- Optionally, while in the same repo, retire the obsolete
+  `RenameDmsTopicToOpenSearchIndex` transform (dead OpenSearch code).
 
-### 2. Build and publish the Connect image without the external RedHat download
+### Dependencies / handoffs (not part of this ticket)
 
-Acceptance criteria:
-- `kafka/Dockerfile` no longer downloads `expandjsonsmt`.
-- Published image contains the vendored Ed-Fi transform and starts cleanly.
-- No remaining build-time dependency on the RedHat GitHub release.
-
-### 3. Consume the new transform from the relational streaming connector (DMS-1232)
-
-The legacy backend is being retired, so there are no legacy configs to repoint.
-The relational streaming connector — owned by **DMS-1232** — wires the new
-transform once the image (ticket 2) is available and ticket 1's contract
-validation passes. DMS-1232 owns the captured tables and the `sourceFields`
-values (likely just `DocumentJson`).
-
-Acceptance criteria (within DMS-1232):
-- The relational connector uses `org.edfi.kafka.connect.transforms.ExpandJson$Value`.
-- Connectors reach `RUNNING`; configured fields publish as structured JSON; no
-  transform load errors.
-- The legacy connector configs (`postgresql_connector.json`,
+- **Relational connector wiring is owned by DMS-1232.** It selects the captured
+  tables and the `sourceFields` values (likely `DocumentCache.DocumentJson`) and
+  points the connector at `org.edfi.kafka.connect.transforms.ExpandJson$Value`
+  once the image is available and the contract validation passes.
+- **Legacy connector configs** (`postgresql_connector.json`,
   `data_store_connector_template.json`) and `DebeziumConnectorClient.cs` are
   removed as part of legacy backend retirement.
-
-### 4. (Optional, minor) Retire the obsolete `RenameDmsTopicToOpenSearchIndex` transform
-
-OpenSearch is no longer a read store. Adjacent cleanup in the Ed-Fi Kafka
-Connect repo's stale plugin surface; not part of solving `expandjsonsmt`.
 
 ## Risks and open questions
 
@@ -332,7 +323,7 @@ Connect repo's stale plugin surface; not part of solving `expandjsonsmt`.
 - **Connect 4 upgrade timing.** Does not block this design, but sets urgency and
   whether the plugin's Gradle/Java baseline bumps now or later.
 
-## Test expectations for the implementation tickets
+## Test expectations for the implementation ticket
 
 - **Ed-Fi plugin repo (JUnit):** one test per Contract-validation case — valid
   object, nested object, scalar array, object array, empty array, null/missing
