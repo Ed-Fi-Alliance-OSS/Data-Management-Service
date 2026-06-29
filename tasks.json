@@ -278,7 +278,7 @@
       "Run: `rg -n \"Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|USE_RELATIONAL_BACKEND|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|provision-relational-e2e-database|provision-e2e-database|instance-management-ci-shard\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md`",
       "Manually inspect remaining matches and confirm they describe the new relational route-context flow."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Instance Management E2E",

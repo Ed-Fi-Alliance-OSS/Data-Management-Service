@@ -36,11 +36,25 @@ The tests are based on the workflow defined in `src/dms/tests/RestClient/multi-i
 
 This script handles:
 - Docker environment setup with proper configuration
+- Relational route-context database provisioning
 - Building the DMS and Configuration Service
 - Running the tests
 - Cleanup of the Docker environment
 
 **Do not attempt to run these tests directly with `dotnet test`** - the setup is too complex and requires specific environment configuration that is managed by the build script.
+
+### Shard Filters
+
+The Instance Management E2E suite currently uses two CI shard categories. Run a shard from the repository root with the build script:
+
+```powershell
+./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-1'
+./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-2'
+```
+
+### Route-Context Database Provisioning
+
+`setup-local-dms.ps1`, called by `build-dms.ps1 InstanceE2ETest`, starts the local Docker stack and provisions the three fixed route-context databases with `eng/docker-compose/provision-e2e-database.ps1 -DatabaseName <database>`. The provisioning step generates the relational DMS schema and verifies the `dms."EffectiveSchema"` singleton row plus expected generated resource tables before tests create tenants, vendors, instances, route contexts, and applications.
 
 ## Test Structure
 

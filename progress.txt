@@ -277,3 +277,10 @@
 - Removed compose README Debezium pointer; kept explicit opt-in Kafka/Kafka UI infra docs plus pending-support notes.
 - Files changed: GETTING_STARTED.md, eng/docker-compose/README.md, RestClient HTTP files, DMS integration README, tasks.json, progress.txt.
 - Verification: task rg shows no dms.document/to_debezium/edfi.dms.document/Debezium active contract refs; remaining Kafka hits are opt-in infra, guardrails, or pending-support notes; git diff --check passed.
+
+2026-06-29 - completed Instance Management E2E documentation: relational route-context setup / remove-legacy-backend.md Phase 4.8
+- README now states build-dms InstanceE2ETest provisions route-context databases through provision-e2e-database.ps1 and verifies relational schema before tests create tenants/instances.
+- Added current Instance Management shard filter examples for @instance-management-ci-shard-1 and @instance-management-ci-shard-2.
+- Files changed: InstanceManagement E2E README, tasks.json, progress.txt.
+- Verification: task rg returns only expected provision-e2e-database and shard-filter matches; no deleted installer/legacy flag/dms.document hits.
+- Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
