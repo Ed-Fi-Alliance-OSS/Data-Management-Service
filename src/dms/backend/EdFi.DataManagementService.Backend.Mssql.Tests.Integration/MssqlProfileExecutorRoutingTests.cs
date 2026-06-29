@@ -26,15 +26,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileRoutingAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -293,7 +284,6 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -444,7 +434,6 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -485,7 +474,6 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
             DocumentUuid: PostAsUpdateDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -632,7 +620,6 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -673,7 +660,6 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );

@@ -39,16 +39,6 @@ file sealed class PostgresqlProfileTopLevelCollectionMergeNoOpHostApplicationLif
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -296,7 +286,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -338,7 +327,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -381,7 +369,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

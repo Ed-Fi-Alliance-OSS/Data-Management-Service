@@ -120,7 +120,6 @@ internal static class PostgresqlProfileNestedSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -162,7 +161,6 @@ internal static class PostgresqlProfileNestedSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

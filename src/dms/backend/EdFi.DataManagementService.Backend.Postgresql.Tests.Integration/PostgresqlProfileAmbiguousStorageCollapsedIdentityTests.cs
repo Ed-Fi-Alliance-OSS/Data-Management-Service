@@ -38,16 +38,6 @@ file sealed class PostgresqlProfileAmbiguousStorageCollapsedNoOpHostApplicationL
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -307,7 +297,6 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -358,7 +347,6 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

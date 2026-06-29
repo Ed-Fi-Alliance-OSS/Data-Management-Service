@@ -35,16 +35,6 @@ file sealed class FullSurfaceCollectionReorderHostApplicationLifetime : IHostApp
     public void StopApplication() { }
 }
 
-file sealed class FullSurfaceCollectionReorderAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class FullSurfaceCollectionReorderUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -227,7 +217,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new FullSurfaceCollectionReorderAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -246,7 +235,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new FullSurfaceCollectionReorderAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

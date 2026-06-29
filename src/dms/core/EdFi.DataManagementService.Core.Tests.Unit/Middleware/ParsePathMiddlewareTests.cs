@@ -147,7 +147,6 @@ public class ParsePathMiddlewareTests
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
             appSettingsOptions,
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,

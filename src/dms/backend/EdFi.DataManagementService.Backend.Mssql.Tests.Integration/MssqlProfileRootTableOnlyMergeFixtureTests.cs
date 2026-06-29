@@ -32,16 +32,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -309,7 +299,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -748,7 +737,6 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Roo
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -890,7 +878,6 @@ public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -1071,7 +1058,6 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -1238,7 +1224,6 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

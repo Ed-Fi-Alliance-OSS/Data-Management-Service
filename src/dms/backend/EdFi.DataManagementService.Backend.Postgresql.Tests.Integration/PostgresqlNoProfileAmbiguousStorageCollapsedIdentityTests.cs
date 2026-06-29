@@ -34,16 +34,6 @@ file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedNoOpHostApplicatio
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -205,7 +195,6 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlNoProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

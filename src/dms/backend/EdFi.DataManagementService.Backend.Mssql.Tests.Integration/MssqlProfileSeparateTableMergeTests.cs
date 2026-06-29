@@ -31,16 +31,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileSeparateTableMergeAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileSeparateTableMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -269,7 +259,6 @@ internal static class MssqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -309,7 +298,6 @@ internal static class MssqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -350,7 +338,6 @@ internal static class MssqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

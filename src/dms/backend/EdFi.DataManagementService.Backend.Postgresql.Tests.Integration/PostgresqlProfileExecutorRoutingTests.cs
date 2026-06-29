@@ -36,15 +36,6 @@ file sealed class ProfileRoutingNoOpHostApplicationLifetime : IHostApplicationLi
     public void StopApplication() { }
 }
 
-file sealed class ProfileRoutingAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -305,7 +296,6 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -450,7 +440,6 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -491,7 +480,6 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             DocumentUuid: PostAsUpdateDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -632,7 +620,6 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -673,7 +660,6 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );

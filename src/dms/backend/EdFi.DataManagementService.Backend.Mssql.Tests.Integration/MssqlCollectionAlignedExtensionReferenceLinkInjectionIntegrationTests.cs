@@ -29,16 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // in the aligned _ext scope of each parents[*] element. Uses the synthetic fixture
 // IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref.
 
-file sealed class MssqlCollectionAlignedExtAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlCollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -286,7 +276,6 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             DocumentUuid: SponsorDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlCollectionAlignedExtAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -330,7 +319,6 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             DocumentUuid: ParentResourceDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlCollectionAlignedExtAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -35,15 +35,6 @@ internal sealed class UpdateSemanticsNoOpHostApplicationLifetime : IHostApplicat
     public void StopApplication() { }
 }
 
-internal sealed class UpdateSemanticsAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 internal sealed class UpdateSemanticsNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -346,7 +337,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new UpdateSemanticsAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -361,7 +351,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new UpdateSemanticsAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

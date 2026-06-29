@@ -30,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // DocumentLinkSlugResolverTests. The other reference shapes (abstract, nested-collection,
 // _ext scope, _ext child collection) are tracked as task subtasks 29b-29e.
 
-file sealed class MssqlLinkInjectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlLinkInjectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -334,7 +325,6 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlLinkInjectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -364,7 +354,6 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlLinkInjectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -23,15 +23,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlDeleteByIdAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlDeleteByIdNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -358,7 +349,6 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlDeleteByIdNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlDeleteByIdAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }
@@ -368,7 +358,6 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         return new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
-            ResourceAuthorizationHandler: new MssqlDeleteByIdAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             TraceId: new TraceId("mssql-delete-invocation"),
             DeleteInEdOrgHierarchy: false,

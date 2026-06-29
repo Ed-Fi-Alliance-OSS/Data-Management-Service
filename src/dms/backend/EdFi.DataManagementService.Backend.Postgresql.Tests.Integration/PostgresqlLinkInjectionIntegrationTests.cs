@@ -41,15 +41,6 @@ file sealed class LinkInjectionHostApplicationLifetime : IHostApplicationLifetim
     public void StopApplication() { }
 }
 
-file sealed class LinkInjectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class LinkInjectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -343,7 +334,6 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new LinkInjectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -373,7 +363,6 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new LinkInjectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -48,15 +48,6 @@ file sealed class OrphanedRefHostApplicationLifetime : IHostApplicationLifetime
     public void StopApplication() { }
 }
 
-file sealed class OrphanedRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class OrphanedRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -346,7 +337,6 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new OrphanedRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -376,7 +366,6 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new OrphanedRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

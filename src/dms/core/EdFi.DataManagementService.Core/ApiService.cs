@@ -41,7 +41,6 @@ internal class ApiService : IApiService
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
     private readonly IOptions<AppSettings> _appSettings;
-    private readonly IAuthorizationServiceFactory _authorizationServiceFactory;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IServiceProvider _serviceProvider;
@@ -115,7 +114,6 @@ internal class ApiService : IApiService
         IDecimalValidator decimalValidator,
         ILogger<ApiService> logger,
         IOptions<AppSettings> appSettings,
-        IAuthorizationServiceFactory authorizationServiceFactory,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IServiceProvider serviceProvider,
@@ -134,7 +132,6 @@ internal class ApiService : IApiService
         _decimalValidator = decimalValidator;
         _logger = logger;
         _appSettings = appSettings;
-        _authorizationServiceFactory = authorizationServiceFactory;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _serviceProvider = serviceProvider;
@@ -231,7 +228,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
-            new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider, _authorizationServiceFactory),
+            new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
         ]);
 
         return new PipelineProvider(steps);
@@ -252,7 +249,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            new GetByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
+            new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -327,12 +324,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
-            new UpdateByIdHandler(
-                _logger,
-                _resiliencePipeline,
-                _apiSchemaProvider,
-                _authorizationServiceFactory
-            ),
+            new UpdateByIdHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
         ]);
         return new PipelineProvider(steps);
     }
@@ -353,7 +345,7 @@ internal class ApiService : IApiService
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            new DeleteByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
+            new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);

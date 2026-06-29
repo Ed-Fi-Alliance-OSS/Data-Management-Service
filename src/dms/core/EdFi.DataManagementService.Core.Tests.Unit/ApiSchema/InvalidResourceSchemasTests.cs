@@ -165,7 +165,6 @@ public class InvalidResourceSchemasTests
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                new NamedAuthorizationServiceFactory(),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 serviceProvider,

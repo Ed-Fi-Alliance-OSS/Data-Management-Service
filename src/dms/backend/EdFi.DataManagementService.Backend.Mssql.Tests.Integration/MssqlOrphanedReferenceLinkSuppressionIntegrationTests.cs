@@ -29,15 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // AcademicWeek.School_DocumentId column to a phantom value. CK_AcademicWeek_School_AllNone
 // stays satisfied because School_SchoolId remains non-null.
 
-file sealed class MssqlOrphanedRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlOrphanedRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -324,7 +315,6 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlOrphanedRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -354,7 +344,6 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlOrphanedRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

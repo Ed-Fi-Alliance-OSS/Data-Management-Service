@@ -32,15 +32,6 @@ file sealed class PostgresqlProfileIfMatchHostApplicationLifetime : IHostApplica
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlProfileIfMatchNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -167,7 +158,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
             AuthorizationContext: new RelationalAuthorizationContext([]),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -258,7 +248,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
@@ -293,7 +282,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

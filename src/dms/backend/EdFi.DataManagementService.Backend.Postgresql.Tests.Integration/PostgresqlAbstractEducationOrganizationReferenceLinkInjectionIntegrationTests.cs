@@ -43,15 +43,6 @@ file sealed class AbstractRefHostApplicationLifetime : IHostApplicationLifetime
     public void StopApplication() { }
 }
 
-file sealed class AbstractRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class AbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -346,7 +337,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AbstractRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -376,7 +366,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             DocumentUuid: CourseDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AbstractRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -36,15 +36,6 @@ file sealed class AuthoritativeDs52WriteHostApplicationLifetime : IHostApplicati
     public void StopApplication() { }
 }
 
-file sealed class AuthoritativeDs52WriteAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class AuthoritativeDs52WriteNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -631,7 +622,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeDs52WriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeDs52WriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -661,7 +651,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeDs52WriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeDs52WriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -34,15 +34,6 @@ file sealed class DeleteByIdNoOpHostApplicationLifetime : IHostApplicationLifeti
     public void StopApplication() { }
 }
 
-file sealed class DeleteByIdAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class DeleteByIdNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -348,7 +339,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new DeleteByIdNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new DeleteByIdAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }
@@ -358,7 +348,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         return new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
-            ResourceAuthorizationHandler: new DeleteByIdAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             TraceId: new TraceId("pg-delete-invocation"),
             DeleteInEdOrgHierarchy: false,

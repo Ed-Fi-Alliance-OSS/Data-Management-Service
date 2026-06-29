@@ -36,15 +36,6 @@ file sealed class GuardedNoOpHostApplicationLifetime : IHostApplicationLifetime
     public void StopApplication() { }
 }
 
-file sealed class GuardedNoOpAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class GuardedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -556,7 +547,6 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -582,7 +572,6 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -610,7 +599,6 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

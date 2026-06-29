@@ -37,15 +37,6 @@ file sealed class RollbackSafetyNoOpHostApplicationLifetime : IHostApplicationLi
     public void StopApplication() { }
 }
 
-file sealed class RollbackSafetyAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class RollbackSafetyNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -242,7 +233,6 @@ file static class RollbackSafetyIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new RollbackSafetyNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new RollbackSafetyAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }

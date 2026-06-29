@@ -30,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // asserts both content shape (no link) and cross-restart etag equality (etag derives
 // from the canonical resource-state body, link-stripped; clarified by DMS-1005).
 
-file sealed class MssqlResourceLinksFlagAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlResourceLinksFlagNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -347,7 +338,6 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlResourceLinksFlagAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -377,7 +367,6 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlResourceLinksFlagAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

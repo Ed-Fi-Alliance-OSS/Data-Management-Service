@@ -37,16 +37,6 @@ file sealed class AuthoritativeSampleStudentSectionAssociationWriteHostApplicati
     public void StopApplication() { }
 }
 
-file sealed class AuthoritativeSampleStudentSectionAssociationAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class AuthoritativeSampleStudentSectionAssociationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -897,7 +887,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: StudentSectionAssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleStudentSectionAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSectionAssociationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -940,7 +929,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: StudentSectionAssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleStudentSectionAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSectionAssociationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -983,7 +971,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: StudentSectionAssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleStudentSectionAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSectionAssociationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

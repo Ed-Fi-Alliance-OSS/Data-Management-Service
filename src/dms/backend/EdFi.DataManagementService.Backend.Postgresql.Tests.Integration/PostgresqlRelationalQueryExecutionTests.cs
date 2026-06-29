@@ -40,16 +40,6 @@ internal sealed class PostgresqlRelationalQueryHostApplicationLifetime : IHostAp
     public void StopApplication() { }
 }
 
-internal sealed class PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 internal sealed class PostgresqlRelationalQueryNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -713,7 +703,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             DocumentUuid: schoolSeed.DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

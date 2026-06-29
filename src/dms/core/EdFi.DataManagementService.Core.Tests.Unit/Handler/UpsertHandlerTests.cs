@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,8 +38,7 @@ public class UpsertHandlerTests
         var handler = new UpsertHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
-            new UpdateByIdHandlerTests.Provider(),
-            new NoAuthorizationServiceFactory()
+            new UpdateByIdHandlerTests.Provider()
         );
 
         return (handler, serviceProvider);

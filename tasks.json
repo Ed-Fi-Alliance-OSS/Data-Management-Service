@@ -824,5 +824,88 @@
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
     ],
     "completed": true
+  },
+  {
+    "category": "Authorization",
+    "description": "Medium: Finish removing or restoring the old authorization-handler contract. `ProvideAuthorizationFiltersMiddleware.cs:49` now creates empty-filter evaluators, but public request contracts still expose `IResourceAuthorizationHandler` at `IUpsertRequest.cs:64`, core still constructs it at `GetByIdHandler.cs:41` and `UpsertHandler.cs:70`, and relational code uses `AuthorizationStrategyEvaluators` plus `AuthorizationContext` at `RelationalDocumentStoreRepository.cs:122` instead.",
+    "acceptance-criteria": [
+      "Either the legacy `IResourceAuthorizationHandler` compatibility path is restored with populated filters, or the unused handler/factory/filter-provider/validator surface is removed from production contracts and registrations.",
+      "Public request contracts no longer instruct backend implementations to depend on an empty-filter `IResourceAuthorizationHandler` path unless that path is fully functional.",
+      "`ResourceAuthorizationHandler` no longer consumes empty filters created by `ProvideAuthorizationFiltersMiddleware` as a latent compatibility path.",
+      "`DmsCoreServiceExtensions.cs` no longer registers legacy authorization validators or filter providers unless they are still used by an active, tested compatibility path.",
+      "Unit tests are removed or updated so they assert the final supported authorization contract rather than a half-removed legacy path."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"IResourceAuthorizationHandler|ResourceAuthorizationHandler|IAuthorizationValidator|IAuthorizationFiltersProvider|AuthorizationFiltersProvider|AuthorizationStrategyEvaluator\" src/dms/core src/dms/backend` and confirm the remaining surface matches the chosen contract.",
+      "Run: `rg -n \"ResourceAuthorizationHandler: new ResourceAuthorizationHandler|AuthorizationContext|AuthorizationStrategyEvaluators\" src/dms/core src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs` and confirm core/backend request flow is not carrying an unused handler.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Core Pipeline",
+    "description": "Medium: Remove old document-security and authorization-pathway computation that relational write authorization does not consume. `RelationalDocumentStoreRepository.cs:141` says `DocumentSecurityElements` and `AuthorizationPathways` are not used for relational write authorization or persistence, but POST/PUT/DELETE pipelines still run legacy steps at `ApiService.cs:219` and `ApiService.cs:233`.",
+    "acceptance-criteria": [
+      "POST, PUT, and DELETE pipelines no longer run middleware that only populates legacy `DocumentSecurityElements` or `AuthorizationPathways` for relational write authorization.",
+      "Request DTOs and handler calls no longer carry `DocumentSecurityElements` or `AuthorizationPathways` when the relational backend does not consume them.",
+      "Any remaining document-security extraction is tied to an active relational requirement and has tests that prove that requirement.",
+      "Legacy failure modes from unused document-security/pathway middleware are removed from relational write requests.",
+      "Comments in `RelationalDocumentStoreRepository.cs` accurately describe any remaining security data passed through the write path."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"DocumentSecurityElements|AuthorizationPathways|ExtractDocumentSecurity|ProvideAuthorizationPathways|RelationalDocumentStoreRepository\" src/dms/core src/dms/backend` and confirm remaining usage is active and intentional.",
+      "Inspect `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs` POST/PUT/DELETE pipelines and confirm legacy document-security/pathway steps are gone or justified by active relational behavior.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Wiring",
+    "description": "Low: Remove duplicate relationship authorization service registration. `AddReferenceResolver` already calls `AddRelationalRelationshipAuthorizationServices` at `ReferenceResolverServiceCollectionExtensions.cs:187`, and frontend datastore wiring calls it again at `WebApplicationBuilderExtensions.cs:231`.",
+    "acceptance-criteria": [
+      "Relationship authorization services are registered from one clear composition point for each datastore.",
+      "The duplicate `AddRelationalRelationshipAuthorizationServices` call in frontend datastore wiring is removed if `AddReferenceResolver` remains the owner.",
+      "No relationship authorization service registration is lost for PostgreSQL or MSSQL.",
+      "Service-registration tests or focused inspection verify that required relationship authorization services remain available."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"AddRelationalRelationshipAuthorizationServices|AddReferenceResolver\" src/dms/backend src/dms/frontend` and confirm there is no redundant registration call.",
+      "Run: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Low: Update Docker documentation for removed installer-era PostgreSQL variables. `docs/DOCKER.md:23` still lists `POSTGRES_ADMIN_*`, `POSTGRES_PORT`, and `POSTGRES_HOST`, but the installer path is gone and `src/dms/run.sh:14` only parses `DATABASE_CONNECTION_STRING_ADMIN` for PostgreSQL readiness.",
+    "acceptance-criteria": [
+      "`docs/DOCKER.md` no longer documents installer-era `POSTGRES_ADMIN_*`, `POSTGRES_PORT`, or `POSTGRES_HOST` variables as active DMS Docker configuration.",
+      "Docker documentation describes the active PostgreSQL readiness/configuration inputs used by `src/dms/run.sh`.",
+      "Documentation does not reintroduce `/app/Installer`, backend installer, or DMS deploy-on-startup setup instructions.",
+      "Any remaining PostgreSQL admin variables in docs are clearly tied to active scripts that still consume them."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"POSTGRES_ADMIN_|POSTGRES_PORT|POSTGRES_HOST|DATABASE_CONNECTION_STRING_ADMIN|/app/Installer|Backend\\\\.Installer|DeployDatabaseOnStartup\" docs/DOCKER.md src/dms/run.sh` and confirm the docs match active runtime behavior.",
+      "Run: `rg -n \"POSTGRES_ADMIN_|POSTGRES_PORT|POSTGRES_HOST\" docs README.md GETTING_STARTED.md eng/docker-compose/README.md` and confirm remaining references are active or removed."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Cleanup",
+    "description": "Low: Remove stale comments and XML docs that reference deleted legacy/profile classes. Examples include `ProfileResponseFilter` at `ProfileExtensionCanonicalizer.cs:31`, `ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields` and `Legacy ExternalResponse callers` at `RelationalReadMaterializer.cs:135`, and `ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields` at `RelationalReadMaterializerTests.cs:730`.",
+    "acceptance-criteria": [
+      "Comments and XML docs no longer reference deleted `ProfileResponseFilter` or `ProfileWriteValidationMiddleware` types.",
+      "Comments no longer describe `Legacy ExternalResponse` behavior that is not part of the relational-only backend.",
+      "Updated comments describe the current relational/profile behavior without stale compatibility terminology.",
+      "No production behavior changes are introduced by the documentation cleanup."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"ProfileResponseFilter|ProfileWriteValidationMiddleware|Legacy ExternalResponse\" src/dms -g '*.cs'` and confirm stale references are gone or intentionally retained in historical test names only.",
+      "Run: `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileExtensionCanonicalizer.cs src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalReadMaterializerTests.cs`.",
+      "Run: `git diff --check`."
+    ],
+    "completed": false
   }
 ]

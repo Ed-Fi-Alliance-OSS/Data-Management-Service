@@ -18,7 +18,6 @@ public sealed record IntegrationRelationalGetRequest(
     DocumentUuid DocumentUuid,
     BaseResourceInfo ResourceInfo,
     MappingSet MappingSet,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,

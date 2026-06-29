@@ -26,15 +26,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlSurveyRuntimeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -479,7 +470,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -509,7 +499,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentUuid: SurveyDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -527,7 +516,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId)
         );

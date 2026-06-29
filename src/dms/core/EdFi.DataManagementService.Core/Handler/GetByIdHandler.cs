@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -24,11 +23,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class GetByIdHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IAuthorizationServiceFactory authorizationServiceFactory
-) : IPipelineStep
+internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -38,14 +33,6 @@ internal class GetByIdHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var resourceAuthorizationHandler = new ResourceAuthorizationHandler(
-            requestInfo.AuthorizationStrategyEvaluators,
-            requestInfo.AuthorizationSecurableInfo,
-            authorizationServiceFactory,
-            requestInfo.ScopedServiceProvider,
-            _logger
-        );
-
         var getResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
             _logger,
@@ -53,10 +40,7 @@ internal class GetByIdHandler(
             requestInfo.FrontendRequest.TraceId,
             r => IsRetryableResult(r),
             r => r is GetSuccess,
-            async ct =>
-                await documentStoreRepository.GetDocumentById(
-                    CreateGetRequest(requestInfo, resourceAuthorizationHandler)
-                ),
+            async ct => await documentStoreRepository.GetDocumentById(CreateGetRequest(requestInfo)),
             requestInfo
         );
         _logger.LogDebug(
@@ -140,10 +124,7 @@ internal class GetByIdHandler(
         return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
     }
 
-    private static IGetRequest CreateGetRequest(
-        RequestInfo requestInfo,
-        IResourceAuthorizationHandler resourceAuthorizationHandler
-    )
+    private static IGetRequest CreateGetRequest(RequestInfo requestInfo)
     {
         var mappingSet = RequireMappingSet(requestInfo, "get by id");
 
@@ -152,7 +133,6 @@ internal class GetByIdHandler(
             ResourceInfo: requestInfo.ResourceInfo,
             MappingSet: mappingSet,
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
-            ResourceAuthorizationHandler: resourceAuthorizationHandler,
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             TraceId: requestInfo.FrontendRequest.TraceId,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)

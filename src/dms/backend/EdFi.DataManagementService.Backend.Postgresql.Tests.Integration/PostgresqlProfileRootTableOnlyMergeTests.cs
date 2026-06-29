@@ -50,15 +50,6 @@ file sealed class ProfileMergeNoOpHostApplicationLifetime : IHostApplicationLife
     public void StopApplication() { }
 }
 
-file sealed class ProfileMergeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -252,7 +243,6 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -392,7 +382,6 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -527,7 +516,6 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -676,7 +664,6 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
             DocumentUuid: PostAsUpdateDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -840,7 +827,6 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -899,7 +885,6 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

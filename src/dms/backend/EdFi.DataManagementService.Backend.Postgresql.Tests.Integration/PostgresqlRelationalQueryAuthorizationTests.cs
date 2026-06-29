@@ -1001,7 +1001,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
             MappingSet: mappingSet,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1040,7 +1039,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var request = new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
             DeleteInEdOrgHierarchy: false,
@@ -1389,7 +1387,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
@@ -1442,7 +1439,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )

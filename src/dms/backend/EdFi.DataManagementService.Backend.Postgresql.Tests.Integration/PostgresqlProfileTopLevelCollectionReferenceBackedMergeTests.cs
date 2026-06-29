@@ -42,16 +42,6 @@ file sealed class ReferenceBackedTopLevelCollectionNoOpHostApplicationLifetime :
     public void StopApplication() { }
 }
 
-file sealed class ReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -450,7 +440,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -485,7 +474,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

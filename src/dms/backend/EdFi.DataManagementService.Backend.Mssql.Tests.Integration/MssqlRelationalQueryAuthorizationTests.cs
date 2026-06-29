@@ -32,16 +32,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -1152,7 +1142,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
             MappingSet: mappingSet,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1191,7 +1180,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var request = new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
             DeleteInEdOrgHierarchy: false,
@@ -1588,7 +1576,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
@@ -1641,7 +1628,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlRelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )

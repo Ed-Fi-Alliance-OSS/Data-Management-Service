@@ -120,15 +120,6 @@ public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepos
     }
 }
 
-file sealed class ChangeQueryAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ChangeQueryNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -617,7 +608,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     DocumentUuid: SchoolDocumentUuid,
                     DocumentSecurityElements: new([], [], [], [], []),
                     UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new ChangeQueryAllowAllResourceAuthorizationHandler(),
                     ResourceAuthorizationPathways: []
                 )
             )
@@ -644,7 +634,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     DocumentUuid: AcademicWeekDocumentUuid,
                     DocumentSecurityElements: new([], [], [], [], []),
                     UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new ChangeQueryAllowAllResourceAuthorizationHandler(),
                     ResourceAuthorizationPathways: []
                 )
             )

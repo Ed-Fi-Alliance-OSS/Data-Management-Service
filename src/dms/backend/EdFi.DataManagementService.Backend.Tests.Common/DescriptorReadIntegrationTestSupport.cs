@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,9 +27,6 @@ public sealed record DescriptorReadSeed(
 
 public static class DescriptorReadIntegrationTestSupport
 {
-    private static readonly IResourceAuthorizationHandler AllowAllResourceAuthorizationHandler =
-        new DescriptorReadAllowAllResourceAuthorizationHandler();
-
     public static ResourceInfo CreateResourceInfo(
         EffectiveSchemaSet effectiveSchemaSet,
         string projectEndpointName,
@@ -98,7 +94,6 @@ public static class DescriptorReadIntegrationTestSupport
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
             MappingSet: mappingSet,
-            ResourceAuthorizationHandler: AllowAllResourceAuthorizationHandler,
             AuthorizationStrategyEvaluators: authorizationStrategyEvaluators ?? [],
             TraceId: traceId,
             ReadMode: readMode,
@@ -144,13 +139,4 @@ public static class DescriptorReadIntegrationTestSupport
 
     private static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
-}
-
-file sealed class DescriptorReadAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
 }

@@ -55,18 +55,6 @@ file sealed class AuthorizationHostApplicationLifetime : IHostApplicationLifetim
     public void StopApplication() { }
 }
 
-// Seed-path authorization handler — only used by the upsert seed (the query path does
-// not consult IResourceAuthorizationHandler at all, which is precisely the contract
-// task 32 documents).
-file sealed class AuthorizationSeedAllowAllHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class AuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -366,7 +354,6 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthorizationSeedAllowAllHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -396,7 +383,6 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthorizationSeedAllowAllHandler(),
             ResourceAuthorizationPathways: []
         );
 

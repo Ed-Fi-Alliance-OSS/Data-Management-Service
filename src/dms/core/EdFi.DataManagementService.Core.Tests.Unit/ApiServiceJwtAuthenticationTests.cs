@@ -138,7 +138,6 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
             appSettingsOptions,
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,
@@ -188,7 +187,6 @@ public class ApiServiceJwtAuthenticationTests
             Options.Create(
                 new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
             ),
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,

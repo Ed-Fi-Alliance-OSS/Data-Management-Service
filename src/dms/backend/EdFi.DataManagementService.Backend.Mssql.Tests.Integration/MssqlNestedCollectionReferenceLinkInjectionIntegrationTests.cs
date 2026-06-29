@@ -28,15 +28,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // BellSchedule.classPeriods[*].classPeriodReference -> ClassPeriod. References located
 // by classPeriodName identity field, never by array index.
 
-file sealed class MssqlNestedCollectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlNestedCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -379,7 +370,6 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -413,7 +403,6 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -443,7 +432,6 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             DocumentUuid: BellScheduleDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -14,8 +14,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
-using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
@@ -82,7 +80,6 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IDecimalValidator, DecimalValidator>()
-            .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
             .AddSingleton<
                 IResourceDependencyGraphTransformer,
                 PersonAuthorizationDependencyGraphTransformer
@@ -92,19 +89,6 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IResourceDependencyGraphMLFactory, ResourceDependencyGraphMLFactory>()
             .AddSingleton<IResourceLoadOrderTransformer, PersonAuthorizationLoadOrderTransformer>()
             .AddSingleton<ResourceLoadOrderCalculator>()
-            .AddTransient<NoFurtherAuthorizationRequiredValidator>()
-            .AddTransient<NamespaceBasedValidator>()
-            .AddTransient<RelationshipsWithEdOrgsOnlyValidator>()
-            .AddTransient<RelationshipsWithEdOrgsAndPeopleValidator>()
-            .AddTransient<RelationshipsWithStudentsOnlyValidator>()
-            .AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityValidator>()
-            .AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>()
-            .AddTransient<RelationshipsWithEdOrgsOnlyInvertedFiltersProvider>()
-            .AddTransient<RelationshipsWithEdOrgsAndPeopleFiltersProvider>()
-            .AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>()
-            .AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>()
-            .AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider>()
-            .AddTransient<NamespaceBasedFiltersProvider>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
             .AddScoped<IDataStoreSelection, DataStoreSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()

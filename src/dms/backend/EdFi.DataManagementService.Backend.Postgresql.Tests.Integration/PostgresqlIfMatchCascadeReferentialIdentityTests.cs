@@ -36,15 +36,6 @@ file sealed class PostgresqlIfMatchCascadeHostApplicationLifetime : IHostApplica
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -351,7 +342,6 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 DocumentSecurityElements: new([], [], [], [], []),
                 UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationHandler: new PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 ResourceAuthorizationPathways: []
             )
         );
@@ -387,7 +377,6 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 DocumentSecurityElements: new([], [], [], [], []),
                 UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationHandler: new PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 ResourceAuthorizationPathways: []
             )
         );
@@ -410,7 +399,6 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
                 AuthorizationContext: new RelationalAuthorizationContext([]),
-                ResourceAuthorizationHandler: new PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)
             )

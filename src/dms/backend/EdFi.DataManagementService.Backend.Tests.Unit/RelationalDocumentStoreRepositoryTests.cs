@@ -196,13 +196,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
-        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
-        var getRequest = CreateGetRequest(
-            documentUuid,
-            mappingSet,
-            _schoolResourceInfo,
-            resourceAuthorizationHandler
-        );
+        var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
         var hydratedPage = CreateHydratedPage(
             readPlan,
             CreateDocumentMetadataRow(documentUuid, 345L, 91L),
@@ -254,7 +248,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .DescriptorRowsInPlanOrder.Should()
             .BeSameAs(hydratedPage.DescriptorRowsInPlanOrder);
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
-        resourceAuthorizationHandler.CallCount.Should().Be(0);
         A.CallTo(() =>
                 _descriptorReadHandler.HandleGetByIdAsync(
                     A<DescriptorGetByIdRequest>._,
@@ -270,7 +263,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var descriptorReadHandler = A.Fake<IDescriptorReadHandler>();
         var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
         var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
-        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
         var documentUuid = new DocumentUuid(Guid.Parse("11111111-2222-3333-4444-555555555555"));
         var projectionContext = new ReadableProfileProjectionContext(
             new ContentTypeDefinition(
@@ -324,7 +316,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             descriptorResourceInfo,
-            resourceAuthorizationHandler,
             RelationalGetRequestReadMode.StoredDocument,
             projectionContext,
             authorizationStrategyEvaluators
@@ -340,7 +331,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
         capturedRequest.ReadableProfileProjectionContext.Should().BeSameAs(projectionContext);
         capturedRequest.TraceId.Value.Should().Be("get-trace");
-        resourceAuthorizationHandler.CallCount.Should().Be(0);
         A.CallTo(() =>
                 descriptorReadHandler.HandleGetByIdAsync(
                     A<DescriptorGetByIdRequest>._,
@@ -373,12 +363,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_a_precise_not_implemented_failure_for_descriptor_get_requests()
     {
-        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
         var getRequest = CreateGetRequest(
             new DocumentUuid(Guid.NewGuid()),
             CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
-            _descriptorResourceInfo,
-            resourceAuthorizationHandler
+            _descriptorResourceInfo
         );
 
         var result = await _sut.GetDocumentById(getRequest);
@@ -390,7 +378,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
-        resourceAuthorizationHandler.CallCount.Should().Be(0);
     }
 
     [Test]
@@ -412,7 +399,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new DocumentUuid(Guid.NewGuid()),
             CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
             _descriptorResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators: [new("RelationshipsWithEdOrgsOnly", [], FilterOperator.And)]
         );
 
@@ -440,12 +426,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_allows_no_further_authorization_required_for_descriptor_get_requests()
     {
-        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
         var getRequest = CreateGetRequest(
             new DocumentUuid(Guid.NewGuid()),
             CreateDescriptorOnlyMappingSet(_descriptorResourceInfo),
             _descriptorResourceInfo,
-            resourceAuthorizationHandler,
             authorizationStrategyEvaluators:
             [
                 new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
@@ -461,7 +445,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
-        resourceAuthorizationHandler.CallCount.Should().Be(0);
     }
 
     [Test]
@@ -474,7 +457,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             RelationalGetRequestReadMode.StoredDocument
         );
         var hydratedPage = CreateHydratedPage(
@@ -522,7 +504,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             RelationalGetRequestReadMode.StoredDocument
         );
         var hydratedPage = CreateHydratedPage(
@@ -577,7 +558,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             RelationalGetRequestReadMode.ExternalResponse
         );
         var hydratedPage = CreateHydratedPage(
@@ -627,7 +607,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -709,7 +688,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -768,7 +746,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -841,7 +818,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -898,7 +874,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -950,7 +925,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -1001,7 +975,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1079,7 +1052,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _studentResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -1157,7 +1129,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _studentResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -1245,7 +1216,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -1304,7 +1274,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1365,7 +1334,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1436,7 +1404,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1482,7 +1449,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1534,7 +1500,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1594,7 +1559,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1639,7 +1603,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1685,7 +1648,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1731,7 +1693,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1773,7 +1734,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1861,7 +1821,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1924,7 +1883,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -1975,7 +1933,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
@@ -2077,7 +2034,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             RelationalGetRequestReadMode.StoredDocument,
             authorizationStrategyEvaluators:
             [
@@ -2136,7 +2092,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -2223,7 +2178,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
@@ -2330,7 +2284,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler(),
             readableProfileProjectionContext: projectionContext
         );
         var hydratedPage = new HydratedPage(
@@ -2424,12 +2377,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
-        var getRequest = CreateGetRequest(
-            documentUuid,
-            mappingSet,
-            _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler()
-        );
+        var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -2462,12 +2410,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
-        var getRequest = CreateGetRequest(
-            documentUuid,
-            mappingSet,
-            _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler()
-        );
+        var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -2511,8 +2454,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var getRequest = CreateGetRequest(
             documentUuid,
             CreateMissingReadPlanMappingSet(_schoolResourceInfo),
-            _schoolResourceInfo,
-            new RecordingResourceAuthorizationHandler()
+            _schoolResourceInfo
         );
 
         var result = await _sut.GetDocumentById(getRequest);
@@ -9165,22 +9107,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
-    private sealed class RecordingResourceAuthorizationHandler : IResourceAuthorizationHandler
-    {
-        public int CallCount { get; private set; }
-
-        public Task<ResourceAuthorizationResult> Authorize(
-            DocumentSecurityElements documentSecurityElements,
-            OperationType operationType,
-            TraceId traceId
-        )
-        {
-            CallCount++;
-
-            return Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-        }
-    }
-
     private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(
         MappingSet mappingSet,
         WritePrecondition? writePrecondition = null,
@@ -9436,7 +9362,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         DocumentUuid documentUuid,
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
-        IResourceAuthorizationHandler resourceAuthorizationHandler,
         RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
@@ -9455,7 +9380,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     resourceInfo.IsDescriptor
                 )
             );
-        A.CallTo(() => getRequest.ResourceAuthorizationHandler).Returns(resourceAuthorizationHandler);
         A.CallTo(() => getRequest.TraceId).Returns(new TraceId("get-trace"));
         A.CallTo(() => getRequest.ReadMode).Returns(readMode);
         A.CallTo(() => getRequest.ReadableProfileProjectionContext).Returns(readableProfileProjectionContext);
