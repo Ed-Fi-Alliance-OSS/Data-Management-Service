@@ -179,3 +179,9 @@
 - Files changed: GetTokenInfoHandler, Core.External lookup interface deleted, token_info/core startup/frontend/backend unit tests, tasks.json, progress.txt.
 - Verification: task rg has no old interface/UseRelationalBackend/legacy-mode hits; remaining Legacy hits unrelated. Core.Tests.Unit, Frontend.AspNetCore.Tests.Unit, Backend.Tests.Unit passed; git diff --check passed.
 - Notes: first parallel dotnet test run hit shared Core.External DLL file lock; sequential reruns passed.
+
+2026-06-29 - completed Core Pipeline: document-info extraction requires relational mapping metadata / remove-legacy-backend.md Phase 5
+- Moved ExtractDocumentInfoMiddleware MappingSet guard before identity/reference extraction; missing MappingSet now fails immediately as pipeline/config defect.
+- Added middleware tests for unresolved MappingSet and mapping set missing requested ConcreteResourceModel; kept no-write-plan descriptor extraction tolerance because repository/write-plan guardrails own that failure.
+- Files changed: ExtractDocumentInfoMiddleware, ExtractDocumentInfoMiddlewareTests, tasks.json, progress.txt.
+- Verification: csharpier format; task rg no UseRelationalBackend/disabled-backend matches; remaining MappingSet is null/is not null hits are pending profile/handler tasks; Core.Tests.Unit Release passed 2691; git diff --check passed.
