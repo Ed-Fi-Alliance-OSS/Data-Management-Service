@@ -48,8 +48,7 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
         {
             (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
                 requestInfo.ParsedBody,
-                _logger,
-                ReferenceExtractionMode.RelationalWriteValidation
+                _logger
             );
         }
         catch (ReferenceExtractionValidationException ex)

@@ -161,8 +161,7 @@ public class ReferenceExtractorTests
     {
         var (documentReferences, _) = resourceSchema.ExtractReferences(
             JsonNode.Parse(documentBody)!,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
+            NullLogger.Instance
         );
 
         return documentReferences.Should().ContainSingle().Subject;
@@ -191,8 +190,7 @@ public class ReferenceExtractorTests
                     }
                     """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
 
             _documentReference = documentReferences.Should().ContainSingle().Subject;
@@ -409,8 +407,7 @@ public class ReferenceExtractorTests
                     }
                     """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
 
             _documentReference = documentReferences.Should().ContainSingle().Subject;
@@ -483,8 +480,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -647,8 +643,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -762,8 +757,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -843,8 +837,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -883,8 +876,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -969,8 +961,7 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.RelationalWriteValidation
+                    NullLogger.Instance
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1025,8 +1016,7 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.RelationalWriteValidation
+                    NullLogger.Instance
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1081,8 +1071,7 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.RelationalWriteValidation
+                    NullLogger.Instance
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1143,8 +1132,7 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.RelationalWriteValidation
+                    NullLogger.Instance
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1173,91 +1161,6 @@ public class ReferenceExtractorTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_An_Empty_Reference_Object
-        : ReferenceExtractorTests
-    {
-        private InvalidOperationException _exception = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-
-            var act = () =>
-                resourceSchema.ExtractReferences(
-                    JsonNode.Parse(
-                        """
-                        {
-                            "sectionIdentifier": "Bob",
-                            "courseOfferingReference": {}
-                        }
-                        """
-                    )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.LegacyCompatibility
-                );
-
-            _exception = act.Should().Throw<InvalidOperationException>().Which;
-        }
-
-        [Test]
-        public void It_preserves_the_pre_relational_identity_count_mismatch_failure()
-        {
-            _exception
-                .Message.Should()
-                .Be(
-                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
-                );
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_A_Malformed_Nested_Reference_Member
-        : ReferenceExtractorTests
-    {
-        private InvalidOperationException _exception = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-
-            var act = () =>
-                resourceSchema.ExtractReferences(
-                    JsonNode.Parse(
-                        """
-                        {
-                            "sectionIdentifier": "Bob",
-                            "classPeriods": [
-                                {
-                                    "classPeriodReference": {
-                                        "classPeriodName": {},
-                                        "schoolId": "111"
-                                    }
-                                }
-                            ]
-                        }
-                        """
-                    )!,
-                    NullLogger.Instance,
-                    ReferenceExtractionMode.LegacyCompatibility
-                );
-
-            _exception = act.Should().Throw<InvalidOperationException>().Which;
-        }
-
-        [Test]
-        public void It_preserves_the_pre_relational_scalar_coercion_failure()
-        {
-            _exception.Message.Should().Be("Unexpected JSONPath value error");
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_Extracting_Document_References_With_No_References_In_Body : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
@@ -1277,8 +1180,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 
@@ -1370,8 +1272,7 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
+                NullLogger.Instance
             );
         }
 

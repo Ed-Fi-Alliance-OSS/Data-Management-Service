@@ -1142,8 +1142,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var createRequestBody = JsonNode.Parse(CreateRequestBodyJson)!;
         var (baseDocumentReferences, _) = _baseResourceSchema.ExtractReferences(
             createRequestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
+            NullLogger.Instance
         );
         var sectionReference = baseDocumentReferences.Single(reference =>
             reference.Path == new JsonPath("$.sectionReference")
