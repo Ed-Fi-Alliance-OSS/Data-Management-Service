@@ -152,6 +152,14 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<PostgresqlRelationalCommandExecutor>();
             scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>()
+                .Should()
+                .NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>()
+                .Should()
+                .NotBeNull();
+            scope
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()
                 .BeOfType<MappingSetProvider>();
@@ -272,6 +280,14 @@ public class WebApplicationBuilderExtensionsTests
                 .Match<IRelationalCommandExecutor>(executor =>
                     executor.GetType().Name == "MssqlRelationalCommandExecutor"
                 );
+            scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>()
+                .Should()
+                .NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>()
+                .Should()
+                .NotBeNull();
             scope
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()

@@ -228,7 +228,6 @@ public static class WebApplicationBuilderExtensions
         }
 
         logger.Information("Injecting relational document store repository surface");
-        webAppBuilder.Services.AddRelationalRelationshipAuthorizationServices();
         webAppBuilder.Services.AddScoped<RelationalDocumentStoreRepository>();
         webAppBuilder.Services.AddScoped<IDocumentStoreRepository>(serviceProvider =>
             serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
