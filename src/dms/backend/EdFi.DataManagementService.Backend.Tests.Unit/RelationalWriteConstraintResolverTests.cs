@@ -216,6 +216,44 @@ public class Given_Relational_Write_Constraint_Resolver
         result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(absentConstraintName));
     }
 
+    [Test]
+    public void It_resolves_composite_abstract_identity_natural_key_unique_constraints_to_identity_conflicts()
+    {
+        const string naturalKeyConstraintName = "UX_CompositeIdentity_NK";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            CompositeAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(naturalKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
+    }
+
+    [Test]
+    public void It_leaves_composite_abstract_identity_reference_key_unique_constraints_unresolved()
+    {
+        const string referenceKeyConstraintName = "UX_CompositeIdentity_RefKey";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            CompositeAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(referenceKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(referenceKeyConstraintName));
+    }
+
     private static ResolverFixture CreateFixture()
     {
         var sectionRootTable = new DbTableModel(
@@ -538,44 +576,26 @@ public class Given_Relational_Write_Constraint_Resolver
 
     private static AbstractIdentityResolverFixture CreateSchoolAbstractIdentityFixture()
     {
-        var schoolRootTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "School"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_School",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    null,
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("SchoolId"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    false,
-                    new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-            ],
-            []
-        );
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
 
-        // Models edfi."EducationOrganizationIdentity" the way AbstractIdentityTableAndUnionViewDerivationPass
-        // builds it: DocumentId primary key, the _NK natural-key unique over the projected identity column,
-        // the _RefKey helper that also includes DocumentId, and the document FK.
-        var educationOrganizationIdentityTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
+        return new AbstractIdentityResolverFixture(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            NaturalKeyConstraintName: AbstractIdentitySchoolTestData.NaturalKeyConstraintName,
+            ReferenceKeyConstraintName: AbstractIdentitySchoolTestData.ReferenceKeyConstraintName
+        );
+    }
+
+    // Models an abstract identity table for a resource whose identity spans two columns, the way
+    // AbstractIdentityTableAndUnionViewDerivationPass builds it: DocumentId primary key, the _NK natural-key
+    // unique over both projected identity columns, the _RefKey helper that also appends DocumentId, and the
+    // document FK. Proves the resolver matches multi-column natural keys, not just single-column ones.
+    private static DbTableModel CompositeAbstractIdentityTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "CompositeIdentity"),
             new JsonPathExpression("$", []),
             new TableKey(
-                "PK_EducationOrganizationIdentity",
+                "PK_CompositeIdentity",
                 [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
             [
@@ -589,11 +609,20 @@ public class Given_Relational_Write_Constraint_Resolver
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
-                    new DbColumnName("EducationOrganizationId"),
+                    new DbColumnName("PartOneId"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.Int32),
                     false,
+                    new JsonPathExpression("$.partOneId", [new JsonPathSegment.Property("partOneId")]),
                     null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PartTwoId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.partTwoId", [new JsonPathSegment.Property("partTwoId")]),
                     null,
                     new ColumnStorage.Stored()
                 ),
@@ -609,15 +638,19 @@ public class Given_Relational_Write_Constraint_Resolver
             ],
             [
                 new TableConstraint.Unique(
-                    "UX_EducationOrganizationIdentity_NK",
-                    [new DbColumnName("EducationOrganizationId")]
+                    "UX_CompositeIdentity_NK",
+                    [new DbColumnName("PartOneId"), new DbColumnName("PartTwoId")]
                 ),
                 new TableConstraint.Unique(
-                    "UX_EducationOrganizationIdentity_RefKey",
-                    [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
+                    "UX_CompositeIdentity_RefKey",
+                    [
+                        new DbColumnName("PartOneId"),
+                        new DbColumnName("PartTwoId"),
+                        new DbColumnName("DocumentId"),
+                    ]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
+                    "FK_CompositeIdentity_Document",
                     [new DbColumnName("DocumentId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
                     [new DbColumnName("DocumentId")],
@@ -625,65 +658,6 @@ public class Given_Relational_Write_Constraint_Resolver
                 ),
             ]
         );
-
-        var resourceModel = new RelationalResourceModel(
-            SchoolResource,
-            new DbSchemaName("edfi"),
-            ResourceStorageKind.RelationalTables,
-            schoolRootTable,
-            [schoolRootTable],
-            [],
-            []
-        );
-
-        var writePlan = new ResourceWritePlan(resourceModel, []);
-
-        var schoolKey = new ResourceKeyEntry(1, SchoolResource, "1.0.0", false);
-        var educationOrganizationResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
-        var educationOrganizationKey = new ResourceKeyEntry(2, educationOrganizationResource, "1.0.0", true);
-
-        var mappingSet = new MappingSet(
-            new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
-            new DerivedRelationalModelSet(
-                new EffectiveSchemaInfo(
-                    "1.0",
-                    "v1",
-                    "schema-hash",
-                    2,
-                    [1, 2],
-                    [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash")],
-                    [schoolKey, educationOrganizationKey]
-                ),
-                SqlDialect.Pgsql,
-                [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
-                [new ConcreteResourceModel(schoolKey, ResourceStorageKind.RelationalTables, resourceModel)],
-                [new AbstractIdentityTableInfo(educationOrganizationKey, educationOrganizationIdentityTable)],
-                [],
-                [],
-                []
-            ),
-            new Dictionary<QualifiedResourceName, ResourceWritePlan> { [SchoolResource] = writePlan },
-            new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            new Dictionary<QualifiedResourceName, short>
-            {
-                [SchoolResource] = schoolKey.ResourceKeyId,
-                [educationOrganizationResource] = educationOrganizationKey.ResourceKeyId,
-            },
-            new Dictionary<short, ResourceKeyEntry>
-            {
-                [schoolKey.ResourceKeyId] = schoolKey,
-                [educationOrganizationKey.ResourceKeyId] = educationOrganizationKey,
-            },
-            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
-
-        return new AbstractIdentityResolverFixture(
-            writePlan,
-            new ReferenceResolverRequest(mappingSet, SchoolResource, [], []),
-            NaturalKeyConstraintName: "UX_EducationOrganizationIdentity_NK",
-            ReferenceKeyConstraintName: "UX_EducationOrganizationIdentity_RefKey"
-        );
-    }
 
     private sealed record ResolverFixture(
         ResourceWritePlan WritePlan,

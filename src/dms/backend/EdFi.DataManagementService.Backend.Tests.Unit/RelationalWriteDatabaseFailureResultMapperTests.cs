@@ -172,7 +172,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             classifier,
             new RelationalWriteConstraintResolver()
         );
-        var request = CreateSchoolAbstractIdentityRequest();
+        var request = CreateSchoolAbstractIdentityRequest(RelationalWriteOperationKind.Post);
 
         var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
 
@@ -182,6 +182,38 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "155901")]
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_maps_abstract_education_organization_identity_unique_violations_on_put_to_identity_conflicts()
+    {
+        // The same abstract-identity natural-key violation on a PUT must surface the Update identity-conflict
+        // result, with the duplicate values still taken from the concrete School request body.
+        var classifier = new RecordingRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                "UX_EducationOrganizationIdentity_NK"
+            ),
+        };
+        var mapper = new RelationalWriteDatabaseFailureResultMapper(
+            classifier,
+            new RelationalWriteConstraintResolver()
+        );
+        var request = CreateSchoolAbstractIdentityRequest(RelationalWriteOperationKind.Put);
+
+        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureIdentityConflict(
                         new ResourceName("School"),
                         [new KeyValuePair<string, string>("schoolId", "155901")]
                     )
@@ -303,191 +335,35 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         );
     }
 
-    // Dedicated, isolated builder for the abstract-identity end-to-end test. Kept separate from
-    // CreateRequest/CreateMappingSet so the recording-stub tests stay simple and unchanged.
-    private static RelationalWriteExecutorRequest CreateSchoolAbstractIdentityRequest()
+    // Dedicated, isolated builder for the abstract-identity end-to-end tests, parameterized by operation kind
+    // so both the POST and PUT identity-conflict paths are covered. Shares its table shapes with the
+    // constraint-resolver tests via AbstractIdentitySchoolTestData.
+    private static RelationalWriteExecutorRequest CreateSchoolAbstractIdentityRequest(
+        RelationalWriteOperationKind operationKind
+    )
     {
-        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
-
-        var schoolRootTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "School"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_School",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    null,
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("SchoolId"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    false,
-                    new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-            ],
-            []
-        );
-
-        // Models edfi."EducationOrganizationIdentity" the way AbstractIdentityTableAndUnionViewDerivationPass
-        // builds it: DocumentId primary key, the _NK natural-key unique over the projected identity column,
-        // the _RefKey helper that also includes DocumentId, and the document FK.
-        var educationOrganizationIdentityTable = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "EducationOrganizationIdentity"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_EducationOrganizationIdentity",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("EducationOrganizationId"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("Discriminator"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, 256),
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-            ],
-            [
-                new TableConstraint.Unique(
-                    "UX_EducationOrganizationIdentity_NK",
-                    [new DbColumnName("EducationOrganizationId")]
-                ),
-                new TableConstraint.Unique(
-                    "UX_EducationOrganizationIdentity_RefKey",
-                    [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
-                ),
-                new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
-                    new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
-                    OnDelete: ReferentialAction.Cascade
-                ),
-            ]
-        );
-
-        var resourceModel = new RelationalResourceModel(
-            schoolResource,
-            new DbSchemaName("edfi"),
-            ResourceStorageKind.RelationalTables,
-            schoolRootTable,
-            [schoolRootTable],
-            [],
-            []
-        );
-
-        var resourceWritePlan = new ResourceWritePlan(resourceModel, []);
-
-        var schoolKey = new ResourceKeyEntry(1, schoolResource, "1.0.0", false);
-        var educationOrganizationResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
-        var educationOrganizationKey = new ResourceKeyEntry(2, educationOrganizationResource, "1.0.0", true);
-
-        var schoolReferentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName("TR_School_ReferentialIdentity"),
-            schoolRootTable.Table,
-            [new DbColumnName("DocumentId")],
-            [new DbColumnName("SchoolId")],
-            new TriggerKindParameters.ReferentialIdentityMaintenance(
-                schoolKey.ResourceKeyId,
-                schoolResource.ProjectName,
-                schoolResource.ResourceName,
-                [
-                    new IdentityElementMapping(
-                        new DbColumnName("SchoolId"),
-                        "$.schoolId",
-                        new RelationalScalarType(ScalarKind.Int32)
-                    ),
-                ]
-            )
-        );
-
-        var mappingSet = new MappingSet(
-            new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
-            new DerivedRelationalModelSet(
-                new EffectiveSchemaInfo(
-                    "1.0",
-                    "v1",
-                    "schema-hash",
-                    2,
-                    [1, 2],
-                    [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash")],
-                    [schoolKey, educationOrganizationKey]
-                ),
-                SqlDialect.Pgsql,
-                [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
-                [new ConcreteResourceModel(schoolKey, ResourceStorageKind.RelationalTables, resourceModel)],
-                [new AbstractIdentityTableInfo(educationOrganizationKey, educationOrganizationIdentityTable)],
-                [],
-                [],
-                [schoolReferentialIdentityTrigger]
-            ),
-            new Dictionary<QualifiedResourceName, ResourceWritePlan> { [schoolResource] = resourceWritePlan },
-            new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            new Dictionary<QualifiedResourceName, short>
-            {
-                [schoolResource] = schoolKey.ResourceKeyId,
-                [educationOrganizationResource] = educationOrganizationKey.ResourceKeyId,
-            },
-            new Dictionary<short, ResourceKeyEntry>
-            {
-                [schoolKey.ResourceKeyId] = schoolKey,
-                [educationOrganizationKey.ResourceKeyId] = educationOrganizationKey,
-            },
-            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
-
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
         var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
 
         return new RelationalWriteExecutorRequest(
             mappingSet,
-            RelationalWriteOperationKind.Post,
-            new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
-                createDocumentUuid
-            ),
-            resourceWritePlan,
+            operationKind,
+            operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
+                : new RelationalWriteTargetRequest.Post(
+                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    createDocumentUuid
+                ),
+            writePlan,
             existingDocumentReadPlan: null,
             JsonNode.Parse("""{"schoolId":155901,"nameOfInstitution":"School Test"}""")!,
             allowIdentityUpdates: false,
             new TraceId("abstract-identity-conflict-test"),
-            new ReferenceResolverRequest(
-                mappingSet,
-                resourceWritePlan.Model.Resource,
-                [],
-                DescriptorReferences: []
-            ),
-            new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
+            operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
+                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
         );
     }
 
