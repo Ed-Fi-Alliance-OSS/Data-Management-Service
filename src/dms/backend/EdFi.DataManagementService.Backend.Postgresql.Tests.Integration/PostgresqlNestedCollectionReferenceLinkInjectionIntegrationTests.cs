@@ -41,15 +41,6 @@ file sealed class NestedCollectionHostApplicationLifetime : IHostApplicationLife
     public void StopApplication() { }
 }
 
-file sealed class NestedCollectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class NestedCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -391,7 +382,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new NestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -425,7 +415,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new NestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -455,7 +444,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             DocumentUuid: BellScheduleDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new NestedCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

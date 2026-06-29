@@ -32,16 +32,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // File-scoped no-op stubs
 // ---------------------------------------------------------------------------
 
-file sealed class MssqlReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -431,7 +421,6 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -466,7 +455,6 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlReferenceBackedTopLevelCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

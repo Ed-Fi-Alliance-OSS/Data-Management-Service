@@ -40,15 +40,6 @@ file sealed class MultiBatchCollectionsNoOpHostApplicationLifetime : IHostApplic
     public void StopApplication() { }
 }
 
-file sealed class MultiBatchCollectionsAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MultiBatchCollectionsNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -330,7 +321,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MultiBatchCollectionsAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }
@@ -363,7 +353,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MultiBatchCollectionsAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }

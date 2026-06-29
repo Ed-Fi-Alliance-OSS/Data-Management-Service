@@ -432,20 +432,6 @@ public static class ProfileNestedCollectionScenarios
         );
 
     /// <summary>
-    /// Authorization handler that authorizes every request unconditionally. Used by the
-    /// nested-collection integration suites to keep the focus on profile-merge behavior
-    /// rather than authorization.
-    /// </summary>
-    public sealed class AllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-    {
-        public Task<ResourceAuthorizationResult> Authorize(
-            DocumentSecurityElements documentSecurityElements,
-            OperationType operationType,
-            TraceId traceId
-        ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-    }
-
-    /// <summary>
     /// Identity update-cascade handler that returns the referencing document unchanged. Used
     /// by the nested-collection integration suites where update-cascade behavior is not under
     /// test.

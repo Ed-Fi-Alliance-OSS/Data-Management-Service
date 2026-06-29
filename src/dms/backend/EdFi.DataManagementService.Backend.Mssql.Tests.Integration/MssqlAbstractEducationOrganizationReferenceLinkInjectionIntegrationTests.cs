@@ -30,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // ResourceKeyId, so a miss (wrong resolution) would throw with a clear message rather
 // than producing a misleading link.
 
-file sealed class MssqlAbstractRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlAbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -329,7 +320,6 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlAbstractRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -359,7 +349,6 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             DocumentUuid: CourseDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlAbstractRefAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

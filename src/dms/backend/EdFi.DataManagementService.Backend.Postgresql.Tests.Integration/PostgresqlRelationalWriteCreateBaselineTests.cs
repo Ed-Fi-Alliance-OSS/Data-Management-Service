@@ -35,15 +35,6 @@ file sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime
     public void StopApplication() { }
 }
 
-file sealed class AllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class NoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -449,7 +440,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }

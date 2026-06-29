@@ -37,15 +37,6 @@ file sealed class AuthoritativeSampleWriteHostApplicationLifetime : IHostApplica
     public void StopApplication() { }
 }
 
-file sealed class AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class AuthoritativeSampleWriteNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -909,7 +900,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: AssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -952,7 +942,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: AssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -995,7 +984,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: AssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -1028,7 +1016,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -2067,7 +2054,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             DocumentUuid: AssociationDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -2085,7 +2071,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId)
         );

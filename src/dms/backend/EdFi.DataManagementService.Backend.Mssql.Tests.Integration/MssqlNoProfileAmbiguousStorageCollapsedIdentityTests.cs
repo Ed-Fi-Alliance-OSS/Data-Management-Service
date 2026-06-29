@@ -23,16 +23,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlNoProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -202,7 +192,6 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNoProfileAmbiguousStorageCollapsedAllowAllAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

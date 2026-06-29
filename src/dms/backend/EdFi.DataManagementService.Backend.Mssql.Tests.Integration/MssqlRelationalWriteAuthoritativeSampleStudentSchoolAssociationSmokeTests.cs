@@ -29,16 +29,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlStudentSchoolAssociationAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlStudentSchoolAssociationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -696,7 +686,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -718,7 +707,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new MssqlStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext

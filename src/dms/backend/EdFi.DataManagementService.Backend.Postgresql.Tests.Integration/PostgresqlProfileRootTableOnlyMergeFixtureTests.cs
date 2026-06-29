@@ -78,15 +78,6 @@ file sealed class ProfileRootOnlyFixtureNoOpHostApplicationLifetime : IHostAppli
     public void StopApplication() { }
 }
 
-file sealed class ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -362,7 +353,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -806,7 +796,6 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Root_Scop
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -953,7 +942,6 @@ public class Given_A_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Cleara
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -1135,7 +1123,6 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -1306,7 +1293,6 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

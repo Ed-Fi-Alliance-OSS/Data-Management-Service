@@ -26,15 +26,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlIfMatchCascadeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -346,7 +337,6 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 DocumentSecurityElements: new([], [], [], [], []),
                 UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationHandler: new MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 ResourceAuthorizationPathways: []
             )
         );
@@ -382,7 +372,6 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 DocumentSecurityElements: new([], [], [], [], []),
                 UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationHandler: new MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 ResourceAuthorizationPathways: []
             )
         );
@@ -405,7 +394,6 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
                 AuthorizationContext: new RelationalAuthorizationContext([]),
-                ResourceAuthorizationHandler: new MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)
             )

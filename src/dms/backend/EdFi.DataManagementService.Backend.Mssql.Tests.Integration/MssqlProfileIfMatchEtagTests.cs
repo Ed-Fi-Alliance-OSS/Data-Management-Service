@@ -23,15 +23,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileIfMatchAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileIfMatchNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -155,7 +146,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             ResourceInfo: MssqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
             AuthorizationContext: new RelationalAuthorizationContext([]),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -246,7 +236,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
@@ -281,7 +270,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

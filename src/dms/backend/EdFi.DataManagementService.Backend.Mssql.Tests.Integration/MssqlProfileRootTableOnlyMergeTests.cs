@@ -41,15 +41,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileMergeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -235,7 +226,6 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -373,7 +363,6 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -511,7 +500,6 @@ public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
             DocumentUuid: DocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -663,7 +651,6 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
             DocumentUuid: PostAsUpdateDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -808,7 +795,6 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -864,7 +850,6 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

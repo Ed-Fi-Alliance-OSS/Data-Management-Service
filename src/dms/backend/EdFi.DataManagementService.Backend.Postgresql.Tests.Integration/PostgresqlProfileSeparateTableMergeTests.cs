@@ -64,16 +64,6 @@ file sealed class ProfileSeparateTableMergeNoOpHostApplicationLifetime : IHostAp
     public void StopApplication() { }
 }
 
-file sealed class ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ProfileSeparateTableMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -321,7 +311,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -361,7 +350,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -402,7 +390,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

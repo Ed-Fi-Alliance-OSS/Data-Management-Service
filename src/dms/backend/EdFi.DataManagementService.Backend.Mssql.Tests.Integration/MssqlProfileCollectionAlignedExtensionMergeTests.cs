@@ -27,16 +27,6 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAl
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -198,7 +188,6 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -240,7 +229,6 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -283,7 +271,6 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

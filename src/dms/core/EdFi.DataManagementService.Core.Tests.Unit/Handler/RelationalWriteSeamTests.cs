@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -694,14 +693,12 @@ actual: {requestInfo.FrontendResponse.Body}
             _upsertHandler = new UpsertHandler(
                 NullLogger.Instance,
                 ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider(),
-                new NoAuthorizationServiceFactory()
+                new StaticApiSchemaProvider()
             );
             _updateHandler = new UpdateByIdHandler(
                 NullLogger.Instance,
                 ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider(),
-                new NoAuthorizationServiceFactory()
+                new StaticApiSchemaProvider()
             );
         }
 

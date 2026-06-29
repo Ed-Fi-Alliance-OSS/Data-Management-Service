@@ -47,15 +47,6 @@ file sealed class ResourceLinksFlagHostApplicationLifetime : IHostApplicationLif
     public void StopApplication() { }
 }
 
-file sealed class ResourceLinksFlagAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ResourceLinksFlagNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -376,7 +367,6 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ResourceLinksFlagAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -406,7 +396,6 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ResourceLinksFlagAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

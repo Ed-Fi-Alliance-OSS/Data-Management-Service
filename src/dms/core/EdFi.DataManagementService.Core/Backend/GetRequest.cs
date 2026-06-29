@@ -12,12 +12,8 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <summary>
 /// A get request to a document repository
 /// </summary>
-internal record GetRequest(
-    DocumentUuid DocumentUuid,
-    ResourceName ResourceName,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    TraceId TraceId
-) : IGetRequest;
+internal record GetRequest(DocumentUuid DocumentUuid, ResourceName ResourceName, TraceId TraceId)
+    : IGetRequest;
 
 /// <summary>
 /// A relational get request to a document repository.
@@ -29,9 +25,6 @@ internal record GetRequest(
 /// <param name="MappingSet">
 /// The resolved runtime mapping set for the active relational request.
 /// </param>
-/// <param name="ResourceAuthorizationHandler">
-/// The handler to authorize the delete request for a resource in the database.
-/// </param>
 /// <param name="TraceId">The request TraceId.</param>
 /// <param name="ReadMode">The local relational read mode for response materialization.</param>
 /// <param name="ReadableProfileProjectionContext">
@@ -42,11 +35,8 @@ internal sealed record RelationalGetRequest(
     BaseResourceInfo ResourceInfo,
     MappingSet MappingSet,
     RelationalAuthorizationContext AuthorizationContext,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-)
-    : GetRequest(DocumentUuid, ResourceInfo.ResourceName, ResourceAuthorizationHandler, TraceId),
-        IRelationalGetRequest;
+) : GetRequest(DocumentUuid, ResourceInfo.ResourceName, TraceId), IRelationalGetRequest;

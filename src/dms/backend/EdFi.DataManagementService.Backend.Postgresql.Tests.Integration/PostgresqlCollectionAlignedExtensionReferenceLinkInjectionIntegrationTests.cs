@@ -41,15 +41,6 @@ file sealed class CollectionAlignedExtHostApplicationLifetime : IHostApplication
     public void StopApplication() { }
 }
 
-file sealed class CollectionAlignedExtAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class CollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -293,7 +284,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             DocumentUuid: SponsorDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new CollectionAlignedExtAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -337,7 +327,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             DocumentUuid: ParentResourceDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new CollectionAlignedExtAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

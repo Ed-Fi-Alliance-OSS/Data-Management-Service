@@ -34,15 +34,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 //   2. caller-agnostic equivalence: two independent query invocations against the same
 //      source return byte-equal reconstituted intermediate JSON and identical _etag.
 
-file sealed class MssqlAuthorizationSeedAllowAllHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlAuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -341,7 +332,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlAuthorizationSeedAllowAllHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -371,7 +361,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             DocumentUuid: AcademicWeekDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlAuthorizationSeedAllowAllHandler(),
             ResourceAuthorizationPathways: []
         );
 

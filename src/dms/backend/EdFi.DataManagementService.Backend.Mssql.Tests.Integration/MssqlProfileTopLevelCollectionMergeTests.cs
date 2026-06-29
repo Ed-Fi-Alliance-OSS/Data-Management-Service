@@ -28,16 +28,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -277,7 +267,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -319,7 +308,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -362,7 +350,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileTopLevelCollectionMergeAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

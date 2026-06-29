@@ -40,15 +40,6 @@ file sealed class PostAsUpdateNoOpHostApplicationLifetime : IHostApplicationLife
     public void StopApplication() { }
 }
 
-file sealed class PostAsUpdateAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostAsUpdateNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -473,7 +464,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -1095,7 +1085,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
                     DocumentSecurityElements: new([], [], [], [], []),
                     UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
                     ResourceAuthorizationPathways: []
                 )
             );
@@ -1140,7 +1129,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
                     DocumentSecurityElements: new([], [], [], [], []),
                     UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
                     ResourceAuthorizationPathways: []
                 )
             );
@@ -1185,7 +1173,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
                     DocumentSecurityElements: new([], [], [], [], []),
                     UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
                     ResourceAuthorizationPathways: []
                 )
             );
@@ -2654,7 +2641,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -3025,7 +3011,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -3382,7 +3367,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -4109,7 +4093,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
     }

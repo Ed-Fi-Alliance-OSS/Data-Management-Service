@@ -41,15 +41,6 @@ file sealed class ExtensionChildCollectionHostApplicationLifetime : IHostApplica
     public void StopApplication() { }
 }
 
-file sealed class ExtensionChildCollectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class ExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -349,7 +340,6 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             DocumentUuid: BusDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ExtensionChildCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -393,7 +383,6 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ExtensionChildCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

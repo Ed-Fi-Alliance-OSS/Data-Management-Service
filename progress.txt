@@ -364,3 +364,10 @@
 - Decision: tests should use focused doubles such as NotImplementedDocumentStoreRepository subclasses instead of a success-everything backend.
 - Files changed: deleted core SuccessDocumentStoreRepository, tasks.json, progress.txt.
 - Verification: task rg returned no matches; Core.Tests.Unit Release passed 2657; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Authorization: remove legacy backend authorization-handler contract / remove-legacy-backend.md follow-up
+- Deleted IResourceAuthorizationHandler/ResourceAuthorizationHandler plus old authorization factories, validators, filter providers, and tests; public backend request contracts no longer carry the unused handler path.
+- Core handlers now pass AuthorizationStrategyEvaluators and RelationalAuthorizationContext only; DmsCoreServiceExtensions no longer registers legacy authorization services.
+- Updated backend/core tests and shared integration helpers to construct relational requests without allow-all handler stubs.
+- Files changed: core/backend request contracts and handlers, DmsCoreServiceExtensions, deleted legacy auth service/test files, backend test helpers/integration request construction, tasks.json, progress.txt.
+- Verification: csharpier format; required rg checks clean for the old handler/factory/validator surface; Core.Tests.Unit Release passed 2589; Backend.Tests.Unit Release passed 1829; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning; git diff --check passed.

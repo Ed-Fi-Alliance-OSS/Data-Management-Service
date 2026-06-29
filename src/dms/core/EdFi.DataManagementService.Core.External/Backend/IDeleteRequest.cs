@@ -23,12 +23,6 @@ public interface IDeleteRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
-    /// The backend should use this handler to determine whether
-    /// the client is authorized to delete the document
-    /// </summary>
-    IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
-
-    /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
     IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways { get; }

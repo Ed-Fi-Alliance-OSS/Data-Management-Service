@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,11 +85,7 @@ public class DeleteByIdHandlerTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new DeleteByIdHandler(
-            NullLogger.Instance,
-            ResiliencePipeline.Empty,
-            new NoAuthorizationServiceFactory()
-        );
+        var handler = new DeleteByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }

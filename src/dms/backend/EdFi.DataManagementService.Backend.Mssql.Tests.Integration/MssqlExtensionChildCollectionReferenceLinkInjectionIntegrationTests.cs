@@ -29,16 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // School._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference -> sample.Bus.
 // Bus belongs to the Sample project, so href is /sample/buses/<uuid:D>.
 
-file sealed class MssqlExtensionChildCollectionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class MssqlExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -336,7 +326,6 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             DocumentUuid: BusDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlExtensionChildCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -380,7 +369,6 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlExtensionChildCollectionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 

@@ -368,7 +368,6 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -428,7 +427,6 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             DocumentUuid: incomingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );

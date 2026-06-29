@@ -38,16 +38,6 @@ file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpHostApplication
     public void StopApplication() { }
 }
 
-file sealed class PostgresqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
@@ -215,7 +205,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -257,7 +246,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
@@ -300,7 +288,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
