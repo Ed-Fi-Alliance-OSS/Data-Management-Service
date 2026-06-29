@@ -996,7 +996,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         }
 
         [Test]
-        public void It_leaves_backend_mapping_initializer_composition_to_the_frontend()
+        public void It_registers_a_fail_fast_backend_mapping_initializer_until_the_frontend_replaces_it()
         {
             var initializerDescriptors = _services
                 .Where(descriptor => descriptor.ServiceType == typeof(IBackendMappingInitializer))
@@ -1005,7 +1005,7 @@ public class PostgresqlRuntimeMappingInitializationTests
             initializerDescriptors.Should().ContainSingle();
             initializerDescriptors[0]
                 .ImplementationType.Should()
-                .BeAssignableTo<NoOpBackendMappingInitializer>();
+                .BeAssignableTo<MissingBackendMappingInitializer>();
         }
 
         [Test]

@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -91,6 +92,19 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Should()
                 .BeOfType<RelationalDocumentStoreRepository>();
+        }
+
+        [Test]
+        public void It_replaces_the_core_backend_mapping_initializer_with_the_relational_initializer()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetServices<IBackendMappingInitializer>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalBackendMappingInitializer>();
         }
 
         [Test]
@@ -320,6 +334,19 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Should()
                 .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
+        }
+
+        [Test]
+        public void It_replaces_the_core_backend_mapping_initializer_with_the_relational_initializer()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetServices<IBackendMappingInitializer>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalBackendMappingInitializer>();
         }
     }
 }

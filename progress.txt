@@ -410,3 +410,9 @@
 - Decision: keep restore-driven updates to backend/core/DMS unit lock files because they drop stale transitive package state from the surviving graph.
 - Files changed: active packages.lock.json files for frontend, backend/core/DMS unit tests; deleted three orphan legacy lock files; tasks.json; progress.txt.
 - Verification: package-lock rg clean; orphan git ls-files clean after staging deletions; solution locked restore passed; frontend locked restore passed; git diff --check passed.
+
+2026-06-29 - completed Runtime Wiring: fail fast for missing backend mapping initialization / remove-legacy-backend.md follow-up
+- Replaced NoOpBackendMappingInitializer with MissingBackendMappingInitializer; core hosts now fail clearly if datastore composition does not replace IBackendMappingInitializer.
+- Decision: keep core default registration so startup task resolution stays deterministic, but make execution fail instead of silently continuing.
+- Files changed: core startup initializer/registration, backend mapping startup tests, PostgreSQL datastore registration test, frontend datastore composition tests, tasks.json, progress.txt.
+- Verification: csharpier format; required initializer rg no NoOp matches; Core.Tests.Unit Release passed 2561; Frontend.AspNetCore.Tests.Unit Release passed 194.
