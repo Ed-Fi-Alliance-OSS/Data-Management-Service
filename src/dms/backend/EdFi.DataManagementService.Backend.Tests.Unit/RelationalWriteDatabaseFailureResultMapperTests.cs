@@ -221,6 +221,39 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             );
     }
 
+    [Test]
+    public void It_reports_the_writing_subclass_identity_for_abstract_education_organization_identity_conflicts()
+    {
+        // A non-School EducationOrganization subclass colliding on the shared abstract identity table must
+        // report its own identity element (localEducationAgencyId), proving the duplicate values are taken from
+        // the concrete resource's referential-identity metadata rather than a hard-coded School identity.
+        var classifier = new RecordingRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                "UX_EducationOrganizationIdentity_NK"
+            ),
+        };
+        var mapper = new RelationalWriteDatabaseFailureResultMapper(
+            classifier,
+            new RelationalWriteConstraintResolver()
+        );
+        var request = CreateLocalEducationAgencyAbstractIdentityRequest();
+
+        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("LocalEducationAgency"),
+                        [new KeyValuePair<string, string>("localEducationAgencyId", "155901")]
+                    )
+                )
+            );
+    }
+
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
         IReadOnlyList<DocumentReference>? documentReferences = null
@@ -364,6 +397,30 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
                 : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+        );
+    }
+
+    // Builds a POST request for a non-School EducationOrganization subclass (LocalEducationAgency) so the
+    // abstract-identity conflict path is exercised against a different concrete identity element.
+    private static RelationalWriteExecutorRequest CreateLocalEducationAgencyAbstractIdentityRequest()
+    {
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildLocalEducationAgencyWriteModel();
+        var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+
+        return new RelationalWriteExecutorRequest(
+            mappingSet,
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetRequest.Post(
+                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                createDocumentUuid
+            ),
+            writePlan,
+            existingDocumentReadPlan: null,
+            JsonNode.Parse("""{"localEducationAgencyId":155901,"nameOfInstitution":"Grand Bend ISD"}""")!,
+            allowIdentityUpdates: false,
+            new TraceId("abstract-identity-conflict-lea-test"),
+            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
+            new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
         );
     }
 

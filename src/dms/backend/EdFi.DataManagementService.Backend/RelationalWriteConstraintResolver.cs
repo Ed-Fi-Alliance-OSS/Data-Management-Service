@@ -82,16 +82,14 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
             // An abstract identity table carries two unique constraints: the natural-key constraint over the
             // projected identity columns, and the *_RefKey helper that appends the DocumentId primary key.
             // Only the natural-key constraint is a user-facing identity conflict; the *_RefKey helper and any
-            // other unique constraint stay unresolved. Identify the natural key by an exact column match
-            // against the projected identity columns — which carry a SourceJsonPath, while DocumentId and the
-            // Discriminator do not — mirroring the SequenceEqual check used for concrete resource roots.
-            var abstractNaturalKeyColumns = tableModel
-                .Columns.Where(column => column.SourceJsonPath is not null)
-                .Select(column => column.ColumnName);
+            // other unique constraint stay unresolved. The natural key is the unique constraint that does not
+            // include the surrogate DocumentId key column; *_RefKey always appends it. Keying off the table's
+            // own primary-key columns keeps this robust to changes in the projected identity column set.
+            var keyColumnNames = tableModel.Key.Columns.Select(keyColumn => keyColumn.ColumnName).ToHashSet();
 
-            return match.Columns.SequenceEqual(abstractNaturalKeyColumns)
-                ? new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName)
-                : new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
+            return match.Columns.Any(keyColumnNames.Contains)
+                ? new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName)
+                : new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName);
         }
 
         return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);

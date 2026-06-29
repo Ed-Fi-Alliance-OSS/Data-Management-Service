@@ -19,6 +19,10 @@ internal static class AbstractIdentitySchoolTestData
     internal const string ReferenceKeyConstraintName = "UX_EducationOrganizationIdentity_RefKey";
 
     internal static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    internal static readonly QualifiedResourceName LocalEducationAgencyResource = new(
+        "Ed-Fi",
+        "LocalEducationAgency"
+    );
     internal static readonly QualifiedResourceName EducationOrganizationResource = new(
         "Ed-Fi",
         "EducationOrganization"
@@ -51,6 +55,45 @@ internal static class AbstractIdentitySchoolTestData
                     new RelationalScalarType(ScalarKind.Int32),
                     false,
                     new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        );
+
+    /// <summary>
+    /// Builds a concrete LocalEducationAgency root table with its <c>LocalEducationAgencyId</c> identity column.
+    /// Used to prove abstract-identity conflicts report the writing subclass's own identity values rather than a
+    /// hard-coded School identity.
+    /// </summary>
+    internal static DbTableModel LocalEducationAgencyRootTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_LocalEducationAgency",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("LocalEducationAgencyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression(
+                        "$.localEducationAgencyId",
+                        [new JsonPathSegment.Property("localEducationAgencyId")]
+                    ),
                     null,
                     new ColumnStorage.Stored()
                 ),
@@ -130,7 +173,7 @@ internal static class AbstractIdentitySchoolTestData
         BuildSchoolWriteModel(EducationOrganizationIdentityTable());
 
     /// <summary>
-    /// Builds the write plan and mapping set shared by the abstract-identity tests. The School
+    /// Builds the School write plan and mapping set shared by the abstract-identity tests. The School
     /// referential-identity trigger is always present so the failure mapper can project the concrete identity
     /// values; the constraint resolver ignores triggers.
     /// </summary>
@@ -140,38 +183,77 @@ internal static class AbstractIdentitySchoolTestData
     /// </param>
     internal static (ResourceWritePlan WritePlan, MappingSet MappingSet) BuildSchoolWriteModel(
         DbTableModel abstractIdentityTable
+    ) =>
+        BuildEducationOrganizationSubclassWriteModel(
+            SchoolResource,
+            SchoolRootTable(),
+            new DbColumnName("SchoolId"),
+            "$.schoolId",
+            abstractIdentityTable
+        );
+
+    /// <summary>
+    /// Builds a LocalEducationAgency write plan and mapping set that projects into the same single-column
+    /// EducationOrganization identity table as School. Used to prove abstract-identity conflicts report the
+    /// writing subclass's own identity element (<c>localEducationAgencyId</c>) rather than School's.
+    /// </summary>
+    internal static (
+        ResourceWritePlan WritePlan,
+        MappingSet MappingSet
+    ) BuildLocalEducationAgencyWriteModel() =>
+        BuildEducationOrganizationSubclassWriteModel(
+            LocalEducationAgencyResource,
+            LocalEducationAgencyRootTable(),
+            new DbColumnName("LocalEducationAgencyId"),
+            "$.localEducationAgencyId",
+            EducationOrganizationIdentityTable()
+        );
+
+    /// <summary>
+    /// Builds the write plan and mapping set for a concrete EducationOrganization subclass that projects into
+    /// the shared abstract identity table, parameterized by the subclass's identity column and JSONPath.
+    /// </summary>
+    private static (
+        ResourceWritePlan WritePlan,
+        MappingSet MappingSet
+    ) BuildEducationOrganizationSubclassWriteModel(
+        QualifiedResourceName concreteResource,
+        DbTableModel concreteRootTable,
+        DbColumnName identityColumnName,
+        string identityJsonPath,
+        DbTableModel abstractIdentityTable
     )
     {
-        var schoolRootTable = SchoolRootTable();
-
         var resourceModel = new RelationalResourceModel(
-            SchoolResource,
+            concreteResource,
             new DbSchemaName("edfi"),
             ResourceStorageKind.RelationalTables,
-            schoolRootTable,
-            [schoolRootTable],
+            concreteRootTable,
+            [concreteRootTable],
             [],
             []
         );
 
         var writePlan = new ResourceWritePlan(resourceModel, []);
 
-        var schoolKey = new ResourceKeyEntry(1, SchoolResource, "1.0.0", false);
+        var concreteKey = new ResourceKeyEntry(1, concreteResource, "1.0.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(2, EducationOrganizationResource, "1.0.0", true);
 
-        var schoolReferentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName("TR_School_ReferentialIdentity"),
-            schoolRootTable.Table,
+        // EducationOrganization subclass identifiers are Int32 in these fixtures; the failure mapper reads only
+        // the identity JSONPath from this element, not its scalar type.
+        var referentialIdentityTrigger = new DbTriggerInfo(
+            new DbTriggerName($"TR_{concreteResource.ResourceName}_ReferentialIdentity"),
+            concreteRootTable.Table,
             [new DbColumnName("DocumentId")],
-            [new DbColumnName("SchoolId")],
+            [identityColumnName],
             new TriggerKindParameters.ReferentialIdentityMaintenance(
-                schoolKey.ResourceKeyId,
-                SchoolResource.ProjectName,
-                SchoolResource.ResourceName,
+                concreteKey.ResourceKeyId,
+                concreteResource.ProjectName,
+                concreteResource.ResourceName,
                 [
                     new IdentityElementMapping(
-                        new DbColumnName("SchoolId"),
-                        "$.schoolId",
+                        identityColumnName,
+                        identityJsonPath,
                         new RelationalScalarType(ScalarKind.Int32)
                     ),
                 ]
@@ -188,26 +270,26 @@ internal static class AbstractIdentitySchoolTestData
                     2,
                     [1, 2],
                     [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash")],
-                    [schoolKey, educationOrganizationKey]
+                    [concreteKey, educationOrganizationKey]
                 ),
                 SqlDialect.Pgsql,
                 [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
-                [new ConcreteResourceModel(schoolKey, ResourceStorageKind.RelationalTables, resourceModel)],
+                [new ConcreteResourceModel(concreteKey, ResourceStorageKind.RelationalTables, resourceModel)],
                 [new AbstractIdentityTableInfo(educationOrganizationKey, abstractIdentityTable)],
                 [],
                 [],
-                [schoolReferentialIdentityTrigger]
+                [referentialIdentityTrigger]
             ),
-            new Dictionary<QualifiedResourceName, ResourceWritePlan> { [SchoolResource] = writePlan },
+            new Dictionary<QualifiedResourceName, ResourceWritePlan> { [concreteResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             new Dictionary<QualifiedResourceName, short>
             {
-                [SchoolResource] = schoolKey.ResourceKeyId,
+                [concreteResource] = concreteKey.ResourceKeyId,
                 [EducationOrganizationResource] = educationOrganizationKey.ResourceKeyId,
             },
             new Dictionary<short, ResourceKeyEntry>
             {
-                [schoolKey.ResourceKeyId] = schoolKey,
+                [concreteKey.ResourceKeyId] = concreteKey,
                 [educationOrganizationKey.ResourceKeyId] = educationOrganizationKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
