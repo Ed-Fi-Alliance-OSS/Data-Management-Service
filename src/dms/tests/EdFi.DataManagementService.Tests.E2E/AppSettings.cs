@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Tests.E2E;
 
 public static class AppSettings
 {
-    public const string LegacyDataStoreDatabaseName = "edfi_datamanagementservice";
+    public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
 
     private const string DefaultDmsPort = "8080";
     private const string DefaultConfigServicePort = "8081";
@@ -29,7 +29,7 @@ public static class AppSettings
             GetString(configuration, nameof(DmsPort), DefaultDmsPort),
             GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
             GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
-            GetString(configuration, nameof(DataStoreDatabaseName), LegacyDataStoreDatabaseName)
+            GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName)
         );
     }
 

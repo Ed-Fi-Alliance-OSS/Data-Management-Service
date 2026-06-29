@@ -11,16 +11,16 @@ namespace EdFi.DataManagementService.Tests.Unit.Management;
 [TestFixture]
 public class Given_Search_Container_Setup
 {
-    private int _resetRelationalDatabaseCalls;
+    private int _resetDatabaseCalls;
 
     [SetUp]
     public async Task Setup()
     {
-        _resetRelationalDatabaseCalls = 0;
+        _resetDatabaseCalls = 0;
 
-        var sut = new SearchContainerSetup(resetRelationalDatabase: () =>
+        var sut = new SearchContainerSetup(resetDatabase: () =>
         {
-            _resetRelationalDatabaseCalls++;
+            _resetDatabaseCalls++;
             return Task.CompletedTask;
         });
 
@@ -28,8 +28,8 @@ public class Given_Search_Container_Setup
     }
 
     [Test]
-    public void It_resets_the_relational_database()
+    public void It_resets_the_e2e_database()
     {
-        _resetRelationalDatabaseCalls.Should().Be(1);
+        _resetDatabaseCalls.Should().Be(1);
     }
 }

@@ -236,3 +236,9 @@
 - DMS E2E setup no longer passes -EnableKafkaUI by default; connector setup remains deleted.
 - Files changed: docker-compose start scripts, DMS E2E setup wrapper, docker-compose Pester guardrails, tasks.json, progress.txt.
 - Verification: task rg inspected; PowerShell parser passed; BootstrapSchemaDeploymentSafety and BootstrapSchemaAndSecuritySelection Pester passed 157; git diff --check passed; Docker default start had no Kafka/Kafka UI containers, explicit -EnableKafkaUI start created Kafka/Kafka Connect/Kafka UI, final teardown removed stack.
+
+2026-06-29 - completed E2E Helpers: single relational backend helper settings / remove-legacy-backend.md Phase 6
+- Removed E2E LegacyDataStoreDatabaseName default; helper default is neutral edfi_datamanagementservice_e2e and appsettings.json names it explicitly.
+- Deleted direct legacy dms.Document reset path; SearchContainerSetup now uses neutral ResetDatabase hook against AppSettings.DataStoreDatabaseName.
+- Files changed: E2E AppSettings/appsettings.json, ContainerSetupBase, SearchContainerSetup, DMS unit guardrail tests, tasks.json, progress.txt.
+- Verification: task rg clean except expected SearchContainerSetup/provision-e2e matches; csharpier format; DMS Tests.Unit Release passed 30; full build-dms E2ETest .env.e2e self-contained SkipDockerBuild passed 777/791 with 14 skipped in 1h25m; git diff --check passed.

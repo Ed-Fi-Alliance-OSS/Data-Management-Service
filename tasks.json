@@ -577,7 +577,7 @@
       "Run: `rg --hidden -n \"AppSettings\\\\.UseRelationalBackend|UseRelationalBackend|LegacyDataStoreDatabaseName|SearchContainerSetup|provision-relational-e2e-database|provision-e2e-database|legacy reset|LegacyDataStore\" src/dms/tests/EdFi.DataManagementService.Tests.E2E eng/docker-compose/.env* build-dms.ps1`",
       "Run DMS E2E setup through `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI",
