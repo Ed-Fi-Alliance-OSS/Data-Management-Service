@@ -325,7 +325,7 @@
       "Start the local DMS compose stack without Kafka switches and confirm Kafka/Kafka UI containers are not started.",
       "Start the local DMS compose stack with the explicit Kafka switch, if retained, and confirm Kafka infrastructure starts."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Legacy CDC",

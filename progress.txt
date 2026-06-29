@@ -229,3 +229,10 @@
 - Files changed: docker-compose env files/provision helper/tests/README, build/template/e2e workflows, AGENTS/docs RestClient, Given_E2E_Provisioning_Helper, tasks.json.
 - Verification: task rg shows only valid E2E_DATABASE_NAME matches and no old env names/backend switches; csharpier format; provision helper PowerShell parser passed; DMS Tests.Unit Release passed 30; git diff --check passed; after rebuilding/tagging ed-fi-api-local, build-dms E2ETest with .env.e2e and Category=@e2e-ci-shard-3 passed 207/215 with 8 skipped in 21m41s.
 - Notes: initial full -SkipDockerBuild E2ETest used a stale ed-fi-api-local image and failed with old mappingSet behavior; rebuilt the DMS Docker image before shard validation. Full all-shard E2E was not rerun.
+
+2026-06-29 - completed Legacy CDC: explicit Kafka compose opt-in / remove-legacy-backend.md Phase 4A
+- start-local-dms.ps1 and start-published-dms.ps1 now keep kafka.yml out of default compose files; added -EnableKafka, with -EnableKafkaUI implying Kafka infra.
+- Added --remove-orphans to up/down so default no-Kafka runs clear previously-started Kafka containers instead of leaving compose orphans.
+- DMS E2E setup no longer passes -EnableKafkaUI by default; connector setup remains deleted.
+- Files changed: docker-compose start scripts, DMS E2E setup wrapper, docker-compose Pester guardrails, tasks.json, progress.txt.
+- Verification: task rg inspected; PowerShell parser passed; BootstrapSchemaDeploymentSafety and BootstrapSchemaAndSecuritySelection Pester passed 157; git diff --check passed; Docker default start had no Kafka/Kafka UI containers, explicit -EnableKafkaUI start created Kafka/Kafka Connect/Kafka UI, final teardown removed stack.
