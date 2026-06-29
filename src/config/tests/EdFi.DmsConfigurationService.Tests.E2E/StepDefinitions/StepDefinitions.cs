@@ -294,6 +294,21 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
     }
 
+    [When("the current token is revoked")]
+    public async Task WhenTheCurrentTokenIsRevoked()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string> { { "token", _token } });
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/revoke", options);
+    }
+
     [When("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
