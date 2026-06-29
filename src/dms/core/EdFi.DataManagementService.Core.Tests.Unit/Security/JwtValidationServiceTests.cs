@@ -411,7 +411,14 @@ public class JwtValidationServiceTests
         [Test]
         public void It_accepts_the_token_on_every_presentation()
         {
-            _results.Should().OnlyContain(r => r.Principal != null && r.ClientAuthorizations != null);
+            _results.Should().HaveCount(3);
+            _results
+                .Should()
+                .AllSatisfy(r =>
+                {
+                    r.Principal.Should().NotBeNull();
+                    r.ClientAuthorizations.Should().NotBeNull();
+                });
         }
 
         [Test]

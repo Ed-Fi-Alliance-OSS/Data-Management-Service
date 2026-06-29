@@ -129,10 +129,13 @@ public class OpenIddictTokenManagerTests
     // standard validation, so a revoked token is rejected on reuse. This is the platform's
     // strongest replay control. The fixtures below pin that behavior.
 
+    // A valid self-contained token is reusable for the life of its "valid" status: the
+    // status check does not consume the token, so repeated presentations all succeed.
+    // This distinguishes the design from a one-time-use token.
     [TestFixture]
     public class Given_ValidateTokenAsync_WithAValidStoredToken : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private readonly List<bool> _results = [];
 
         [SetUp]
         public async Task Act()
@@ -154,13 +157,20 @@ public class OpenIddictTokenManagerTests
                 new[] { new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()) }
             );
 
-            _result = await CreateConfiguredTokenManager().ValidateTokenAsync(token);
+            var manager = CreateConfiguredTokenManager();
+
+            // Present the same token several times to prove it is reusable while valid.
+            for (int i = 0; i < 3; i++)
+            {
+                _results.Add(await manager.ValidateTokenAsync(token));
+            }
         }
 
         [Test]
-        public void It_accepts_the_token()
+        public void It_accepts_the_token_on_every_presentation()
         {
-            _result.Should().BeTrue();
+            _results.Should().HaveCount(3);
+            _results.Should().AllBeEquivalentTo(true);
         }
     }
 

@@ -369,4 +369,4 @@ Feature: OWASP critical attack path protections
              Then it should respond with 401
               And the response body should not contain "System."
               And the response body should not contain " at EdFi."
-              And the response body should not contain "signature"
+              And the response body should not contain "signature" ignoring case
