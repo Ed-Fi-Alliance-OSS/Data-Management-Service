@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -216,33 +215,19 @@ internal partial class GetTokenInfoHandler(
             return new AuthorizedEducationOrganizationsResult(true, []);
         }
 
-        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows;
-
         var relationalLookup =
-            requestInfo.ScopedServiceProvider.GetService<IRelationalTokenInfoEducationOrganizationLookup>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IRelationalTokenInfoEducationOrganizationLookup>();
 
-        if (relationalLookup is not null)
+        var mappingSetResolution = await tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo);
+        if (!mappingSetResolution.Succeeded || mappingSetResolution.MappingSet is not { } mappingSet)
         {
-            var mappingSetResolution = await tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo);
-            if (!mappingSetResolution.Succeeded || mappingSetResolution.MappingSet is not { } mappingSet)
-            {
-                return new AuthorizedEducationOrganizationsResult(false, []);
-            }
-
-            educationOrganizationRows = await relationalLookup.GetEducationOrganizations(
-                clientEducationOrganizationIds,
-                mappingSet
-            );
+            return new AuthorizedEducationOrganizationsResult(false, []);
         }
-        else
-        {
-            var educationOrganizationLookup =
-                requestInfo.ScopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
 
-            educationOrganizationRows = await educationOrganizationLookup.GetEducationOrganizations(
-                clientEducationOrganizationIds
-            );
-        }
+        var educationOrganizationRows = await relationalLookup.GetEducationOrganizations(
+            clientEducationOrganizationIds,
+            mappingSet
+        );
 
         return new AuthorizedEducationOrganizationsResult(
             true,

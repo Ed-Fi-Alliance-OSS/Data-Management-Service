@@ -171,3 +171,11 @@
 - Removed backend repository tests for impossible nullable MappingSet contract; kept RequestInfo.MappingSet nullable for progressive middleware resolution.
 - Files changed: core handler/request contracts/tests, backend relational write contract/repository tests, tasks.json, progress.txt.
 - Verification: task rg inspected; remaining new GetRequest/MappingSet branches are profile middleware pending task. Core.Tests.Unit, Backend.Tests.Unit, API Integration, solution build passed; build still has existing Reqnroll missing DeleteResourcesValidation feature warning; git diff --check passed.
+
+2026-06-29 - completed Authorization: remove legacy token-info lookup fallback / remove-legacy-backend.md Phase 5
+- Deleted ITokenInfoEducationOrganizationLookup; GetTokenInfoHandler now requires IRelationalTokenInfoEducationOrganizationLookup and resolved MappingSet before ed-org lookup.
+- Kept ResourceActionAuthorizationMiddleware flagless relational behavior unchanged; ApiService already used flagless constructor.
+- Updated token_info handler tests and PostgreSQL/MSSQL/frontend registration guardrails for relational-only lookup registration/replacement.
+- Files changed: GetTokenInfoHandler, Core.External lookup interface deleted, token_info/core startup/frontend/backend unit tests, tasks.json, progress.txt.
+- Verification: task rg has no old interface/UseRelationalBackend/legacy-mode hits; remaining Legacy hits unrelated. Core.Tests.Unit, Frontend.AspNetCore.Tests.Unit, Backend.Tests.Unit passed; git diff --check passed.
+- Notes: first parallel dotnet test run hit shared Core.External DLL file lock; sequential reruns passed.
