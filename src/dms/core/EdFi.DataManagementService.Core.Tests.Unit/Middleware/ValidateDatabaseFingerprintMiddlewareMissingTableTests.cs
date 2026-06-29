@@ -14,7 +14,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Tests.Unit.Middleware.ValidateDatabaseFingerprintMiddlewareFeatureFlagTests;
+using static EdFi.DataManagementService.Core.Tests.Unit.Middleware.ValidateDatabaseFingerprintMiddlewareTests;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -63,9 +63,7 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
-            );
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
@@ -123,9 +121,7 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
-            );
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 

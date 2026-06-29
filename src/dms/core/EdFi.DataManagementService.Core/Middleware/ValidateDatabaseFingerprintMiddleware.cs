@@ -13,17 +13,14 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Validates that the selected database has been provisioned by reading the
 /// dms.EffectiveSchema fingerprint. Short-circuits with 503 if unprovisioned.
-/// No-op when UseRelationalBackend is false.
 /// </summary>
 internal class ValidateDatabaseFingerprintMiddleware(
-    IOptions<AppSettings> appSettings,
     DatabaseFingerprintProvider fingerprintProvider,
     IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     ILogger<ValidateDatabaseFingerprintMiddleware> logger
@@ -41,12 +38,6 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            await next();
-            return;
-        }
-
         // ResolveDataStoreMiddleware should already enforce this invariant, but
         // guard here so fingerprint validation returns a clear configuration
         // error even if upstream selection behavior changes.
