@@ -312,3 +312,10 @@
 - Files changed: DMS build-script guardrail test, tasks.json, progress.txt.
 - Verification: full static rg set passed with only accepted CMS/relational guard matches; csharpier on touched test; focused DMS guardrail tests passed 5; git diff --check passed.
 - Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
+
+2026-06-29 - completed Formatting: final CSharpier pass / remove-legacy-backend.md final cleanup
+- Ran dotnet csharpier format src/dms after legacy-backend cleanup; only Directory.Build.targets changed from formatter XML/CDATA wrapping.
+- Decision: kept formatter output because it is the repository formatting tool's direct result for the requested full src/dms pass.
+- Files changed: src/dms/Directory.Build.targets, tasks.json, progress.txt.
+- Verification: dotnet csharpier format src/dms; git diff --check passed.
+- Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.

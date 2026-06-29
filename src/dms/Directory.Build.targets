@@ -17,7 +17,8 @@
             <Using Namespace="System.Text" />
             <Using Namespace="Newtonsoft.Json" />
             <Using Namespace="Newtonsoft.Json.Linq" />
-            <Code Type="Fragment" Language="cs"><![CDATA[
+            <Code Type="Fragment" Language="cs">
+                <![CDATA[
 var projects = new List<Dictionary<string, object>>();
 
 foreach (var package in BundledPackages)
@@ -435,7 +436,8 @@ string BuildBootstrapManifestJson(List<Dictionary<string, object>> projects)
         Formatting.Indented
     );
 }
-]]></Code>
+]]>
+            </Code>
         </Task>
     </UsingTask>
 
