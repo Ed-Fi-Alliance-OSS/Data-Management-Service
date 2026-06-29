@@ -100,12 +100,12 @@ public partial class Given_E2E_Provisioning_Helper
             POSTGRES_PASSWORD=abcdefgh1!
             POSTGRES_DB_NAME=edfi_datamanagementservice
             E2E_DATABASE_NAME=edfi_datamanagementservice_e2e
-            DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e;NoResetOnClose=true;
+            DATABASE_CONNECTION_STRING_ADMIN=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e;NoResetOnClose=true;
             """
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("must stay separate from DATABASE_CONNECTION_STRING");
+        result.NormalizedOutput.Should().Contain("must stay separate from DATABASE_CONNECTION_STRING_ADMIN");
     }
 
     [Test]

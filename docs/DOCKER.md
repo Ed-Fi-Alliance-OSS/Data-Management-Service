@@ -24,7 +24,6 @@ username from `DATABASE_CONNECTION_STRING_ADMIN`.
 ```none
 AppSettings__Datastore=<Database engine: postgresql or mssql. Defaults to postgresql>
 DATABASE_CONNECTION_STRING_ADMIN=<Admin PostgreSQL connection string used for the readiness check when AppSettings__Datastore is postgresql>
-DATABASE_CONNECTION_STRING=<The application database connection string>
 LOG_LEVEL=<serilog log level i.e. Information>
 MASK_REQUEST_BODY_IN_LOGS=<Mask incoming HTTP POST and PUT request body structures in DEBUG logging, default value is true>
 OAUTH_TOKEN_ENDPOINT=<Authentication service url>
@@ -42,7 +41,6 @@ For example, you might have a `.env` file like the following:
 ```none
 AppSettings__Datastore=postgresql
 DATABASE_CONNECTION_STRING_ADMIN=host=localhost;port=5432;username=postgres;password=P@ssw0rd53;database=postgres;
-DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;
 LOG_LEVEL=Information
 MASK_REQUEST_BODY_IN_LOGS=true
 OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
