@@ -35,6 +35,9 @@
         "actions": [
           {
             "name": "Read"
+          },
+          {
+            "name": "ReadChanges"
           }
         ]
       },
@@ -117,6 +120,14 @@
       "actions": [
         {
           "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
           "authorizationStrategies": [
             {
               "name": "NoFurtherAuthorizationRequired"
@@ -4366,7 +4377,7 @@
               "name": "ReadChanges",
               "authorizationStrategies": [
                 {
-                  "name": "RelationshipsWithEdOrgsAndPeople"
+                  "name": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
                 }
               ]
             }
@@ -4631,7 +4642,7 @@
           "name": "ReadChanges",
           "authorizationStrategies": [
             {
-              "name": "RelationshipsWithEdOrgsAndPeople"
+              "name": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
             }
           ]
         }
