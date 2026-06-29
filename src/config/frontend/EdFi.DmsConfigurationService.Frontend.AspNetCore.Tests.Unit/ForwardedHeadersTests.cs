@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Net;
+using System.Text.Json.Nodes;
+using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using NUnit.Framework;
+
+namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
+
+/// <summary>
+/// Verifies that X-Forwarded-* headers are honored only from trusted reverse-proxy sources,
+/// asserting on the information endpoint's openApiMetadata URL which is built from the request
+/// scheme/host. A test-only startup filter sets the connection remote IP (TestServer leaves it
+/// null) so trusted vs untrusted peers can be simulated deterministically.
+///
+/// UseReverseProxyHeaders and the trusted sources are read from configuration before the host
+/// is built, so they are supplied via environment variables (visible to CreateBuilder) rather
+/// than ConfigureAppConfiguration (applied later, at build time).
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class ForwardedHeadersTests
+{
+    private const string ForwardedHost = "proxied.example.com";
+    private const string UseReverseProxyHeadersEnv = "AppSettings__UseReverseProxyHeaders";
+    private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
+    private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
+
+    [TearDown]
+    public void TearDown()
+    {
+        Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, null);
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
+        Environment.SetEnvironmentVariable(KnownNetworksEnv, null);
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+                collection.AddSingleton<IStartupFilter, RemoteIpStartupFilter>()
+            );
+        });
+    }
+
+    private static async Task<string> GetOpenApiMetadataUrl(HttpClient client, string? remoteIp)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Add("X-Forwarded-Host", ForwardedHost);
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        if (remoteIp is not null)
+        {
+            request.Headers.Add("X-Test-Remote-Ip", remoteIp);
+        }
+
+        var response = await client.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+        var info = JsonNode.Parse(content);
+        return info?["urls"]?["openApiMetadata"]?.GetValue<string>() ?? string.Empty;
+    }
+
+    [Test]
+    public async Task When_reverse_proxy_disabled_forwarded_headers_are_ignored()
+    {
+        Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "false");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.0.0.5");
+
+        url.Should().Be("http://localhost/metadata/specifications");
+    }
+
+    [Test]
+    public async Task When_source_is_untrusted_forwarded_headers_are_ignored()
+    {
+        Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var url = await GetOpenApiMetadataUrl(client, remoteIp: "203.0.113.99");
+
+        url.Should().Be("http://localhost/metadata/specifications");
+    }
+
+    [Test]
+    public async Task When_source_is_a_trusted_proxy_ip_forwarded_headers_are_honored()
+    {
+        Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.0.0.5");
+
+        url.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+    }
+
+    [Test]
+    public async Task When_source_is_in_a_trusted_network_forwarded_headers_are_honored()
+    {
+        Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownNetworksEnv, "10.10.0.0/16");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.10.5.5");
+
+        url.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+    }
+
+    /// <summary>
+    /// Runs before the application's UseForwardedHeaders middleware and sets the connection
+    /// remote IP from the X-Test-Remote-Ip header so trusted/untrusted peers can be simulated.
+    /// </summary>
+    private sealed class RemoteIpStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    async (context, nextMiddleware) =>
+                    {
+                        if (
+                            context.Request.Headers.TryGetValue("X-Test-Remote-Ip", out var value)
+                            && IPAddress.TryParse(value.ToString(), out var ip)
+                        )
+                        {
+                            context.Connection.RemoteIpAddress = ip;
+                        }
+
+                        await nextMiddleware();
+                    }
+                );
+                next(app);
+            };
+    }
+}
