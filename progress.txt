@@ -191,3 +191,9 @@
 - ProfileWritePipelineMiddleware now fails fast when a profiled write reaches it without a resolved MappingSet; relational read handlers/repositories own projection and content type.
 - Files changed: profile middlewares, profile pipeline docs, DMS core service registration, profile middleware/unit setup tests, deleted old filter/creatability services/tests, tasks.json.
 - Verification: csharpier format; deleted-type rg clean; task rg inspected remaining unrelated legacy references; Core.Tests.Unit Release passed 2565; solution build Release --no-restore passed with existing Reqnroll missing DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Startup Validation: always-on registration checks/messages / remove-legacy-backend.md Phase 5
+- Startup validation tasks were already flagless; renamed old relational-enabled fingerprint fixtures and added resource-key reader registration tests for missing/concrete reader behavior.
+- Reworded change-query missing repository warnings/comments as explicit unsupported datastore configuration, not legacy backend selection.
+- Files changed: startup registration tests, change-query handlers/tests, tasks.json, progress.txt.
+- Verification: task rg inspected; csharpier format; Frontend.AspNetCore.Tests.Unit Release passed 187; Core.Tests.Unit Release passed 2567.

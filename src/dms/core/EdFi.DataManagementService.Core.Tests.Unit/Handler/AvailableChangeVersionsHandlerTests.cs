@@ -92,7 +92,7 @@ public class Given_AvailableChangeVersionsHandler
     /// <summary>
     /// Minimal scoped service provider that resolves only IChangeQueryRepository, mirroring how the
     /// handler resolves the repository from the request scope. A null repository models a
-    /// non-relational backend where the service is not registered.
+    /// datastore configuration where Change Queries are unsupported.
     /// </summary>
     private sealed class SingleServiceProvider(IChangeQueryRepository? repository) : IServiceProvider
     {

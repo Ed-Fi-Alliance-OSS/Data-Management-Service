@@ -30,14 +30,14 @@ internal sealed class AvailableChangeVersionsHandler(ILogger<AvailableChangeVers
 
         var changeQueryRepository = requestInfo.ScopedServiceProvider.GetService<IChangeQueryRepository>();
 
-        // Change Queries are a relational-backend feature; IChangeQueryRepository is only
-        // registered on that path. When support is unavailable in the runtime the endpoint is
-        // treated as not routed and returns the standard 404 not-found response, matching the
-        // Change Queries contract (the same shape Program.cs MapFallback emits for any unrouted path).
+        // Change Queries are exposed only when the selected datastore registers support.
+        // Otherwise the endpoint is treated as not routed and returns the standard 404 not-found
+        // response, matching the Change Queries contract (the same shape Program.cs MapFallback
+        // emits for any unrouted path).
         if (changeQueryRepository is null)
         {
             logger.LogWarning(
-                "IChangeQueryRepository is not registered; Change Queries require the relational backend - {TraceId}",
+                "IChangeQueryRepository is not registered; Change Queries are unsupported for this datastore configuration - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(

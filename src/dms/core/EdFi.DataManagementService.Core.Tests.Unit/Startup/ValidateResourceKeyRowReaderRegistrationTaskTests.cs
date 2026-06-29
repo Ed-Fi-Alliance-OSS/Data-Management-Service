@@ -15,38 +15,37 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 
 [TestFixture]
 [Parallelizable]
-public class ValidateDatabaseFingerprintReaderRegistrationTaskTests
+public class ValidateResourceKeyRowReaderRegistrationTaskTests
 {
     [TestFixture]
     [Parallelizable]
-    public class Given_The_Fallback_Reader_Is_Resolved
-        : ValidateDatabaseFingerprintReaderRegistrationTaskTests
+    public class Given_The_Fallback_Reader_Is_Resolved : ValidateResourceKeyRowReaderRegistrationTaskTests
     {
         [Test]
         public async Task It_throws_a_configuration_error()
         {
-            var task = new ValidateDatabaseFingerprintReaderRegistrationTask(
-                new MissingDatabaseFingerprintReader(),
-                NullLogger<ValidateDatabaseFingerprintReaderRegistrationTask>.Instance
+            var task = new ValidateResourceKeyRowReaderRegistrationTask(
+                new MissingResourceKeyRowReader(),
+                NullLogger<ValidateResourceKeyRowReaderRegistrationTask>.Instance
             );
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
             var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Be(MissingDatabaseFingerprintReader.ConfigurationErrorMessage);
+            exception.Which.Message.Should().Be(MissingResourceKeyRowReader.ConfigurationErrorMessage);
         }
     }
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Concrete_Reader_Is_Resolved : ValidateDatabaseFingerprintReaderRegistrationTaskTests
+    public class Given_A_Concrete_Reader_Is_Resolved : ValidateResourceKeyRowReaderRegistrationTaskTests
     {
         [Test]
         public async Task It_completes_successfully()
         {
-            var task = new ValidateDatabaseFingerprintReaderRegistrationTask(
-                A.Fake<IDatabaseFingerprintReader>(),
-                NullLogger<ValidateDatabaseFingerprintReaderRegistrationTask>.Instance
+            var task = new ValidateResourceKeyRowReaderRegistrationTask(
+                A.Fake<IResourceKeyRowReader>(),
+                NullLogger<ValidateResourceKeyRowReaderRegistrationTask>.Instance
             );
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
