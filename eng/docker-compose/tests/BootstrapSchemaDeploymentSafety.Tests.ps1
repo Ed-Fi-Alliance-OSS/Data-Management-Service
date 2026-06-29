@@ -963,6 +963,8 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
                 param(
                     [string] $CmsUrl,
                     [string] $AccessToken,
@@ -992,6 +994,8 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DmsSchoolYearInstances {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
                 param(
                     [string] $CmsUrl,
                     [string] $AccessToken,
