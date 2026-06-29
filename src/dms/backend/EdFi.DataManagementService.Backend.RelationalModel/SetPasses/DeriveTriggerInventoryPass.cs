@@ -31,7 +31,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private const string StampToken = "Stamp";
     private const string ReferentialIdentityToken = "ReferentialIdentity";
     private const string AbstractIdentityToken = "AbstractIdentity";
-    private const string PropagationFallbackPrefix = "PropagateIdentity";
+    private const string PropagationTriggerPrefix = "PropagateIdentity";
 
     // The shared dms.Descriptor stamping trigger. Defined as local constants because DmsTableNames is
     // internal to Backend.Ddl and RelationalModel must not depend on the DDL project; CoreDdlEmitterTests
@@ -45,7 +45,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.TriggerInventory"/> with
     /// <c>DocumentStamping</c>, <c>ReferentialIdentityMaintenance</c>,
-    /// <c>AbstractIdentityMaintenance</c>, and (MSSQL only) <c>IdentityPropagationFallback</c>
+    /// <c>AbstractIdentityMaintenance</c>, and (MSSQL only) <c>MssqlIdentityPropagationTrigger</c>
     /// triggers.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
@@ -282,14 +282,14 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             )
         );
 
-        // IdentityPropagationFallback — MSSQL only: emits triggers on referenced entities to propagate
+        // MssqlIdentityPropagationTrigger — MSSQL only: emits triggers on referenced entities to propagate
         // identity updates to all referrers. This replaces ON UPDATE CASCADE which SQL Server rejects
         // due to multiple cascade paths.
         if (context.Dialect == SqlDialect.Mssql)
         {
             var resourceContextsByResource = SetPassHelpers.BuildResourceContextLookup(context);
 
-            EmitPropagationFallbackTriggers(
+            EmitMssqlIdentityPropagationTriggers(
                 context,
                 abstractTablesByResource,
                 resourceContextsByResource,
@@ -312,11 +312,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     );
 
     /// <summary>
-    /// Emits <see cref="TriggerKindParameters.IdentityPropagationFallback"/> triggers on referenced
+    /// Emits <see cref="TriggerKindParameters.MssqlIdentityPropagationTrigger"/> triggers on referenced
     /// entities to propagate identity updates to all referrers. These replace the <c>ON UPDATE CASCADE</c>
     /// that PostgreSQL handles natively but SQL Server rejects due to multiple cascade paths.
     /// </summary>
-    private static void EmitPropagationFallbackTriggers(
+    private static void EmitMssqlIdentityPropagationTriggers(
         RelationalModelSetBuilderContext context,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
@@ -402,11 +402,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
-                    new DbTriggerName(BuildTriggerName(triggerTable, PropagationFallbackPrefix)),
+                    new DbTriggerName(BuildTriggerName(triggerTable, PropagationTriggerPrefix)),
                     triggerTable,
                     [RelationalNameConventions.DocumentIdColumnName],
                     identityProjectionColumns,
-                    new TriggerKindParameters.IdentityPropagationFallback(referrerUpdates)
+                    new TriggerKindParameters.MssqlIdentityPropagationTrigger(referrerUpdates)
                 )
             );
         }

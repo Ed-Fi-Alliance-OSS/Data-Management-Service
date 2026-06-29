@@ -341,7 +341,8 @@ public static class DerivedModelSetManifestEmitter
                     TriggerKindParameters.DocumentStamping => "DocumentStamping",
                     TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                     TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
-                    TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                    TriggerKindParameters.MssqlIdentityPropagationTrigger =>
+                        "MssqlIdentityPropagationTrigger",
                     TriggerKindParameters.AuthHierarchyMaintenance => "AuthHierarchyMaintenance",
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(triggers),
@@ -363,7 +364,7 @@ public static class DerivedModelSetManifestEmitter
                     writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
                     break;
 
-                case TriggerKindParameters.IdentityPropagationFallback propagation:
+                case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
                     writer.WritePropertyName("referrer_updates");
                     writer.WriteStartArray();
                     foreach (var referrer in propagation.ReferrerUpdates)

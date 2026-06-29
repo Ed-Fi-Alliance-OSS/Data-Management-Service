@@ -461,11 +461,11 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
 }
 
 /// <summary>
-/// Test fixture verifying IdentityPropagationFallback triggers are not emitted on Pgsql,
+/// Test fixture verifying MssqlIdentityPropagationTrigger triggers are not emitted on Pgsql,
 /// even for schemas that have references qualifying for cascade propagation.
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_On_Pgsql
+public class Given_MssqlIdentityPropagationTrigger_On_Pgsql
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -490,13 +490,13 @@ public class Given_IdentityPropagationFallback_On_Pgsql
     }
 
     /// <summary>
-    /// It should not emit any IdentityPropagationFallback triggers on Pgsql.
+    /// It should not emit any MssqlIdentityPropagationTrigger triggers on Pgsql.
     /// </summary>
     [Test]
-    public void It_should_not_emit_any_IdentityPropagationFallback_triggers_on_Pgsql()
+    public void It_should_not_emit_any_MssqlIdentityPropagationTrigger_triggers_on_Pgsql()
     {
         var fallbackTriggers = _triggers.Where(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
         );
 
         fallbackTriggers.Should().BeEmpty();
@@ -504,11 +504,11 @@ public class Given_IdentityPropagationFallback_On_Pgsql
 }
 
 /// <summary>
-/// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with concrete
+/// Test fixture for MssqlIdentityPropagationTrigger triggers on MSSQL dialect with concrete
 /// reference targets (allowIdentityUpdates).
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
+public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Concrete_Targets
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -539,7 +539,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_emit_propagation_trigger_on_referenced_resource()
     {
         var schoolPropagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
@@ -554,7 +554,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_not_emit_propagation_trigger_for_non_updatable_target()
     {
         var studentPropagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_Student_PropagateIdentity"
         );
 
@@ -568,7 +568,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_use_DocumentId_as_key_column()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
@@ -583,7 +583,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_include_identity_projection_columns()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
@@ -601,12 +601,12 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_include_referrer_updates()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         var propagationParams =
-            schoolPropagation.Parameters as TriggerKindParameters.IdentityPropagationFallback;
+            schoolPropagation.Parameters as TriggerKindParameters.MssqlIdentityPropagationTrigger;
         propagationParams.Should().NotBeNull();
         propagationParams!.ReferrerUpdates.Should().ContainSingle();
 
@@ -622,11 +622,11 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
 }
 
 /// <summary>
-/// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with abstract
+/// Test fixture for MssqlIdentityPropagationTrigger triggers on MSSQL dialect with abstract
 /// reference targets.
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
+public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Abstract_Targets
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -657,7 +657,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     public void It_should_emit_propagation_trigger_on_abstract_identity_table()
     {
         var propagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
@@ -672,11 +672,12 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     public void It_should_include_referrer_updates_for_enrollment()
     {
         var propagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
-        var propagationParams = propagation.Parameters as TriggerKindParameters.IdentityPropagationFallback;
+        var propagationParams =
+            propagation.Parameters as TriggerKindParameters.MssqlIdentityPropagationTrigger;
         propagationParams.Should().NotBeNull();
         propagationParams!.ReferrerUpdates.Should().ContainSingle();
 
@@ -692,7 +693,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     public void It_should_use_DocumentId_as_key_column_for_abstract_identity_table()
     {
         var propagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
@@ -952,7 +953,7 @@ public class Given_Deterministic_Trigger_Ordering
                 TriggerKindParameters.DocumentStamping => "DocumentStamping",
                 TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                 TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
-                TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                TriggerKindParameters.MssqlIdentityPropagationTrigger => "MssqlIdentityPropagationTrigger",
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(p),
                     "Unsupported trigger kind parameters type."
@@ -1350,13 +1351,13 @@ file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelS
 }
 
 /// <summary>
-/// Test fixture for IdentityPropagationFallback on MSSQL with a child-collection
+/// Test fixture for MssqlIdentityPropagationTrigger on MSSQL with a child-collection
 /// reference binding (in addition to the existing root-table binding). Verifies
 /// that child collection referrers must appear as PropagationReferrerTarget
 /// entries on the referenced resource's propagation trigger.
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Referrer
+public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Child_Collection_Referrer
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -1389,7 +1390,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
     {
         var schoolPropagations = _triggers
             .Where(t =>
-                t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
                 && t.Name.Value == "TR_School_PropagateIdentity"
             )
             .ToArray();
@@ -1405,10 +1406,10 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
     public void It_should_include_child_table_referrer_alongside_root_referrer()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
-        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
             schoolPropagation.Parameters;
 
         // Existing root-table referrer (Enrollment) must still be present.
@@ -1419,7 +1420,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
             .ReferrerUpdates.Should()
             .Contain(
                 r => r.ReferrerTable.Name == "BusRouteAddress",
-                "child collection bindings must be included in IdentityPropagationFallback"
+                "child collection bindings must be included in MssqlIdentityPropagationTrigger"
             );
     }
 
@@ -1430,10 +1431,10 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
     public void It_should_resolve_child_referrer_target_columns_against_the_child_table_model()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
-        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
             schoolPropagation.Parameters;
 
         var childReferrer = propagationParams.ReferrerUpdates.Single(r =>
@@ -1448,7 +1449,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
 }
 
 /// <summary>
-/// Test fixture for IdentityPropagationFallback on MSSQL with a resource-extension
+/// Test fixture for MssqlIdentityPropagationTrigger on MSSQL with a resource-extension
 /// reference binding (an <c>_ext</c>-scoped reference defined by an extension project that
 /// targets a core resource). Verifies that the extension table appears as a
 /// PropagationReferrerTarget on the referenced resource's propagation trigger; without the
@@ -1456,7 +1457,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Child_Collection_Re
 /// its own stamp trigger never fires.
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
+public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Extension_Referrer
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -1496,7 +1497,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
     {
         var schoolPropagations = _triggers
             .Where(t =>
-                t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
                 && t.Name.Value == "TR_School_PropagateIdentity"
             )
             .ToArray();
@@ -1512,17 +1513,17 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
     public void It_should_include_the_extension_table_referrer()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
-        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
             schoolPropagation.Parameters;
 
         propagationParams
             .ReferrerUpdates.Should()
             .Contain(
                 r => r.ReferrerTable.Name == "ContactExtension",
-                "_ext-scoped reference bindings must be included in IdentityPropagationFallback"
+                "_ext-scoped reference bindings must be included in MssqlIdentityPropagationTrigger"
             );
     }
 
@@ -1533,10 +1534,10 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Extension_Referrer
     public void It_should_resolve_extension_referrer_target_columns_against_the_extension_table_model()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
             && t.Name.Value == "TR_School_PropagateIdentity"
         );
-        var propagationParams = (TriggerKindParameters.IdentityPropagationFallback)
+        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
             schoolPropagation.Parameters;
 
         var extensionReferrer = propagationParams.ReferrerUpdates.Single(r =>
@@ -2305,7 +2306,7 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
     /// <summary>
     /// Derives the trigger inventory for the grouped-duplicate fixture. Key unification must run before
     /// abstract identity derivation so the grouped duplicate columns converge; transitive identity
-    /// mutability must run so the propagation fallback trigger is emitted on the mutable referenced
+    /// mutability must run so the identity-propagation trigger is emitted on the mutable referenced
     /// resource.
     /// </summary>
     private static IReadOnlyList<DbTriggerInfo> BuildTriggers(bool reverseDuplicateReferenceBindings)
@@ -2360,9 +2361,9 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
     )
     {
         var trigger = triggers.Single(t =>
-            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
         );
-        var parameters = (TriggerKindParameters.IdentityPropagationFallback)trigger.Parameters;
+        var parameters = (TriggerKindParameters.MssqlIdentityPropagationTrigger)trigger.Parameters;
 
         return parameters
             .ReferrerUpdates.Single(r => r.ReferrerTable.Name == "EnrollmentSchoolCarrier")

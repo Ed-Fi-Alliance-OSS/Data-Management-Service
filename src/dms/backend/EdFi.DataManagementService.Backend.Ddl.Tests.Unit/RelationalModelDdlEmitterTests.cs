@@ -1565,7 +1565,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 }
 
 [TestFixture]
-public class Given_RelationalModelDdlEmitter_With_Mssql_IdentityPropagationFallback
+public class Given_RelationalModelDdlEmitter_With_MssqlIdentityPropagationTrigger
 {
     private string _ddl = default!;
 
@@ -3424,7 +3424,7 @@ internal static class MssqlIdentityPropagationFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.IdentityPropagationFallback([
+                new TriggerKindParameters.MssqlIdentityPropagationTrigger([
                     new PropagationReferrerTarget(
                         new DbTableName(schema, "Enrollment"),
                         new DbColumnName("School_DocumentId"),
@@ -3746,7 +3746,7 @@ public class Given_DdlEmitter_On_Mssql_With_Child_Collection_Referrer
     /// the shape exercised by the trigger-inventory derivation tests: a School root with a
     /// composite identity (EducationOrganizationId, SchoolId), a BusRoute root referrer, and
     /// a BusRouteAddress child collection that also stores the propagated School identity
-    /// columns. The MSSQL variant carries the <see cref="TriggerKindParameters.IdentityPropagationFallback"/>
+    /// columns. The MSSQL variant carries the <see cref="TriggerKindParameters.MssqlIdentityPropagationTrigger"/>
     /// trigger with both referrer updates; the PG variant has no propagation trigger and instead
     /// uses a composite FK on the child table with <c>ON UPDATE CASCADE</c> against School.
     /// </summary>
@@ -3998,7 +3998,7 @@ internal static class ChildCollectionReferrerFixture
                         schoolTableName,
                         [documentIdColumn],
                         [educationOrgIdColumn, schoolIdColumn],
-                        new TriggerKindParameters.IdentityPropagationFallback([
+                        new TriggerKindParameters.MssqlIdentityPropagationTrigger([
                             new PropagationReferrerTarget(
                                 busRouteTableName,
                                 schoolFkColumn,
