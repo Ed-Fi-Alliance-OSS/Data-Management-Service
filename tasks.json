@@ -515,7 +515,7 @@
       "Run: `rg -n \"USE_RELATIONAL_BACKEND|Test-FilterIncludesRelationalCategory|Test-FilterExcludesRelationalCategory|Assert-E2ETestLaneMatchesFilter|Category[!]?=?@?relational-backend|relational-ci-shard|Category.*relational\" build-dms.ps1`",
       "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Build Script",
