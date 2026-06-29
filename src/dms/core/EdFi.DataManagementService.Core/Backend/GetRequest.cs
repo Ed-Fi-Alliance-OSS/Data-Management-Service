@@ -4,16 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
-
-/// <summary>
-/// A get request to a document repository
-/// </summary>
-internal record GetRequest(DocumentUuid DocumentUuid, ResourceName ResourceName, TraceId TraceId)
-    : IGetRequest;
 
 /// <summary>
 /// A relational get request to a document repository.
@@ -39,4 +32,7 @@ internal sealed record RelationalGetRequest(
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-) : GetRequest(DocumentUuid, ResourceInfo.ResourceName, TraceId), IRelationalGetRequest;
+) : IRelationalGetRequest
+{
+    public ResourceName ResourceName => ResourceInfo.ResourceName;
+}
