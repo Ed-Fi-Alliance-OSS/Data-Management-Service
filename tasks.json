@@ -890,7 +890,7 @@
       "Run: `rg -n \"POSTGRES_ADMIN_|POSTGRES_PORT|POSTGRES_HOST|DATABASE_CONNECTION_STRING_ADMIN|/app/Installer|Backend\\\\.Installer|DeployDatabaseOnStartup\" docs/DOCKER.md src/dms/run.sh` and confirm the docs match active runtime behavior.",
       "Run: `rg -n \"POSTGRES_ADMIN_|POSTGRES_PORT|POSTGRES_HOST\" docs README.md GETTING_STARTED.md eng/docker-compose/README.md` and confirm remaining references are active or removed."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Code Cleanup",
