@@ -3,11 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# These scenarios require the relational backend in the Instance Management E2E harness,
-# which is enabled in DMS-1239. They are committed @ignore until that lands. They were
-# verified green locally against a throwaway relational harness (see plan Task 6).
-
-@InstanceCleanup @changequeries-isolation @ignore @DMS-1239 @instance-management-ci-shard-2
+@InstanceCleanup @changequeries-isolation @DMS-1239 @instance-management-ci-shard-2
 Feature: ChangeQueries isolation across tenants and instances
     Verify that change versions, /deletes, /keyChanges, and ReadChanges authorization are
     isolated per (tenant, instance) database. Tenant_255901 owns instances 255901/2024 and
