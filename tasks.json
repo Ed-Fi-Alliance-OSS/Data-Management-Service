@@ -607,7 +607,7 @@
       "Run: `rg -n \"use_relational_backend|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|relational-backend|relational-ci-shard|\\\\.env\\\\.template\\\\.relational\" .github/workflows/build-populated-template.yml .github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml .github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml`",
       "Review template workflow inputs and generated commands for neutral backend behavior."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI",

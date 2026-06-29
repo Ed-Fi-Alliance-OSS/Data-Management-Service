@@ -60,15 +60,15 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Resolve relational database name
+      - name: Resolve template database name
         run: |
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "./.env.template"
-          $relationalDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
-          if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
+          $templateDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
+          if ([string]::IsNullOrWhiteSpace($templateDatabaseName)) {
             throw "E2E_DATABASE_NAME must be set in .env.template"
           }
-          "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TEMPLATE_DB_NAME=$templateDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
       - name: Set up Docker Buildx
@@ -107,31 +107,31 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.template" -EnableConfig
         working-directory: eng/docker-compose/
 
-      - name: Provision relational database
+      - name: Provision template database
         run: |
           ./provision-e2e-database.ps1 -EnvironmentFile ./.env.template -Configuration Release
         working-directory: eng/docker-compose/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.
-      # No data store is created by default; register the single relational data store here
+      # No data store is created by default; register the template data store here
       # and hand its id forward; the Configuration Service protects data store connection
       # strings in API responses, so the id from registration is the only reliable way to
       # select this data store later.
-      - name: Register relational data store
+      - name: Register template data store
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "./.env.template"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:TEMPLATE_DB_NAME -Name "Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
-            throw "Failed to register the relational data store."
+            throw "Failed to register the template data store."
           }
-          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TEMPLATE_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
-      - name: Restart DMS to load the provisioned relational schema
+      - name: Restart DMS to load the provisioned schema
         run: |
           docker restart ed-fi-api
 
@@ -180,14 +180,14 @@ jobs:
                   -StandardVersion '${{ env.STANDARD_VERSION }}'`
                   -PackageVersion $packageVersion `
                   -ApplicationName $uniqueAppName `
-                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
-                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
+                  -DataStoreDatabaseName $env:TEMPLATE_DB_NAME `
+                  -DataStoreId $env:TEMPLATE_DATA_STORE_ID `
                   -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 
       - name: Verify template package restore
         run: |
-          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:TEMPLATE_DB_NAME
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs
@@ -284,8 +284,8 @@ jobs:
         shell: bash
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
-          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   generate-package-provenance:
     name: Create Minimal Template Provenance
