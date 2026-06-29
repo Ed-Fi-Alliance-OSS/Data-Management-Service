@@ -390,3 +390,9 @@
 - Decision: kept no-link fallback description as current descriptor/no-mapping-set behavior, not compatibility behavior; no production behavior changes.
 - Files changed: ProfileExtensionCanonicalizer, RelationalReadMaterializer, RelationalReadMaterializerTests, tasks.json, progress.txt.
 - Verification: csharpier format; task rg only finds generated ProfileResponseFilteringFeature class name; refined stale-comment rg clean; git diff --check passed; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Documentation: Docker runtime PostgreSQL readiness variables / remove-legacy-backend.md follow-up
+- Replaced installer-era POSTGRES_ADMIN_*/POSTGRES_PORT/POSTGRES_HOST docs with AppSettings__Datastore and DATABASE_CONNECTION_STRING_ADMIN readiness inputs.
+- Decision: document DATABASE_CONNECTION_STRING_ADMIN as readiness/admin connection source parsed by run.sh; no setup-on-startup or installer guidance added.
+- Files changed: docs/DOCKER.md, tasks.json, progress.txt.
+- Verification: task rg showed only DATABASE_CONNECTION_STRING_ADMIN docs/run.sh matches and no remaining POSTGRES_ADMIN_/POSTGRES_PORT/POSTGRES_HOST in active docs; git diff --check passed.
