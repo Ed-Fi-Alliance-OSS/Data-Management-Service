@@ -10,9 +10,7 @@
 > building production deployments. This reference architecture will not be tuned
 > for real-world production usage. For example, it will not include service
 > clustering, may not be well secured, and it will not utilize cloud providers'
-> manage services. Also see [Debezium Connector for
-> PostgreSQL](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html)
-> for additional notes on securely configuring replication.
+> managed services.
 
 ## Starting Services with Docker Compose
 

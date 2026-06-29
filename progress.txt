@@ -270,3 +270,10 @@
 - Neutralized scheduled smoke Slack summaries from a backend-lane label to single backend path language.
 - Files changed: scheduled-smoke-test workflow, tasks.json, progress.txt.
 - Verification: task rg clean; case-insensitive installer artifact rg clean; yq parsed scheduled-smoke-test/on-prerelease/on-release/on-dms-merge-or-tag workflows; git diff --check passed.
+
+2026-06-29 - completed Legacy CDC: active docs/RestClient pending-support cleanup / remove-legacy-backend.md Phase 4A
+- Removed active source-connector/Kafka data-path wording from GETTING_STARTED and OpenIddict RestClient setup; default lab commands no longer enable Kafka UI.
+- Replaced Instance Routing RestClient legacy topic/dms.document checks with relational dms."Descriptor" route-db verification queries and pending CDC note.
+- Removed compose README Debezium pointer; kept explicit opt-in Kafka/Kafka UI infra docs plus pending-support notes.
+- Files changed: GETTING_STARTED.md, eng/docker-compose/README.md, RestClient HTTP files, DMS integration README, tasks.json, progress.txt.
+- Verification: task rg shows no dms.document/to_debezium/edfi.dms.document/Debezium active contract refs; remaining Kafka hits are opt-in infra, guardrails, or pending-support notes; git diff --check passed.
