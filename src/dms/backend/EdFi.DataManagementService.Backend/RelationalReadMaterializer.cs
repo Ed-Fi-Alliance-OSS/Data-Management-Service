@@ -23,7 +23,7 @@ public sealed record RelationalReadMaterializationRequest(
     /// <summary>
     /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
     /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
-    /// in scope (legacy callers, descriptor materialization). When <see langword="null"/>,
+    /// in scope, such as descriptor materialization. When <see langword="null"/>,
     /// reconstitution falls back to the no-link overload regardless of
     /// <see cref="ResourceLinksOptions.Enabled"/>.
     /// </summary>
@@ -48,7 +48,7 @@ public sealed record RelationalReadPageMaterializationRequest(
     /// <summary>
     /// Optional mapping set used to resolve <c>link.rel</c> / <c>link.href</c> slugs during
     /// reconstitution. <see langword="null"/> on call paths that do not have a mapping set
-    /// in scope (legacy callers, descriptor materialization). When <see langword="null"/>,
+    /// in scope, such as descriptor materialization. When <see langword="null"/>,
     /// reconstitution falls back to the no-link overload regardless of
     /// <see cref="ResourceLinksOptions.Enabled"/>.
     /// </summary>
@@ -128,15 +128,14 @@ internal sealed class RelationalReadMaterializer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // The resolver-aware (link-bearing) overload runs only for ExternalResponse reads —
-        // StoredDocument-mode reads are internal read-modify-write fetches per
-        // RelationalGetRequestContracts.cs:22 and must not carry server-only `link`
-        // decorations (otherwise profile write merge can copy them back into the request
-        // body via ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields). Legacy
-        // ExternalResponse callers without a MappingSet also fall back to the no-link
-        // overload. The ResourceLinksOptions.Enabled flag is honored as the final response-
-        // shaping pass via StripReferenceLinks, invoked by the repository wrapper after
-        // readable-profile projection.
+        // The resolver-aware (link-bearing) overload runs only for ExternalResponse reads
+        // that have a MappingSet. StoredDocument-mode reads are internal read-modify-write
+        // fetches per RelationalGetRequestContracts.cs and must not carry server-only `link`
+        // decorations into stored-state profile projection. ExternalResponse materialization
+        // without a MappingSet also falls back to the no-link overload. The
+        // ResourceLinksOptions.Enabled flag is honored as the final response-shaping pass via
+        // StripReferenceLinks, invoked by the repository wrapper after readable-profile
+        // projection.
         var reconstitutedDocuments =
             request.ReadMode == RelationalGetRequestReadMode.ExternalResponse
             && request.MappingSet is { } mappingSet

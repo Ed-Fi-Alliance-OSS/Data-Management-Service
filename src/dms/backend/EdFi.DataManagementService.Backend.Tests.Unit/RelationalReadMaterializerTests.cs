@@ -726,9 +726,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     /// reconstitution overload even when the caller supplies a <see cref="MappingSet"/> and a
     /// populated <see cref="HydratedDocumentReferenceLookup"/>. StoredDocument is the internal
     /// read-modify-write shape (see <c>RelationalGetRequestContracts.cs:22</c>); a leaking
-    /// server-only <c>link</c> subtree would be copied back into the request body by
-    /// <c>ProfileWriteValidationMiddleware.MergeNestedObjectStrippedFields</c>. The throwing
-    /// resolver below converts any silent routing slip into a loud test failure.
+    /// server-only <c>link</c> subtree would contaminate stored-state profile projection. The
+    /// throwing resolver below converts any silent routing slip into a loud test failure.
     /// </summary>
     [Test]
     public void It_does_not_emit_link_on_stored_document_mode_even_when_mapping_set_and_lookup_are_passed()
@@ -856,9 +855,9 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
 
     /// <summary>
     /// Pins the inverse: a single-doc <see cref="IRelationalReadMaterializer.Materialize"/>
-    /// caller that does NOT pass <c>DocumentReferenceLookup</c> (legacy callers, descriptor
-    /// materialization) gets no <c>link</c> emission even with a <see cref="MappingSet"/> in
-    /// scope — the lookup map is empty so <c>EmitReferenceLink</c> returns on the miss.
+    /// caller that does NOT pass <c>DocumentReferenceLookup</c>, such as descriptor
+    /// materialization, gets no <c>link</c> emission even with a <see cref="MappingSet"/> in
+    /// scope because the lookup map is empty and <c>EmitReferenceLink</c> returns on the miss.
     /// </summary>
     [Test]
     public void It_omits_link_on_single_document_materialize_when_document_reference_lookup_is_null()

@@ -906,6 +906,6 @@
       "Run: `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileExtensionCanonicalizer.cs src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalReadMaterializerTests.cs`.",
       "Run: `git diff --check`."
     ],
-    "completed": false
+    "completed": true
   }
 ]

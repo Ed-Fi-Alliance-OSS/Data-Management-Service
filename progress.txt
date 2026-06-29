@@ -384,3 +384,9 @@
 - Added frontend datastore assertions that PostgreSQL and MSSQL still resolve RelationalEdOrgAuthorizationElementResolutionCache and RelationalEdOrgAuthorizationSubjectSelector.
 - Files changed: WebApplicationBuilderExtensions, WebApplicationBuilderExtensionsTests, tasks.json, progress.txt.
 - Verification: csharpier format; task rg shows no frontend duplicate; Frontend.AspNetCore.Tests.Unit Release passed 192; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Code Cleanup: stale legacy/profile comment references / remove-legacy-backend.md cleanup
+- Removed deleted ProfileResponseFilter/ProfileWriteValidationMiddleware refs and legacy-caller wording from profile/read materializer comments.
+- Decision: kept no-link fallback description as current descriptor/no-mapping-set behavior, not compatibility behavior; no production behavior changes.
+- Files changed: ProfileExtensionCanonicalizer, RelationalReadMaterializer, RelationalReadMaterializerTests, tasks.json, progress.txt.
+- Verification: csharpier format; task rg only finds generated ProfileResponseFilteringFeature class name; refined stale-comment rg clean; git diff --check passed; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
