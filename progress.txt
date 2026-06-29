@@ -403,3 +403,10 @@
 - Files changed: build-dms.ps1, configure-local-data-store.ps1, start-published-dms.ps1, DMS E2E setup-local-dms.ps1, E2E/Pester/C# guardrails, tasks.json, progress.txt.
 - Verification: PowerShell parser checks; csharpier on C# guardrail; DMS build-script guardrail test passed 6; BootstrapSchemaDeploymentSafety passed 96; BootstrapSchemaAndSecuritySelection passed 65; DockerBuild rebuilt/tagged ed-fi-api-local; build-dms E2ETest .env.e2e self-contained Category=@e2e-ci-shard-3 passed 235/243 with 8 skipped in 34m01s.
 - Notes: first shard run used stale ed-fi-api-local image from 2026-06-28 22:45 and failed 20 unrelated runtime scenarios; rebuilt and tagged fresh image before final shard rerun.
+
+2026-06-29 - completed Lock Files: remove stale legacy backend lock references / remove-legacy-backend.md follow-up
+- Regenerated solution lock graph with dotnet restore --force-evaluate; removed frontend Old.Postgresql project entry and now-unused DbUp/Npgsql.DependencyInjection transitives.
+- Deleted orphan tracked packages.lock.json files under deleted Backend.Installer and Old.Postgresql project directories.
+- Decision: keep restore-driven updates to backend/core/DMS unit lock files because they drop stale transitive package state from the surviving graph.
+- Files changed: active packages.lock.json files for frontend, backend/core/DMS unit tests; deleted three orphan legacy lock files; tasks.json; progress.txt.
+- Verification: package-lock rg clean; orphan git ls-files clean after staging deletions; solution locked restore passed; frontend locked restore passed; git diff --check passed.

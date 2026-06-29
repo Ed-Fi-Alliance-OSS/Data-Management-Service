@@ -943,7 +943,7 @@
       "Run: `dotnet restore src/dms/EdFi.DataManagementService.sln --locked-mode`.",
       "Run: `dotnet restore src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Wiring",
