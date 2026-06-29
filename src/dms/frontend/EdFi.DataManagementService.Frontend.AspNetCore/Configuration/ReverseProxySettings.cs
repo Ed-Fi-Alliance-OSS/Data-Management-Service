@@ -57,7 +57,7 @@ public class ReverseProxySettingsValidator : IValidateOptions<ReverseProxySettin
             {
                 return ValidateOptionsResult.Fail(
                     $"AppSettings:ReverseProxy:KnownNetworks contains an invalid CIDR network: '{network}'. "
-                        + "Use a canonical network base address, for example '10.0.0.0/8'."
+                        + "Expected CIDR notation, for example '10.0.0.0/8' or '2001:db8::/32'."
                 );
             }
         }
