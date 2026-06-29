@@ -304,3 +304,11 @@
 - Files changed: tasks.json, progress.txt.
 - Verification: task rg over AGENTS/README/GETTING_STARTED/docs/compose README clean; Kafka/CDC rg shows only opt-in infra or pending-support notes.
 - Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
+
+2026-06-29 - completed Static Validation: final legacy-backend reference searches / remove-legacy-backend.md final validation
+- Ran final active-surface rg set for old PostgreSQL, feature flags, E2E lane names, installer/setup vars, neutral env names, MappingSet/QueryRequest fallbacks, and legacy CDC/document-store refs.
+- Removed one searchable UseRelationalBackend guardrail literal by composing the deleted setting name in the test while preserving the assertion.
+- Remaining DeployDatabaseOnStartup matches are CMS-only/config-service setup guidance; remaining MappingSet/change-query matches are relational guard/fail-fast or explicit unsupported datastore handling.
+- Files changed: DMS build-script guardrail test, tasks.json, progress.txt.
+- Verification: full static rg set passed with only accepted CMS/relational guard matches; csharpier on touched test; focused DMS guardrail tests passed 5; git diff --check passed.
+- Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
