@@ -7,7 +7,7 @@
 # build-populated-template.yml so the thin caller (EdFi.Api.Minimal.Template.PostgreSQL.yml)
 # can run one matrix leg per Ed-Fi Data Standard version with per-version outputs (package,
 # SBOM, provenance) staying correlated within a single reusable-workflow run. The minimal
-# template is relational-backend only and loads only the descriptor (minimal) sample data.
+# template is relational backend only and loads only the descriptor (minimal) sample data.
 
 name: Build Minimal Template Package
 
@@ -39,7 +39,7 @@ on:
         description: "Docker compose environment file used to start/provision the stack"
         required: false
         type: string
-        default: "./.env.template.relational"
+        default: "./.env.template"
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
         required: true
@@ -103,9 +103,9 @@ jobs:
         run: |
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
-          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
+          $relationalDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
           if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-            throw "RELATIONAL_E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
+            throw "E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
           }
           "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/

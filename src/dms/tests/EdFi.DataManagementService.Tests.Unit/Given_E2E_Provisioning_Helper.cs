@@ -99,8 +99,8 @@ public partial class Given_E2E_Provisioning_Helper
             POSTGRES_PORT=5435
             POSTGRES_PASSWORD=abcdefgh1!
             POSTGRES_DB_NAME=edfi_datamanagementservice
-            E2E_DATABASE_NAME=edfi_datamanagementservice_relational
-            DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_relational;NoResetOnClose=true;
+            E2E_DATABASE_NAME=edfi_datamanagementservice_e2e
+            DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e;NoResetOnClose=true;
             """
         );
 

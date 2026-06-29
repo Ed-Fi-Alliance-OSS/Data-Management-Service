@@ -100,7 +100,7 @@ jobs:
           $environmentFile = '${{ inputs.environment_file }}'
           $packageName = '${{ inputs.package_name }}'
 
-          $relationalEnvFiles = @('./.env.template.relational', './.env.template.relational.ds61', './.env.smoke.relational', './.env.smoke.relational.ds61')
+          $relationalEnvFiles = @('./.env.template', './.env.template.ds61', './.env.smoke', './.env.smoke.ds61')
           if ($useRelationalBackend -and $environmentFile -notin $relationalEnvFiles) {
             throw "use_relational_backend requires environment_file to be one of: $($relationalEnvFiles -join ', '); got '$environmentFile'."
           }
@@ -108,7 +108,7 @@ jobs:
           # The smoke surface (Core+[TPDM]+Sample+Homograph) is an in-run smoke artifact only. It
           # must never publish under the product template contract, and must not reuse a product
           # package name.
-          $smokeEnvFiles = @('./.env.smoke.relational', './.env.smoke.relational.ds61')
+          $smokeEnvFiles = @('./.env.smoke', './.env.smoke.ds61')
           if ($environmentFile -in $smokeEnvFiles) {
             if ($publishPackage) {
               throw "environment_file '$environmentFile' is smoke-only and must not be published; set publish_package to false."

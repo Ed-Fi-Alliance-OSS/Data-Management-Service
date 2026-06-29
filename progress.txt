@@ -221,3 +221,11 @@
 - Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, eng/docker-compose/README.md, tasks.json, progress.txt.
 - Verification: task rg clean for old function/helper names; PowerShell parser passed; csharpier format; DMS Tests.Unit Release passed 30; git diff --check passed.
 - Notes: full Docker E2ETest with .env.e2e not run because neutral env-file consolidation task is still pending; .env.e2e currently lacks E2E_DATABASE_NAME.
+
+2026-06-29 - completed E2E Environment: neutral E2E env-file names / remove-legacy-backend.md Phase 6
+- Consolidated .env.e2e onto dedicated E2E DB config with E2E_DATABASE_NAME=edfi_datamanagementservice_e2e; deleted .env.e2e.relational.
+- Renamed .env.template.relational to .env.template and .env.smoke.relational to .env.smoke; neutralized template/smoke DB names to edfi_datamanagementservice_template.
+- Updated workflow/docs/RestClient/provision helper references to neutral env filenames. Kept backend semantics unchanged: E2E DB stays separate from POSTGRES_DB_NAME per helper safety check.
+- Files changed: docker-compose env files/provision helper/tests/README, build/template/e2e workflows, AGENTS/docs RestClient, Given_E2E_Provisioning_Helper, tasks.json.
+- Verification: task rg shows only valid E2E_DATABASE_NAME matches and no old env names/backend switches; csharpier format; provision helper PowerShell parser passed; DMS Tests.Unit Release passed 30; git diff --check passed; after rebuilding/tagging ed-fi-api-local, build-dms E2ETest with .env.e2e and Category=@e2e-ci-shard-3 passed 207/215 with 8 skipped in 21m41s.
+- Notes: initial full -SkipDockerBuild E2ETest used a stale ed-fi-api-local image and failed with old mappingSet behavior; rebuilt the DMS Docker image before shard validation. Full all-shard E2E was not rerun.

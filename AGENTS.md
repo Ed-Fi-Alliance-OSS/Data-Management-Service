@@ -48,16 +48,16 @@ The build script performs required relational-only setup that direct local setup
 Example shard run from the repository root:
 
 ```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@e2e-ci-shard-3'
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'
 ```
 
-Do not treat `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational` plus direct `dotnet test` as a valid relational E2E signal unless you also manually run the relational provisioning helper and set the test-process database environment variables. Otherwise tests can fail before the scenario payload with `503 Database Not Provisioned` because the CMS-created DMS instance points at the legacy `edfi_datamanagementservice` database or a database without `dms."EffectiveSchema"`.
+Do not treat `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` plus direct `dotnet test` as a valid relational E2E signal unless you also manually run the relational provisioning helper and set the test-process database environment variables. Otherwise tests can fail before the scenario payload with `503 Database Not Provisioned` because the CMS-created DMS instance points at the legacy `edfi_datamanagementservice` database or a database without `dms."EffectiveSchema"`.
 
 If you only need to inspect the relational Docker environment manually, you can use this setup path:
 
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./teardown-local-dms.ps1`
-3. Run: `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational`
+3. Run: `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e`
 4. Verify the DMS container is using PostgreSQL:
    - `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'Datastore'`
    - Expected values include `AppSettings__Datastore=postgresql`.
