@@ -37,8 +37,7 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
                 (_, DocumentReferenceArray[] shapedReferenceArrays) =
                     requestInfo.ResourceSchema.ExtractReferences(
                         ProfileWriteValidationBody.Effective(requestInfo),
-                        logger,
-                        ReferenceExtractionMode.RelationalWriteValidation
+                        logger
                     );
                 referenceArrays = shapedReferenceArrays;
             }

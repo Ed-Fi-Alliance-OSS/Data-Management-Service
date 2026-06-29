@@ -113,11 +113,7 @@ internal static class RelationalDocumentInfoTestHelper
         if (source.UseReferenceExtraction)
         {
             var (extractedDocumentReferences, extractedDocumentReferenceArrays) =
-                source.ResourceSchema.ExtractReferences(
-                    requestBody,
-                    logger,
-                    ReferenceExtractionMode.RelationalWriteValidation
-                );
+                source.ResourceSchema.ExtractReferences(requestBody, logger);
 
             documentReferences.AddRange(extractedDocumentReferences);
             documentReferenceArrays.AddRange(extractedDocumentReferenceArrays);

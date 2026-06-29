@@ -340,3 +340,9 @@
 - Feedback-loop fix: InstanceE2ETest first rerun exposed stale ApiService tracked-change authorization constructor/UseRelationalBackend call; updated ApiService and matching unit-test helper to current two-arg middleware.
 - Files changed: Instance setup script, DMS E2E README, four workflows, BootstrapSchemaAndSecuritySelection Pester test, ApiService, ResourceActionAuthorizationMiddlewareTests, tasks.json, progress.txt.
 - Verification: task rg clean except explicit opt-in guardrails; PowerShell parser; yq/actionlint affected workflows; BootstrapSchemaAndSecuritySelection Pester passed 64; Core.Tests.Unit passed 2672; pwsh build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild passed 40/49 with 9 skipped; git diff --check passed.
+
+2026-06-29 - completed Core Pipeline: remove legacy reference-extraction compatibility mode / remove-legacy-backend.md cleanup
+- Deleted ReferenceExtractionMode and made ReferenceExtractor always use relational write-validation behavior; removed legacy-only exception helpers.
+- Deleted legacy compatibility extraction fixtures; updated production/test callers to stop passing extraction mode.
+- Files changed: ReferenceExtractor, ReferenceExtractorTests, extraction callers in core middleware/backend test helpers/PostgreSQL smoke test, tasks.json, progress.txt.
+- Verification: csharpier format; task rg returned no matches; Core.Tests.Unit Release passed 2670; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
