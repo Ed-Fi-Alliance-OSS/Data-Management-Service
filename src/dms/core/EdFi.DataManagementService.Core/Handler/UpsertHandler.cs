@@ -63,9 +63,7 @@ internal class UpsertHandler(
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
                         DocumentUuid: candidateDocumentUuid,
-                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
                         UpdateCascadeHandler: updateCascadeHandler,
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

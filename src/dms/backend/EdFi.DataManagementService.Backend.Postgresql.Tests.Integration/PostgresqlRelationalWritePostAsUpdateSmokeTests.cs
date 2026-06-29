@@ -462,9 +462,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
@@ -1083,9 +1081,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-create"),
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
                 )
             );
     }
@@ -1127,9 +1123,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-changed-update"),
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
                 )
             );
     }
@@ -1171,9 +1165,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-no-op-update"),
                     DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
                 )
             );
     }
@@ -2639,9 +2631,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
@@ -3009,9 +2999,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
@@ -3365,9 +3353,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
         );
 
     private static DocumentInfo CreateSchoolYearTypeDocumentInfo(ReferentialId? referentialId = null)
@@ -4091,9 +4077,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler()
         );
     }
 

@@ -190,9 +190,7 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
             Headers: [],
             TraceId: new TraceId("mssql-no-profile-storage-collapsed"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

@@ -286,9 +286,7 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
             Headers: [],
             TraceId: new TraceId("mssql-storage-collapsed-seed"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -336,9 +334,7 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
             Headers: [],
             TraceId: new TraceId("mssql-storage-collapsed-put"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

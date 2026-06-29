@@ -23,11 +23,6 @@ public interface IDeleteRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways { get; }
-
-    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }

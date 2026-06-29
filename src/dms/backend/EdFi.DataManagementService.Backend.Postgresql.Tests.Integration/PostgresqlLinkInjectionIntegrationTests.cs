@@ -332,9 +332,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             Headers: [],
             TraceId: new TraceId("pg-link-injection-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -361,9 +359,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             Headers: [],
             TraceId: new TraceId("pg-link-injection-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler()
         );
 
         return await scope

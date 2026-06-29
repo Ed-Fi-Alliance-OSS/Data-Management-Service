@@ -438,9 +438,7 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -472,9 +470,7 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

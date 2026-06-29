@@ -611,9 +611,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     Headers: [],
                     TraceId: new TraceId("pg-change-query-seed-school"),
                     DocumentUuid: SchoolDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
                 )
             )
         );
@@ -637,9 +635,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     Headers: [],
                     TraceId: new TraceId("pg-change-query-seed-academicweek"),
                     DocumentUuid: AcademicWeekDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
                 )
             )
         );

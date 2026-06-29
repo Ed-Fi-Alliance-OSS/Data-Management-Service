@@ -313,9 +313,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("mssql-30-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -342,9 +340,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("mssql-30-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler()
         );
 
         return await scope

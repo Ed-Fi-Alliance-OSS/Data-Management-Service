@@ -338,9 +338,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             Headers: [],
             TraceId: new TraceId("pg-29e-seed-bus"),
             DocumentUuid: BusDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -381,9 +379,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             Headers: [],
             TraceId: new TraceId("pg-29e-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope

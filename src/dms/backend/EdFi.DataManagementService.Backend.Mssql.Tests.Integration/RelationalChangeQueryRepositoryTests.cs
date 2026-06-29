@@ -606,9 +606,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     Headers: [],
                     TraceId: new TraceId("mssql-change-query-seed-school"),
                     DocumentUuid: SchoolDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
                 )
             )
         );
@@ -632,9 +630,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     Headers: [],
                     TraceId: new TraceId("mssql-change-query-seed-academicweek"),
                     DocumentUuid: AcademicWeekDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationPathways: []
+                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
                 )
             )
         );

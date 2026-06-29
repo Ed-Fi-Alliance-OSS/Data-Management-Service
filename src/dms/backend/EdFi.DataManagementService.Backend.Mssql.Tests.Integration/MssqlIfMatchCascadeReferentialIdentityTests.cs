@@ -335,9 +335,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 Headers: [],
                 TraceId: new TraceId(traceId),
                 DocumentUuid: documentUuid,
-                DocumentSecurityElements: new([], [], [], [], []),
-                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationPathways: []
+                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler()
             )
         );
     }
@@ -370,9 +368,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 Headers: headers ?? [],
                 TraceId: new TraceId(traceId),
                 DocumentUuid: documentUuid,
-                DocumentSecurityElements: new([], [], [], [], []),
-                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationPathways: []
+                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler()
             )
         );
     }

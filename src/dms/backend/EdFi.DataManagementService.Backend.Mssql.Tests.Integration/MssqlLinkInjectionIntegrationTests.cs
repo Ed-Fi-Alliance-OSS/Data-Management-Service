@@ -323,9 +323,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("mssql-link-injection-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -352,9 +350,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("mssql-link-injection-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlLinkInjectionNoOpUpdateCascadeHandler()
         );
 
         return await scope

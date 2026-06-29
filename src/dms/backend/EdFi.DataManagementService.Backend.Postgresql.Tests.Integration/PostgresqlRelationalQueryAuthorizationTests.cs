@@ -1039,7 +1039,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var request = new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
             DeleteInEdOrgHierarchy: false,
             Headers: CreateHeaders(ifMatch),
@@ -1385,9 +1384,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1437,9 +1434,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {

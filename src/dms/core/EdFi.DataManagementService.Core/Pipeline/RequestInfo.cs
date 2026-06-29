@@ -111,11 +111,6 @@ internal class RequestInfo(
     public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; set; } = [];
 
     /// <summary>
-    /// DocumentSecurityElements from the submitted document
-    /// </summary>
-    public DocumentSecurityElements DocumentSecurityElements { get; set; } = No.DocumentSecurityElements;
-
-    /// <summary>
     /// ResourceActionAuthStrategies for the request
     /// </summary>
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];
@@ -125,11 +120,6 @@ internal class RequestInfo(
     /// </summary>
     public EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo { get; set; } =
         No.EducationOrganizationHierarchyInfo;
-
-    /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    public IReadOnlyList<AuthorizationPathway> AuthorizationPathways { get; set; } = No.AuthorizationPathways;
 
     /// <summary>
     /// Student Authorization Securable info for the submitted document

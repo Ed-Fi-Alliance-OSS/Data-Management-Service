@@ -111,11 +111,6 @@ internal static class No
     );
 
     /// <summary>
-    /// The null object for DocumentSecurityElements
-    /// </summary>
-    public static readonly DocumentSecurityElements DocumentSecurityElements = new([], [], [], [], []);
-
-    /// <summary>
     /// The null object for ResourceClaim
     /// </summary>
     public static readonly ResourceClaim ResourceClaim = new("", "", []);
@@ -159,11 +154,6 @@ internal static class No
     {
         public object? GetService(Type serviceType) => null;
     }
-
-    /// <summary>
-    /// The null object for AuthorizationPathways
-    /// </summary>
-    public static readonly IReadOnlyList<AuthorizationPathway> AuthorizationPathways = [];
 
     /// <summary>
     /// The null object for ClientAuthorizations

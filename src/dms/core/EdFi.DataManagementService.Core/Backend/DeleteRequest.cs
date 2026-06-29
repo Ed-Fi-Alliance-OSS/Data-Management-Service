@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 /// <param name="DocumentUuid">The document UUID to delete</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being deleted</param>
-/// <param name="ResourceAuthorizationPathways">The AuthorizationPathways the resource is part of.</param>
 /// <param name="TraceId">The request TraceId</param>
 /// <param name="DeleteInEdOrgHierarchy">The request IsEdOrgHierarchy</param>
 /// <param name="Headers">Request headers provided by the frontend service as a dictionary</param>
@@ -24,7 +23,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
     TraceId TraceId,
     bool DeleteInEdOrgHierarchy,
     Dictionary<string, string> Headers,

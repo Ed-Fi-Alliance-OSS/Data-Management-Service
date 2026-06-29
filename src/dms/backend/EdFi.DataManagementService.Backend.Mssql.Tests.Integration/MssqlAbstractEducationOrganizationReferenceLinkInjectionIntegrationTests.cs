@@ -318,9 +318,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -347,9 +345,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-course"),
             DocumentUuid: CourseDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler()
         );
 
         return await scope

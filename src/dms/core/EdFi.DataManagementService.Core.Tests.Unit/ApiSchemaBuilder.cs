@@ -423,27 +423,6 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an AuthorizationPathways section to a resource
-    /// </summary>
-    public ApiSchemaBuilder WithAuthorizationPathways(string[] authorizationPathways)
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentResourceNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentResourceNode["authorizationPathways"] = new JsonArray(
-            authorizationPathways.Select(x => JsonValue.Create(x)).ToArray()
-        );
-
-        return this;
-    }
-
-    /// <summary>
     /// Define resource schema. Can only be done inside a project definition.
     /// Always end a resource definition when finished.
     ///
