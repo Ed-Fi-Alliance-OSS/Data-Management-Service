@@ -622,7 +622,7 @@
       "Run: `rg -n \"Relational E2E|Backend\\\\.Installer|/app/Installer|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|PublishBackendInstaller\" .github/workflows`",
       "Review package and release workflow artifacts for removed installer expectations."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",

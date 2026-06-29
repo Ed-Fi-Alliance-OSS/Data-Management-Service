@@ -342,7 +342,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backend:* Single backend path\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -362,7 +362,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backend:* Single backend path\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
