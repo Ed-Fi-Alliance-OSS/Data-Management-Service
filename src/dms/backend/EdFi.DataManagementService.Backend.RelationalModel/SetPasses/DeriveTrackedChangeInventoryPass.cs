@@ -630,20 +630,28 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 foreach (var unresolvedPath in unresolvedRootLevelPaths)
                 {
                     if (
-                        !PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                        PersonJoinPathResolver.IsSelfPersonIdentityPath(
                             concreteModel.RelationalModel.Resource,
                             personKind,
                             unresolvedPath
                         )
                     )
                     {
-                        throw new InvalidOperationException(
-                            $"Tracked-change derivation for resource "
-                                + $"'{concreteModel.ResourceKey.Resource.ProjectName}."
-                                + $"{concreteModel.ResourceKey.Resource.ResourceName}': {personResourceName} "
-                                + $"securable path '{unresolvedPath}' could not be resolved to a person join."
+                        AddSelfPersonDocumentIdColumn(
+                            personResourceName,
+                            unresolvedPath,
+                            valueColumns,
+                            valueColumnsByOldName
                         );
+                        continue;
                     }
+
+                    throw new InvalidOperationException(
+                        $"Tracked-change derivation for resource "
+                            + $"'{concreteModel.ResourceKey.Resource.ProjectName}."
+                            + $"{concreteModel.ResourceKey.Resource.ResourceName}': {personResourceName} "
+                            + $"securable path '{unresolvedPath}' could not be resolved to a person join."
+                    );
                 }
 
                 continue;
@@ -691,6 +699,28 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
             MergeOrAdd(personColumn, valueColumns, valueColumnsByOldName);
         }
+    }
+
+    private static void AddSelfPersonDocumentIdColumn(
+        string personResourceName,
+        string personPath,
+        List<TrackedChangeColumnInfo> valueColumns,
+        Dictionary<string, int> valueColumnsByOldName
+    )
+    {
+        var personColumn = BuildValueColumn(
+            personResourceName + DocumentIdSuffix,
+            personPath,
+            new RelationalScalarType(ScalarKind.Int64),
+            isOldNullable: false,
+            TrackedChangeColumnRole.PersonDocumentId,
+            TrackedChangeColumnOrigin.SecurableElement
+        ) with
+        {
+            CanonicalStorageColumn = new DbColumnName("DocumentId"),
+        };
+
+        MergeOrAdd(personColumn, valueColumns, valueColumnsByOldName);
     }
 
     /// <summary>

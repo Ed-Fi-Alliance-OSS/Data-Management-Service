@@ -430,6 +430,12 @@ internal class ApiService : IApiService
             ),
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ValidateTrackedChangeQueryMiddleware(_logger),
+            new ResourceActionAuthorizationMiddleware(
+                _claimSetProvider,
+                _logger,
+                _appSettings.Value.UseRelationalBackend
+            ),
+            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 

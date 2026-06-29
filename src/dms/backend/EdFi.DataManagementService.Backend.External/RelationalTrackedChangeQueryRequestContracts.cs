@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
 
@@ -18,6 +19,12 @@ public interface IRelationalTrackedChangeQueryRequest : ITrackedChangeQueryReque
     /// Typed request-scoped authorization inputs for relational tracked Change Query planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }
+
+    /// <summary>
+    /// The resolved ReadChanges authorization strategy evaluators for the request's resource/action,
+    /// in configured order. The relational backend adapts these to ConfiguredAuthorizationStrategy.
+    /// </summary>
+    IReadOnlyList<AuthorizationStrategyEvaluator> AuthorizationStrategyEvaluators { get; }
 
     /// <summary>
     /// The resolved runtime mapping set for the active relational request.

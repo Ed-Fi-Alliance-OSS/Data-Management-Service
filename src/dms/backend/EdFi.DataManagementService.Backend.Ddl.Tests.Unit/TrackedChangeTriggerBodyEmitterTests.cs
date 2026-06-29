@@ -570,6 +570,99 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// TrackedChangeTriggerBodyEmitter — self person DocumentId coverage
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
+{
+    private TrackedChangeInsertPlan _plan = default!;
+    private string _pgsqlTombstone = default!;
+    private string _pgsqlKeyChange = default!;
+    private string _mssqlTombstone = default!;
+    private string _mssqlKeyChange = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _plan = TrackedChangeTriggerBodyEmitter.BuildPlan(
+            TrackedChangeEmitterFixture.BuildSelfPersonTrackedTable(),
+            TrackedChangeEmitterFixture.BuildSelfPersonSourceTableModel()
+        );
+
+        var pgsqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var pgsqlTombstoneWriter = new SqlWriter(pgsqlDialect);
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
+            pgsqlTombstoneWriter,
+            pgsqlDialect,
+            _plan,
+            new DbColumnName("DocumentId")
+        );
+        _pgsqlTombstone = pgsqlTombstoneWriter.ToString();
+
+        var pgsqlKeyChangeWriter = new SqlWriter(pgsqlDialect);
+        TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
+            pgsqlKeyChangeWriter,
+            pgsqlDialect,
+            _plan,
+            new DbColumnName("DocumentId")
+        );
+        _pgsqlKeyChange = pgsqlKeyChangeWriter.ToString();
+
+        var mssqlDialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var mssqlTombstoneWriter = new SqlWriter(mssqlDialect);
+        TrackedChangeTriggerBodyEmitter.EmitMssqlTombstoneInsert(
+            mssqlTombstoneWriter,
+            mssqlDialect,
+            _plan,
+            new DbColumnName("DocumentId")
+        );
+        _mssqlTombstone = mssqlTombstoneWriter.ToString();
+
+        var mssqlKeyChangeWriter = new SqlWriter(mssqlDialect);
+        TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
+            mssqlKeyChangeWriter,
+            mssqlDialect,
+            _plan,
+            new DbColumnName("DocumentId")
+        );
+        _mssqlKeyChange = mssqlKeyChangeWriter.ToString();
+    }
+
+    [Test]
+    public void It_should_resolve_self_person_document_id_columns_to_the_source_document_id_column()
+    {
+        var value = _plan.Values.Single(value =>
+            value.Column.OldColumnName == new DbColumnName("Old_Student_DocumentId")
+        );
+
+        value.Kind.Should().Be(TrackedChangeValueSourceKind.DirectColumn);
+        value.SourceColumn.Should().Be(new DbColumnName("DocumentId"));
+        value.JoinIndex.Should().Be(-1);
+    }
+
+    [Test]
+    public void It_should_render_pgsql_self_person_document_id_values_from_row_images()
+    {
+        _pgsqlTombstone.Should().Contain("OLD.\"DocumentId\",");
+        _pgsqlKeyChange.Should().Contain("OLD.\"DocumentId\",");
+        _pgsqlKeyChange.Should().Contain("NEW.\"DocumentId\",");
+        _pgsqlTombstone.Should().NotContain("oldPj");
+        _pgsqlKeyChange.Should().NotContain("newPj");
+    }
+
+    [Test]
+    public void It_should_render_mssql_self_person_document_id_values_from_row_images()
+    {
+        _mssqlTombstone.Should().Contain("del.[DocumentId],");
+        _mssqlKeyChange.Should().Contain("del.[DocumentId],");
+        _mssqlKeyChange.Should().Contain("i.[DocumentId],");
+        _mssqlTombstone.Should().NotContain("oldPj");
+        _mssqlKeyChange.Should().NotContain("newPj");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Shared fixture
 // ═══════════════════════════════════════════════════════════════════
 
@@ -666,6 +759,101 @@ internal static class TrackedChangeEmitterFixture
             ),
             columns,
             []
+        );
+    }
+
+    /// <summary>
+    /// Builds a source table model for a top-level Student resource.
+    /// </summary>
+    internal static DbTableModel BuildSelfPersonSourceTableModel()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new DbColumnModel(
+                new DbColumnName("DocumentId"),
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("StudentUniqueId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, 32),
+                IsNullable: false,
+                SourceJsonPath: new JsonPathExpression("$.studentUniqueId", []),
+                TargetResource: null
+            ),
+        };
+
+        return new DbTableModel(
+            StudentTable,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            []
+        );
+    }
+
+    /// <summary>
+    /// Builds a TrackedChangeTableInfo for a top-level Student resource with a self person DocumentId
+    /// value column and no person joins.
+    /// </summary>
+    internal static TrackedChangeTableInfo BuildSelfPersonTrackedTable()
+    {
+        var valueColumns = new List<TrackedChangeColumnInfo>
+        {
+            new TrackedChangeColumnInfo(
+                OldColumnName: new DbColumnName("Old_Student_DocumentId"),
+                NewColumnName: new DbColumnName("New_Student_DocumentId"),
+                SourceJsonPath: "$.studentUniqueId",
+                CanonicalStorageColumn: new DbColumnName("DocumentId"),
+                IsOldColumnNullable: false,
+                IsNewColumnNullable: true,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                Role: TrackedChangeColumnRole.PersonDocumentId,
+                Origin: TrackedChangeColumnOrigin.SecurableElement
+            ),
+        };
+
+        var systemColumns = new List<TrackedChangeSystemColumnInfo>
+        {
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.Id,
+                new DbColumnName("Id"),
+                ScalarType: null,
+                IsNullable: false,
+                IsPrimaryKey: false
+            ),
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.ChangeVersion,
+                new DbColumnName("ChangeVersion"),
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                IsPrimaryKey: true
+            ),
+            new TrackedChangeSystemColumnInfo(
+                TrackedChangeSystemColumnRole.CreatedAt,
+                new DbColumnName("CreatedAt"),
+                ScalarType: null,
+                IsNullable: false,
+                IsPrimaryKey: false
+            ),
+        };
+
+        return new TrackedChangeTableInfo(
+            Table: new DbTableName(new DbSchemaName("tracked_changes_edfi"), "Student"),
+            Kind: TrackedChangeTableKind.Resource,
+            SourceTable: StudentTable,
+            ValueColumnsInTableOrder: valueColumns,
+            SystemColumns: systemColumns,
+            PrimaryKeyColumns: [new DbColumnName("ChangeVersion")],
+            DescriptorJoins: [],
+            PersonJoins: []
         );
     }
 

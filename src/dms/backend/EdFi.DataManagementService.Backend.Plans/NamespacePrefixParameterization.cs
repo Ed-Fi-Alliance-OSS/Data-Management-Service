@@ -21,6 +21,12 @@ public enum NamespacePrefixParameterizationKind
     MssqlScalar,
 }
 
+public enum NamespacePrefixParameterizationFailureKind
+{
+    InvalidNamespacePrefix,
+    PrefixCapExceeded,
+}
+
 /// <summary>
 /// Dialect-specific namespace prefix parameterization. Carries both the raw configured prefixes (for
 /// user-facing ProblemDetails) and the prefix values already shaped for <c>LIKE</c> with a trailing
@@ -166,6 +172,41 @@ public static class NamespacePrefixParameterizationFactory
                 $"Namespace prefix parameterization does not support SQL dialect '{dialect}'."
             ),
         };
+    }
+
+    public static bool TryCreate(
+        SqlDialect dialect,
+        IReadOnlyList<string> namespacePrefixes,
+        string baseParameterName,
+        out NamespacePrefixParameterization parameterization,
+        out string securityConfigurationMessage,
+        out NamespacePrefixParameterizationFailureKind? failureKind
+    )
+    {
+        if (namespacePrefixes.Any(string.IsNullOrEmpty))
+        {
+            parameterization = null!;
+            securityConfigurationMessage =
+                NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix;
+            failureKind = NamespacePrefixParameterizationFailureKind.InvalidNamespacePrefix;
+            return false;
+        }
+
+        try
+        {
+            parameterization = Create(dialect, namespacePrefixes, baseParameterName);
+            securityConfigurationMessage = string.Empty;
+            failureKind = null;
+            return true;
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            parameterization = null!;
+            securityConfigurationMessage =
+                NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount);
+            failureKind = NamespacePrefixParameterizationFailureKind.PrefixCapExceeded;
+            return false;
+        }
     }
 
     private static string CreateScalarParameterName(string baseParameterName, int index)

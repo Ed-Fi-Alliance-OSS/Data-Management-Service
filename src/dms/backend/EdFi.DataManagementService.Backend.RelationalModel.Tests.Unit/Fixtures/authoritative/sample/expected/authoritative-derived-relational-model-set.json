@@ -57390,6 +57390,19 @@
           },
           "role": "Scalar",
           "origin": "Identity"
+        },
+        {
+          "old_column": "Old_Contact_DocumentId",
+          "new_column": "New_Contact_DocumentId",
+          "source_json_path": "$.contactUniqueId",
+          "canonical_storage_column": "DocumentId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "role": "PersonDocumentId",
+          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -63182,6 +63195,19 @@
           },
           "role": "Scalar",
           "origin": "Identity"
+        },
+        {
+          "old_column": "Old_Staff_DocumentId",
+          "new_column": "New_Staff_DocumentId",
+          "source_json_path": "$.staffUniqueId",
+          "canonical_storage_column": "DocumentId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "role": "PersonDocumentId",
+          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -64692,6 +64718,19 @@
           },
           "role": "Scalar",
           "origin": "Identity"
+        },
+        {
+          "old_column": "Old_Student_DocumentId",
+          "new_column": "New_Student_DocumentId",
+          "source_json_path": "$.studentUniqueId",
+          "canonical_storage_column": "DocumentId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "role": "PersonDocumentId",
+          "origin": "SecurableElement"
         }
       ],
       "system_columns": [

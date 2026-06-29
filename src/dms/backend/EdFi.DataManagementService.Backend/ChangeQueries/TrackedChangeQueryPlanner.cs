@@ -31,18 +31,20 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     public TrackedChangeQueryPlan Plan(
         IRelationalTrackedChangeQueryRequest request,
-        IReadOnlyList<ChangeQueryResponseField> fields
+        IReadOnlyList<ChangeQueryResponseField> fields,
+        TrackedChangeAuthorizationSql authorizationSql
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(fields);
+        ArgumentNullException.ThrowIfNull(authorizationSql);
 
         return request.Operation switch
         {
-            ChangeQueryEndpointOperation.Deletes => BuildDeletesPlan(request, fields),
+            ChangeQueryEndpointOperation.Deletes => BuildDeletesPlan(request, fields, authorizationSql),
             ChangeQueryEndpointOperation.KeyChanges when IsEmptyKeyChangesTable(request.TrackedChangeTable) =>
                 TrackedChangeQueryPlan.Empty(request.PaginationParameters.TotalCount ? 0 : null),
-            ChangeQueryEndpointOperation.KeyChanges => BuildKeyChangesPlan(request, fields),
+            ChangeQueryEndpointOperation.KeyChanges => BuildKeyChangesPlan(request, fields, authorizationSql),
             _ => throw new InvalidOperationException(
                 $"Unsupported tracked-change query operation '{request.Operation}'."
             ),
@@ -98,18 +100,27 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private TrackedChangeQueryPlan BuildDeletesPlan(
         IRelationalTrackedChangeQueryRequest request,
-        IReadOnlyList<ChangeQueryResponseField> fields
+        IReadOnlyList<ChangeQueryResponseField> fields,
+        TrackedChangeAuthorizationSql authorizationSql
     )
     {
         PlanColumns columns = ResolvePlanColumns(request.TrackedChangeTable);
-        FilteredDeletesSql filteredDeletesSql = BuildFilteredDeletesSql(request, fields, columns);
+        FilteredDeletesSql filteredDeletesSql = BuildFilteredDeletesSql(
+            request,
+            fields,
+            columns,
+            authorizationSql
+        );
 
         string commandText = request.PaginationParameters.TotalCount
             ? $"{BuildDeletesCountSql(filteredDeletesSql)};\n{BuildDeletesPageSql(fields, filteredDeletesSql, columns)}"
             : BuildDeletesPageSql(fields, filteredDeletesSql, columns);
 
         return new TrackedChangeQueryPlan(
-            new RelationalCommand(commandText, BuildDeletesParameters(request, filteredDeletesSql)),
+            new RelationalCommand(
+                commandText,
+                [.. BuildDeletesParameters(request, filteredDeletesSql), .. authorizationSql.Parameters]
+            ),
             fields,
             IncludesTotalCount: request.PaginationParameters.TotalCount,
             IsEmpty: false,
@@ -119,17 +130,21 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private TrackedChangeQueryPlan BuildKeyChangesPlan(
         IRelationalTrackedChangeQueryRequest request,
-        IReadOnlyList<ChangeQueryResponseField> fields
+        IReadOnlyList<ChangeQueryResponseField> fields,
+        TrackedChangeAuthorizationSql authorizationSql
     )
     {
         PlanColumns columns = ResolvePlanColumns(request.TrackedChangeTable);
-        string commonCteSql = BuildKeyChangesCommonCteSql(request, columns);
+        string commonCteSql = BuildKeyChangesCommonCteSql(request, columns, authorizationSql);
         string commandText = request.PaginationParameters.TotalCount
             ? $"{BuildKeyChangesCountSql(commonCteSql)};\n{BuildKeyChangesPageSql(fields, commonCteSql, columns)}"
             : BuildKeyChangesPageSql(fields, commonCteSql, columns);
 
         return new TrackedChangeQueryPlan(
-            new RelationalCommand(commandText, BuildPagingParameters(request)),
+            new RelationalCommand(
+                commandText,
+                [.. BuildPagingParameters(request), .. authorizationSql.Parameters]
+            ),
             fields,
             IncludesTotalCount: request.PaginationParameters.TotalCount,
             IsEmpty: false,
@@ -139,7 +154,8 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private string BuildKeyChangesCommonCteSql(
         IRelationalTrackedChangeQueryRequest request,
-        PlanColumns columns
+        PlanColumns columns,
+        TrackedChangeAuthorizationSql authorizationSql
     )
     {
         TrackedChangeSystemColumnInfo idColumn = columns.IdColumn;
@@ -150,6 +166,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         [
             $"c.{Quote(representativeIdentityColumn.NewColumnName)} IS NOT NULL",
             .. BuildChangeVersionConditions(request, changeVersionColumn),
+            .. authorizationSql.Predicates,
         ];
         string whereClause = string.Join("\n  AND ", whereConditions);
 
@@ -222,7 +239,8 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     private FilteredDeletesSql BuildFilteredDeletesSql(
         IRelationalTrackedChangeQueryRequest request,
         IReadOnlyList<ChangeQueryResponseField> fields,
-        PlanColumns columns
+        PlanColumns columns,
+        TrackedChangeAuthorizationSql authorizationSql
     )
     {
         TrackedChangeSystemColumnInfo changeVersionColumn = columns.ChangeVersionColumn;
@@ -233,6 +251,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         [
             $"c.{Quote(representativeIdentityColumn.NewColumnName)} IS NULL",
             .. BuildChangeVersionConditions(request, changeVersionColumn),
+            .. authorizationSql.Predicates,
         ];
         List<DescriptorDiscriminatorParameter> descriptorDiscriminatorParameters = [];
 

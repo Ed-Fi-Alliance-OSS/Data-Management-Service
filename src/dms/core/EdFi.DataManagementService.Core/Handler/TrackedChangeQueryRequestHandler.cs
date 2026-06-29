@@ -66,6 +66,15 @@ internal sealed class TrackedChangeQueryRequestHandler(
             requestInfo
         );
 
+        if (trackedChangeQueryResult.AuthorizationFailure is { } authorizationFailure)
+        {
+            requestInfo.FrontendResponse = CreateAuthorizationFailureResponse(
+                requestInfo,
+                authorizationFailure
+            );
+            return;
+        }
+
         Dictionary<string, string> headers = trackedChangeQueryResult.TotalCount.HasValue
             ? new()
             {
@@ -93,6 +102,58 @@ internal sealed class TrackedChangeQueryRequestHandler(
             Headers: [],
             ContentType: "application/problem+json"
         );
+
+    private static FrontendResponse CreateAuthorizationFailureResponse(
+        RequestInfo requestInfo,
+        ChangeQueryAuthorizationFailure failure
+    )
+    {
+        TraceId traceId = requestInfo.FrontendRequest.TraceId;
+
+        return failure switch
+        {
+            ChangeQueryAuthorizationFailure.SecurityConfiguration securityConfiguration =>
+                new FrontendResponse(
+                    StatusCode: 500,
+                    Body: FailureResponse.ForSecurityConfiguration(
+                        traceId,
+                        SecurityConfigurationErrors(securityConfiguration)
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                ),
+            ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured noPrefixes => new FrontendResponse(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    new NamespaceAuthorizationFailure(
+                        NamespaceAuthorizationFailureKind.NoPrefixesConfigured,
+                        ValueSource: null,
+                        EmittedAuth1Index: null,
+                        StrategyName: noPrefixes.StrategyName,
+                        ConfiguredNamespacePrefixes: []
+                    ),
+                    traceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported change query authorization failure '{failure.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static string[] SecurityConfigurationErrors(
+        ChangeQueryAuthorizationFailure.SecurityConfiguration securityConfiguration
+    ) =>
+        securityConfiguration.Errors.Count > 0
+            ? [.. securityConfiguration.Errors]
+            :
+            [
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(
+                    securityConfiguration.UnavailableStrategyNames
+                ),
+            ];
 
     private static ITrackedChangeQueryRequest? CreateQueryRequestOrNull(RequestInfo requestInfo)
     {
@@ -141,6 +202,7 @@ internal sealed class TrackedChangeQueryRequestHandler(
             ChangeVersionRange: requestInfo.ChangeVersionRange,
             TraceId: requestInfo.FrontendRequest.TraceId,
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             MappingSet: mappingSet,
             ResourceModel: resourceModel,
             TrackedChangeTable: trackedChangeTable

@@ -787,6 +787,28 @@ These `*IncludingDeletes` views consider current, deleted, and key-changed Prima
 
 #### Authorization peculiarities
 
+##### KeyChanges are always authorized based on the old values
+Let's take a closer look at the authorization SQL used by the `/grades/keyChanges` endpoint:
+
+```sql
+SELECT DISTINCT 
+  c.Id, 
+  MIN(c.ChangeVersion) AS InitialChangeVersion, 
+  MAX(c.ChangeVersion) AS FinalChangeVersion 
+FROM 
+  tracked_changes_edfi.Grade AS c 
+  INNER JOIN auth.EducationOrganizationIdToEducationOrganizationId AS rba0 ON c.OldSchoolId = rba0.TargetEducationOrganizationId 
+  INNER JOIN auth.EducationOrganizationIdToStudentUSIIncludingDeletes AS rba1 ON c.OldStudentUSI = rba1.StudentUSI 
+WHERE 
+  c.NewBeginDate IS NOT NULL -- Exclude tombstones
+  AND (
+      rba0.SourceEducationOrganizationId IN (SELECT Id FROM @p0) -- Auth check: Relationship with EdOrg
+      AND rba1.SourceEducationOrganizationId IN (SELECT Id FROM @p1) -- Auth check: Relationship with People
+  ) 
+```
+
+Notice that, for keyChanges, the authorization checks are done only against the old values. This means that a token that has access to the old school/student but doesn't have access to the new ones will still be able to read the keyChange record.
+
 ##### Once an EdOrgId has access to a person-securable resource, it will forever have access to its deletes and key changes
 
 The `EducationOrganizationIdToContactUSIIncludingDeletes` authorization view above sources PrimaryAssociations from the current table, such as `edfi.StudentSchoolAssociation`, and the deleted or key-changed table, such as `tracked_changes_edfi.StudentSchoolAssociation`. This is needed to grant access to resource items whose PrimaryAssociation was deleted or key-changed. However, the `tracked_changes_edfi.StudentSchoolAssociation` table is not filtered by its ChangeVersion, meaning that an EdOrgId that is no longer associated with a Person will continue to have access to the key changes and deletes of the affected person-securable resource items.
@@ -1625,7 +1647,20 @@ The views are only emitted when all five PrimaryAssociation resources exist in t
 
 #### Preserved authorization peculiarities
 
-DMS deliberately preserves the two ODS authorization peculiarities described in the ODS section of this document.
+DMS deliberately preserves the three ODS authorization peculiarities described in the ODS section of this document.
+
+##### KeyChanges are always authorized based on the old values
+This peculiarity will be honored in DMS, except for one known edge case: cascading key changes.
+
+Let's assume that `StudentAssessmentRegistration` references `StudentSchoolAssociation` **as part of its identity**. Then someone changes the `StudentSchoolAssociation` student from A to B, so the cascading key change reaches the `StudentAssessmentRegistration`. The `_Stamp` trigger gets the Student's DocumentId by joining `StudentSchoolAssociation`; but at this point `StudentSchoolAssociation` only has the new value, so the `_Stamp` trigger will store the **new** Student's DocumentId in the `Old_` column.
+
+Note that `Old_StudentUniqueId_Unified` stores the correct value, since the unique id gets denormalized into the `StudentSchoolAssociation` table, meaning that the /keyChanges endpoint returns the correct old and new values, but the authorization check is done against the `Old_` column, which in this case has the new value.
+
+This behavior is acceptable in the meantime as the scenario doesn't appear in the data standard (remember that `StudentAssessmentRegistration` does not reference `StudentSchoolAssociation` as part of its identity). However, there could be an extension that exposes this behavior.
+
+Some changes that could mitigate this discrepancy are:
+- Denormalizing people's Document IDs the same way we denormalize unique IDs.
+- Joining directly with Student using its unique ID (undesirable due to the performance degradation of joining using a varchar)
 
 #### Descriptor authorization
 

@@ -2864,6 +2864,25 @@ internal static class ConstraintDerivationTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build top-level person project schema.
+    /// </summary>
+    internal static JsonObject BuildTopLevelPersonProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["students"] = BuildTopLevelPersonSchema("Student", "studentUniqueId", "Student"),
+                ["staffs"] = BuildTopLevelPersonSchema("Staff", "staffUniqueId", "Staff"),
+                ["contacts"] = BuildTopLevelPersonSchema("Contact", "contactUniqueId", "Contact"),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build descriptor project schema.
     /// </summary>
     internal static JsonObject BuildDescriptorProjectSchema()
@@ -4303,6 +4322,48 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     ["isReference"] = false,
                     ["path"] = "$.studentUniqueId",
                 },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build a top-level person resource schema with its self person securable element.
+    /// </summary>
+    private static JsonObject BuildTopLevelPersonSchema(
+        string resourceName,
+        string uniqueIdPropertyName,
+        string securableElementName
+    )
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                [uniqueIdPropertyName] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+            },
+            ["required"] = new JsonArray(uniqueIdPropertyName),
+        };
+
+        var uniqueIdPath = "$." + uniqueIdPropertyName;
+        var columnName = resourceName + "UniqueId";
+
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { uniqueIdPath },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                [columnName] = new JsonObject { ["isReference"] = false, ["path"] = uniqueIdPath },
+            },
+            ["securableElements"] = new JsonObject
+            {
+                [securableElementName] = new JsonArray(JsonValue.Create(uniqueIdPath)),
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };

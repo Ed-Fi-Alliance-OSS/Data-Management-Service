@@ -6,8 +6,10 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
@@ -33,7 +35,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
     public async Task It_returns_empty_keychanges_without_sql_for_descriptors()
     {
         var executor = new InMemoryRelationalCommandExecutor([]);
-        var sut = new RelationalChangeQueryRepository(executor);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
         IRelationalTrackedChangeQueryRequest request = CreateRequest(
             ChangeQueryEndpointOperation.KeyChanges,
             totalCount: true,
@@ -50,10 +52,35 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
     }
 
     [Test]
+    public async Task It_returns_authorization_failure_before_empty_keychanges_for_descriptors()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([]);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.KeyChanges,
+            totalCount: true,
+            trackedChangeTable: CreateSharedDescriptorTrackedTable(),
+            resourceInfo: CreateResourceInfo(_programTypeDescriptorResource, isDescriptor: true),
+            resourceModel: CreateSharedDescriptorResourceModel(),
+            evaluators: [new AuthorizationStrategyEvaluator("NamespaceBased", [], FilterOperator.Or)],
+            authorizationContext: new RelationalAuthorizationContext([])
+        );
+
+        TrackedChangeQueryResult result = await sut.QueryTrackedChanges(request);
+
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().BeNull();
+        result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured>();
+        executor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_returns_empty_keychanges_without_mapping_fields_or_sql_for_concrete_abstract_resources()
     {
         var executor = new InMemoryRelationalCommandExecutor([]);
-        var sut = new RelationalChangeQueryRepository(executor);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
         IRelationalTrackedChangeQueryRequest request = CreateRequest(
             ChangeQueryEndpointOperation.KeyChanges,
             totalCount: true,
@@ -83,7 +110,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
                 ),
             ]),
         ]);
-        var sut = new RelationalChangeQueryRepository(executor);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
         IRelationalTrackedChangeQueryRequest request = CreateRequest(
             ChangeQueryEndpointOperation.Deletes,
             totalCount: false,
@@ -106,7 +133,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
     public async Task It_rejects_non_relational_tracked_change_request()
     {
         var executor = new InMemoryRelationalCommandExecutor([]);
-        var sut = new RelationalChangeQueryRepository(executor);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
         ITrackedChangeQueryRequest request = A.Fake<ITrackedChangeQueryRequest>();
 
         Func<Task> act = () => sut.QueryTrackedChanges(request);
@@ -116,12 +143,223 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             .WithMessage("Tracked Change Queries require an IRelationalTrackedChangeQueryRequest.");
     }
 
+    [Test]
+    public async Task It_returns_security_configuration_failure_for_unsupported_strategy()
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Pgsql);
+
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: CreateSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            evaluators: [new AuthorizationStrategyEvaluator("OwnershipBased", [], FilterOperator.Or)]
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().Equal("OwnershipBased");
+        failure.Errors.Should().BeEmpty();
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_mssql_authorization_parameters_exceed_command_limit()
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Mssql);
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(new TrackedChangeQueryResult([], null)));
+
+        ConcreteResourceModel resourceModel = CreateAuthorizedSchoolResourceModel();
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: CreateAuthorizedSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: resourceModel,
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NamespaceBased,
+                    [],
+                    FilterOperator.Or
+                ),
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    [],
+                    FilterOperator.Or
+                ),
+            ],
+            authorizationContext: new RelationalAuthorizationContext(
+                CreateClaimEducationOrganizationIds(1050),
+                CreateNamespacePrefixes(1050)
+            ),
+            dialect: SqlDialect.Mssql
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().BeEmpty();
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("exceed the SQL Server parameter limit");
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_mssql_namespace_prefix_count_exceeds_scalar_limit()
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Mssql);
+
+        ConcreteResourceModel resourceModel = CreateAuthorizedSchoolResourceModel();
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: CreateAuthorizedSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: resourceModel,
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NamespaceBased,
+                    [],
+                    FilterOperator.Or
+                ),
+            ],
+            authorizationContext: new RelationalAuthorizationContext(
+                [],
+                CreateNamespacePrefixes(NamespacePrefixLimitExceededException.MssqlScalarParameterLimit)
+            ),
+            dialect: SqlDialect.Mssql
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().BeEmpty();
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(
+                    NamespacePrefixLimitExceededException.MssqlScalarParameterLimit
+                )
+            );
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_namespace_prefix_is_empty()
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Pgsql);
+
+        ConcreteResourceModel resourceModel = CreateAuthorizedSchoolResourceModel();
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: CreateAuthorizedSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: resourceModel,
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NamespaceBased,
+                    [],
+                    FilterOperator.Or
+                ),
+            ],
+            authorizationContext: new RelationalAuthorizationContext([], [""])
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().BeEmpty();
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix);
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     private static IRelationalTrackedChangeQueryRequest CreateRequest(
         ChangeQueryEndpointOperation operation,
         bool totalCount,
         TrackedChangeTableInfo trackedChangeTable,
         ResourceInfo resourceInfo,
-        ConcreteResourceModel resourceModel
+        ConcreteResourceModel resourceModel,
+        IReadOnlyList<AuthorizationStrategyEvaluator>? evaluators = null,
+        RelationalAuthorizationContext? authorizationContext = null,
+        SqlDialect dialect = SqlDialect.Pgsql
     )
     {
         var request = A.Fake<IRelationalTrackedChangeQueryRequest>();
@@ -134,8 +372,11 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             );
         A.CallTo(() => request.ChangeVersionRange).Returns(ChangeVersionRange.None);
         A.CallTo(() => request.TraceId).Returns(new TraceId("tracked-change-repository-test"));
-        A.CallTo(() => request.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
-        A.CallTo(() => request.MappingSet).Returns(CreateMappingSet(resourceModel.RelationalModel.Resource));
+        A.CallTo(() => request.AuthorizationContext)
+            .Returns(authorizationContext ?? new RelationalAuthorizationContext([]));
+        A.CallTo(() => request.AuthorizationStrategyEvaluators).Returns(evaluators ?? []);
+        A.CallTo(() => request.MappingSet)
+            .Returns(CreateMappingSet(resourceModel.RelationalModel.Resource, dialect));
         A.CallTo(() => request.ResourceModel).Returns(resourceModel);
         A.CallTo(() => request.TrackedChangeTable).Returns(trackedChangeTable);
 
@@ -153,6 +394,31 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         );
 
         return CreateTrackedChangeTable(TrackedChangeTableKind.Resource, _schoolTable, [schoolIdColumn]);
+    }
+
+    private static TrackedChangeTableInfo CreateAuthorizedSchoolTrackedTable()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity | TrackedChangeColumnOrigin.SecurableElement,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        TrackedChangeColumnInfo namespaceColumn = ValueColumn(
+            "Namespace",
+            "$.namespace",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.SecurableElement,
+            canonicalStorageColumn: new DbColumnName("Namespace"),
+            scalarKind: ScalarKind.String
+        );
+
+        return CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            _schoolTable,
+            [schoolIdColumn, namespaceColumn]
+        );
     }
 
     private static TrackedChangeTableInfo CreateConcreteAbstractTrackedTable()
@@ -285,6 +551,28 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             CreateQueryFieldMappings(("schoolId", "$.schoolId", "integer"))
         );
 
+    private static ConcreteResourceModel CreateAuthorizedSchoolResourceModel()
+    {
+        ConcreteResourceModel resourceModel = CreateResourceModel(
+            _schoolResource,
+            ResourceStorageKind.RelationalTables,
+            _schoolTable,
+            [
+                RootColumn("SchoolId", "$.schoolId", ScalarKind.Int32),
+                RootColumn("Namespace", "$.namespace", ScalarKind.String),
+            ],
+            CreateQueryFieldMappings(("schoolId", "$.schoolId", "integer")),
+            securableElements: new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.schoolId", "SchoolId")],
+                ["$.namespace"],
+                [],
+                [],
+                []
+            )
+        );
+        return resourceModel;
+    }
+
     private static ConcreteResourceModel CreateConcreteAbstractResourceModelWithoutQueryFieldMappings() =>
         CreateResourceModel(
             _schoolResource,
@@ -307,6 +595,18 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             CreateQueryFieldMappings(
                 ("namespace", "$.namespace", "string"),
                 ("codeValue", "$.codeValue", "string")
+            ),
+            new DescriptorMetadata(
+                new DescriptorColumnContract(
+                    new DbColumnName("Namespace"),
+                    new DbColumnName("CodeValue"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                ),
+                DiscriminatorStrategy.ResourceKeyId
             )
         );
 
@@ -315,7 +615,9 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         ResourceStorageKind storageKind,
         DbTableName rootTableName,
         IReadOnlyList<DbColumnModel> rootColumns,
-        IReadOnlyDictionary<string, RelationalQueryFieldMapping> queryFieldMappings
+        IReadOnlyDictionary<string, RelationalQueryFieldMapping> queryFieldMappings,
+        DescriptorMetadata? descriptorMetadata = null,
+        ResourceSecurableElements? securableElements = null
     )
     {
         DbColumnModel documentIdColumn = RootColumn("DocumentId", sourceJsonPath: null, ScalarKind.Int64);
@@ -339,10 +641,12 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         return new ConcreteResourceModel(
             new ResourceKeyEntry(1, resource, ResourceVersion: "1.0", IsAbstractResource: false),
             storageKind,
-            relationalModel
+            relationalModel,
+            descriptorMetadata
         )
         {
             QueryFieldMappingsByQueryField = queryFieldMappings,
+            SecurableElements = securableElements ?? ResourceSecurableElements.Empty,
         };
     }
 
@@ -372,7 +676,10 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             StringComparer.Ordinal
         );
 
-    private static MappingSet CreateMappingSet(QualifiedResourceName resource)
+    private static MappingSet CreateMappingSet(
+        QualifiedResourceName resource,
+        SqlDialect dialect = SqlDialect.Pgsql
+    )
     {
         var resourceKey = new ResourceKeyEntry(
             1,
@@ -382,7 +689,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         );
 
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
             Model: new DerivedRelationalModelSet(
                 new EffectiveSchemaInfo(
                     ApiSchemaFormatVersion: "5.2",
@@ -393,7 +700,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
                     SchemaComponentsInEndpointOrder: [],
                     ResourceKeysInIdOrder: [resourceKey]
                 ),
-                SqlDialect.Pgsql,
+                dialect,
                 ProjectSchemasInEndpointOrder: [],
                 ConcreteResourcesInNameOrder: [],
                 AbstractIdentityTablesInNameOrder: [],
@@ -419,6 +726,12 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
     }
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
+
+    private static IReadOnlyList<long> CreateClaimEducationOrganizationIds(int count) =>
+        [.. Enumerable.Range(1, count).Select(static id => (long)id)];
+
+    private static IReadOnlyList<string> CreateNamespacePrefixes(int count) =>
+        [.. Enumerable.Range(1, count).Select(static id => $"uri://namespace-{id:D4}/")];
 
     private static ResourceInfo CreateResourceInfo(QualifiedResourceName resource, bool isDescriptor) =>
         new(

@@ -98,6 +98,48 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// GET availableChangeVersions for a route-qualified instance.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetAvailableChangeVersionsAsync(
+        string districtId,
+        string schoolYear
+    )
+    {
+        var url = BuildPath($"/{districtId}/{schoolYear}/changeQueries/v1/availableChangeVersions");
+        return await _httpClient.GetAsync(url);
+    }
+
+    /// <summary>
+    /// GET a tracked-change endpoint (segment = "deletes" or "keyChanges") for a route-qualified instance.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetTrackedChangesAsync(
+        string districtId,
+        string schoolYear,
+        string resource,
+        string segment
+    )
+    {
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}/{segment}");
+        return await _httpClient.GetAsync(url);
+    }
+
+    /// <summary>
+    /// DELETE a resource by its stored Location header value.
+    /// </summary>
+    public async Task<HttpResponseMessage> DeleteByLocationAsync(string location)
+    {
+        return await _httpClient.DeleteAsync(location);
+    }
+
+    /// <summary>
+    /// PUT a resource by its stored Location header value.
+    /// </summary>
+    public async Task<HttpResponseMessage> PutByLocationAsync(string location, object body)
+    {
+        return await _httpClient.PutAsJsonAsync(location, body);
+    }
+
+    /// <summary>
     /// GET a resource without route qualifiers (for error testing)
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)

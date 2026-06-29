@@ -52,6 +52,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     }
 
     [Given("I am authenticated to DMS with credentials for tenant {string}")]
+    [When("I am authenticated to DMS with credentials for tenant {string}")]
     public async Task GivenIAmAuthenticatedToDmsWithCredentialsForTenant(string tenantName)
     {
         context

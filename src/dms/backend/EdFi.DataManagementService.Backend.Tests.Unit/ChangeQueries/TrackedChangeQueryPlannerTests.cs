@@ -146,7 +146,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -217,7 +217,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -258,7 +258,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -324,7 +324,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -366,7 +366,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Mssql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -415,7 +415,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -468,7 +468,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -508,7 +508,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -543,7 +543,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -577,7 +577,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Mssql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -613,7 +613,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -675,7 +675,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -741,7 +741,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -806,7 +806,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        Action act = () => sut.Plan(request, fields);
+        Action act = () => sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -852,7 +852,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
@@ -897,7 +897,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, fields);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
@@ -931,7 +931,7 @@ public class Given_TrackedChangeQueryPlanner
         );
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
 
-        Action act = () => sut.Plan(request, fields);
+        Action act = () => sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -939,6 +939,76 @@ public class Given_TrackedChangeQueryPlanner
                 "Tracked path '$.schoolId' declares canonical storage column 'MissingSchoolId', "
                     + "but that column was not found on live root table 'edfi.School' for resource 'Ed-Fi:School'."
             );
+    }
+
+    [Test]
+    public void It_injects_authorization_predicates_into_deletes_sql()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: table,
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+
+        var authSql = new TrackedChangeAuthorizationSql(
+            ["c.\"Old_SchoolId\" IN (SELECT 1)"],
+            [new RelationalParameter("@AuthP0", 7L)]
+        );
+
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        TrackedChangeQueryPlan plan = sut.Plan(request, fields, authSql);
+
+        string sql = NormalizeSql(plan.Command!.CommandText);
+        sql.Should().Contain("c.\"Old_SchoolId\" IN (SELECT 1)");
+        plan.Command!.Parameters.Should().Contain(p => p.Name == "@AuthP0");
+    }
+
+    [Test]
+    public void It_injects_authorization_predicates_into_keychanges_cte()
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        TrackedChangeTableInfo table = CreateTrackedChangeTable(
+            TrackedChangeTableKind.Resource,
+            [schoolIdColumn]
+        );
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.KeyChanges,
+            totalCount: false,
+            trackedChangeTable: table,
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+
+        var authSql = new TrackedChangeAuthorizationSql(["c.\"Old_SchoolId\" IN (SELECT 1)"], []);
+
+        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        string sql = NormalizeSql(sut.Plan(request, fields, authSql).Command!.CommandText);
+
+        // Auth predicate must be inside the FilteredChanges CTE (before GROUP BY / paging).
+        int filteredChangesIndex = sql.IndexOf("FilteredChanges AS", StringComparison.Ordinal);
+        int authIndex = sql.IndexOf("c.\"Old_SchoolId\" IN (SELECT 1)", StringComparison.Ordinal);
+        int groupByIndex = sql.IndexOf("GROUP BY", StringComparison.Ordinal);
+        authIndex.Should().BeGreaterThan(filteredChangesIndex);
+        authIndex.Should().BeLessThan(groupByIndex);
     }
 
     private static void AssertEmptyKeyChangesPlan(
@@ -954,7 +1024,7 @@ public class Given_TrackedChangeQueryPlanner
             totalCount
         );
 
-        TrackedChangeQueryPlan plan = sut.Plan(request, []);
+        TrackedChangeQueryPlan plan = sut.Plan(request, [], TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().BeNull();
         plan.Fields.Should().BeEmpty();

@@ -939,6 +939,26 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await UploadClaimSetToCms(endpointName, claimSetName, []);
         }
 
+        // Composition: configures the claim's actions (including ReadChanges) with TWO authorization
+        // strategies so that a ReadChanges row must satisfy every configured strategy. Used by the
+        // TrackedChangeAuthorization composition scenarios.
+        [Given(
+            "a claim set is uploaded to CMS that grants {string} access to {string} using authorization strategies {string} and {string}"
+        )]
+        public async Task GivenAClaimSetIsUploadedToCMSThatGrantsEndpointAccessUsingTwoAuthorizationStrategies(
+            string endpointName,
+            string claimSetName,
+            string firstAuthorizationStrategyName,
+            string secondAuthorizationStrategyName
+        )
+        {
+            await UploadClaimSetToCms(
+                endpointName,
+                claimSetName,
+                [firstAuthorizationStrategyName, secondAuthorizationStrategyName]
+            );
+        }
+
         private async Task UploadClaimSetToCms(
             string endpointName,
             string claimSetName,
@@ -978,7 +998,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                             BuildAction("Create"),
                             BuildAction("Read"),
                             BuildAction("Update"),
-                            BuildAction("Delete")
+                            BuildAction("Delete"),
+                            // ReadChanges authorizes the /deletes and /keyChanges Change Query
+                            // endpoints. Granting it the same strategy as CRUD lets scenarios
+                            // exercise ReadChanges authorization (relationship/namespace filtering,
+                            // unsupported-strategy 500, no-prefixes 403) through this upload step.
+                            BuildAction("ReadChanges")
                         ),
                     }
                 ),

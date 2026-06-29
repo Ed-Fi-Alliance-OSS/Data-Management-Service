@@ -190,6 +190,96 @@ public class TrackedChangeQueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Request_Level_Authorization_Failure : TrackedChangeQueryRequestHandlerTests
+    {
+        [Test]
+        public async Task It_maps_security_configuration_failure_to_500()
+        {
+            var repository = A.Fake<IChangeQueryRepository>();
+            A.CallTo(() =>
+                    repository.QueryTrackedChanges(A<ITrackedChangeQueryRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new TrackedChangeQueryResult(
+                        [],
+                        null,
+                        new ChangeQueryAuthorizationFailure.SecurityConfiguration(["OwnershipBased"])
+                    )
+                );
+
+            RequestInfo requestInfo = CreateTrackedChangeRequestInfo(repository);
+
+            await Execute(requestInfo);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain("Could not find authorization strategy implementations");
+        }
+
+        [Test]
+        public async Task It_maps_security_configuration_failure_errors_to_500()
+        {
+            var repository = A.Fake<IChangeQueryRepository>();
+            A.CallTo(() =>
+                    repository.QueryTrackedChanges(A<ITrackedChangeQueryRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new TrackedChangeQueryResult(
+                        [],
+                        null,
+                        new ChangeQueryAuthorizationFailure.SecurityConfiguration(
+                            [],
+                            ["The planned ReadChanges command exceeds the SQL Server parameter limit."]
+                        )
+                    )
+                );
+
+            RequestInfo requestInfo = CreateTrackedChangeRequestInfo(repository);
+
+            await Execute(requestInfo);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            string responseBody = requestInfo.FrontendResponse.Body!.ToJsonString();
+            responseBody
+                .Should()
+                .Contain("The planned ReadChanges command exceeds the SQL Server parameter limit.");
+            responseBody.Should().NotContain("Could not find authorization strategy implementations");
+        }
+
+        [Test]
+        public async Task It_maps_no_prefixes_failure_to_403()
+        {
+            var repository = A.Fake<IChangeQueryRepository>();
+            A.CallTo(() =>
+                    repository.QueryTrackedChanges(A<ITrackedChangeQueryRequest>._, A<CancellationToken>._)
+                )
+                .Returns(
+                    new TrackedChangeQueryResult(
+                        [],
+                        null,
+                        new ChangeQueryAuthorizationFailure.NamespaceNoPrefixesConfigured("NamespaceBased")
+                    )
+                );
+
+            RequestInfo requestInfo = CreateTrackedChangeRequestInfo(repository);
+
+            await Execute(requestInfo);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        }
+
+        private static RequestInfo CreateTrackedChangeRequestInfo(IChangeQueryRepository repository) =>
+            CreateRequestInfo(
+                serviceProvider: CreateServiceProvider(repository),
+                mappingSet: CreateMappingSet(out _, out _, out _, out _, out _),
+                resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false)
+            );
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Resource_That_Is_Not_In_The_Mapping_Set : TrackedChangeQueryRequestHandlerTests
     {
         private Repository _repository = null!;

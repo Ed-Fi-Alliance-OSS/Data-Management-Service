@@ -21,4 +21,32 @@ public interface ITrackedChangeQueryRequest
     TraceId TraceId { get; }
 }
 
-public sealed record TrackedChangeQueryResult(JsonArray Items, long? TotalCount);
+/// <summary>
+/// A request-level (preflight) ReadChanges authorization failure for Change Query endpoints.
+/// </summary>
+public abstract record ChangeQueryAuthorizationFailure
+{
+    private ChangeQueryAuthorizationFailure() { }
+
+    /// <summary>
+    /// 500 — one or more configured strategies have no ReadChanges implementation, or the backend
+    /// detected a concrete security-configuration error while planning the request.
+    /// </summary>
+    public sealed record SecurityConfiguration(
+        IReadOnlyList<string> UnavailableStrategyNames,
+        IReadOnlyList<string> Errors
+    ) : ChangeQueryAuthorizationFailure
+    {
+        public SecurityConfiguration(IReadOnlyList<string> UnavailableStrategyNames)
+            : this(UnavailableStrategyNames, []) { }
+    }
+
+    /// <summary>403 — NamespaceBased is configured but the client has no namespace prefixes.</summary>
+    public sealed record NamespaceNoPrefixesConfigured(string StrategyName) : ChangeQueryAuthorizationFailure;
+}
+
+public sealed record TrackedChangeQueryResult(
+    JsonArray Items,
+    long? TotalCount,
+    ChangeQueryAuthorizationFailure? AuthorizationFailure = null
+);
