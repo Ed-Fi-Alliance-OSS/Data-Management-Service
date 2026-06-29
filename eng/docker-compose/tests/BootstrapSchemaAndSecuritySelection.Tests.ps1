@@ -1524,6 +1524,14 @@ exit 0
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
         }
 
+        It "DataManagementService E2E setup does not enable Kafka infrastructure by default" {
+            $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+
+            $dmsSetup | Should -Match "start-local-dms\.ps1"
+            $dmsSetup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafka"
+            $dmsSetup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafkaUI"
+        }
+
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {
             # Confirm that both teardown invocations in Start-DockerEnvironment pass -RemoveBootstrap so
             # a manually-staged .bootstrap/ from a developer session cannot hijack the subsequent E2E start.

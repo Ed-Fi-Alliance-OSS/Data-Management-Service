@@ -306,10 +306,24 @@ exit $ExitCode
 
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
+                $params | Should -Contain "EnableKafka"
                 $params | Should -Not -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
+            }
+        }
+
+        It "start scripts keep Kafka compose files behind explicit opt-in" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
+
+                ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
+                $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
+                $content | Should -Match 'if \(\$enableKafkaInfrastructure\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$EnableKafkaUI\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
+                $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
+                $content | Should -Match '"--remove-orphans"'
             }
         }
 

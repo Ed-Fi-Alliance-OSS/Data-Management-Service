@@ -35,7 +35,11 @@ param (
     [string]
     $EnvironmentFile = "./.env",
 
-    # Enable KafkaUI
+    # Enable Kafka and Kafka Connect infrastructure
+    [Switch]
+    $EnableKafka,
+
+    # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
 
@@ -198,12 +202,12 @@ if ($usePostgresqlTmpfs) {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @(
-    "-f",
-    "published-dms.yml",
-    "-f",
-    "kafka.yml"
-)
+$files += @("-f", "published-dms.yml")
+
+$enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
+if ($enableKafkaInfrastructure) {
+    $files += @("-f", "kafka.yml")
+}
 
 if ($IdentityProvider -eq "keycloak") {
     # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
@@ -232,15 +236,17 @@ if ($EnableSwaggerUI) {
 }
 
 if ($d) {
+    $downArgs = @("--remove-orphans")
     if ($v) {
+        $downArgs += "-v"
         Write-Output "Shutting down with volume delete"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down -v
+        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
 
         Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down
+        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
     }
 }
 else {
@@ -250,7 +256,8 @@ else {
     }
 
     $upArgs = @(
-        "--detach"
+        "--detach",
+        "--remove-orphans"
     )
 
     function Wait-HttpEndpointHealthy {
@@ -354,6 +361,14 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        }
+
+        if ($enableKafkaInfrastructure) {
+            Write-Output "Starting Kafka infrastructure..."
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka kafka-postgresql-source
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
+            }
         }
 
         if ($EnableKafkaUI) {

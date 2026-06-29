@@ -8,8 +8,8 @@
     Infrastructure-lifecycle phase for the local DMS Docker stack.
 .DESCRIPTION
     This script is the infrastructure-lifecycle phase. It starts or stops the Docker
-    services that underpin local DMS development (PostgreSQL, Kafka, Config Service,
-    optional Keycloak/SwaggerUI/KafkaUI). The wrapper bootstrap-local-dms.ps1
+    services that underpin local DMS development (PostgreSQL, Config Service,
+    optional Keycloak/SwaggerUI/Kafka/KafkaUI). The wrapper bootstrap-local-dms.ps1
     orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
     time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
     already exist.
@@ -92,7 +92,11 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI
+    # Enable Kafka and Kafka Connect infrastructure
+    [Switch]
+    $EnableKafka,
+
+    # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
 
@@ -246,12 +250,12 @@ if ($usePostgresqlTmpfs) {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @(
-    "-f",
-    "local-dms.yml",
-    "-f",
-    "kafka.yml"
-)
+$files += @("-f", "local-dms.yml")
+
+$enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
+if ($enableKafkaInfrastructure) {
+    $files += @("-f", "kafka.yml")
+}
 
 if ($IdentityProvider -eq "keycloak") {
     # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
@@ -281,15 +285,17 @@ if ($EnableSwaggerUI) {
 }
 
 if ($d) {
+    $downArgs = @("--remove-orphans")
     if ($v) {
+        $downArgs += "-v"
         Write-Output "Shutting down with volume delete"
-        docker compose $files --env-file $EnvironmentFile -p dms-local down -v
+        docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
 
         Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files --env-file $EnvironmentFile -p dms-local down
+        docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
     }
 }
 else {
@@ -299,7 +305,8 @@ else {
     }
 
     $upArgs = @(
-        "--detach"
+        "--detach",
+        "--remove-orphans"
     )
     if ($r) {
         Write-Output "Building images with no cache (this may take a few minutes)..."
@@ -408,6 +415,14 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        }
+
+        if ($enableKafkaInfrastructure) {
+            Write-Output "Starting Kafka infrastructure..."
+            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
+            }
         }
 
         if ($EnableKafkaUI) {

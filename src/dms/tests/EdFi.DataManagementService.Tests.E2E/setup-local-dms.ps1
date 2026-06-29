@@ -17,7 +17,7 @@
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
     ./configure-local-data-store.ps1 -EnvironmentFile <selected env file>
 #>
 
@@ -89,7 +89,7 @@ try {
     Write-Output "Using file-based schema packages from $EnvironmentFile for E2E (non-bootstrap compatibility path)."
 
     # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
