@@ -15,6 +15,33 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 public class BackendMappingInitializationTaskTests
 {
     [TestFixture]
+    public class Given_Mapping_Initialization_Is_Not_Configured : BackendMappingInitializationTaskTests
+    {
+        private BackendMappingInitializationTask _task = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _task = new BackendMappingInitializationTask(
+                new MissingBackendMappingInitializer(),
+                NullLogger<BackendMappingInitializationTask>.Instance
+            );
+        }
+
+        [Test]
+        public async Task It_fails_fast_with_a_configuration_message()
+        {
+            Func<Task> act = async () => await _task.ExecuteAsync(CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage(
+                    "Backend mapping initialization is not configured. Register a datastore-specific IBackendMappingInitializer after AddDmsDefaultConfiguration."
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Backend_Mapping_Initializer : BackendMappingInitializationTaskTests
     {
         private IBackendMappingInitializer _mockInitializer = null!;
