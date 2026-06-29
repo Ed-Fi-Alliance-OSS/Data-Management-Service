@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Backend.Postgresql;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
@@ -15,16 +14,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_NpgsqlDataSourceCache
 {
-    private IHostApplicationLifetime _applicationLifetime = null!;
     private ILogger<NpgsqlDataSourceCache> _logger = null!;
     private NpgsqlDataSourceCache _cache = null!;
 
     [SetUp]
     public void Setup()
     {
-        _applicationLifetime = A.Fake<IHostApplicationLifetime>();
         _logger = A.Fake<ILogger<NpgsqlDataSourceCache>>();
-        _cache = new NpgsqlDataSourceCache(_applicationLifetime, _logger);
+        _cache = new NpgsqlDataSourceCache(_logger);
     }
 
     [TearDown]
@@ -119,7 +116,7 @@ public class Given_NpgsqlDataSourceCache
     public void It_should_allow_multiple_dispose_calls()
     {
         // Arrange
-        var cache = new NpgsqlDataSourceCache(_applicationLifetime, _logger);
+        var cache = new NpgsqlDataSourceCache(_logger);
         cache.Dispose();
 
         // Act & Assert

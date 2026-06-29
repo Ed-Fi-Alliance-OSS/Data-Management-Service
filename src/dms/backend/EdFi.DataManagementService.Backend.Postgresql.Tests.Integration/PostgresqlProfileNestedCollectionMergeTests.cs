@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -27,21 +26,11 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ProfileNestedCollec
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class PostgresqlProfileNestedNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
 internal static class PostgresqlProfileNestedSupport
 {
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
-        services.AddSingleton<IHostApplicationLifetime, PostgresqlProfileNestedNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

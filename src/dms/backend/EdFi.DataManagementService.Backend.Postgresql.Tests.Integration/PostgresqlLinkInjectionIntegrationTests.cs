@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -31,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // than wiring a real IApiSchemaProvider; the real resolver has unit coverage in
 // DocumentLinkSlugResolverTests. The other reference shapes (abstract, nested-collection,
 // _ext scope, _ext child collection) are tracked as task subtasks 29b-29e.
-
-file sealed class LinkInjectionHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class LinkInjectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -177,7 +167,6 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, LinkInjectionHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

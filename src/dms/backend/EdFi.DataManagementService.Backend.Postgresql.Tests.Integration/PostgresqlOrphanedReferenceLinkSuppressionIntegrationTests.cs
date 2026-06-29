@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -38,15 +37,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // FK_AcademicWeek_School_RefKey constraint and updates the academic-week row's
 // School_DocumentId column to a phantom value. The CHECK constraint
 // CK_AcademicWeek_School_AllNone stays satisfied (School_SchoolId is also non-null).
-
-file sealed class OrphanedRefHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class OrphanedRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -187,7 +177,6 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, OrphanedRefHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

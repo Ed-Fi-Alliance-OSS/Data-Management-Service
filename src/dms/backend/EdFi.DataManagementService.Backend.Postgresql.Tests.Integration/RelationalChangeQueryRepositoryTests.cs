@@ -21,7 +21,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
@@ -112,15 +111,6 @@ public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepos
         _repositoryResult.Should().Be(_rawResult);
         _repositoryResult.Should().Be(5L);
     }
-}
-
-file sealed class ChangeQueryHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
 }
 
 file sealed class ChangeQueryNoOpUpdateCascadeHandler : IUpdateCascadeHandler
@@ -462,7 +452,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ChangeQueryHostApplicationLifetime>();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

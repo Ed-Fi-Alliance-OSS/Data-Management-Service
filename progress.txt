@@ -428,3 +428,10 @@
 - Decision: keep handler/repository public seams as IQueryRequest/IGetRequest because relational interfaces already inherit them; RelationalGetRequest exposes ResourceName from ResourceInfo for base contract.
 - Files changed: QueryRequest.cs, GetRequest.cs, tasks.json, progress.txt.
 - Verification: csharpier format; task rg shows only relational request records in active flow; Core.Tests.Unit Release passed 2561; Backend.Tests.Unit Release passed 1829; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed PostgreSQL Infrastructure: remove dead NpgsqlDataSourceCache shutdown registration / remove-legacy-backend.md cleanup
+- Removed IHostApplicationLifetime injection, empty ApplicationStopping registration, and registration disposal from NpgsqlDataSourceCache; normal singleton disposal still clears cached data sources.
+- Dropped Backend.Postgresql direct Hosting.Abstractions package/lock entry and removed host-lifetime stubs/registrations from backend unit and PostgreSQL integration test helpers.
+- Files changed: NpgsqlDataSourceCache/csproj/lock, backend unit cache/provider/reference-resolver tests, PostgreSQL integration service-provider helpers, tasks.json, progress.txt.
+- Verification: csharpier format; static rg clean for IHostApplicationLifetime/ApplicationStopping/dead hosting dependency; Backend.Tests.Unit Release passed 1829; PostgreSQL integration Release passed 682 in 25m52s.
+- Notes: task listed a nonexistent Backend.Postgresql.Tests.Unit project; used actual Backend.Tests.Unit project that owns NpgsqlDataSourceCache tests.

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -14,18 +13,11 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// Singleton cache for NpgsqlDataSource instances keyed by connection string.
 /// Ensures proper connection pooling by reusing data sources for identical connection strings.
 /// </summary>
-public sealed class NpgsqlDataSourceCache(
-    IHostApplicationLifetime applicationLifetime,
-    ILogger<NpgsqlDataSourceCache> logger
-) : IDisposable
+public sealed class NpgsqlDataSourceCache(ILogger<NpgsqlDataSourceCache> logger) : IDisposable
 {
     private readonly ConcurrentDictionary<string, NpgsqlDataSource> _cache = new();
     private bool _disposed;
     private readonly ILogger<NpgsqlDataSourceCache> _logger = logger;
-
-    // Register disposal on application shutdown
-    private readonly CancellationTokenRegistration _registration =
-        applicationLifetime.ApplicationStopping.Register(() => { });
 
     /// <summary>
     /// Gets or creates an NpgsqlDataSource for the specified connection string.
@@ -93,6 +85,5 @@ public sealed class NpgsqlDataSourceCache(
         }
 
         _cache.Clear();
-        _registration.Dispose();
     }
 }
