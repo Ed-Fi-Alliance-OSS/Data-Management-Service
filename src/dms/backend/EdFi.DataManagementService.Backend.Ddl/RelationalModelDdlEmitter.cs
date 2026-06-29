@@ -809,7 +809,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var mssqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
-            TriggerKindParameters.IdentityPropagationFallback => "AFTER UPDATE",
+            TriggerKindParameters.MssqlIdentityPropagationTrigger => "AFTER UPDATE",
             _ => "AFTER INSERT, UPDATE",
         };
         writer.AppendLine(mssqlTriggerEvent);
@@ -976,11 +976,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 }
                 EmitAbstractIdentityBody(writer, trigger, abstractIdTableModel, abstractId);
                 break;
-            case TriggerKindParameters.IdentityPropagationFallback propagation:
+            case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var propagationTableModel))
                 {
                     throw new InvalidOperationException(
-                        $"IdentityPropagationFallback trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+                        $"MssqlIdentityPropagationTrigger trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
                     );
                 }
 
@@ -2402,7 +2402,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits identity propagation fallback trigger body (MSSQL only) that cascades
+    /// Emits the MSSQL identity-propagation trigger body that cascades
     /// identity column updates to referrer tables when <c>ON UPDATE CASCADE</c> is not available.
     /// The trigger is placed on the referenced entity and propagates to all referrers.
     /// </summary>
@@ -2410,20 +2410,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        TriggerKindParameters.IdentityPropagationFallback propagation
+        TriggerKindParameters.MssqlIdentityPropagationTrigger propagation
     )
     {
         if (_dialect.Rules.Dialect != SqlDialect.Mssql)
         {
             throw new InvalidOperationException(
-                $"Identity propagation fallback triggers are only supported for MSSQL, but dialect is {_dialect.Rules.Dialect}."
+                $"Identity-propagation triggers are only supported for MSSQL, but dialect is {_dialect.Rules.Dialect}."
             );
         }
 
         if (propagation.ReferrerUpdates.Count == 0)
         {
             throw new InvalidOperationException(
-                "IdentityPropagationFallback trigger was created with zero referrer updates. "
+                "MssqlIdentityPropagationTrigger trigger was created with zero referrer updates. "
                     + "This indicates a bug in DeriveTriggerInventoryPass — triggers with no "
                     + "referrers should be skipped."
             );

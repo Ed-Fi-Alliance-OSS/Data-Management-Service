@@ -176,7 +176,10 @@ public class Given_Abstract_Union_View_With_Descriptor_Identity_When_Emitting_Ma
     [Test]
     public void It_should_emit_descriptor_reference_flag_on_abstract_union_view_output_columns()
     {
-        _descriptorOutputColumn["column_name"]!.GetValue<string>().Should().Be("ProgramTypeDescriptor");
+        _descriptorOutputColumn["column_name"]!
+            .GetValue<string>()
+            .Should()
+            .Be("ProgramTypeDescriptor_DescriptorId");
         _descriptorOutputColumn["is_descriptor_reference"]!.GetValue<bool>().Should().BeTrue();
     }
 }

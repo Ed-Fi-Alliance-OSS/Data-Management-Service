@@ -41,7 +41,7 @@ The DDL generation utility is responsible for database objects derived from the 
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_Discriminator_ContentVersion`)
-  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `TriggerKindParameters.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
+  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional projection objects (performance / integrations):
   - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))

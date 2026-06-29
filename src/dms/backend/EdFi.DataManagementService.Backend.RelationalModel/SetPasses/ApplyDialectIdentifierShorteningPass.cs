@@ -1519,7 +1519,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     }
                     : parameters;
             }
-            case TriggerKindParameters.IdentityPropagationFallback propagation:
+            case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
             {
                 var updatedReferrers = ShortenPropagationReferrerTargets(
                     propagation.ReferrerUpdates,

@@ -637,9 +637,9 @@ public class Given_Trigger_Parameter_Column_Shortening
     public void It_should_shorten_identity_propagation_fallback_referrer_updates()
     {
         var trigger = _result.TriggersInCreateOrder.Single(t =>
-            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
         );
-        var parameters = (TriggerKindParameters.IdentityPropagationFallback)trigger.Parameters;
+        var parameters = (TriggerKindParameters.MssqlIdentityPropagationTrigger)trigger.Parameters;
         var referrer = parameters.ReferrerUpdates.Single();
         var mapping = referrer.ColumnMappings.Single();
 
@@ -740,7 +740,7 @@ file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdenti
                 table,
                 [],
                 [],
-                new TriggerKindParameters.IdentityPropagationFallback([
+                new TriggerKindParameters.MssqlIdentityPropagationTrigger([
                     new PropagationReferrerTarget(
                         targetTable,
                         new DbColumnName(identifiers.FkColumn),

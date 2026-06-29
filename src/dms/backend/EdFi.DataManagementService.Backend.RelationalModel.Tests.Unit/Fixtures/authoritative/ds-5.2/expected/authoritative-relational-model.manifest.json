@@ -87308,7 +87308,23 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_6055a42561",
+                "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_7cda3492ef",
+                "columns": [
+                  "StudentCompetencyObjective_DocumentId"
+                ],
+                "target_table": {
+                  "schema": "edfi",
+                  "name": "StudentCompetencyObjective"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_bab8d25e1f",
                 "columns": [
                   "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896",
                   "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96",
@@ -87324,31 +87340,15 @@
                 },
                 "target_columns": [
                   "BeginDate",
-                  "EducationOrganizationReferenceEducationOrganizationId",
-                  "ProgramReferenceEducationOrganizationId",
-                  "ProgramReferenceProgramName",
-                  "ProgramReferenceProgramTypeDescriptor",
-                  "StudentReferenceStudentUniqueId",
+                  "EducationOrganization_EducationOrganizationId",
+                  "Program_EducationOrganizationId",
+                  "Program_ProgramName",
+                  "Program_ProgramTypeDescriptor_DescriptorId",
+                  "Student_StudentUniqueId",
                   "DocumentId"
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_7cda3492ef",
-                "columns": [
-                  "StudentCompetencyObjective_DocumentId"
-                ],
-                "target_table": {
-                  "schema": "edfi",
-                  "name": "StudentCompetencyObjective"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
               },
               {
                 "kind": "AllOrNoneNullability",

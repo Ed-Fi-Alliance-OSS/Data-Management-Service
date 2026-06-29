@@ -14,7 +14,7 @@ all of which are tracked by their own stories elsewhere in this epic:
 - **Per-resource `tracked_changes_<schema>.<resource>` tables** (and the shared
   `tracked_changes_edfi.Descriptor`) carry their own `Id`, `ChangeVersion`, and `Old_*`/`New_*`
   identity values. They are populated by the existing `*_Stamp` triggers extended with
-  `TriggerKindParameters.ChangeTracking` and back the `/deletes` and `/keyChanges` endpoints.
+  `DocumentStamping.ChangeTracking` and back the `/deletes` and `/keyChanges` endpoints.
 - A **`ContentVersion` / `ContentLastModifiedAt` mirror** on every concrete
   `StorageKind = RelationalTables` root and on `dms.Descriptor`, together with
   `IX_<Table>_ContentVersion` and the composite `IX_Descriptor_Discriminator_ContentVersion`,

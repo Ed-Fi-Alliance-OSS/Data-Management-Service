@@ -313,12 +313,14 @@ public abstract record TriggerKindParameters
     ) : TriggerKindParameters;
 
     /// <summary>
-    /// Parameters for trigger-based fallback for identity propagation when cascade paths are constrained.
-    /// The trigger is placed on the referenced entity and propagates identity updates to all referrers.
+    /// Parameters for the MSSQL-only identity-propagation trigger placed on a referenced entity to
+    /// propagate identity updates to all referrers. It stands in for the <c>ON UPDATE CASCADE</c> that
+    /// PostgreSQL handles natively but SQL Server rejects when a table has multiple cascade paths.
     /// </summary>
     /// <param name="ReferrerUpdates">The list of referrer tables to update when identity changes.</param>
-    public sealed record IdentityPropagationFallback(IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates)
-        : TriggerKindParameters;
+    public sealed record MssqlIdentityPropagationTrigger(
+        IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
+    ) : TriggerKindParameters;
 
     /// <summary>
     /// Parameters for triggers that maintain the <c>auth.EducationOrganizationIdToEducationOrganizationId</c>
@@ -333,7 +335,7 @@ public abstract record TriggerKindParameters
 }
 
 /// <summary>
-/// Describes a single referrer table to update during identity propagation fallback.
+/// Describes a single referrer table to update during identity propagation.
 /// </summary>
 /// <param name="ReferrerTable">The referrer table containing stored identity columns.</param>
 /// <param name="ReferrerFkColumn">The FK column on the referrer pointing to the source DocumentId.</param>

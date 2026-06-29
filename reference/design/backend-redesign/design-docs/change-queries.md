@@ -1145,7 +1145,7 @@ The derived model must include SQL-free inventory for:
 - `TrackedChangeColumnInfo` entries for each tracked old/new value in `ValueColumnsInTableOrder`, including the source JsonPath, canonical storage column when key unification applies, separate old/new nullability, scalar type, and column role.
 - `TrackedChangeDescriptorJoinInfo` entries for descriptor reference paths that must be materialized as `Namespace` and `CodeValue`.
 - `TrackedChangePersonJoinInfo` entries for Student, Contact, and Staff `SecurableElements` paths that must materialize the person resource `DocumentId`.
-- `TriggerKindParameters.ChangeTracking` on the affected `DbTriggerKind.DocumentStamping` trigger inventory entries.
+- `DocumentStamping.ChangeTracking` on the affected `TriggerKindParameters.DocumentStamping` trigger inventory entries.
 
 The `*IncludingDeletes` authorization views used by `ReadChanges` are the exception: their `ReadChangesAuthorizationViewInfo` entries are a static structural inventory owned by `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` in `Backend.External`, not part of `DerivedRelationalModelSet`, because their shape never varies with the effective schema (see [compiled-mapping-set.md](compiled-mapping-set.md)). Their emission is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables.
 
@@ -1304,9 +1304,9 @@ The mirror `ContentVersion` default is a non-null sentinel, not a real change-ve
 
 #### Triggers that populate the `tracked_changes*` tables
 
-The existing `*_Stamp` trigger inventory entries will be updated to store tombstones and key changes by attaching `TriggerKindParameters.ChangeTracking` to the affected `DbTriggerKind.DocumentStamping` entries. The parameter points to the `TrackedChangeTableInfo` for the source table.
+The existing `*_Stamp` trigger inventory entries will be updated to store tombstones and key changes by attaching `DocumentStamping.ChangeTracking` to the affected `TriggerKindParameters.DocumentStamping` entries. The parameter points to the `TrackedChangeTableInfo` for the source table.
 
-`TriggerKindParameters.ChangeTracking` extends the existing `DbTriggerKind.DocumentStamping` trigger render path. It does not introduce a second trigger with an independent key-change predicate.
+`DocumentStamping.ChangeTracking` extends the existing `TriggerKindParameters.DocumentStamping` trigger render path. It does not introduce a second trigger with an independent key-change predicate.
 
 The dialect trigger emitters must use the tracked-change inventory directly. They must not re-derive old/new columns, descriptor joins, person joins, or key-change predicates from SQL text or from ad hoc DDL-only metadata.
 
@@ -2006,7 +2006,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
-- `TriggerKindParameters.ChangeTracking` attachment to the correct `DbTriggerKind.DocumentStamping` trigger entries.
+- `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.

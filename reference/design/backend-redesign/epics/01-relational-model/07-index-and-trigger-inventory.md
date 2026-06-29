@@ -22,7 +22,7 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 
 - Set-level (`DMS-1033`) uses two whole-schema passes over the complete derived table/constraint inventory:
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
-  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server propagation fallback fan-out
+  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server `MssqlIdentityPropagationTrigger` fan-out
     metadata.
 
 ## Scope (What This Story Is Talking About)
@@ -65,7 +65,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 - Inventory includes required trigger intents for schema-derived tables (non-descriptor resources):
 
-1. **Representation/identity stamping triggers** (`DbTriggerKind.DocumentStamping`)
+1. **Representation/identity stamping triggers** (`TriggerKindParameters.DocumentStamping`)
    - One per schema-derived table that can change a resource representation:
      - resource root tables,
      - resource child/collection tables,
@@ -78,7 +78,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
      - root tables: `DocumentId`,
      - child/extension tables: the root document id parent-key-part column (e.g., `{RootBaseName}_DocumentId`).
 
-2. **Referential identity maintenance triggers** (`DbTriggerKind.ReferentialIdentityMaintenance`)
+2. **Referential identity maintenance triggers** (`TriggerKindParameters.ReferentialIdentityMaintenance`)
    - One per concrete resource root table.
    - Trigger events: `INSERT` and `UPDATE` with recomputation gated by null-safe value-diff comparisons over
      `IdentityProjectionColumns` (not `UPDATE(column)`-style gating).
@@ -87,7 +87,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
      - (when applicable) recompute and upsert the superclass/abstract alias row,
      - using the engine UUIDv5 helper (`epics/02-ddl-emission/06-uuidv5-function.md`) for DB-side computation.
 
-3. **Abstract identity table maintenance triggers** (`DbTriggerKind.AbstractIdentityMaintenance`)
+3. **Abstract identity table maintenance triggers** (`TriggerKindParameters.AbstractIdentityMaintenance`)
    - One per participating concrete resource root table **per abstract identity table** it contributes to.
    - Trigger events: `INSERT` and `UPDATE` with recomputation gated by null-safe value-diff comparisons over
      `IdentityProjectionColumns`.
@@ -95,11 +95,11 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 - Trigger contracts interpret `IdentityProjectionColumns` as null-safe old/new value-diff compare sets, not
   `UPDATE(column)` gates.
-- SQL Server-only identity propagation is represented by explicit `DbTriggerKind.IdentityPropagationFallback` trigger
+- SQL Server-only identity propagation is represented by explicit `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger
   intents with stable naming.
   - SQL Server reference composite FKs always use `ON UPDATE NO ACTION`.
   - For eligible targets (abstract targets and concrete targets with `allowIdentityUpdates=true`), inventory emits one
-    propagation trigger per referenced table (`TriggerTable`) with deterministic referrer fan-out actions.
+    propagation trigger per referenced table (`Table`) with deterministic referrer fan-out actions.
   - Propagation fan-out actions update canonical/storage columns only (never alias/binding columns).
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:
@@ -127,7 +127,7 @@ Out of scope for this story:
    - table stamping triggers,
    - referential identity maintenance triggers,
    - abstract identity maintenance triggers,
-   - SQL Server propagation fallback triggers (one trigger per referenced table with fan-out referrer actions).
+   - SQL Server `MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table with fan-out referrer actions).
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
 5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

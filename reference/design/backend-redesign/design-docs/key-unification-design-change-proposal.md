@@ -21,7 +21,7 @@ The redesign’s relational model also differs structurally from legacy ODS/API:
 
 - Child collection tables are keyed by **parent `DocumentId` + `Ordinal`** (see “Child tables for collections” in
   `reference/design/backend-redesign/design-docs/data-model.md`), not by parent natural keys.
-- Identity propagation is defined over **reference edges** (composite reference FKs / SQL Server fallback triggers),
+- Identity propagation is defined over **reference edges** (composite reference FKs / SQL Server `MssqlIdentityPropagationTrigger` triggers),
   not over `equalityConstraints`.
 
 These choices are intentional, but they introduce a parity gap described in `key-unification-children-problem.md`: after an
@@ -76,8 +76,8 @@ The parity target summary above is grounded in these ODS/API implementation poin
 We need parity for a specific class of document-level equality constraints:
 
 - A key part value is duplicated across **root scope** and one or more **child collection scopes**.
-- An upstream identity/key update propagates into the root row (via composite FK cascades or SQL Server propagation
-  fallback).
+- An upstream identity/key update propagates into the root row (via composite FK cascades or SQL Server
+  `MssqlIdentityPropagationTrigger`).
 - The duplicated child values must update to preserve document-level `equalityConstraints`, even when the child table does
   not reference the upstream updated entity directly.
 
@@ -119,7 +119,7 @@ unified key parts.
    (`..._DocumentId + identity parts`), propagate the entire reference site (not just the unified key part) so the FK
    remains valid and the reference is effectively “retargeted” as ODS/API would do.
 3. **SQL Server baseline parity fix**: include non-root reference sites when deriving
-   `IdentityPropagationFallback` triggers (remove the “only root-table bindings” restriction in
+   `MssqlIdentityPropagationTrigger` triggers (remove the “only root-table bindings” restriction in
    `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`).
 
 ## Detailed Design
@@ -183,7 +183,7 @@ and bidirectional convergence; that is explicitly out-of-scope for the initial i
 
 DLEP runs inside the database transaction as part of derived maintenance, similar to:
 
-- identity propagation (PostgreSQL `ON UPDATE CASCADE`; SQL Server fallback triggers), and
+- identity propagation (PostgreSQL `ON UPDATE CASCADE`; SQL Server `MssqlIdentityPropagationTrigger` triggers), and
 - `dms.ReferentialIdentity` maintenance triggers.
 
 Recommended execution strategy:
@@ -268,7 +268,7 @@ This is the key mechanism that makes DLEP equivalent to ODS/API’s “shared co
 DLEP must run when source-of-truth storage values change due to:
 
 - direct writes to the source table, and
-- indirect writes caused by identity propagation (cascades/fallback triggers) into the source table.
+- indirect writes caused by identity propagation (cascades/`MssqlIdentityPropagationTrigger` triggers) into the source table.
 
 The reliable hook is the existing per-table derived triggers that already run for indirect updates:
 
@@ -306,14 +306,14 @@ Versioning requirements:
 
 ### 6) SQL Server baseline parity fix (non-root reverse references)
 
-Independently of DLEP, SQL Server’s identity propagation fallback triggers must include non-root referrers, per the design
+Independently of DLEP, SQL Server `MssqlIdentityPropagationTrigger` triggers must include non-root referrers, per the design
 intent in `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“fan out to all impacted
 referrer tables (root and non-root reference sites)”).
 
 Current gap:
 
 - `DeriveTriggerInventoryPass.BuildReverseReferenceIndex(...)` filters to root-table reference bindings only
-  (`// Only consider root-table bindings ...`), so child/extension tables are not updated by propagation fallback.
+  (`// Only consider root-table bindings ...`), so child/extension tables are not updated by `MssqlIdentityPropagationTrigger`.
 
 Change:
 
@@ -342,7 +342,7 @@ This fix is a prerequisite for correctness on SQL Server even without DLEP.
   - produce a document `X` with the root ↔ child equality constraint shape,
   - perform an identity update that changes the root value via propagation,
   - assert child collection rows are updated and reconstituted JSON remains consistent.
-- Add a SQL Server-focused test verifying non-root propagation fallback updates child/extension referrers.
+- Add a SQL Server-focused test verifying non-root `MssqlIdentityPropagationTrigger` updates child/extension referrers.
 
 ## Open Questions
 

@@ -2165,9 +2165,9 @@ internal static class ExtensionMappingFixture
 }
 
 /// <summary>
-/// Fixture for identity propagation fallback scenario (MSSQL only):
+/// Fixture for identity propagation scenario (MSSQL only):
 /// StudentSchoolAssociation references School via SchoolId FK.
-/// On MSSQL, an IdentityPropagationFallback trigger on StudentSchoolAssociation
+/// On MSSQL, an MssqlIdentityPropagationTrigger trigger on StudentSchoolAssociation
 /// propagates SchoolId changes to the School root table (replacing ON UPDATE CASCADE).
 /// On PostgreSQL, only DocumentStamping and ReferentialIdentityMaintenance are emitted.
 /// </summary>
@@ -2397,7 +2397,7 @@ internal static class IdentityPropagationFixture
             ),
         ];
 
-        // IdentityPropagationFallback — MSSQL only, trigger on referenced entity (School)
+        // MssqlIdentityPropagationTrigger — MSSQL only, trigger on referenced entity (School)
         if (dialect == SqlDialect.Mssql)
         {
             triggers.Add(
@@ -2406,7 +2406,7 @@ internal static class IdentityPropagationFixture
                     schoolTableName,
                     [new DbColumnName("DocumentId")],
                     [schoolIdColumn],
-                    new TriggerKindParameters.IdentityPropagationFallback([
+                    new TriggerKindParameters.MssqlIdentityPropagationTrigger([
                         new PropagationReferrerTarget(
                             assocTableName,
                             new DbColumnName("School_DocumentId"),
@@ -2922,7 +2922,7 @@ internal static class KeyUnificationFixture
             ),
         ];
 
-        // IdentityPropagationFallback — MSSQL only.
+        // MssqlIdentityPropagationTrigger — MSSQL only.
         // School propagates SchoolId changes to CourseRegistration.
         // The target column is the CANONICAL stored column (SchoolId_Unified), not the alias.
         if (dialect == SqlDialect.Mssql)
@@ -2933,7 +2933,7 @@ internal static class KeyUnificationFixture
                     schoolTableName,
                     [documentIdColumn],
                     [schoolIdColumn],
-                    new TriggerKindParameters.IdentityPropagationFallback([
+                    new TriggerKindParameters.MssqlIdentityPropagationTrigger([
                         new PropagationReferrerTarget(
                             regTableName,
                             schoolDocIdColumn,

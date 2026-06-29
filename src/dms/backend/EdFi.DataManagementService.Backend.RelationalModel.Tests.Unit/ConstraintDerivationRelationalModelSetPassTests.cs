@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -1410,6 +1411,85 @@ public class Given_Abstract_Reference_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture asserting that a composite FK targeting an abstract identity table uses
+/// the renamed abstract identity columns (e.g. <c>EducationOrganizationId</c>), not old
+/// concatenated names, in its <c>TargetColumns</c>.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Reference_Composite_FK_Target_Columns
+{
+    private DbTableModel _enrollmentTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildAbstractReferenceProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        // ReferenceBindingPass must run before AbstractIdentityTableAndUnionViewDerivationPass (as it
+        // does in production) so the abstract identity columns are derived from the concrete reference
+        // binding's convention name (the DMS-1223 path); the reverse order would silently bypass it.
+        // This is the minimal pass subset needed to exercise that path, not the full production pipeline.
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new TransitiveIdentityMutabilityPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var enrollmentModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+
+        _enrollmentTable = enrollmentModel.Root;
+    }
+
+    [Test]
+    public void It_should_target_abstract_identity_table()
+    {
+        var educationOrganizationFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint =>
+                constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
+            );
+
+        educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
+    }
+
+    [Test]
+    public void It_should_use_renamed_identity_columns_in_FK_TargetColumns()
+    {
+        var educationOrganizationFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint =>
+                constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
+            );
+
+        // TargetColumns must be the exact, ordered set of abstract identity table columns under their
+        // renamed convention: the natural identity column followed by DocumentId. An exact ordered
+        // assertion (not Contain) guards against extra, missing, or misordered target columns, which
+        // matter for FK correspondence. The old concatenated EducationOrganizationReference-prefixed
+        // form is excluded by construction here.
+        educationOrganizationFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganizationId", "DocumentId");
+    }
+}
+
+/// <summary>
 /// Test fixture for reference constraint derivation on MSSQL dialect.
 /// </summary>
 [TestFixture]
@@ -2609,6 +2689,100 @@ public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture asserting that the unique constraints on an abstract identity table whose identity
+/// paths traverse resource references (<c>GeneralStudentProgramAssociation</c>-style) carry the
+/// <em>renamed</em> column names introduced by DMS-1223
+/// (e.g. <c>Student_StudentUniqueId</c>, <c>Program_ProgramTypeDescriptor_DescriptorId</c>),
+/// not the old concatenated forms (<c>StudentReferenceStudentUniqueId</c>,
+/// <c>ProgramReferenceProgramTypeDescriptor</c>).
+/// </summary>
+[TestFixture]
+public class Given_Reference_Backed_Abstract_Identity_Table_Has_Renamed_Constraint_Columns
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildAbstractCompositeReferenceIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new TransitiveIdentityMutabilityPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single(table =>
+            table.AbstractResourceKey.Resource.ResourceName == "GeneralStudentProgramAssociation"
+        );
+    }
+
+    /// <summary>
+    /// The natural-key unique constraint columns must use the renamed reference-backed convention.
+    /// This is a genuine guard: if the rename regression occurred these columns would be present
+    /// under their old names (e.g. <c>StudentReferenceStudentUniqueId</c>) and the
+    /// <c>Contain</c> assertions would fail.
+    /// </summary>
+    [Test]
+    public void It_should_use_renamed_columns_in_natural_key_unique_constraint()
+    {
+        var nkConstraint = _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.Unique>()
+            .Single(c => c.Name == "UX_GeneralStudentProgramAssociationIdentity_NK");
+
+        var columnNames = nkConstraint.Columns.Select(c => c.Value).ToList();
+
+        // Reference-backed abstract identity columns must use the renamed convention.
+        columnNames.Should().Contain("Student_StudentUniqueId");
+        columnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
+        columnNames.Should().Contain("Program_EducationOrganizationId");
+        columnNames.Should().Contain("Program_ProgramName");
+        columnNames.Should().Contain("EducationOrganization_EducationOrganizationId");
+
+        // Must NOT contain the old concatenated forms eliminated by the DMS-1223 rename.
+        columnNames.Should().NotContain(c => c.StartsWith("StudentReference", StringComparison.Ordinal));
+        columnNames.Should().NotContain(c => c.StartsWith("ProgramReference", StringComparison.Ordinal));
+        columnNames
+            .Should()
+            .NotContain(c => c.StartsWith("EducationOrganizationReference", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The reference-key unique constraint (natural key + DocumentId) must also use the renamed
+    /// reference-backed columns.
+    /// </summary>
+    [Test]
+    public void It_should_use_renamed_columns_in_reference_key_unique_constraint()
+    {
+        var refKeyConstraint = _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.Unique>()
+            .Single(c => c.Name == "UX_GeneralStudentProgramAssociationIdentity_RefKey");
+
+        var columnNames = refKeyConstraint.Columns.Select(c => c.Value).ToList();
+
+        columnNames.Should().Contain("Student_StudentUniqueId");
+        columnNames.Should().Contain("Program_ProgramTypeDescriptor_DescriptorId");
+        columnNames.Should().Contain("DocumentId");
+
+        columnNames.Should().NotContain(c => c.StartsWith("StudentReference", StringComparison.Ordinal));
+        columnNames.Should().NotContain(c => c.StartsWith("ProgramReference", StringComparison.Ordinal));
+    }
+}
+
+/// <summary>
 /// Test type constraint derivation test schema builder.
 /// </summary>
 internal static class ConstraintDerivationTestSchemaBuilder
@@ -2814,6 +2988,16 @@ internal static class ConstraintDerivationTestSchemaBuilder
             },
         };
     }
+
+    /// <summary>
+    /// Build a project schema with <c>GeneralStudentProgramAssociation</c> as the abstract resource
+    /// whose identity paths flow through EducationOrganization, Program (with a descriptor field), and
+    /// Student references — the reference-backed shape used by DMS-1223 rename tests.
+    /// Referenced resources (School as an EducationOrganization subclass, Program, Student,
+    /// ProgramTypeDescriptor) are included so the schema passes validation.
+    /// </summary>
+    internal static JsonObject BuildAbstractCompositeReferenceIdentityProjectSchema() =>
+        GeneralStudentProgramAssociationTestSchema.BuildProjectSchema();
 
     /// <summary>
     /// Build abstract reference missing identity project schema.
