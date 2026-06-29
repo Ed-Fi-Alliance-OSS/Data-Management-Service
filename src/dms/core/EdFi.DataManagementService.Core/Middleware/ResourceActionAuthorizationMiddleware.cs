@@ -21,11 +21,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
-internal class ResourceActionAuthorizationMiddleware(
-    IClaimSetProvider _claimSetProvider,
-    ILogger _logger,
-    bool _useRelationalBackend = false
-) : IPipelineStep
+internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSetProvider, ILogger _logger)
+    : IPipelineStep
 {
     private static readonly Dictionary<RequestMethod, string> _methodToActionNameMapping = new()
     {
@@ -347,7 +344,7 @@ internal class ResourceActionAuthorizationMiddleware(
         return resourceClaimUris;
     }
 
-    private bool TryCreateStagedNotImplementedResponse(
+    private static bool TryCreateStagedNotImplementedResponse(
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies
     )
@@ -388,15 +385,13 @@ internal class ResourceActionAuthorizationMiddleware(
     private static bool IsGetManyRequest(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
 
-    // Broad relational backend-planned surface used for missing-strategy classification; GET-many is included.
-    private bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
-        (_useRelationalBackend || requestInfo.MappingSet is not null)
-        && (
-            requestInfo.Method == RequestMethod.GET
-            || requestInfo.Method == RequestMethod.DELETE
-            || requestInfo.Method == RequestMethod.POST
-            || requestInfo.Method == RequestMethod.PUT
-        );
+    // Broad relational backend surface used for missing-strategy classification; GET-many is included.
+    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
+        requestInfo.Method
+            is RequestMethod.GET
+                or RequestMethod.DELETE
+                or RequestMethod.POST
+                or RequestMethod.PUT;
 
     private static string GetOperationLabel(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment

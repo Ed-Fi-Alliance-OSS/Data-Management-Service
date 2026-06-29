@@ -35,7 +35,7 @@ public class Given_Build_Dms_E2E_Guardrails
     {
         var environmentContextFunctionContents = ExtractFunctionBody("Get-E2ETestEnvironmentContext");
 
-        environmentContextFunctionContents.Should().NotContain("USE_RELATIONAL_BACKEND");
+        environmentContextFunctionContents.Should().NotContain("USE" + "_RELATIONAL_BACKEND");
         environmentContextFunctionContents.Should().NotContain("ConvertTo-Boolean");
         environmentContextFunctionContents.Should().Contain("E2E_DATABASE_NAME");
     }

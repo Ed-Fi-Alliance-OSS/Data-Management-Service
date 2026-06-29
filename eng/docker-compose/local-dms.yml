@@ -14,7 +14,6 @@ services:
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
       AppSettings__AuthenticationService: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
-      AppSettings__UseRelationalBackend: true
       AppSettings__BypassTypeCoercion: ${BYPASS_TYPE_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}

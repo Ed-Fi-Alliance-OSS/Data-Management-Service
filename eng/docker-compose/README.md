@@ -65,10 +65,10 @@ also append `-v`. Examples:
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
-When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
+When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. Because `provision-e2e-database.ps1`
-provisions inside the running `dms-postgresql` container, the sequence is:
+it can serve requests. Because `provision-e2e-database.ps1` provisions inside
+the running `dms-postgresql` container, the sequence is:
 
 1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
    the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):

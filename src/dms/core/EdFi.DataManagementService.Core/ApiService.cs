@@ -225,15 +225,11 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
+            new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider, _authorizationServiceFactory),
@@ -254,11 +250,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
@@ -282,11 +274,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new QueryRequestHandler(_logger, _resiliencePipeline),
@@ -336,15 +324,11 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
+            new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpdateByIdHandler(
@@ -369,11 +353,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),

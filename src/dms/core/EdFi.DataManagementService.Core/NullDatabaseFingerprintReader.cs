@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core;
 
 /// <summary>
 /// Testing-only no-op implementation of IDatabaseFingerprintReader that always returns null.
-/// This should not be the runtime registration when UseRelationalBackend is enabled.
+/// This should not be the runtime registration.
 /// </summary>
 internal sealed class NullDatabaseFingerprintReader : IDatabaseFingerprintReader
 {

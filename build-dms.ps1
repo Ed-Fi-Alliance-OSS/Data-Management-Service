@@ -337,10 +337,10 @@ function Get-E2ETestEnvironmentContext {
 
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
     $e2eDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
-    $useRelationalBackend = -not [string]::IsNullOrWhiteSpace($e2eDatabaseName)
+    $shouldProvisionE2EDatabase = -not [string]::IsNullOrWhiteSpace($e2eDatabaseName)
 
     $dataStoreDatabaseName =
-        if ($useRelationalBackend) {
+        if ($shouldProvisionE2EDatabase) {
             $e2eDatabaseName
         }
         else {
@@ -349,7 +349,7 @@ function Get-E2ETestEnvironmentContext {
 
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
-        UseRelationalBackend = $useRelationalBackend
+        ShouldProvisionE2EDatabase = $shouldProvisionE2EDatabase
         DataStoreDatabaseName = $dataStoreDatabaseName
         TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
@@ -364,17 +364,14 @@ function Invoke-WithE2ETestProcessContext {
         $Action
     )
 
-    $previousUseRelationalBackend = $env:AppSettings__UseRelationalBackend
     $previousDataStoreDatabaseName = $env:AppSettings__DataStoreDatabaseName
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
-        if ($E2ETestSettings.UseRelationalBackend) {
-            $env:AppSettings__UseRelationalBackend = $E2ETestSettings.UseRelationalBackend.ToString().ToLowerInvariant()
+        if (-not [string]::IsNullOrWhiteSpace($E2ETestSettings.DataStoreDatabaseName)) {
             $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
         }
         else {
-            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
             Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
         }
 
@@ -382,13 +379,6 @@ function Invoke-WithE2ETestProcessContext {
         & $Action
     }
     finally {
-        if ([string]::IsNullOrWhiteSpace($previousUseRelationalBackend)) {
-            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:AppSettings__UseRelationalBackend = $previousUseRelationalBackend
-        }
-
         if ([string]::IsNullOrWhiteSpace($previousDataStoreDatabaseName)) {
             Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
         }
@@ -678,7 +668,6 @@ function Write-DmsSchemaContainerEnvironment {
 
     Write-Output "DMS container schema environment:"
     foreach ($key in @(
-            "AppSettings__UseRelationalBackend",
             "AppSettings__Datastore",
             "AppSettings__UseApiSchemaPath",
             "AppSettings__ApiSchemaPath",
@@ -880,7 +869,7 @@ function Initialize-RelationalE2EDatabase {
         $UsePublishedImage
     )
 
-    if (-not $E2ETestSettings.UseRelationalBackend) {
+    if (-not $E2ETestSettings.ShouldProvisionE2EDatabase) {
         return
     }
 
@@ -930,10 +919,10 @@ function E2ETests {
             -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
-            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.UseRelationalBackend
+            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
     }
 
-    if ($e2eTestSettings.UseRelationalBackend) {
+    if ($e2eTestSettings.ShouldProvisionE2EDatabase) {
         Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
     }
 

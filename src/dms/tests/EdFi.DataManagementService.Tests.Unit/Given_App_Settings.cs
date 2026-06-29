@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Tests.Unit;
 public class Given_App_Settings
 {
     [Test]
-    public void It_uses_legacy_defaults_when_relational_settings_are_not_present()
+    public void It_uses_the_default_data_store_database_name_when_not_configured()
     {
         var settings = AppSettings.Create(
             new ConfigurationBuilder()
@@ -26,17 +26,15 @@ public class Given_App_Settings
                 .Build()
         );
 
-        settings.UseRelationalBackend.Should().BeFalse();
         settings.DataStoreDatabaseName.Should().Be(AppSettings.LegacyDataStoreDatabaseName);
     }
 
     [Test]
-    public void It_prefers_environment_style_overrides_for_relational_settings()
+    public void It_prefers_environment_style_overrides_for_data_store_database_name()
     {
         var settings = AppSettings.Create(
             new ConfigurationBuilder()
                 .AddInMemoryCollection([
-                    KeyValuePair.Create<string, string?>("AppSettings:UseRelationalBackend", "true"),
                     KeyValuePair.Create<string, string?>(
                         nameof(AppSettings.DataStoreDatabaseName),
                         "edfi_datamanagementservice_relational"
@@ -45,17 +43,15 @@ public class Given_App_Settings
                 .Build()
         );
 
-        settings.UseRelationalBackend.Should().BeTrue();
         settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational");
     }
 
     [Test]
-    public void It_reads_relational_settings_from_top_level_keys()
+    public void It_reads_data_store_database_name_from_top_level_keys()
     {
         var settings = AppSettings.Create(
             new ConfigurationBuilder()
                 .AddInMemoryCollection([
-                    KeyValuePair.Create<string, string?>(nameof(AppSettings.UseRelationalBackend), "true"),
                     KeyValuePair.Create<string, string?>(
                         nameof(AppSettings.DataStoreDatabaseName),
                         "edfi_datamanagementservice_relational_top_level"
@@ -64,7 +60,6 @@ public class Given_App_Settings
                 .Build()
         );
 
-        settings.UseRelationalBackend.Should().BeTrue();
         settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational_top_level");
     }
 }

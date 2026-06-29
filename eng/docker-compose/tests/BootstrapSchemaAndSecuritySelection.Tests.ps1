@@ -1548,7 +1548,7 @@ exit 0
             ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
-            $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.UseRelationalBackend'
+            $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
         }
 
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {

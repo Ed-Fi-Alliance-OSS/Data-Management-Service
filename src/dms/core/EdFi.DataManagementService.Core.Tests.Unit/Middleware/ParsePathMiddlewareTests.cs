@@ -115,12 +115,7 @@ public class ParsePathMiddlewareTests
         );
 
         var appSettingsOptions = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                MaskRequestBodyInLogs = false,
-                UseRelationalBackend = true,
-            }
+            new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
         );
 
         services.AddSingleton(appSettingsOptions);

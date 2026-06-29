@@ -159,18 +159,16 @@ internal class RequestInfo(
 
     /// <summary>
     /// The cached database fingerprint from the dms.EffectiveSchema singleton row.
-    /// Set by ValidateDatabaseFingerprintMiddleware when UseRelationalBackend is true.
-    /// Null when relational backend is disabled or the request short-circuits before
-    /// fingerprint validation completes.
+    /// Set by ValidateDatabaseFingerprintMiddleware.
+    /// Null when the request short-circuits before fingerprint validation completes.
     /// </summary>
     public DatabaseFingerprint? DatabaseFingerprint { get; set; }
 
     /// <summary>
     /// The compiled mapping set for the current request's database instance.
-    /// Set by ResolveMappingSetMiddleware when UseRelationalBackend is true.
+    /// Set by ResolveMappingSetMiddleware.
     /// Supported relational handler paths should have this populated before repository
-    /// execution. Null when relational backend is disabled or the request short-circuits
-    /// before mapping-set resolution completes.
+    /// execution. Null when the request short-circuits before mapping-set resolution completes.
     /// </summary>
     public MappingSet? MappingSet { get; set; }
 

@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -17,8 +16,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Extracts identity and reference information from a valid JSON document
 /// </summary>
-internal class ExtractDocumentInfoMiddleware(IOptions<Configuration.AppSettings> appSettings, ILogger _logger)
-    : IPipelineStep
+internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
     /// Builds a DocumentInfo using the various extractors on a document body
@@ -39,49 +37,33 @@ internal class ExtractDocumentInfoMiddleware(IOptions<Configuration.AppSettings>
 
         DocumentReference[] documentReferences;
         DocumentReferenceArray[] documentReferenceArrays;
-        var extractionMode = appSettings.Value.UseRelationalBackend
-            ? ReferenceExtractionMode.RelationalWriteValidation
-            : ReferenceExtractionMode.LegacyCompatibility;
 
-        if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
-        {
-            try
-            {
-                (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
-                    requestInfo.ParsedBody,
-                    _logger,
-                    extractionMode
-                );
-            }
-            catch (ReferenceExtractionValidationException ex)
-            {
-                requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
-                    ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
-                    requestInfo.FrontendRequest.TraceId
-                );
-                return;
-            }
-        }
-        else
+        try
         {
             (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
                 requestInfo.ParsedBody,
                 _logger,
-                extractionMode
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
+        catch (ReferenceExtractionValidationException ex)
+        {
+            requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
 
-        var descriptorReferences = appSettings.Value.UseRelationalBackend
-            ? requestInfo.ResourceSchema.ExtractRelationalDescriptors(
-                requestInfo.ResourceInfo,
-                requestInfo.MappingSet
-                    ?? throw new InvalidOperationException(
-                        "MappingSet must be resolved before ExtractDocumentInfoMiddleware when UseRelationalBackend is enabled."
-                    ),
-                requestInfo.ParsedBody,
-                _logger
-            )
-            : requestInfo.ResourceSchema.ExtractDescriptors(requestInfo.ParsedBody, _logger);
+        var descriptorReferences = requestInfo.ResourceSchema.ExtractRelationalDescriptors(
+            requestInfo.ResourceInfo,
+            requestInfo.MappingSet
+                ?? throw new InvalidOperationException(
+                    "MappingSet must be resolved before ExtractDocumentInfoMiddleware."
+                ),
+            requestInfo.ParsedBody,
+            _logger
+        );
 
         requestInfo.DocumentInfo = new(
             DocumentReferences: documentReferences,
