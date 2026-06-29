@@ -264,3 +264,9 @@
 - Fixed reusable workflow secret declarations and bash quoting found by actionlint.
 - Files changed: template/smoke workflows, tasks.json, progress.txt.
 - Verification: task rg clean; yq parsed affected workflows; actionlint passed affected workflows; git diff --check passed.
+
+2026-06-29 - completed CI: log summaries and package/release artifact handling / remove-legacy-backend.md Phase 8
+- Package/release workflow artifact handling already had no Backend.Installer, /app/Installer, PublishBackendInstaller, or Old.Postgresql references; no artifact flow edits needed.
+- Neutralized scheduled smoke Slack summaries from a backend-lane label to single backend path language.
+- Files changed: scheduled-smoke-test workflow, tasks.json, progress.txt.
+- Verification: task rg clean; case-insensitive installer artifact rg clean; yq parsed scheduled-smoke-test/on-prerelease/on-release/on-dms-merge-or-tag workflows; git diff --check passed.

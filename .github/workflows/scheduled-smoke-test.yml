@@ -300,7 +300,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*DMS Backend:* Single backend path\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -320,7 +320,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*DMS Backend:* Single backend path\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
