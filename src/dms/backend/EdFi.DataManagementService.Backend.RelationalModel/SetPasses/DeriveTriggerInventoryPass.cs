@@ -534,7 +534,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// <c>TargetColumn</c> means the column being updated on the referrer binding table — not the
     /// referenced resource's target table.
     /// </remarks>
-    private static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
+    internal static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
         DocumentReferenceBinding binding,
         QualifiedResourceName referrerResource,
         DbTableModel bindingTableModel,
@@ -570,27 +570,52 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         List<TriggerColumnMapping> mappings = new(orderedTargets.Count);
 
-        foreach (var targetColumn in orderedTargets)
+        // Resolve a binding's IdentityJsonPath to its source column on the trigger table; each binding
+        // expects the source it names, so a missing mapping is a derivation fault.
+        DbColumnName ResolveCandidateSource(ReferenceIdentityBinding ib)
         {
-            // Choose the source from the field-name-matched binding (the rule that names abstract identity
-            // columns), so the emitted source is independent of binding order rather than reflecting
-            // whichever grouped duplicate happened to be first. The chosen binding's own IdentityJsonPath
-            // resolves the source column, keeping the source-to-target pairing correct.
-            var chosen = SelectReferenceFieldMatchedBinding(
-                binding.ReferenceObjectPath,
-                bindingsByTarget[targetColumn.Value]
-            );
-
-            if (!sourceColumnsByPath.TryGetValue(chosen.IdentityJsonPath.Canonical, out var sourceColumn))
+            if (!sourceColumnsByPath.TryGetValue(ib.IdentityJsonPath.Canonical, out var candidateSource))
             {
                 throw new InvalidOperationException(
-                    $"Propagation fallback trigger derivation for target '{FormatResource(targetResource)}': "
-                        + $"identity path '{chosen.IdentityJsonPath.Canonical}' did not map to a column on "
+                    $"Propagation trigger derivation for target '{FormatResource(targetResource)}': "
+                        + $"identity path '{ib.IdentityJsonPath.Canonical}' did not map to a column on "
                         + $"trigger table '{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
                 );
             }
 
-            mappings.Add(new TriggerColumnMapping(sourceColumn, targetColumn));
+            return candidateSource;
+        }
+
+        foreach (var targetColumn in orderedTargets)
+        {
+            var groupBindings = bindingsByTarget[targetColumn.Value];
+
+            // Resolve every binding in the group to its own source column. Collapsing the group onto one
+            // referrer column is only sound when those sources read the same effective value.
+            var candidates = groupBindings
+                .Select(ib => (ib.IdentityJsonPath, SourceColumn: ResolveCandidateSource(ib)))
+                .ToArray();
+
+            // The target-side grouping already proved the referrer columns collapse to one stored column,
+            // but emitting a single representative source is only correct when every candidate source is
+            // value-equivalent. Guard the source side and fail loudly rather than propagate a wrong value.
+            ValidatePropagationSourceEquivalence(
+                triggerTable,
+                targetResource,
+                referrerResource,
+                targetColumn,
+                candidates
+            );
+
+            // Choose the source from the field-name-matched binding (the rule that names abstract identity
+            // columns), so the emitted source is independent of binding order rather than reflecting
+            // whichever grouped duplicate happened to be first. Equivalence is validated above, so the
+            // representative is value-correct for the whole group.
+            var chosen = SelectReferenceFieldMatchedBinding(binding.ReferenceObjectPath, groupBindings);
+
+            mappings.Add(
+                new TriggerColumnMapping(sourceColumnsByPath[chosen.IdentityJsonPath.Canonical], targetColumn)
+            );
         }
 
         return mappings.ToArray();

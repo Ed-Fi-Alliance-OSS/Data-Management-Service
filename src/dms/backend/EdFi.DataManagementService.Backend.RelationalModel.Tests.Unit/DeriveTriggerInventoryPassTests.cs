@@ -2484,3 +2484,141 @@ public class Given_AbstractIdentityMaintenance_Trigger_With_Overridden_Member_Re
             .Contain(("SchoolBase_CampusId", "SchoolBase_SchoolId"));
     }
 }
+
+/// <summary>
+/// Wiring tests proving <see cref="DeriveTriggerInventoryPass.BuildPropagationColumnMappings"/> invokes the
+/// source-equivalence guard for a real grouped target-binding collapse: two identity bindings whose stored
+/// referrer column unifies into one SET target. The natural pass pipeline cannot produce a divergent group
+/// (key unification makes collapsed sources equivalent), so this drives the latent guard branch directly.
+/// The two cases share one builder and differ only in the second binding's source value — equivalent vs
+/// non-equivalent — so the guard is demonstrably what flips the outcome.
+/// </summary>
+[TestFixture]
+public class Given_Propagation_Column_Mappings_With_Collapsed_Target_Bindings
+{
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly QualifiedResourceName _target = new("Ed-Fi", "CourseOffering");
+    private static readonly QualifiedResourceName _referrer = new("Ed-Fi", "Section");
+
+    private static DbColumnModel Stored(string name) =>
+        new(
+            new DbColumnName(name),
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+
+    private static DbColumnModel SourceAlias(string name, string canonical, string sourcePath) =>
+        new(
+            new DbColumnName(name),
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: true,
+            SourceJsonPath: JsonPathExpressionCompiler.Compile(sourcePath),
+            TargetResource: null,
+            new ColumnStorage.UnifiedAlias(new DbColumnName(canonical), PresenceColumn: null)
+        );
+
+    // Trigger (referenced) table: two aliases over SchoolId_Unified plus one over a different canonical,
+    // each keyed by the target identity path that resolves it.
+    private static DbTableModel TriggerTable() =>
+        new(
+            new DbTableName(_schema, "CourseOffering"),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_CourseOffering",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.Scalar)]
+            ),
+            [
+                Stored("SchoolId_Unified"),
+                Stored("OtherId_Unified"),
+                SourceAlias("School_SchoolId", "SchoolId_Unified", "$.schoolReference.schoolId"),
+                SourceAlias("Session_SchoolId", "SchoolId_Unified", "$.sessionReference.schoolId"),
+                SourceAlias("Other_SchoolId", "OtherId_Unified", "$.otherReference.schoolId"),
+            ],
+            []
+        );
+
+    // Referrer (binding) table: both identity bindings store into one unified column, so they collapse onto
+    // a single SET target column.
+    private static DbTableModel BindingTable() =>
+        new(
+            new DbTableName(_schema, "Section"),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey("PK_Section", [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.Scalar)]),
+            [Stored("SchoolId_Unified")],
+            []
+        );
+
+    private static DocumentReferenceBinding Binding(string secondIdentityPath) =>
+        new(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.courseOfferingReference"),
+            Table: new DbTableName(_schema, "Section"),
+            FkColumn: new DbColumnName("CourseOffering_DocumentId"),
+            TargetResource: _target,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                    ReferenceJsonPath: JsonPathExpressionCompiler.Compile(
+                        "$.courseOfferingReference.schoolId"
+                    ),
+                    Column: new DbColumnName("SchoolId_Unified")
+                ),
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: JsonPathExpressionCompiler.Compile(secondIdentityPath),
+                    ReferenceJsonPath: JsonPathExpressionCompiler.Compile(
+                        "$.courseOfferingReference.secondSchoolId"
+                    ),
+                    Column: new DbColumnName("SchoolId_Unified")
+                ),
+            ]
+        );
+
+    private static IReadOnlyList<TriggerColumnMapping> Build(string secondIdentityPath) =>
+        DeriveTriggerInventoryPass.BuildPropagationColumnMappings(
+            Binding(secondIdentityPath),
+            _referrer,
+            BindingTable(),
+            TriggerTable(),
+            _target
+        );
+
+    /// <summary>
+    /// Two bindings that collapse onto one referrer column but read value-equivalent sources
+    /// (School_SchoolId and Session_SchoolId, both over SchoolId_Unified) must produce a single mapping
+    /// using the deterministic representative source.
+    /// </summary>
+    [Test]
+    public void It_should_collapse_value_equivalent_bindings_to_the_representative_source()
+    {
+        var mappings = Build("$.sessionReference.schoolId");
+
+        mappings.Should().HaveCount(1);
+        mappings[0].SourceColumn.Value.Should().Be("School_SchoolId");
+        mappings[0].TargetColumn.Value.Should().Be("SchoolId_Unified");
+    }
+
+    /// <summary>
+    /// Two bindings that collapse onto one referrer column but read non-equivalent sources (School_SchoolId
+    /// over SchoolId_Unified vs Other_SchoolId over OtherId_Unified) must fail derivation rather than emit
+    /// one representative that silently drops the other binding's value.
+    /// </summary>
+    [Test]
+    public void It_should_throw_when_collapsed_bindings_read_non_equivalent_sources()
+    {
+        var act = () => Build("$.otherReference.schoolId");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*CourseOffering*")
+            .WithMessage("*Section*")
+            .WithMessage("*SchoolId_Unified*")
+            .WithMessage("*OtherId_Unified*")
+            .WithMessage("*School_SchoolId*")
+            .WithMessage("*Other_SchoolId*");
+    }
+}
