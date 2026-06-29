@@ -20,8 +20,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="DeleteInEdOrgHierarchy">The request IsEdOrgHierarchy</param>
 /// <param name="Headers">Request headers provided by the frontend service as a dictionary</param>
 /// <param name="MappingSet">
-/// The resolved runtime mapping set for relational execution. Null for non-relational or
-/// pipeline-bypass scenarios.
+/// The resolved runtime mapping set for relational execution.
 /// </param>
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
@@ -31,7 +30,7 @@ internal record DeleteRequest(
     TraceId TraceId,
     bool DeleteInEdOrgHierarchy,
     Dictionary<string, string> Headers,
-    MappingSet? MappingSet
+    MappingSet MappingSet
 ) : IRelationalDeleteRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);

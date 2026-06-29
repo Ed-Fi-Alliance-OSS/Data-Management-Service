@@ -99,7 +99,6 @@ public sealed class RelationalDocumentStoreRepository(
             nameof(upsertRequest)
         );
         var mappingSet = relationalUpsertRequest.MappingSet;
-        ArgumentNullException.ThrowIfNull(mappingSet);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",

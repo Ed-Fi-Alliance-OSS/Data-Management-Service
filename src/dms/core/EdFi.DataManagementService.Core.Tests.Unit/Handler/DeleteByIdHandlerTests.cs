@@ -124,7 +124,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -160,7 +160,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -199,7 +199,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -239,7 +239,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -277,7 +277,9 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-delete-403");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-delete-403"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -349,7 +351,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "namespace-delete-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -395,7 +397,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-delete-501";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -452,7 +454,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-delete-500";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -510,7 +512,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -568,7 +570,9 @@ actual: {_requestInfo.FrontendResponse.Body}
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo("delete-profile-trace");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "delete-profile-trace"
+        );
 
         private static ResourceInfo CreateResourceInfo() =>
             new(

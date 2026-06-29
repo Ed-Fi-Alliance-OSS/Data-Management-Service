@@ -656,7 +656,8 @@ actual: {requestInfo.FrontendResponse.Body}
                 _fixture.CreateDocumentInfo()
             );
 
-        act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
+        var exception = act.Should().ThrowAsync<InvalidOperationException>().Result.Which;
+        exception.Message.Should().Contain("upsert requests").And.Contain("ResolveMappingSetMiddleware");
     }
 
     private static BackendProfileWriteContext CreateBackendProfileWriteContext(JsonNode requestBody)

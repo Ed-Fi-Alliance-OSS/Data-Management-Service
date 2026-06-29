@@ -7,7 +7,10 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Tests.Unit.Handler;
 using FakeItEasy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -21,6 +24,18 @@ public static class TestHelper
     /// Provides a no-op awaitable Next function
     /// </summary>
     public static readonly Func<Task> NullNext = () => Task.CompletedTask;
+
+    internal static RequestInfo RequestInfoWithRelationalMappingSet(
+        string traceId = "",
+        IServiceProvider? serviceProvider = null
+    )
+    {
+        var requestInfo = No.RequestInfo(traceId, serviceProvider);
+        requestInfo.MappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        return requestInfo;
+    }
 
     /// <summary>
     /// Builds a ResourceSchema for the given endpointName on the given apiSchemaDocument

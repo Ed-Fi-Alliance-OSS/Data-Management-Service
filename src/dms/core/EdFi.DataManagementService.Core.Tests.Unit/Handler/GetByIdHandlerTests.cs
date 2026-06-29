@@ -113,7 +113,7 @@ public class GetByIdHandlerTests
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -131,10 +131,72 @@ public class GetByIdHandlerTests
         }
 
         [Test]
-        public void It_constructs_a_standard_get_request_when_no_mapping_set_is_present()
+        public void It_constructs_a_relational_get_request()
         {
-            _repository.CapturedRequest.Should().BeOfType<GetRequest>();
-            _repository.CapturedRequest.Should().NotBeAssignableTo<IRelationalGetRequest>();
+            var relationalRequest = _repository
+                .CapturedRequest.Should()
+                .BeAssignableTo<IRelationalGetRequest>()
+                .Subject;
+            relationalRequest.MappingSet.Should().BeSameAs(requestInfo.MappingSet);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_With_No_Mapping_Set : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IGetRequest? CapturedRequest { get; private set; }
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                CapturedRequest = getRequest;
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(
+                        No.DocumentUuid,
+                        new JsonObject(),
+                        DateTime.UtcNow,
+                        getRequest.TraceId.Value
+                    )
+                );
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            try
+            {
+                await getByIdHandler.Execute(requestInfo, NullNext);
+            }
+            catch (Exception ex)
+            {
+                _exception = ex;
+            }
+        }
+
+        [Test]
+        public void It_fails_fast_with_an_actionable_configuration_error()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+            _exception!
+                .Message.Should()
+                .Contain("get by id requests")
+                .And.Contain("ResolveMappingSetMiddleware");
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            _repository.CapturedRequest.Should().BeNull();
         }
     }
 
@@ -154,7 +216,7 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -184,7 +246,7 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -217,7 +279,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-get-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -273,7 +335,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -322,7 +384,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-get-500";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -379,7 +441,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "namespace-get-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -433,7 +495,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "descriptor-get-501";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -515,7 +577,7 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -596,7 +658,7 @@ actual: {requestInfo.FrontendResponse.Body}
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -779,7 +841,9 @@ actual: {requestInfo.FrontendResponse.Body}
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo("empty-claims-get-by-id");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "empty-claims-get-by-id"
+        );
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -904,7 +968,7 @@ actual: {requestInfo.FrontendResponse.Body}
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);

@@ -7507,21 +7507,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_throws_when_a_descriptor_delete_request_has_no_mapping_set()
-    {
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
-        A.CallTo(() => deleteRequest.MappingSet).Returns(null);
-        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("descriptor-delete-no-mapping"));
-        A.CallTo(() => deleteRequest.WritePrecondition).Returns(new WritePrecondition.None());
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentNullException>();
-    }
-
-    [Test]
     public async Task It_throws_when_the_delete_request_does_not_implement_IRelationalDeleteRequest()
     {
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -7530,16 +7515,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
 
         await act.Should().ThrowAsync<ArgumentException>();
-    }
-
-    [Test]
-    public async Task It_throws_when_a_non_descriptor_delete_request_has_no_mapping_set()
-    {
-        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet: null);
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Test]
@@ -9144,20 +9119,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         thrownException.Which.Message.Should().Be(internalFailure.Message);
     }
 
-    [Test]
-    public void It_does_not_remap_missing_mapping_sets_inside_the_repository()
-    {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
-        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet).Returns(null);
-        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
-
-        Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
-
-        act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
-    }
-
     private sealed class RecordingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
@@ -9221,7 +9182,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(
-        MappingSet? mappingSet,
+        MappingSet mappingSet,
         WritePrecondition? writePrecondition = null,
         DocumentUuid? documentUuid = null,
         ResourceInfo? resourceInfo = null

@@ -16,10 +16,9 @@ public interface IRelationalRequestWithMappingSet
 {
     /// <summary>
     /// The resolved runtime mapping set for the active request.
-    /// Supported relational middleware-owned execution paths populate this before repository
-    /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
+    /// Supported relational middleware-owned execution paths populate this before repository execution.
     /// </summary>
-    MappingSet? MappingSet { get; }
+    MappingSet MappingSet { get; }
 }
 
 /// <summary>
