@@ -142,7 +142,6 @@ public class InvalidResourceSchemasTests
 
             // Register Profile Filtering services
             services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter, ProfileResponseFilter>();
             services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
                 NullLogger<ProfileFilteringMiddleware>.Instance
             );

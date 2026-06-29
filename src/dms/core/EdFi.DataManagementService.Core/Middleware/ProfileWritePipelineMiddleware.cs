@@ -33,19 +33,19 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
             return;
         }
 
-        // Short-circuit: no mapping set resolved
-        if (requestInfo.MappingSet is null)
-        {
-            await next();
-            return;
-        }
-
         // Short-circuit: no profile context
         if (requestInfo.ProfileContext is null)
         {
             await next();
             return;
         }
+
+        var mappingSet =
+            requestInfo.MappingSet
+            ?? throw new InvalidOperationException(
+                "A resolved relational mapping set is required before executing profile write requests. "
+                    + "Ensure ResolveMappingSetMiddleware runs before ProfileWritePipelineMiddleware."
+            );
 
         var profileContext = requestInfo.ProfileContext;
         var writeContentType = profileContext.ResourceProfile.WriteContentType;
@@ -84,7 +84,7 @@ internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddle
         ResourceWritePlan writePlan;
         try
         {
-            writePlan = requestInfo.MappingSet.GetWritePlanOrThrow(qualifiedResourceName);
+            writePlan = mappingSet.GetWritePlanOrThrow(qualifiedResourceName);
         }
         catch (Exception ex) when (ex is NotSupportedException or MissingWritePlanLookupGuardRailException)
         {

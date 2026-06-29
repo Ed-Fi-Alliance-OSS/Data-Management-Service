@@ -137,6 +137,115 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
 
 [TestFixture]
 [Parallelizable]
+public class Given_A_Writable_Profile_Post_Request_With_No_Mapping_Set
+{
+    private Exception? _exception;
+    private bool _nextCalled;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var requestInfo = CreateRequestInfo();
+        _nextCalled = false;
+
+        try
+        {
+            await CreateMiddleware()
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_fast_as_a_pipeline_configuration_error()
+    {
+        _exception
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("A resolved relational mapping set is required");
+    }
+
+    [Test]
+    public void It_does_not_call_next()
+    {
+        _nextCalled.Should().BeFalse();
+    }
+
+    private static ProfileWritePipelineMiddleware CreateMiddleware()
+    {
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
+    }
+
+    private static RequestInfo CreateRequestInfo()
+    {
+        ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("School")
+            .WithIdentityJsonPaths(["$.schoolId"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("SchoolId", "$.schoolId")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+
+        ProjectSchema projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
+
+        return new RequestInfo(
+            new FrontendRequest(
+                Path: "/ed-fi/schools",
+                Body: """{"schoolId":255901}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            ),
+            RequestMethod.POST,
+            No.ServiceProvider
+        )
+        {
+            ParsedBody = JsonNode.Parse("""{"schoolId":255901}""")!,
+            ProjectSchema = projectSchema,
+            ResourceSchema = resourceSchema,
+            ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("School"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+                AuthorizationSecurableInfo: []
+            ),
+            ProfileContext = new ProfileContext(
+                ProfileName: "TestWriteProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "School",
+                    LogicalSchema: null,
+                    ReadContentType: null,
+                    WriteContentType: new ContentTypeDefinition(MemberSelection.IncludeAll, [], [], [], [])
+                ),
+                WasExplicitlySpecified: true
+            ),
+        };
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_A_Writable_Profile_Post_Request_That_May_Resolve_To_An_Existing_Document
 {
     private RequestInfo _requestInfo = null!;

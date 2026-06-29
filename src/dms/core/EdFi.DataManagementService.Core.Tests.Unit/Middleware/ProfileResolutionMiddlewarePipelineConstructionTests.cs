@@ -70,7 +70,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
         );
 
         services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
         services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
             NullLogger<ProfileFilteringMiddleware>.Instance
         );

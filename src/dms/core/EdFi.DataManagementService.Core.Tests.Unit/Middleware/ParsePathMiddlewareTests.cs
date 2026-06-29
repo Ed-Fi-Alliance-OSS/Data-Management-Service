@@ -136,7 +136,6 @@ public class ParsePathMiddlewareTests
         );
 
         services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
         services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
             NullLogger<ProfileFilteringMiddleware>.Instance
         );
