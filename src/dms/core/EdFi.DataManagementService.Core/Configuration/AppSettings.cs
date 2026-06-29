@@ -68,13 +68,6 @@ public class AppSettings
     public bool MultiTenancy { get; set; }
 
     /// <summary>
-    /// If true, activates the redesigned relational backend pipeline including
-    /// database fingerprint validation, effective-schema caching, and runtime
-    /// mapping selection. When false (default), the existing backend path is used.
-    /// </summary>
-    public bool UseRelationalBackend { get; set; }
-
-    /// <summary>
     /// If true, authorization is bypassed and OIDC metadata is not warmed up at startup.
     /// </summary>
     public bool BypassAuthorization { get; set; }

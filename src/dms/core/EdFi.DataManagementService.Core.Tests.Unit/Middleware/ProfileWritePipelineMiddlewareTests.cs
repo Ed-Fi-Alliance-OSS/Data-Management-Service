@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -15,7 +14,6 @@ using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -65,12 +63,7 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -209,12 +202,7 @@ public class Given_A_Writable_Profile_Post_Request_That_May_Resolve_To_An_Existi
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -379,12 +367,7 @@ public class Given_A_Writable_Profile_Post_Request_Without_Preseeded_ResourceInf
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static ProfileContext CreateWriteProfileContext()
@@ -459,12 +442,7 @@ public class Given_A_Writable_Profile_Post_Create_New_With_Profile_Hiding_A_Requ
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -616,12 +594,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -770,12 +743,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -938,12 +906,7 @@ public class Given_A_Writable_Profile_Post_Update_Stored_State_Projection_With_H
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()

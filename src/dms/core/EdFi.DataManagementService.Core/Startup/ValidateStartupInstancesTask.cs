@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Startup;
 
@@ -26,7 +25,6 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// validated by the request-time middleware on first access.
 /// </summary>
 internal sealed class ValidateStartupInstancesTask(
-    IOptions<AppSettings> appSettings,
     IDataStoreProvider dataStoreProvider,
     IConnectionStringProvider connectionStringProvider,
     DatabaseFingerprintProvider fingerprintProvider,
@@ -43,12 +41,6 @@ internal sealed class ValidateStartupInstancesTask(
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            logger.LogDebug("Skipping startup instance validation because UseRelationalBackend is disabled");
-            return;
-        }
 
         var loadedTenantKeys = dataStoreProvider.GetLoadedTenantKeys();
         if (loadedTenantKeys.Count == 0)

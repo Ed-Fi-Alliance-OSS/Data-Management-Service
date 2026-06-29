@@ -31,9 +31,7 @@ If local E2E tests fail before issuing API requests, check for environment/runti
 
 When running E2E tests from a shell that has `NODE_OPTIONS` set, clear it for the test command if Playwright reports an unsupported Node option, for example: `env -u NODE_OPTIONS dotnet test ...`.
 
-E2E tests require the `relational-backend` NUnit category to work with the relational backend. The Reqnroll feature tag is `@relational-backend`, but the NUnit filter omits the `@`: `--filter "Category=relational-backend"`.
-
-The `relational-backend` test category only selects tests; it does not configure the DMS container. To run relational-backend E2E tests, the dms-local stack must be started with `USE_RELATIONAL_BACKEND=true` by using the relational environment file.
+E2E tests still include a pending-cleanup `relational-backend` NUnit category. The Reqnroll feature tag is `@relational-backend`, but the NUnit filter omits the `@`: `--filter "Category=relational-backend"`.
 
 ### Setup Data Management Service E2E test Docker environment
 
@@ -46,7 +44,7 @@ For relational-backend E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` p
 
 The build script performs required relational-only setup that direct local setup does not:
 - Provisions `E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
-- Sets `AppSettings__DmsInstanceDatabaseName` for the E2E test process.
+- Sets `AppSettings__DataStoreDatabaseName` for the E2E test process.
 - Restarts DMS after relational database reprovisioning to clear cached database state.
 
 Example shard run from the repository root:
@@ -62,11 +60,9 @@ If you only need to inspect the relational Docker environment manually, you can 
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./teardown-local-dms.ps1`
 3. Run: `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational`
-4. Verify the DMS container is using the relational backend:
-   - `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore'`
-   - Expected values include `AppSettings__UseRelationalBackend=true` and `AppSettings__Datastore=postgresql`.
-
-The default `pwsh ./setup-local-dms.ps1` command uses `.env.e2e`, which starts DMS with `AppSettings__UseRelationalBackend=false`. A run with `Category=relational-backend` against that default stack is not a valid relational-backend signal.
+4. Verify the DMS container is using PostgreSQL:
+   - `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'Datastore'`
+   - Expected values include `AppSettings__Datastore=postgresql`.
 
 ### Teardown Data Management Service E2E test Docker environment
 

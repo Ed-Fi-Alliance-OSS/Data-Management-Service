@@ -157,3 +157,10 @@
 - Files changed: three core middleware files; core middleware unit tests; tasks.json; progress.txt.
 - Verification: targeted no-flag rg on changed middleware/tests clean; csharpier format; Core.Tests.Unit Release passed 2694; solution build Release --no-restore passed with existing Reqnroll missing DeleteResourcesValidation feature warning; git diff --check passed.
 - Notes: broad task rg still shows pending UseRelationalBackend work in app settings, document extraction, profile/authorization/startup validation, E2E helpers, docs.
+
+2026-06-29 - completed Feature Flag Removal: delete UseRelationalBackend setting / remove-legacy-backend.md Phase 5
+- Removed DMS core and E2E AppSettings flag surface, container/env injection, build-dms test-process flag wiring, compose env keys, and active docs references.
+- Made remaining flag readers unconditional enough to compile: missing reader placeholders throw directly, startup registration/instance validation always runs, document extraction uses relational reference/descriptor extraction, authorization middleware uses relational security-config behavior.
+- Kept profile validation legacy body for later profile task but skips once MappingSet exists; ProfileWritePipeline no longer needs options.
+- Files changed: core settings/middleware/startup/auth tests, E2E settings/search reset helper, build-dms, compose yml/Pester/docs, integration/frontend/unit overrides.
+- Verification: required broad rg clean; csharpier format; Core.Tests.Unit, DMS Tests.Unit, Frontend.AspNetCore.Tests.Unit, API Integration tests passed; BootstrapSchemaAndSecuritySelection Pester passed; PowerShell parser checks and git diff --check passed.

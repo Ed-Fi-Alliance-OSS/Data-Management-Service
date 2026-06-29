@@ -8,7 +8,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -21,7 +20,6 @@ using EdFi.DataManagementService.Core.Validation;
 using Json.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -34,7 +32,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// This middleware runs after ValidateDocumentMiddleware to filter validated request bodies.
 /// </summary>
 internal class ProfileWriteValidationMiddleware(
-    IOptions<AppSettings> appSettings,
     IProfileResponseFilter profileFilter,
     IProfileCreatabilityValidator creatabilityValidator,
     ICompiledSchemaCache schemaCache,
@@ -51,9 +48,9 @@ internal class ProfileWriteValidationMiddleware(
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // Skip legacy profile filtering when the relational backend is active — the new
-        // ProfileWritePipelineMiddleware handles profile write semantics for that path.
-        if (appSettings.Value.UseRelationalBackend)
+        // ProfileWritePipelineMiddleware handles profile write semantics once relational
+        // mapping metadata has been resolved.
+        if (requestInfo.MappingSet is not null)
         {
             await next();
             return;

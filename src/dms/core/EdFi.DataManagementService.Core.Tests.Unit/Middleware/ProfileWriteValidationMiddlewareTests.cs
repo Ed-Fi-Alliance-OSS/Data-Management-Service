@@ -7,7 +7,6 @@ using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -20,7 +19,6 @@ using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreApiSchemaModel = EdFi.DataManagementService.Core.ApiSchema.Model;
 using RelationalWriteSeamFixture = EdFi.DataManagementService.Core.Tests.Unit.Handler.RelationalWriteSeamFixture;
@@ -38,7 +36,6 @@ public class ProfileWriteValidationMiddlewareTests
     )
     {
         return new ProfileWriteValidationMiddleware(
-            Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
             filter ?? new ProfileResponseFilter(),
             creatabilityValidator ?? new ProfileCreatabilityValidator(),
             schemaCache ?? new CompiledSchemaCache(),
@@ -2328,7 +2325,7 @@ public class ProfileWriteValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_PUT_Merge_Loading_The_Existing_Document : ProfileWriteValidationMiddlewareTests
+    public class Given_PUT_With_Relational_Mapping_Metadata : ProfileWriteValidationMiddlewareTests
     {
         private sealed class CapturingRepository : IDocumentStoreRepository
         {
@@ -2410,18 +2407,10 @@ public class ProfileWriteValidationMiddlewareTests
         }
 
         [Test]
-        public void It_loads_the_existing_document_using_the_stored_document_read_mode()
+        public void It_skips_legacy_merge_loading()
         {
             _nextCalled.Should().BeTrue();
-            _repository.CapturedRequest.Should().NotBeNull();
-            _repository.CapturedRequest!.MappingSet.Should().BeSameAs(_mappingSet);
-            _repository
-                .CapturedRequest.ResourceInfo.Should()
-                .BeEquivalentTo(
-                    new BaseResourceInfo(new ProjectName("Ed-Fi"), new ResourceName("Student"), false)
-                );
-            _repository.CapturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
-            _repository.CapturedRequest.ReadableProfileProjectionContext.Should().BeNull();
+            _repository.CapturedRequest.Should().BeNull();
         }
     }
 }

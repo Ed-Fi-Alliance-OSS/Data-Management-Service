@@ -7,14 +7,12 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -24,18 +22,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ExtractDocumentInfoMiddlewareTests
 {
-    internal static IPipelineStep BuildMiddleware(bool useRelationalBackend = true)
+    internal static IPipelineStep BuildMiddleware()
     {
-        return new ExtractDocumentInfoMiddleware(
-            Options.Create(
-                new AppSettings
-                {
-                    AllowIdentityUpdateOverrides = "",
-                    UseRelationalBackend = useRelationalBackend,
-                }
-            ),
-            NullLogger.Instance
-        );
+        return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
     }
 
     internal static RequestInfo CreateRequestInfo(
@@ -619,111 +608,6 @@ public class ExtractDocumentInfoMiddlewareTests
         }
     }
 
-    [TestFixture(true)]
-    [TestFixture(false)]
-    [Parallelizable]
-    public class Given_UseRelationalBackend_Toggle_For_Reference_Extraction(bool _useRelationalBackend)
-        : ExtractDocumentInfoMiddlewareTests
-    {
-        private RequestInfo _requestInfo = null!;
-        private InvalidOperationException _exception = null!;
-        private bool _completedWithoutException;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-            string body = """
-                {
-                    "sectionIdentifier": "Bob",
-                    "courseOfferingReference": {}
-                }
-                """;
-
-            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
-
-            try
-            {
-                await BuildMiddleware(useRelationalBackend: _useRelationalBackend)
-                    .Execute(_requestInfo, NullNext);
-                _completedWithoutException = true;
-            }
-            catch (InvalidOperationException ex)
-            {
-                _exception = ex;
-            }
-        }
-
-        [Test]
-        public void It_uses_the_expected_reference_extraction_behavior()
-        {
-            if (_useRelationalBackend)
-            {
-                _completedWithoutException.Should().BeTrue();
-                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-                _requestInfo.FrontendResponse.Body!["validationErrors"]!["$.courseOfferingReference"]![0]!
-                    .GetValue<string>()
-                    .Should()
-                    .Contain("$.courseOfferingReference.localCourseCode");
-                return;
-            }
-
-            _completedWithoutException.Should().BeFalse();
-            _exception
-                .Message.Should()
-                .Be(
-                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
-                );
-            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Legacy_Post_Request_With_An_Empty_Reference_Object
-        : ExtractDocumentInfoMiddlewareTests
-    {
-        private RequestInfo _requestInfo = null!;
-        private InvalidOperationException _exception = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-            string body = """
-                {
-                    "sectionIdentifier": "Bob",
-                    "courseOfferingReference": {}
-                }
-                """;
-
-            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
-
-            Func<Task> act = () =>
-                BuildMiddleware(useRelationalBackend: false).Execute(_requestInfo, NullNext);
-
-            _exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
-        }
-
-        [Test]
-        public void It_preserves_the_pre_relational_identity_count_mismatch_exception()
-        {
-            _exception
-                .Message.Should()
-                .Be(
-                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
-                );
-        }
-
-        [Test]
-        public void It_does_not_translate_the_legacy_failure_into_a_validation_response()
-        {
-            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-        }
-    }
-
     [TestFixture]
     [Parallelizable]
     public class Given_A_Put_Request_With_A_Partial_Nested_Reference_Object
@@ -774,57 +658,6 @@ public class ExtractDocumentInfoMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Contain("$.classPeriods[0].classPeriodReference.schoolId");
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Legacy_Put_Request_With_A_Partial_Nested_Reference_Object
-        : ExtractDocumentInfoMiddlewareTests
-    {
-        private RequestInfo _requestInfo = null!;
-        private InvalidOperationException _exception = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-            string body = """
-                {
-                    "sectionIdentifier": "Bob",
-                    "classPeriods": [
-                        {
-                            "classPeriodReference": {
-                                "classPeriodName": "Class Period 1"
-                            }
-                        }
-                    ]
-                }
-                """;
-
-            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.PUT, body);
-
-            Func<Task> act = () =>
-                BuildMiddleware(useRelationalBackend: false).Execute(_requestInfo, NullNext);
-
-            _exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
-        }
-
-        [Test]
-        public void It_preserves_the_pre_relational_identity_count_mismatch_exception()
-        {
-            _exception
-                .Message.Should()
-                .Be(
-                    "Reference 'ClassPeriod' at '$.classPeriods[0].classPeriodReference': expected 2 identity elements but found 1"
-                );
-        }
-
-        [Test]
-        public void It_does_not_translate_the_legacy_failure_into_a_validation_response()
-        {
-            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
         }
     }
 

@@ -59,7 +59,6 @@ public sealed class Given_ApiIntegrationHostLoadsManifestBackedFixture
         {
             builder.UseEnvironment("Test");
 
-            builder.UseSetting("AppSettings:UseRelationalBackend", "false");
             builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
             builder.UseSetting("AppSettings:ApiSchemaPath", hostFixture.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", _startupStatusFilePath);

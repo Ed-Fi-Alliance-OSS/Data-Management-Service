@@ -356,7 +356,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:UseRelationalBackend"] = "true",
                             ["AppSettings:UseApiSchemaPath"] = "true",
                             ["AppSettings:ApiSchemaPath"] = _schemaDirectory,
                             ["AppSettings:StartupStatusFilePath"] = _startupStatusFilePath,

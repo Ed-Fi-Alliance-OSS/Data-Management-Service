@@ -96,10 +96,8 @@ public abstract class ApiIntegrationTestBase
             builder.UseEnvironment("Test");
 
             // UseSetting writes into the host's IConfiguration before AddServices() runs,
-            // so options bound during service registration (e.g. AppSettings:UseRelationalBackend,
-            // AppSettings:Datastore) observe the harness-owned values without relying on
+            // so options bound during service registration (e.g. AppSettings:Datastore) observe the harness-owned values without relying on
             // process environment variables or file-based appsettings.
-            builder.UseSetting("AppSettings:UseRelationalBackend", "true");
             builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
             builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);

@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
@@ -20,11 +19,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 [Parallelizable]
 public class ValidateStartupInstancesTaskTests
 {
-    private static IOptions<AppSettings> CreateAppSettings(bool useRelational) =>
-        Options.Create(
-            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = useRelational }
-        );
-
     private static DatabaseFingerprint CreateFingerprint() =>
         new("1.0", "abc123", 2, new byte[32].ToImmutableArray());
 
@@ -48,19 +42,18 @@ public class ValidateStartupInstancesTaskTests
     [Test]
     public void It_has_order_310()
     {
-        var task = CreateTask(useRelational: true);
+        var task = CreateTask();
         task.Order.Should().Be(310);
     }
 
     [Test]
     public void It_has_expected_name()
     {
-        var task = CreateTask(useRelational: true);
+        var task = CreateTask();
         task.Name.Should().Be("Validate Startup Database Instances");
     }
 
     private static ValidateStartupInstancesTask CreateTask(
-        bool useRelational,
         IDataStoreProvider? instanceProvider = null,
         IConnectionStringProvider? connectionStringProvider = null,
         DatabaseFingerprintProvider? fingerprintProvider = null,
@@ -77,7 +70,6 @@ public class ValidateStartupInstancesTaskTests
         schemaSetProvider ??= A.Fake<IEffectiveSchemaSetProvider>();
 
         return new ValidateStartupInstancesTask(
-            CreateAppSettings(useRelational),
             instanceProvider,
             connectionStringProvider,
             fingerprintProvider,
@@ -90,22 +82,6 @@ public class ValidateStartupInstancesTaskTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_UseRelationalBackend_Is_Disabled : ValidateStartupInstancesTaskTests
-    {
-        [Test]
-        public async Task It_skips_validation()
-        {
-            var instanceProvider = A.Fake<IDataStoreProvider>();
-            var task = CreateTask(useRelational: false, instanceProvider: instanceProvider);
-
-            await task.ExecuteAsync(CancellationToken.None);
-
-            A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).MustNotHaveHappened();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_No_Loaded_Tenants : ValidateStartupInstancesTaskTests
     {
         [Test]
@@ -114,7 +90,7 @@ public class ValidateStartupInstancesTaskTests
             var instanceProvider = A.Fake<IDataStoreProvider>();
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(Array.Empty<string>());
 
-            var task = CreateTask(useRelational: true, instanceProvider: instanceProvider);
+            var task = CreateTask(instanceProvider: instanceProvider);
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
@@ -140,7 +116,6 @@ public class ValidateStartupInstancesTaskTests
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider
@@ -190,7 +165,6 @@ public class ValidateStartupInstancesTaskTests
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var cacheProvider = new ResourceKeyValidationCacheProvider();
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider,
@@ -225,7 +199,6 @@ public class ValidateStartupInstancesTaskTests
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider
@@ -257,7 +230,6 @@ public class ValidateStartupInstancesTaskTests
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider
@@ -299,7 +271,6 @@ public class ValidateStartupInstancesTaskTests
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider,
@@ -332,7 +303,6 @@ public class ValidateStartupInstancesTaskTests
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider
@@ -381,7 +351,6 @@ public class ValidateStartupInstancesTaskTests
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var cacheProvider = new ResourceKeyValidationCacheProvider();
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider,
@@ -444,7 +413,6 @@ public class ValidateStartupInstancesTaskTests
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var cacheProvider = new ResourceKeyValidationCacheProvider();
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider,
@@ -504,7 +472,6 @@ public class ValidateStartupInstancesTaskTests
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
             var cacheProvider = new ResourceKeyValidationCacheProvider();
             var task = CreateTask(
-                useRelational: true,
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
                 fingerprintProvider: fingerprintProvider,
