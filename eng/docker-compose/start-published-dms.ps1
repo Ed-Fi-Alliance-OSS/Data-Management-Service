@@ -75,6 +75,10 @@ param (
     [string]
     $SchoolYearRange = "",
 
+    # PostgreSQL database name to use when creating CMS data stores. Defaults to POSTGRES_DB_NAME from the environment file.
+    [string]
+    $DataStoreDatabaseName = "",
+
     # Start only infrastructure required before schema provisioning
     [Switch]
     $InfraOnly,
@@ -479,6 +483,13 @@ else {
 
             # Get tenant from environment (for multi-tenant support)
             $tenant = $envValues.CONFIG_SERVICE_TENANT
+            $postgresDbName =
+                if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+                    $envValues.POSTGRES_DB_NAME
+                }
+                else {
+                    $DataStoreDatabaseName
+                }
 
             # Handle school year range data stores
             if ($SchoolYearRange) {
@@ -496,7 +507,7 @@ else {
                         -StartYear $startYear `
                         -EndYear $endYear `
                         -PostgresPassword $envValues.POSTGRES_PASSWORD `
-                        -PostgresDbName $envValues.POSTGRES_DB_NAME `
+                        -PostgresDbName $postgresDbName `
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
@@ -510,7 +521,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }

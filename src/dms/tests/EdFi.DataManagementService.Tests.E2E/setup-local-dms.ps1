@@ -18,7 +18,7 @@
 
     The script runs:
     ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
-    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file>
+    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DataStoreDatabaseName <E2E_DATABASE_NAME>
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -65,6 +65,15 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
 try {
     Set-Location $dockerComposeDir
+    Import-Module ./env-utility.psm1 -Force
+
+    $resolvedEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+    $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
+    $e2eDatabaseName = Get-EnvValue -EnvValues $envValues -Name "E2E_DATABASE_NAME"
+
+    if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
+        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
+    }
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
@@ -81,15 +90,16 @@ try {
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Search Engine UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
-    Write-Host "  - Environment File: $EnvironmentFile" -ForegroundColor Gray
+    Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
+    Write-Host "  - E2E Database: $e2eDatabaseName" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
 
-    Write-Output "Using file-based schema packages from $EnvironmentFile for E2E (non-bootstrap compatibility path)."
+    Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
     # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
@@ -104,7 +114,7 @@ try {
     # This non-bootstrap E2E flow intentionally keeps the full start rather than the
     # -InfraOnly/-DmsOnly split. The DMS container restarts until this step lands the data store
     # (non-bootstrap compatibility flow).
-    ./configure-local-data-store.ps1 -EnvironmentFile $EnvironmentFile
+    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DataStoreDatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"

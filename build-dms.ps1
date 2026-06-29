@@ -752,6 +752,9 @@ function Start-DockerEnvironment {
         [string]
         $ResolvedEnvironmentFile,
 
+        [string]
+        $DataStoreDatabaseName = "",
+
         [switch]
         $UseEnvironmentFileSchemaSettings
     )
@@ -799,12 +802,12 @@ function Start-DockerEnvironment {
             if ($UsePublishedImage) {
                 if ($LoadSeedData) {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                     }
                 }
                 else {
                     Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                     }
                 }
             }
@@ -844,7 +847,7 @@ function Start-DockerEnvironment {
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
                 # create it explicitly so DMS startup finds an instance in CMS.
-                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath
+                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName
             }
         }
         finally {
@@ -908,6 +911,7 @@ function E2ETests {
             -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
+            -DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName `
             -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
     }
 
