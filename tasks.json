@@ -910,16 +910,17 @@
   },
   {
     "category": "E2E Provisioning",
-    "description": "High: Align E2E provisioning and CMS data-store configuration so DMS uses the provisioned E2E database. `eng/docker-compose/.env.e2e:5` sets `POSTGRES_DB_NAME`, `eng/docker-compose/.env.e2e:7` sets a distinct `E2E_DATABASE_NAME`, `build-dms.ps1:318` and `eng/docker-compose/provision-e2e-database.ps1:147` provision the E2E database, but `eng/docker-compose/configure-local-data-store.ps1:292`, `eng/docker-compose/configure-local-data-store.ps1:351`, and `eng/docker-compose/start-published-dms.ps1:504` still configure CMS data stores from `POSTGRES_DB_NAME`; `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/ContainerSetupBase.cs:69` resets the E2E database.",
+    "description": "High: Align E2E provisioning and CMS data-store configuration so DMS uses the provisioned E2E database. `eng/docker-compose/.env.e2e:5` sets `POSTGRES_DB_NAME`, `eng/docker-compose/.env.e2e:7` sets a distinct `E2E_DATABASE_NAME`, `build-dms.ps1:318` reads that E2E database name, `build-dms.ps1:589` and `build-dms.ps1:847` provision and restart around the E2E database, but `build-dms.ps1:821`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1:104`, `eng/docker-compose/configure-local-data-store.ps1:292`, `eng/docker-compose/configure-local-data-store.ps1:351`, and `eng/docker-compose/start-published-dms.ps1:504` still configure CMS data stores from `POSTGRES_DB_NAME`; `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/ContainerSetupBase.cs:69` resets the E2E database, and `eng/docker-compose/provision-e2e-database.ps1:147` enforces that it remains distinct from the default database.",
     "acceptance-criteria": [
       "The DMS E2E setup path provisions, resets, and routes API requests to the same database name.",
       "`configure-local-data-store.ps1` uses the E2E database name when invoked by DMS E2E setup and does not point CMS-created data stores at `POSTGRES_DB_NAME` for E2E runs.",
+      "`build-dms.ps1` and `src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1` pass enough context to data-store configuration so direct setup and repo-root E2E setup create CMS data stores against the provisioned E2E database.",
       "`start-published-dms.ps1` uses the E2E database name for published DMS E2E data-store creation.",
       "`E2E_DATABASE_NAME` remains distinct from `POSTGRES_DB_NAME` and the provisioning guard remains valid.",
       "The build-script E2E setup cannot produce a DMS instance whose configured data store lacks the generated `dms.\"EffectiveSchema\"` table."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"E2E_DATABASE_NAME|POSTGRES_DB_NAME|DataStoreDatabaseName|configure-local-data-store|start-published-dms|provision-e2e-database\" build-dms.ps1 eng/docker-compose src/dms/tests/EdFi.DataManagementService.Tests.E2E` and confirm E2E data-store creation uses the provisioned E2E database.",
+      "Run: `rg -n \"E2E_DATABASE_NAME|POSTGRES_DB_NAME|DataStoreDatabaseName|configure-local-data-store|start-published-dms|provision-e2e-database\" build-dms.ps1 eng/docker-compose src/dms/tests/EdFi.DataManagementService.Tests.E2E` and confirm E2E data-store creation uses the provisioned E2E database in repo-root, direct local setup, and published-image paths.",
       "Inspect `eng/docker-compose/configure-local-data-store.ps1` and `eng/docker-compose/start-published-dms.ps1` to confirm non-E2E/default setup still uses the intended default PostgreSQL database.",
       "Run the repo-root E2E build lane with Docker dependencies available: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'`."
     ],
@@ -927,12 +928,13 @@
   },
   {
     "category": "Lock Files",
-    "description": "High: Remove stale package lock-file references to the deleted legacy backend. `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json:394`, `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json:437`, `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/packages.lock.json:686`, and `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/packages.lock.json:560` still reference `EdFi.DataManagementService.Old.Postgresql`; orphan lock files also remain at `src/dms/backend/EdFi.DataManagementService.Old.Postgresql/packages.lock.json:1`, `src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/packages.lock.json:1`, and `src/dms/backend/EdFi.DataManagementService.Backend.Installer/packages.lock.json:1`, while locked restore is used by `src/dms/Dockerfile:27` and lock files are enabled by `src/dms/Directory.Build.props:11`.",
+    "description": "High: Remove stale package lock-file references to the deleted legacy backend. `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json:394`, `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json:437`, `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/packages.lock.json:686`, and `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/packages.lock.json:560` still reference `EdFi.DataManagementService.Old.Postgresql`; orphan lock files also remain at `src/dms/backend/EdFi.DataManagementService.Old.Postgresql/packages.lock.json:1`, `src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/packages.lock.json:1`, and `src/dms/backend/EdFi.DataManagementService.Backend.Installer/packages.lock.json:1`, while locked restore is used by `src/dms/Dockerfile:27` and `.github/workflows/on-dms-pullrequest.yml:176`, and lock files are enabled by `src/dms/Directory.Build.props:11`.",
     "acceptance-criteria": [
       "Active `packages.lock.json` files no longer reference `EdFi.DataManagementService.Old.Postgresql` or deleted installer projects.",
       "Orphan `packages.lock.json` files under deleted legacy project directories are removed.",
       "The frontend, core unit test, and backend unit test lock files are regenerated from the surviving project graph.",
       "Docker and CI locked restore no longer see deleted legacy backend or installer package entries.",
+      "The PR locked-restore workflow at `.github/workflows/on-dms-pullrequest.yml:176` remains green with the regenerated lock files.",
       "Repository searches no longer surface active lock-file references to deleted DMS legacy backend projects."
     ],
     "steps-to-verify": [
