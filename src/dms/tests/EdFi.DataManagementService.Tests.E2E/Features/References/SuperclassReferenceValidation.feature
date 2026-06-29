@@ -17,8 +17,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
 
 
         @API-104
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients can create a Program that references an existing School
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -34,8 +33,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
 
 
         @API-105
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients can create a Program that references an existing Local Education Agency
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -50,8 +48,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
              Then it should respond with 201 or 200
 
         @API-106
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients cannot create a Program that references a non-existing Education Organization
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -82,8 +79,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   """
 
         @API-107
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients can update a school that references to an existing local education agency
             Given the system has these "Schools" references
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
@@ -116,8 +112,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
 
 
         @API-108
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients cannot update a school that references to an existing Local Agency so it references now a Non Existing Education Organization
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | localEducationAgencyReference  | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
@@ -162,8 +157,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   """
 
         @API-109
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         # DMS-1012: Quarantined until delete conflict diagnostics can report all
         # referencing resource types deterministically.
         @ignore

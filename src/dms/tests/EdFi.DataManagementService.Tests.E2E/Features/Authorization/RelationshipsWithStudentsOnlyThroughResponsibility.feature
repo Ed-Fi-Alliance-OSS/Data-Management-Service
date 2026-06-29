@@ -30,8 +30,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   | "Career and Technical Education" | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education | {"educationOrganizationId": 1255901002} |
 
     Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 Ensure client can create a StudentEducationOrganizationResponsibilityAssociation
              When a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -48,8 +47,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 201
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 02 Ensure client can create a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -85,8 +83,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 Ensure client can not create a StudentSpecialEducationProgramEligibilityAssociation without a StudentEducationOrganizationResponsibilityAssociation
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
              When a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
@@ -123,8 +120,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   }
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 04 Ensure client can update a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -180,8 +176,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 204
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 05 Ensure client can delete a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -255,8 +250,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06 Ensure client cannot update a StudentSpecialEducationProgramEligibilityAssociation
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
              When a PUT request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}" with
@@ -294,8 +288,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Ensure client cannot delete a StudentSpecialEducationProgramEligibilityAssociation
              When a DELETE request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}"
              Then it should respond with 403

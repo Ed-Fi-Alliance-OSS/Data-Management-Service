@@ -3,8 +3,7 @@ Feature: Validate array uniqueness
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Can create addresses on studentEducationOrganizationAssociations differing only in address type
             Given the system has these descriptors
                   | descriptorValue                                                |
@@ -52,8 +51,7 @@ Feature: Validate array uniqueness
                   """
              Then it should respond with 201 or 200
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Cannot create addresses on studentEducationOrganizationAssociations with no difference in type-city-street-postalcode
             Given the system has these descriptors
                   | descriptorValue                                                |
@@ -128,8 +126,7 @@ Feature: Validate array uniqueness
                   | uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score   |
                   | uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer            |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Can create an assessment with unique performanceLevels performanceLevelDescriptor+assessmentReportingMethodDescriptor
 
              When a POST request is made to "/ed-fi/assessments" with
@@ -169,8 +166,7 @@ Feature: Validate array uniqueness
                   """
              Then it should respond with 201 or 200
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Cannot create assessment with duplicate performanceLevels performanceLevelDescriptor+assessmentReportingMethodDescriptor
 
              When a POST request is made to "/ed-fi/assessments" with
@@ -227,8 +223,7 @@ Feature: Validate array uniqueness
                   """
 
     Rule: Uniqueness of array of document references
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Cannot create a bellschedule with a duplicate classPeriodReference in classPeriods array
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -286,8 +281,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 Verify clients cannot create a resource with a duplicate descriptor
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -540,8 +534,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Can create studentAssessments with multiple unique assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
@@ -615,8 +608,7 @@ Feature: Validate array uniqueness
                   """
              Then it should respond with 201 or 200
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Cannot create studentAssessments with duplicate assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
@@ -715,8 +707,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
              When a POST request is made to "/ed-fi/studentHealths" with
                   """

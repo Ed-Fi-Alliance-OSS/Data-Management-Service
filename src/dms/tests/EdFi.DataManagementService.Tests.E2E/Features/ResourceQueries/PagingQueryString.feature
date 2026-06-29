@@ -11,8 +11,8 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | 4        | School 4          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
                   | 5        | School 5          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
 
-        @API-120 @relational-backend
-        @relational-ci-shard-4
+        @API-120
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients can get information when filtering by limit and and a valid offset
              When a GET request is made to "/ed-fi/schools?offset=3&limit=2"
              Then it should respond with 200
@@ -53,8 +53,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-121
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=600&limit=5"
              Then it should respond with 200
@@ -64,8 +63,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-122
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients can GET information when querying using an offset without providing any limit in the query string
              When a GET request is made to "/ed-fi/schools?offset=4"
              Then it should respond with 200
@@ -91,8 +89,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
 
         @API-123
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients can GET information when filtering with limits and properties
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
              Then it should respond with 200
@@ -117,8 +114,8 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                     ]
                   """
 
-        @API-147 @relational-backend
-        @relational-ci-shard-4
+        @API-147
+        @e2e-ci-shard-4
         Scenario Outline: 12 Ensure clients can not GET information when filtering by limit and offset using invalid values
             # Some of these are "SQL Injection" style attacks
              When a GET request is made to "/ed-fi/schools?offset=<value>"
@@ -145,8 +142,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | '0)'                     |
                   | '1%27'                   |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
              When a GET request is made to "/ed-fi/schools?offset=0&limit=<value>"
              Then it should respond with 400

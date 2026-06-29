@@ -304,10 +304,10 @@ tests). Run them with the standard `dotnet test` against the project.
 E2E runs against the Docker stack. The full setup is documented in
 [`eng/docker-compose/README.md`](../eng/docker-compose/README.md); the suite itself is described in
 [`src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md).
-A typical relational-lane run from the repo root:
+A typical shard run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter "Category=@relational-backend"
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter "Category=@e2e-ci-shard-3"
 ```
 
 The environment file lives at [`eng/docker-compose/.env.e2e.relational`](../eng/docker-compose/.env.e2e.relational);

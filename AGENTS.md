@@ -31,16 +31,14 @@ If local E2E tests fail before issuing API requests, check for environment/runti
 
 When running E2E tests from a shell that has `NODE_OPTIONS` set, clear it for the test command if Playwright reports an unsupported Node option, for example: `env -u NODE_OPTIONS dotnet test ...`.
 
-E2E tests still include a pending-cleanup `relational-backend` NUnit category. The Reqnroll feature tag is `@relational-backend`, but the NUnit filter omits the `@`: `--filter "Category=relational-backend"`.
-
 ### Setup Data Management Service E2E test Docker environment
 
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./setup-local-dms.ps1`
 
-### Run Data Management Service relational-backend E2E tests
+### Run Data Management Service E2E tests
 
-For relational-backend E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path instead of manually running `setup-local-dms.ps1` followed by `dotnet test`.
+For DMS E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path instead of manually running `setup-local-dms.ps1` followed by `dotnet test`.
 
 The build script performs required relational-only setup that direct local setup does not:
 - Provisions `E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
@@ -50,7 +48,7 @@ The build script performs required relational-only setup that direct local setup
 Example shard run from the repository root:
 
 ```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@e2e-ci-shard-3'
 ```
 
 Do not treat `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational` plus direct `dotnet test` as a valid relational E2E signal unless you also manually run the relational provisioning helper and set the test-process database environment variables. Otherwise tests can fail before the scenario payload with `503 Database Not Provisioned` because the CMS-created DMS instance points at the legacy `edfi_datamanagementservice` database or a database without `dms."EffectiveSchema"`.

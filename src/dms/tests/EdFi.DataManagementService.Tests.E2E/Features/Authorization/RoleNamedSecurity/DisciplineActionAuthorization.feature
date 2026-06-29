@@ -26,8 +26,7 @@ Feature: DisciplineAction Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 Ensure authorized client can create a DisciplineAction
              When a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -52,14 +51,12 @@ Feature: DisciplineAction Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 02.1 Ensure authorized client can get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 200
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 02.2 Ensure authorized client can get a DisciplineAction by query
             Given a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -109,8 +106,7 @@ Feature: DisciplineAction Authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 Ensure authorized client can update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
                   """
@@ -136,8 +132,7 @@ Feature: DisciplineAction Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 Ensure authorized client can delete a DisciplineAction
              When a DELETE request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 204
@@ -146,8 +141,7 @@ Feature: DisciplineAction Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901044"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 Ensure unauthorized client can not create a DisciplineAction
              When a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -185,8 +179,7 @@ Feature: DisciplineAction Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06.1 Ensure unauthorized client can not get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 403
@@ -204,8 +197,7 @@ Feature: DisciplineAction Authorization
                   }
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 06.2 Ensure unauthorized client can not get a DisciplineAction by query
              When a GET request is made to "/ed-fi/disciplineActions?disciplineActionIdentifier=TEST-001"
              Then it should respond with 200
@@ -214,8 +206,7 @@ Feature: DisciplineAction Authorization
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Ensure unauthorized client can not update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
                   """
@@ -254,8 +245,7 @@ Feature: DisciplineAction Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 08 Ensure unauthorized client can not delete a DisciplineAction
              When a DELETE request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 403

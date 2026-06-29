@@ -33,8 +33,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
                   | 2023       | true              | "year 2023"           |
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Session key change is reported in keyChanges
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -90,8 +89,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body path "0.newKeyValues.schoolId" should have value "930100101"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         @reset-data-before-scenario
         Scenario: 02 Location key change reports the changed school and classroom identity columns
             Given the claimSet "EdFiSandbox" is authorized with namespace "uri://ed-fi.org" and educationOrganizationIds "255901"
@@ -140,8 +138,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body path "0.newKeyValues.classroomIdentificationCode" should have value "BBB"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Grade key change is reported in keyChanges
             # DEEP CHAIN + identity update. Build order (all links granted by the broad set):
             # School -> Session -> Course -> CourseOffering -> Section -> Student ->
@@ -281,8 +278,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body path "0.newKeyValues.studentUniqueId" should have value "GRADE-KC-STU"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         @reset-data-before-scenario
         Scenario: 04 GradebookEntry key change is reported in keyChanges
             Given the claimSet "EdFiSandbox" is authorized with namespace "uri://ed-fi.org" and educationOrganizationIds "255901"
@@ -429,8 +425,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
               And the response body path "0.newKeyValues.namespace" should have value "uri://ed-fi.org/GradebookEntry/GradebookEntry.xml"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 StudentSchoolAssociation key change reports the changed school and the student natural key
             # identity update on StudentSchoolAssociation, changing the school portion of the
             # composite key. Confirmed at run time: DMS allows this (PUT 204) and the keyChange row
@@ -519,8 +514,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # courseOfferingReference cascades the Section key into StaffSectionAssociation and records
         # the association key change.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 StaffSectionAssociation key change via a changed Section course offering reference
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -661,8 +655,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # invalid limit/offset on /keyChanges as a generic bad-request (urn:ed-fi:api:bad-request),
         # lists Offset before Limit, and phrases the bounds as "numeric value between 0 and 500".
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 KeyChanges response rejects invalid limit and offset
              When a GET request is made to "/ed-fi/students/keyChanges?limit=-1&offset=-1"
              Then it should respond with 400
@@ -683,8 +676,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
                   """
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 KeyChanges request for an unknown resource returns 404
              When a GET request is made to "/ed-fi/nonExistingResources/keyChanges"
              Then it should respond with 404
@@ -704,8 +696,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # Person resources are immutable: a PUT that changes the identity is rejected with
         # key-change-not-supported. Body copied verbatim from DMS's actual response.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Changing a Student identity is rejected as key-change-not-supported
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -738,8 +729,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
                   """
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 10 Changing a Contact identity is rejected as key-change-not-supported
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -775,8 +765,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # rejected by request-body validation before any key change is tracked. Body copied verbatim
         # from DMS's actual data-validation-failed ProblemDetails response.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13 Changing a ClassPeriod key to an invalid over-long value is rejected with a validation error
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -837,8 +826,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # _lastModifiedDate at whole-second precision, so a same-second create/cascade would defeat
         # a naive "changed" check.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 11 Session key change cascades a change version bump and key change to its CourseOffering
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -939,8 +927,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # with the cascade write's timestamp. We compare to the parent's fresh timestamp rather than a
         # before/after delta because DMS exposes _lastModifiedDate at whole-second precision.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 12 ClassPeriod key change cascades a change version bump to its BellSchedule
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -1006,8 +993,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # TrackedChangeAuthorization.feature scenario 07; multi-item paging/limit is covered by
         # TrackedChangeEndpoints.feature scenario 10.)
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14 Section key changes collapse to one keyChanges row carrying the original old identity
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -1112,8 +1098,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # this scenario covers the page-smaller-than-the-result-set case that scenario 14's note pointed
         # at TrackedChangeEndpoints scenario 10 for, which only exercises /deletes paging.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 15 Section keyChanges paging returns a partial page while total-count reports all affected items
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -1244,8 +1229,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # scenario 04 in TrackedChangeEndpoints, which requests totalCount=true and asserts the header
         # is present with value 0).
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 16 Descriptor keyChanges without totalCount returns an empty array and omits the total-count header
              When a GET request is made to "/ed-fi/gradeLevelDescriptors/keyChanges"
              Then it should respond with 200
@@ -1261,8 +1245,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # TrackedChangeEndpoints scenarios 13 and 14) and confirms the Total-Count header is omitted
         # when totalCount is not requested even though a key-change row is returned.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 17 ClassPeriod keyChanges served with only minChangeVersion omits the total-count header
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -1312,8 +1295,7 @@ Feature: TrackedChange /keyChanges endpoints across resource and key shapes.
         # and not the ODS-bug undercount (1). B's three changes also coalesce to a single response row,
         # so total of records is 2 as well.
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 18 Total-Count reports distinct key-changed StudentSchoolAssociations when one changes multiple times
              When a POST request is made to "/ed-fi/schools" with
                   """

@@ -1,10 +1,9 @@
 @reset-data-before-scenario
-Feature: RelationshipsWithPeople relational GET-many authorization
+Feature: RelationshipsWithPeople GET-many authorization
 
-    Rule: People relationship GET-many scenarios use the relational backend authorization lane
+    Rule: People relationship GET-many scenarios use relationship authorization
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: Student GET-many returns only students related to the caller
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "9155901001, 9155901002"
               And the system has these "schools"
@@ -41,8 +40,7 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: Staff GET-many returns only staff related to the caller through staff education organization associations
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "9255901001, 9255901002"
               And the system has these "schools"
@@ -78,8 +76,7 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: Empty education organization claims return an empty People page with total count zero
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "9355901001"
               And the system has these "schools"
@@ -105,8 +102,7 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @ResetClaimsetsAfterScenario
         Scenario: StudentsOnlyThroughResponsibility GET-many returns only students related by responsibility
             Given the claimSet "EdFiAPIPublisherWriter" is authorized with educationOrganizationIds "9455901001"
