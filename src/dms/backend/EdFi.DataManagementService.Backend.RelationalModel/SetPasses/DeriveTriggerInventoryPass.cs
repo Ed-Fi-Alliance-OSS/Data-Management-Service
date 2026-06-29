@@ -307,8 +307,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private sealed record ReverseReferenceEntry(
         QualifiedResourceName ReferrerResource,
         DbTableModel BindingTable,
-        DocumentReferenceBinding Binding,
-        DocumentReferenceMapping Mapping
+        DocumentReferenceBinding Binding
     );
 
     /// <summary>
@@ -512,7 +511,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     reverseIndex[targetResource] = entries;
                 }
 
-                entries.Add(new ReverseReferenceEntry(referrerResource, bindingTableModel, binding, mapping));
+                entries.Add(new ReverseReferenceEntry(referrerResource, bindingTableModel, binding));
             }
         }
 
