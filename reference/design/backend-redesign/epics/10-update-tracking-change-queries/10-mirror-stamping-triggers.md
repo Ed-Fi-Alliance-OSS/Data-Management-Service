@@ -7,7 +7,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1173
 
 ## Description
 
-Extend every `DbTriggerKind.DocumentStamping` trigger renderer so the stamped `dms.Document` values are captured once and copied to the trigger's `MirrorStampTargetTable`.
+Extend every `TriggerKindParameters.DocumentStamping` trigger renderer so the stamped `dms.Document` values are captured once and copied to the trigger's `MirrorStampTargetTable`.
 
 For representation-changing updates and deletes, the trigger must allocate exactly one `dms.ChangeVersionSequence` value per affected document, write that value to `dms.Document.ContentVersion`, and then mirror the same value to the concrete root table or `dms.Descriptor`. Root-resource and descriptor inserts must copy the existing `dms.Document.ContentVersion` initialized by `dms.Document` defaults instead of allocating another content version. No mirror update may call the sequence a second time for the same document.
 

@@ -388,12 +388,12 @@ classDiagram
     class DbTriggerInfo {
         DbTriggerName Name
         DbTableName Table
-        DbTriggerKind Kind
         IReadOnlyList~DbColumnName~ KeyColumns
+        TriggerKindParameters Parameters
     }
 
-    class DbTriggerKind {
-        <<enumeration>>
+    class TriggerKindParameters {
+        <<discriminated union>>
         DocumentStamping
         ReferentialIdentityMaintenance
         AbstractIdentityMaintenance
@@ -401,7 +401,7 @@ classDiagram
     }
 
     DbIndexInfo --> DbIndexKind
-    DbTriggerInfo --> DbTriggerKind
+    DbTriggerInfo --> TriggerKindParameters
 ```
 
 ---

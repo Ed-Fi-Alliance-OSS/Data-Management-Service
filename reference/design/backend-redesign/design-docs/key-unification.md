@@ -1625,7 +1625,7 @@ Referential actions:
   - PostgreSQL: for concrete targets, use `CASCADE` only when `allowIdentityUpdates=true`; otherwise `NO ACTION`. For
     abstract targets, use `CASCADE`.
   - SQL Server: always emit `ON UPDATE NO ACTION` for reference composite FKs. Identity propagation for eligible edges
-    is provided by `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger inventory.
+    is provided by `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger inventory.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1709,15 +1709,15 @@ Normative guidance:
 
 SQL Server reference composite FKs are emitted with `ON UPDATE NO ACTION` for deterministic behavior and to avoid
 engine cascade-path limitations. Identity propagation is represented explicitly as
-`DbTriggerKind.MssqlIdentityPropagationTrigger` trigger inventory.
+`TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger inventory.
 
 Normative rules:
 
 1. The DDL generator MUST emit `ON UPDATE NO ACTION` for every SQL Server reference composite FK (concrete and
    abstract targets).
 2. For eligible propagation targets (abstract targets or concrete targets with `allowIdentityUpdates=true`), trigger
-   inventory MUST emit one deterministic, set-based `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger per referenced
-   table (`DbTriggerInfo.TriggerTable`) with referrer fan-out actions.
+   inventory MUST emit one deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger per referenced
+   table (`DbTriggerInfo.Table`) with referrer fan-out actions.
 3. Each propagation referrer action MUST update the referrer table’s **canonical/storage** identity-part columns
    (never alias/binding columns), because aliases are computed/read-only.
 
@@ -1896,7 +1896,7 @@ This makes identity change detection robust to:
 In derived trigger inventory contracts, this compare set is carried by `DbTriggerInfo.IdentityProjectionColumns` and is
 interpreted strictly as a null-safe value-diff input set, never as `UPDATE(column)` gating.
 
-#### `DbTriggerKind.DocumentStamping` (stamps `dms.Document`)
+#### `TriggerKindParameters.DocumentStamping` (stamps `dms.Document`)
 
 Implementation guidance (dialect-neutral semantics):
 
@@ -1908,7 +1908,7 @@ Implementation guidance (dialect-neutral semantics):
   the alias column name).
 - Bump **Identity** stamps only for `identityChangedDocumentIds`.
 
-#### `DbTriggerKind.ReferentialIdentityMaintenance` + `DbTriggerKind.AbstractIdentityMaintenance`
+#### `TriggerKindParameters.ReferentialIdentityMaintenance` + `TriggerKindParameters.AbstractIdentityMaintenance`
 
 These triggers must use the same value-diff gating:
 
@@ -2242,7 +2242,7 @@ semantics, or cascade correctness.
 - SQL Server propagation strategy:
   - every reference composite FK uses `ON UPDATE NO ACTION`,
   - eligible propagation targets (abstract or `allowIdentityUpdates=true`) emit deterministic
-    `DbTriggerKind.MssqlIdentityPropagationTrigger` inventory as one trigger per referenced table with referrer fan-out
+    `TriggerKindParameters.MssqlIdentityPropagationTrigger` inventory as one trigger per referenced table with referrer fan-out
     actions,
   - trigger actions update canonical/storage columns only (never aliases).
 

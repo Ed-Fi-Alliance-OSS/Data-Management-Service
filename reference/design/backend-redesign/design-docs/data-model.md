@@ -598,7 +598,7 @@ Typical structure:
         - abstract targets: `ON UPDATE CASCADE`
       - SQL Server:
         - all reference composite FKs use `ON UPDATE NO ACTION` (concrete + abstract targets)
-        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table, updating canonical/storage columns only
+        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table, updating canonical/storage columns only
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -655,7 +655,7 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
     - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
+    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
 Required: `{schema}.{AbstractResource}_View` union view
 

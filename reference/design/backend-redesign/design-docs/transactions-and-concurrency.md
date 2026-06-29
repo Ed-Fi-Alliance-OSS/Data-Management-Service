@@ -119,7 +119,7 @@ DDL generator requirements (derived from ApiSchema):
   - SQL Server:
     - concrete and abstract targets: emit `ON UPDATE NO ACTION`.
     - eligible propagation targets (abstract or concrete `allowIdentityUpdates=true`) are maintained by
-      `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table, fan-out referrer actions,
+      `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table, fan-out referrer actions,
       canonical/storage-column updates only).
 
 When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true` for concrete targets), the
@@ -146,7 +146,7 @@ The pieces fit together like this:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, SQL Server uses
-     `ON UPDATE NO ACTION` plus `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced identity
+     `ON UPDATE NO ACTION` plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced identity
      table. This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
@@ -257,7 +257,7 @@ fields alongside every document reference. Composite-FK update behavior is diale
 - PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`
   (`ON UPDATE NO ACTION` otherwise).
 - SQL Server: `ON UPDATE NO ACTION` for all reference composite FKs; eligible propagation uses
-  `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers.
+  `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers.
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -269,8 +269,8 @@ Engine considerations:
 - PostgreSQL supports “cycles or multiple cascade paths” for FK cascades.
 - SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs.
 - For eligible SQL Server propagation edges (abstract targets or concrete `allowIdentityUpdates=true` targets), derive
-  deterministic, set-based `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers that:
-  - fire on the referenced table (`DbTriggerInfo.TriggerTable`),
+  deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers that:
+  - fire on the referenced table (`DbTriggerInfo.Table`),
   - fan out to all impacted referrer tables (root and non-root reference sites), and
   - update **canonical/storage columns** only (never binding aliases).
 
@@ -492,7 +492,7 @@ When serving from `dms.DocumentCache`, treat a row as usable only if it is **fre
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
-Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
+Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
 
 A minimal projector approach:
 

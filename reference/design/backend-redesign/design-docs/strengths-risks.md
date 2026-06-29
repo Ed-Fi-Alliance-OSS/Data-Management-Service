@@ -64,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers for eligible edges), and
+- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible edges), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -81,7 +81,7 @@ Mitigations / guidance:
 
 SQL Server may reject FK graphs with “cycles or multiple cascade paths”. This is why the design does not use SQL Server update cascades for reference composite FKs. The DDL generator must:
 - emit `ON UPDATE NO ACTION` for all SQL Server reference composite FKs, and
-- emit deterministic, set-based `DbTriggerKind.MssqlIdentityPropagationTrigger` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
+- emit deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
 
 Risks:
 - extra trigger complexity,
