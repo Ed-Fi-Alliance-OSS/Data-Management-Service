@@ -638,7 +638,7 @@
       "Run: `rg -n \"\\\\.env\\\\.e2e\\\\.relational|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|Category[!]?=?@?relational-backend|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings(:|__)DeployDatabaseOnStartup|RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|/app/Installer|Backend\\\\.Installer\" AGENTS.md README.md GETTING_STARTED.md docs/DOCKER.md eng/docker-compose/README.md`",
       "Inspect remaining matches and confirm they are CMS-only or intentionally retained pending-support notes."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",

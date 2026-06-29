@@ -284,3 +284,10 @@
 - Files changed: InstanceManagement E2E README, tasks.json, progress.txt.
 - Verification: task rg returns only expected provision-e2e-database and shard-filter matches; no deleted installer/legacy flag/dms.document hits.
 - Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
+
+2026-06-29 - completed Documentation: root and Docker setup docs single backend path / remove-legacy-backend.md Phase 9
+- Root/Docker doc task verification already clean; no doc text changes needed.
+- Decision: keep existing single-backend/E2E command guidance in AGENTS, GETTING_STARTED, DOCKER, and compose README as source of truth.
+- Files changed: tasks.json, progress.txt.
+- Verification: task rg over AGENTS/README/GETTING_STARTED/docs/DOCKER/compose README clean.
+- Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
