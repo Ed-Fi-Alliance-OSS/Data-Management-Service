@@ -904,14 +904,9 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: Run DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
         id: e2e
         if: success()
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
           ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
@@ -1218,13 +1213,9 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: Run Instance Management E2E Tests
         if: success()
         env:
-          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
           DMS_API_URL: http://localhost:8080
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution

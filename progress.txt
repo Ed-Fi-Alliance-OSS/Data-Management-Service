@@ -333,3 +333,10 @@
 - Decision: keep PostgreSQL wait behavior for default/explicit postgresql; MSSQL startup skips it and reaches the DMS process without a PostgreSQL-shaped admin connection string.
 - Files changed: src/dms/run.sh, eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1, tasks.json, progress.txt.
 - Verification: bash -n and sh -n run.sh; task rg inspected gated pg_isready/admin connection refs; BootstrapSchemaAndSecuritySelection Pester passed 64; container smoke with AppSettings__Datastore=mssql skipped pg_isready and reached dotnet stub; git diff --check passed.
+
+2026-06-29 - completed Instance Management E2E: remove stale Kafka setup/CI/docs leftovers / remove-legacy-backend.md follow-up
+- Removed default -EnableKafkaUI from Instance E2E setup and output; DMS/Instance E2E CI no longer adds dms-kafka1 host or KAFKA_BOOTSTRAP_SERVERS; DMS E2E README no longer asks for Kafka host entry.
+- Guardrail now checks both DMS and Instance setup wrappers do not enable Kafka infra by default; Kafka remains only start-script opt-in.
+- Feedback-loop fix: InstanceE2ETest first rerun exposed stale ApiService tracked-change authorization constructor/UseRelationalBackend call; updated ApiService and matching unit-test helper to current two-arg middleware.
+- Files changed: Instance setup script, DMS E2E README, four workflows, BootstrapSchemaAndSecuritySelection Pester test, ApiService, ResourceActionAuthorizationMiddlewareTests, tasks.json, progress.txt.
+- Verification: task rg clean except explicit opt-in guardrails; PowerShell parser; yq/actionlint affected workflows; BootstrapSchemaAndSecuritySelection Pester passed 64; Core.Tests.Unit passed 2672; pwsh build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild passed 40/49 with 9 skipped; git diff --check passed.

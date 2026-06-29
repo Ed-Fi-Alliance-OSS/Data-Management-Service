@@ -743,7 +743,7 @@
       "Run the relevant Pester suite under `eng/docker-compose/tests` after adding or updating the guardrail.",
       "Run: `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Container Runtime",
