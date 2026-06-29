@@ -340,7 +340,7 @@
       "Run: `rg -n \"KafkaMessaging|KafkaMessageCollector|KafkaStepDefinitions|edfi\\\\.dms\\\\.document|to_debezium|publication\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
       "Run DMS E2E when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Legacy CDC",

@@ -135,3 +135,10 @@
 - Files changed: eng/docker-compose connector files deleted, eng/docker-compose/README.md, docker-compose Pester tests, RestClient local setup, tasks.json, progress.txt.
 - Verification: task rg over eng/docker-compose no matches; BootstrapSchemaAndSecuritySelection Pester passed 62; BootstrapSchemaDeploymentSafety Pester passed 93; git diff --check passed.
 - Notes: local compose startup not run to avoid mutating developer stack; next CDC tasks still need Kafka infra opt-in and DMS E2E Kafka helper deletion.
+
+2026-06-29 - completed Legacy CDC: delete DMS E2E Kafka helpers tied to legacy document-store topics and payloads / remove-legacy-backend.md Phase 4A
+- Deleted DMS KafkaMessaging feature, Kafka step definitions, Kafka collector/message helper, and removed Confluent.Kafka package; no shared non-CDC helper code remained.
+- Removed stale Kafka CDC cleanup delays from DMS E2E database reset helper.
+- Files changed: DMS E2E Kafka feature/step/management files, E2E csproj, ContainerSetupBase, tasks.json, progress.txt.
+- Verification: task rg returned no matches; csharpier format; DMS E2E project Release build passed with existing missing feature-codebehind warning; dotnet test --list-tests grep showed no Kafka tests; Category=kafka filter found zero tests; git diff --check passed.
+- Notes: full build-dms E2ETest command currently blocked by pending build-script/env-file lane cleanup because .env.e2e.relational no longer has USE_RELATIONAL_BACKEND but build-dms.ps1 still requires it for lane classification.
