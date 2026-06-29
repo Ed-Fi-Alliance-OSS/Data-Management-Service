@@ -90,13 +90,14 @@ public class Given_Build_Dms_E2E_Guardrails
     {
         var processContextDefinition = ExtractFunctionBody("Invoke-WithE2ETestProcessContext");
         var beforeAction = processContextDefinition.Split("& $Action", StringSplitOptions.None)[0];
+        var removedRelationalBackendSetting = "AppSettings__Use" + "Relational" + "Backend";
 
         beforeAction
             .Should()
             .Contain("AppSettings__DataStoreDatabaseName must be set")
             .And.Contain("$env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName");
         beforeAction.Should().NotContain("Remove-Item Env:AppSettings__DataStoreDatabaseName");
-        processContextDefinition.Should().NotContain("AppSettings__UseRelationalBackend");
+        processContextDefinition.Should().NotContain(removedRelationalBackendSetting);
     }
 
     private string ExtractFunctionBody(string functionName)

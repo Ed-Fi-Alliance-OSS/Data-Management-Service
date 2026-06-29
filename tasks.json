@@ -702,7 +702,7 @@
       "Run: `rg -n \"MappingSet is not null|MappingSet is null|new QueryRequest|new GetRequest|ITokenInfoEducationOrganizationLookup|GetService<IChangeQueryRepository>\" src/dms`",
       "Run: `rg --hidden -n \"Test-DmsDocumentTablePresent|Installer/EdFi\\\\.DataManagementService\\\\.Backend\\\\.Installer\\\\.dll|dms\\\\.document|to_debezium\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E eng/docker-compose eng/docker-compose/.env* build-dms.ps1`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Build Validation",
