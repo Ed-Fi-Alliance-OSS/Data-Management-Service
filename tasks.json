@@ -681,7 +681,7 @@
       "Run: `dotnet csharpier format src/dms`",
       "Run: `git diff --check`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Static Validation",
