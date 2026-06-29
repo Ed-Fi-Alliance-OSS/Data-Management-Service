@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
@@ -87,17 +86,13 @@ RunBootstrapPhase(
 
         if (useReverseProxyHeaders)
         {
-            builder.Services.Configure<ForwardedHeadersOptions>(options =>
-            {
-                options.ForwardedHeaders =
-                    ForwardedHeaders.XForwardedFor
-                    | ForwardedHeaders.XForwardedHost
-                    | ForwardedHeaders.XForwardedProto;
+            var reverseProxySettings =
+                builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
+                ?? new ReverseProxySettings();
 
-                // Accept forwarded headers from any network and proxy
-                options.KnownIPNetworks.Clear();
-                options.KnownProxies.Clear();
-            });
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+                ForwardedHeadersConfigurator.Configure(options, reverseProxySettings)
+            );
         }
 
         // Add CORS policy to allow Swagger UI to access the API
@@ -247,6 +242,7 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {
