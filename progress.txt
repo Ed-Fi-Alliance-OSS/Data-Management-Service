@@ -378,3 +378,9 @@
 - Kept EducationOrganizationSecurityElementPath as active securable metadata for AuthorizationSecurableExtractor; ed-org hierarchy middleware now reads schema/body directly.
 - Files changed: ApiService, core/backend request contracts/handlers, RequestInfo/No, ResourceSchema, RelationalDocumentStoreRepository comment, deleted legacy middleware/extractor/tests, backend integration request construction, tasks.json, progress.txt.
 - Verification: legacy symbol rg clean; csharpier format; Core.Tests.Unit Release passed 2560; Backend.Tests.Unit Release --no-build passed 1829; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Runtime Wiring: remove duplicate relationship authorization registration / remove-legacy-backend.md cleanup
+- Removed frontend AddRelationalRelationshipAuthorizationServices call; AddReferenceResolver remains single owner through PostgreSQL/MSSQL reference resolver composition.
+- Added frontend datastore assertions that PostgreSQL and MSSQL still resolve RelationalEdOrgAuthorizationElementResolutionCache and RelationalEdOrgAuthorizationSubjectSelector.
+- Files changed: WebApplicationBuilderExtensions, WebApplicationBuilderExtensionsTests, tasks.json, progress.txt.
+- Verification: csharpier format; task rg shows no frontend duplicate; Frontend.AspNetCore.Tests.Unit Release passed 192; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
