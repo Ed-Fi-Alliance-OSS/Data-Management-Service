@@ -32,6 +32,10 @@ services:
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
+      # Trusted reverse-proxy sources honored when UseReverseProxyHeaders is true (comma-separated).
+      # Leave empty to trust loopback only. KnownProxies: exact IPs; KnownNetworks: CIDR ranges.
+      AppSettings__ReverseProxy__KnownProxies: ${DMS_CONFIG_REVERSE_PROXY_KNOWN_PROXIES:-}
+      AppSettings__ReverseProxy__KnownNetworks: ${DMS_CONFIG_REVERSE_PROXY_KNOWN_NETWORKS:-}
       ClaimsOptions__ClaimsSource: ${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}
       ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
       ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
