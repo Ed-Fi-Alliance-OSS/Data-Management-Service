@@ -592,7 +592,7 @@
       "Run: `rg -n \"Run Old PostgreSQL Integration Tests|relational-backend|relational-ci-shard|Relational E2E|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational\" .github/workflows/on-dms-pullrequest.yml .github/workflows/nightly-keycloak-e2e.yml .github/workflows/scheduled-build.yml .github/workflows/scheduled-pre-image-test.yml .github/workflows/scheduled-smoke-test.yml`",
       "Review the DMS E2E workflow commands and confirm only neutral E2E shard filters remain."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI",
