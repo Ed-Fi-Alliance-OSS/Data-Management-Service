@@ -24,12 +24,11 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// throws (a 500), and read/stored traversal misclassifies the <c>_ext</c> member.
 /// </para>
 /// <para>
-/// Canonicalizing once, at the profile-load seam, keeps every downstream consumer
+/// Canonicalizing once when profiles load keeps every downstream consumer
 /// (<see cref="ContentTypeScopeDiscovery"/>, <see cref="ProfileTreeNavigator"/>,
 /// <see cref="WritableRequestShaper"/>, <see cref="StoredBodyShaper"/>,
-/// <see cref="StoredSideExistenceLookupBuilder"/>, <see cref="ReadableProfileProjector"/>,
-/// and <see cref="ProfileResponseFilter"/>) aligned on the canonical key without each
-/// having to be schema-aware.
+/// <see cref="StoredSideExistenceLookupBuilder"/>, and <see cref="ReadableProfileProjector"/>)
+/// aligned on the canonical key without each having to be schema-aware.
 /// </para>
 /// <para>
 /// Resolution is <em>location-aware</em>: each extension rule is matched against the
