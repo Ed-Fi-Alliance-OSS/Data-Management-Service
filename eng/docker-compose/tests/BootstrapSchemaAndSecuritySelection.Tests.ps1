@@ -1586,12 +1586,17 @@ exit 0
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
         }
 
-        It "DataManagementService E2E setup does not enable Kafka infrastructure by default" {
-            $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+        It "E2E setup scripts do not enable Kafka infrastructure by default" {
+            foreach ($setupScript in @(
+                "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1",
+                "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+            )) {
+                $setup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot $setupScript) -Raw
 
-            $dmsSetup | Should -Match "start-local-dms\.ps1"
-            $dmsSetup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafka"
-            $dmsSetup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafkaUI"
+                $setup | Should -Match "start-local-dms\.ps1"
+                $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafka"
+                $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafkaUI"
+            }
         }
 
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {

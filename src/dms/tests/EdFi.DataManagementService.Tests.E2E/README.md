@@ -24,7 +24,6 @@ From the repository root:
   `pwsh eng/docker-compose/start-local-dms.ps1 -d -v` to stop services and
   delete volumes
 - Run `pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`
-- You must have the following hosts entry to run kafka tests: `127.0.0.1 dms-kafka1`
 
 ### Testing locally with API in debug mode
 

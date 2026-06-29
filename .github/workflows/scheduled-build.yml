@@ -79,9 +79,6 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: Run DMS End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
         id: e2e
         if: success()

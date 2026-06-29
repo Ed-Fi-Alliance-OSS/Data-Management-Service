@@ -86,7 +86,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance, true);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static RequestInfo CreateRequestInfo(
