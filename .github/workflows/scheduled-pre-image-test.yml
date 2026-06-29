@@ -51,7 +51,7 @@ jobs:
         id: relational_e2e
         if: success()
         continue-on-error: true
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'
+        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational'
 
       - name: Export Relational Docker Logs
         if: always() && steps.relational_e2e.outcome == 'failure'

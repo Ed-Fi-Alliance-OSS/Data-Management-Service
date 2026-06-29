@@ -13,8 +13,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
                   | uri://ed-fi.org/ProgramTypeDescriptor#Bilingual                                |
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Deleted AcademicWeek appears in deletes response with composite key
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -55,8 +54,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.schoolId" should have value "920200001"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Deleted AcademicSubjectDescriptor appears in deletes response
              When a POST request is made to "/ed-fi/academicSubjectDescriptors" with
                   """
@@ -85,8 +83,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.codeValue" should have value "Tracked Delete Subject"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         @reset-data-before-scenario
         Scenario: 03 Deleted AssessmentPeriodDescriptor appears in deletes response
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -118,8 +115,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.codeValue" should have value "To Be Deleted"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Course full lifecycle then delete appears in deletes response
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -164,8 +160,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.educationOrganizationId" should have value "920200004"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 LocalEducationAgency delete appears in deletes response
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -193,8 +188,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.localEducationAgencyId" should have value "920200500"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         @reset-data-before-scenario
         Scenario: 06 Deleted StaffEducationOrganizationEmploymentAssociation appears with descriptor and staff natural key
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901,255901001"
@@ -257,8 +251,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.hireDate" should have value "2021-01-01"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Deleted Staff person resource appears in deletes response
              When a POST request is made to "/ed-fi/staffs" with
                   """
@@ -285,8 +278,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.staffUniqueId" should have value "TRACK-STAFF-2"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Program deleted, recreated, and deleted again yields two tracked-delete rows
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -347,8 +339,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "1.keyValues.educationOrganizationId" should have value "920200008"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Deletes response filters by maxChangeVersion only
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
@@ -374,8 +365,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.schoolId" should have value "920200009"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         # NOTE: Expected body copied verbatim from DMS's actual ProblemDetails response. DMS reports
         # invalid limit/offset as a generic bad-request (not parameter-validation-failed), lists Offset
         # before Limit, and phrases the bounds as "numeric value between 0 and 500".
@@ -399,8 +389,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
                   """
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 11 Deletes request for an unknown resource returns 404
              When a GET request is made to "/ed-fi/nonExistingResources/deletes"
              Then it should respond with 404
@@ -418,8 +407,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
                   """
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 12 Registered then deleted Student appears in deletes response
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -470,8 +458,7 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
               And the response body path "0.keyValues.studentUniqueId" should have value "TRACK-STU-REG"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13 Unregistered deleted Student is not returned in deletes response
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a POST request is made to "/ed-fi/students" with

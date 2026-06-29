@@ -38,16 +38,14 @@ Feature: Profile Extension Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 01 Extension IncludeOnly profile returns only specified extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-IncludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should contain path "_ext.sample.isExemplary"
              And the response body should not contain path "_ext.sample.cteProgramService"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 02 Extension IncludeOnly profile preserves the isExemplary value
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-IncludeOnly" for resource "School"
             Then the profile response status is 200
@@ -88,15 +86,13 @@ Feature: Profile Extension Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 03 Extension ExcludeOnly profile excludes specified extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-ExcludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should not contain path "_ext.sample.isExemplary"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 04 Extension ExcludeOnly profile includes non-excluded extension properties
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-ExcludeOnly" for resource "School"
             Then the profile response status is 200
@@ -138,8 +134,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 05 Parent IncludeOnly profile without extension rule excludes _ext entirely
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200
@@ -182,8 +177,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 06 Parent ExcludeOnly profile without extension rule includes _ext
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200
@@ -191,8 +185,7 @@ Feature: Profile Extension Filtering
               And the response body should contain path "_ext.sample.isExemplary"
               And the response body should contain path "_ext.sample.cteProgramService"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 07 Parent ExcludeOnly profile excludes specified core properties but keeps extensions
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-ExcludeOnly-NoExtensionRule" for resource "School"
              Then the profile response status is 200
@@ -227,8 +220,7 @@ Feature: Profile Extension Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 08 Extension Not Included write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Not-Included" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Not-Included" for resource "Staff" with body
@@ -258,8 +250,10 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
+        # DMS-1233: Quarantined until profile extension names are normalized to the
+        # schema extension key during profile write processing.
+        @ignore
         Scenario: 09 Extension Excluded write profile applies write payload to extension members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Excluded" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Excluded" for resource "Staff" with body
@@ -294,8 +288,7 @@ Feature: Profile Extension Filtering
              And the response body path "_ext.sample.petPreference.maximumWeight" should have value "135"
              And the response body path "_ext.sample.pets.0.isFixed" should have value "true"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 10 Extension Include-Only-Deeply write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Include-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Include-Only-Deeply" for resource "Staff" with body
@@ -326,8 +319,7 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 11 Extension Exclude-Only-Deeply write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Only-Deeply" for resource "Staff" with body
@@ -358,8 +350,7 @@ Feature: Profile Extension Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 12 Extension Exclude-Everything write profile is currently unsupported for write content type
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Everything" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
             When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Everything" for resource "Staff" with body

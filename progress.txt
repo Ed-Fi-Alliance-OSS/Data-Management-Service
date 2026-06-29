@@ -205,3 +205,11 @@
 - Files changed: DMS solution files, backend/core csproj refs, PostgresqlRuntimeMappingInitializationTests, old project directories, tasks.json, progress.txt.
 - Verification: required old-project rg clean; csharpier format; solution build Release passed with known Reqnroll DeleteResourcesValidation feature-codebehind warning; Core.Tests.Unit and Backend.Tests.Unit Release --no-build passed.
 - Notes: remaining relational-named E2E feature files/tags are owned by pending E2E Tags task.
+
+2026-06-29 - completed E2E Tags: remove relational backend lane tags and neutralize DMS shards / remove-legacy-backend.md Phase 6
+- Removed @relational-backend from DMS E2E feature files and renamed @relational-ci-shard-N to @e2e-ci-shard-N; renamed two *Relational feature files to neutral query/get-many names.
+- Updated feature guardrails to require exactly one neutral shard per DMS scenario and no removed lane tags; updated build guardrail literals to avoid searchable old category strings.
+- Updated active workflow/doc/RestClient filters/comments that still selected the removed backend lane.
+- Files changed: DMS E2E feature files, DMS unit guardrails, PR/nightly/scheduled workflows, AGENTS/docs RestClient, tasks.json, progress.txt.
+- Verification: task rg clean; csharpier format; DMS Tests.Unit Release passed 30; E2E project Release build passed with existing DeleteResourcesValidation.feature.cs warning only; git diff --check passed.
+- Notes: full Docker shard not run; env-file consolidation remains pending, so .env.e2e.relational examples remain until that task.

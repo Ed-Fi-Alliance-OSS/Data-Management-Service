@@ -14,8 +14,7 @@ Feature: Data strictness
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @API-236
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients can create a resource using numeric 0 for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -41,8 +40,7 @@ Feature: Data strictness
                   """
 
         @API-237
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients can update a resource using numeric 1 for booleans
             Given a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -79,8 +77,7 @@ Feature: Data strictness
                   """
 
         @API-238
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 Ensure clients cannot create a resource using incorrect numeric values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -111,8 +108,7 @@ Feature: Data strictness
                   """
 
         @API-239
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Ensure clients cannot create a resource using incorrect numeric string values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -143,8 +139,7 @@ Feature: Data strictness
                   """
 
         @API-240
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Ensure clients can create a resource using expected booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -159,8 +154,7 @@ Feature: Data strictness
              Then it should respond with 201
 
         @API-241
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Ensure clients can update a resource using expected booleans
             Given a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -186,8 +180,7 @@ Feature: Data strictness
              Then it should respond with 204
 
         @API-242
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 10 Ensure clients can create a resource using expected booleans as string
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -213,8 +206,7 @@ Feature: Data strictness
                   """
 
         @API-243
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 11 Ensure clients can update a resource using expected booleans as strings
             Given a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -251,8 +243,7 @@ Feature: Data strictness
                   """
 
         @API-244
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 12 Ensure clients can create a resource using numeric string 1 for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -278,8 +269,7 @@ Feature: Data strictness
                   """
 
         @API-245
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13 Ensure clients can update a resource using numeric string 0 for booleans
             Given a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -316,8 +306,7 @@ Feature: Data strictness
                   """
 
         @API-246
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14 Ensure clients cannot update a resource that is using a different value type than boolean
             Given a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -360,8 +349,7 @@ Feature: Data strictness
 
 
         @API-248
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 16 Enforce case sensitivity of property names in POST request bodies.
              # Uppercase GRADELEVELS
              When a POST request is made to "/ed-fi/schools" with
@@ -384,8 +372,7 @@ Feature: Data strictness
              Then it should respond with 400
 
         @API-249
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 17 Enforce case sensitivity of property names in PUT request bodies.
              # Uppercase GRADELEVELS
              When a POST request is made to "/ed-fi/schools/{id}" with
@@ -409,8 +396,7 @@ Feature: Data strictness
              Then it should respond with 400
 
         @API-255
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 18 Accept missing time in a POST request with a datetime property
             Given a POST request is made to "/ed-fi/assessments" with
                   """
@@ -479,8 +465,7 @@ Feature: Data strictness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 19 Accept missing time in a POST request with a datetime property with slashes
             Given a POST request is made to "/ed-fi/assessments" with
                   """
@@ -549,8 +534,7 @@ Feature: Data strictness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 20 Accept time with AM PM And Convert To UTC ISO8601 in a POST request
             Given a POST request is made to "/ed-fi/assessments" with
                   """
@@ -619,8 +603,7 @@ Feature: Data strictness
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 21 accept time without zone and it will be added automatically
             Given a POST request is made to "/ed-fi/assessments" with
                   """

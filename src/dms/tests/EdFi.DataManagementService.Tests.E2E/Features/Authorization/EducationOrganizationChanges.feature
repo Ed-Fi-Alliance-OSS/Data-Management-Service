@@ -33,8 +33,7 @@ Feature: EducationOrganizationChanges Authorization
                   | staffSchoolAssociationId1   | { "staffUniqueId": "s0001" } | { "schoolId": 255901001 } | "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education" |
 
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 Ensure client can access the Student ,the Contact and the Staff with a  Grand Bend ISD School 255901
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a GET request is made to "/ed-fi/schools/{SchoolId1}"
@@ -77,8 +76,7 @@ Feature: EducationOrganizationChanges Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 02 Ensure client can't access the Student anymore when a School gets updated to a different LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -153,8 +151,7 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 Ensure client can't access the  Contact anymore when a student  gets updated to a different school
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a POST request is made to "/ed-fi/schools" with
@@ -217,8 +214,7 @@ Feature: EducationOrganizationChanges Authorization
                    []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 Ensure client can't access the  Staffs anymore when a staff gets updated to a different school
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/staffSchoolAssociations/{staffSchoolAssociationId1}" with
@@ -293,8 +289,7 @@ Feature: EducationOrganizationChanges Authorization
                   | _storeResultingIdInVariable | staffReference               | schoolReference           | programAssignmentDescriptor                                     |
                   | staffSchoolAssociationId1   | { "staffUniqueId": "s0001" } | { "schoolId": 255901001 } | "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education" |
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 Ensure client can't access the Student anymore when a School updated to remove LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -340,8 +335,7 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06 Ensure client can't access the Contact anymore when a School updated to remove LEA
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
@@ -388,8 +382,7 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Ensure client can't access the staff anymore when a School updated to remove LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -456,8 +449,7 @@ Feature: EducationOrganizationChanges Authorization
                   | _storeResultingIdInVariable | staffUniqueId | firstName | lastSurname |
                   | StaffId1                    | s0001         | peterson  | Buck        |
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 08 Ensure client can  access the Student  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -511,8 +503,7 @@ Feature: EducationOrganizationChanges Authorization
                       }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 09 Ensure client can  access the contact  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -578,8 +569,7 @@ Feature: EducationOrganizationChanges Authorization
                       "contactUniqueId": "91111"
                   }
                   """
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 10 Ensure client can  access the staff  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with

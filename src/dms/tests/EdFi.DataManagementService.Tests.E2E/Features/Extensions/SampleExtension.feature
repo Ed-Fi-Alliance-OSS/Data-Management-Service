@@ -14,8 +14,7 @@ Feature: Sample extension resources
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 01 Required Field Validation Errors for busRoutes Resource
              When a POST request is made to "/sample/busRoutes" with
                   """
@@ -63,8 +62,7 @@ Feature: Sample extension resources
                       }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 02 Creating New busRoutes Resource
              When a POST request is made to "/sample/busRoutes" with
                   """
@@ -98,8 +96,7 @@ Feature: Sample extension resources
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 03 Get by ID for busRoutes Resource
             Given a POST request is made to "/sample/busRoutes" with
                   """
@@ -164,8 +161,7 @@ Feature: Sample extension resources
                         }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 04 Delete by ID for busRoutes Resource
             Given a POST request is made to "/sample/busRoutes" with
                   """
@@ -209,8 +205,7 @@ Feature: Sample extension resources
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                 |
                   | uri://ed-fi.org/CTEProgramServiceDescriptor#Architecture and Construction          |
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 05 Existing Core Entity School and Sample Extension with Missing CTEProgramServiceDescriptor Field
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -253,8 +248,7 @@ Feature: Sample extension resources
                       }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 06 Existing Core Entity School and Sample Extension with CTEProgramServiceDescriptor Field
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -283,8 +277,7 @@ Feature: Sample extension resources
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 07 Get by ID for Core Entity School and Sample Extension with CTEProgramServiceDescriptor Field
             Given a POST request is made to "/ed-fi/schools" with
                   """
@@ -340,8 +333,7 @@ Feature: Sample extension resources
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 08 Delete by ID for busRoutes Resource
             Given a POST request is made to "/ed-fi/schools" with
                   """
@@ -371,8 +363,7 @@ Feature: Sample extension resources
              When a DELETE request is made to "/ed-fi/schools/{id}"
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 09 Extension Values Should Become Null if the Sample Extension is Not Specified
             Given a POST request is made to "/sample/buses" with
                   """
@@ -480,8 +471,7 @@ Feature: Sample extension resources
                   """
 
     Rule: busRoutes scenarios
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 10 Create Staff with Duplicate Extension Items
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
@@ -531,8 +521,7 @@ Feature: Sample extension resources
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 11 Data Validation with Staff when petName has leading or trailing spaces
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
@@ -573,8 +562,7 @@ Feature: Sample extension resources
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 12 Data Validation with Staff when Pet name has too short value
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
@@ -615,8 +603,7 @@ Feature: Sample extension resources
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 13 Data Validation with Staff when Pet name has too long value
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with

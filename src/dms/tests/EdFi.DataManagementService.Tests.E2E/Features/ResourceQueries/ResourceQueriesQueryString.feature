@@ -19,8 +19,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   | studentReference                | assessmentReference                                                                              | administrationDate     | studentAssessmentIdentifier |
                   | { "studentUniqueId": "unique" } | {"assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2", "namespace": "Assessment.xml" } | "2021-09-28T00:10:00Z" | studentAssessmentIdentifier |
 
-        @API-124 @relational-backend
-        @relational-ci-shard-4
+        @API-124
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients can GET information when querying by valid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15"
              Then it should respond with 200
@@ -38,8 +38,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-124 @relational-backend
-        @relational-ci-shard-4
+        @API-124
+        @e2e-ci-shard-4
         Scenario: 01.1 Ensure clients can GET information when querying by valid datetime ignoring time
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15T17:30:00.000000Z"
              Then it should respond with 200
@@ -57,8 +57,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-125 @relational-backend
-        @relational-ci-shard-4
+        @API-125
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=099-99-09"
              Then it should respond with 400
@@ -77,8 +77,8 @@ Feature: Query String handling for GET requests for Resource Queries
                    }
                   """
 
-        @API-126 @relational-backend
-        @relational-ci-shard-4
+        @API-126
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients can't GET information when querying by a word
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=word"
              Then it should respond with 400
@@ -97,8 +97,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }
                   """
 
-        @API-127 @relational-backend
-        @relational-ci-shard-4
+        @API-127
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients can't GET information when querying by wrong begin date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
@@ -107,8 +107,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @API-128 @relational-backend
-        @relational-ci-shard-4
+        @API-128
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients can't GET information when querying by correct begin date and wrong end date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15&endDate=2025-06-23"
              Then it should respond with 200
@@ -117,8 +117,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @API-129 @relational-backend
-        @relational-ci-shard-4
+        @API-129
+        @e2e-ci-shard-4
         Scenario: 06 Ensure clients can GET information when querying by string parameter
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200
@@ -136,8 +136,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-130 @relational-backend
-        @relational-ci-shard-4
+        @API-130
+        @e2e-ci-shard-4
         Scenario: 07 Ensure clients can GET information when querying by integer parameter
              When a GET request is made to "/ed-fi/academicWeeks?totalInstructionalDays=2"
              Then it should respond with 200
@@ -155,8 +155,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-131 @relational-backend
-        @relational-ci-shard-4
+        @API-131
+        @e2e-ci-shard-4
         Scenario: 08 Ensure clients can GET information when querying with mixed case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIdentifier=Week+One"
              Then it should respond with 200
@@ -174,8 +174,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-132 @relational-backend
-        @relational-ci-shard-4
+        @API-132
+        @e2e-ci-shard-4
         Scenario: 09 Ensure clients can GET information when querying with lower case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?weekidentifier=Week+One"
              Then it should respond with 200
@@ -193,8 +193,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-133 @relational-backend
-        @relational-ci-shard-4
+        @API-133
+        @e2e-ci-shard-4
         Scenario: 10 Ensure clients can GET information when querying with upper case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFIER=Week+One"
              Then it should respond with 200
@@ -212,8 +212,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13 Ensure clients get empty array when querying datetime with no time component and no midnight match
              When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28"
              Then it should respond with 200
@@ -222,8 +221,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14 Ensure clients get correct results when querying datetime with time component
              When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28T00:10:00Z"
              Then it should respond with 200
@@ -245,8 +243,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 15 Ensure clients get midnight results when querying without a time component
             Given a POST request is made to "/ed-fi/studentAssessments" with
                   """
@@ -279,8 +276,7 @@ Feature: Query String handling for GET requests for Resource Queries
                     }]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 16 Ensure clients get results when querying boolean with capitalized values
             Given a POST request is made to "/ed-fi/schoolYearTypes" with
                   """
@@ -302,8 +298,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 17 Ensure clients can GET information when querying by value in a document reference
              When a GET request is made to "/ed-fi/academicWeeks?schoolId=2"
              Then it should respond with 200

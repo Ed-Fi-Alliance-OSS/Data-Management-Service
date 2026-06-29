@@ -13,8 +13,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure client can create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -44,8 +43,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 201 or 200
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Ensure client can update a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -133,8 +131,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Ensure client can not create a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -189,8 +186,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure client can not update a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -269,8 +265,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Ensure client can get the bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -327,8 +322,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                        }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Ensure client can delete a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -367,8 +361,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Ensure client can not get the bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -415,8 +408,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
               And the response body has a non-empty correlationId
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 10 Ensure client can not delete a bellschedule with 255901001
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -467,8 +459,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference           | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 255901001 } | 2023-08-01 | 2023-08-07 | 5                      |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 11 Ensure client with access to school 255901001 gets query results for classPeriods
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
@@ -488,8 +479,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 12 Ensure client with access to school 255901222 does not get query results for classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
              When a GET request is made to "/ed-fi/academicWeeks"
@@ -525,8 +515,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.1 Ensure client with access to state education agency 2 can post and put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -557,8 +546,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.2 Ensure client with access to state education agency 3 can not post or put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -589,8 +577,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
               And the response body has a non-empty correlationId
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.3 Ensure client with access to state education agency 3 can not put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a PUT request is made to "/ed-fi/academicWeeks/{id}" with
@@ -608,8 +595,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 403
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.4 Ensure client with access to state education agency 2 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=week 1"
@@ -630,8 +616,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.5 Ensure client with access to state education agency 2 can get by id school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
@@ -650,8 +635,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 13.6 Ensure client with access to state education agency 2 can delete school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
@@ -690,8 +674,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14.1 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies"
@@ -701,8 +684,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   [
                   ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14.2 Ensure client with access to school 20101 cannot get by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies/{id}"
@@ -721,8 +703,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
               And the response body has a non-empty correlationId
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14.3 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a DELETE request is made to "/ed-fi/localEducationAgencies/{id}"
@@ -741,8 +722,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
               And the response body has a non-empty correlationId
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14.4 Ensure client with access to school 20202 cannot PUT LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a PUT request is made to "/ed-fi/localEducationAgencies/{id}" with
@@ -795,8 +775,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference             | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 30101999999 } | 2023-08-01 | 2023-08-07 | 5                      |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 19 Ensure client with access to state education agency 3 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a GET request is made to "/ed-fi/academicWeeks"
@@ -825,8 +804,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency        |
                   | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 20 Ensure client can create an LEA
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -843,8 +821,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 201
                   
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 21 Ensure client can retrieve an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -879,8 +856,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 22 Ensure client can only query authorized LEAs
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -917,8 +893,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 23 Ensure client can update an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -952,8 +927,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 24 Ensure client can delete an LEA
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """

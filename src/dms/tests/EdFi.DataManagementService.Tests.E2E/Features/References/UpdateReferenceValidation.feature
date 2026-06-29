@@ -17,8 +17,7 @@ Feature: Update Reference Validation
                   | 2022       | true              | 2021-2022             |
 
         @API-110
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                             |
@@ -55,8 +54,8 @@ Feature: Update Reference Validation
                   }
                   """
 
-        @API-111 @relational-backend
-        @relational-ci-shard-4
+        @API-111
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients cannot update a resource missing a direct reference
             Given the system has these "studentEducationOrganizationAssociations" references
                   | educationOrganizationReference     | studentReference             |
@@ -88,8 +87,8 @@ Feature: Update Reference Validation
                   }
                   """
 
-        @API-112 @relational-backend
-        @relational-ci-shard-4
+        @API-112
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients cannot update a resource using a wrong reference
             Given the system has these "Staffs" references
                   | staffUniqueId | firstName | lastSurname |
@@ -128,8 +127,8 @@ Feature: Update Reference Validation
                   }
                   """
 
-        @API-113 @relational-backend
-        @relational-ci-shard-4
+        @API-113
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor                                                | educationOrganizationReference     | graduationSchoolYearTypeReference | totalRequiredCredits |
@@ -163,8 +162,7 @@ Feature: Update Reference Validation
                   """
 
         @API-114
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients cannot update a resource with an unresolved identifying deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |
@@ -217,8 +215,7 @@ Feature: Update Reference Validation
                   """
 
         @API-265
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 Ensure clients cannot update a resource with an unresolved non-identifying deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |

@@ -5,8 +5,7 @@ Feature: SchoolYearType resource
 
     Rule: SchoolYearType resource
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients can create/update/get/delete a schoolYearTypes resource
       # POST request to create a school
              When a POST request is made to "/ed-fi/schoolYearTypes/" with

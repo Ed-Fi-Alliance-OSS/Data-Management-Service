@@ -26,8 +26,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: StudentContactAssociation CRUD is properly authorized
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 01 Ensure client can create a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -53,8 +52,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 02 Ensure client can retrieve a StudentContactAssociation
             Given a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -72,8 +70,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a GET request is made to "/ed-fi/studentContactAssociations/{id}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 03 Ensure client can not create a StudentContactAssociation with wrong educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
@@ -103,8 +100,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 04 Ensure client can not get StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -136,8 +132,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 05 Ensure client can not search StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -160,8 +155,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      []
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 06 Ensure client can update a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -201,8 +195,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 07 Ensure client can not update a StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -256,8 +249,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 08 Ensure client can delete a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -275,8 +267,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a DELETE request is made to "/ed-fi/studentContactAssociations/{id}"
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 09 Ensure client can not delete a StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -308,8 +299,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 10 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "25590190200000"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
@@ -341,8 +331,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: Contact CRUD is properly authorized
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 11 Ensure client can create a Contact
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -370,8 +359,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 12 Ensure client can not retrieve a contact with out student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -398,8 +386,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 13 Ensure client can not update a contact when it's unassociated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
@@ -450,8 +437,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 14 Ensure client can delete a contact when it's unused and should return 204 nocontent
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -465,8 +451,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a DELETE request is made to "/ed-fi/contacts/{id}"
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 15 Ensure client can not delete a contact when it's associated with a student
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -505,8 +490,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 16 Ensure client can retrieve a contact with student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -543,8 +527,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 17 Ensure client can not update a contact When it's unassociated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
@@ -596,8 +579,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 18 Ensure client can update a contact When it's associated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
@@ -649,8 +631,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 19 Ensure client can not update a contact with wrong educationOrganizationId
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
@@ -716,8 +697,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 20 Ensure client should get 403 When associating a nonexistent student
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -756,8 +736,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: Associate more than one students with a contact
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 21 Ensure client can retrieve the contact using any associated student's edorg id when associated with multiple students
 
              When a POST request is made to "/ed-fi/contacts" with
@@ -837,8 +816,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901904 } | { "studentUniqueId": "S91114" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 22 Ensure client can retrieve only the associated contacts using student's edorg id
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -918,8 +896,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
     Rule: Edge cases are properly authorized
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 50 Ensure client can retrieve a Contact after an SSA has been created
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002, 1255901003"
@@ -1056,8 +1033,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 51 Ensure client can no longer retrieve a Contact after the SSA has been deleted
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1355901001, 1355901002, 1355901003"
@@ -1195,8 +1171,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 52 Ensure client can retrieve a Contact after the SSA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1455901001"
@@ -1276,8 +1251,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 53 Ensure client can retrieve a Contact after the SSA has been updated to a new School
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1555901001, 1555901002, 1555901003"
@@ -1423,8 +1397,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 54 Ensure client can retrieve a Contact after the SSA has been updated to a new Student
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1655901001"
@@ -1566,8 +1539,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 55 Ensure client can retrieve a Contact after the SCA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1755901001, 1755901002, 1755901003"

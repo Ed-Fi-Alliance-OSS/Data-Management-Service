@@ -1,7 +1,7 @@
 Feature: The Discovery API provides information about the application version, supported data model(s), and URLs for additional metadata.
 
-        @API-062 @relational-backend
-        @relational-ci-shard-4
+        @API-062
+        @e2e-ci-shard-4
         Scenario: 01 GET / returns the root Discovery API document
              When a GET request is made to "/"
              Then it should respond with 200
@@ -44,8 +44,7 @@ Feature: The Discovery API provides information about the application version, s
                   """
 
         @API-063
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 GET /metadata returns the metadata URL list
              When a GET request is made to "/metadata"
              Then it should respond with 200
@@ -59,8 +58,7 @@ Feature: The Discovery API provides information about the application version, s
                   """
 
         @API-064
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 GET /metadata/specifications returns the list of supported API specifications
              When a GET request is made to "/metadata/specifications"
              Then it should respond with 200
@@ -325,8 +323,7 @@ Feature: The Discovery API provides information about the application version, s
                   ]
                   """
         @API-065
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 GET /metadata/dependencies returns the dependency order for loading documents
              When a GET request is made to "/metadata/dependencies"
              Then it should respond with 200

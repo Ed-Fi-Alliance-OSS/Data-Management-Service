@@ -30,16 +30,14 @@ Feature: Profile Undefined and Misconfigured Usage
                   """
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 GET with undefined profile returns 406
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.profile-does-not-exist.readable+json"
             Then the profile response status is 406
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 02 POST with undefined profile returns 415
             When a POST request is made to "/ed-fi/schools" with profile "Profile-Does-Not-Exist" for resource "School" with body
                   """
@@ -62,8 +60,7 @@ Feature: Profile Undefined and Misconfigured Usage
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 PUT with undefined profile returns 415
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Profile-Does-Not-Exist" for resource "School" with body
                   """
@@ -116,8 +113,7 @@ Feature: Profile Undefined and Misconfigured Usage
                   """
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 GET with misconfigured resource profile returns 406
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Resource" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.test-profile-with-unexisting-resource.readable+json"
@@ -125,8 +121,7 @@ Feature: Profile Undefined and Misconfigured Usage
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 POST with misconfigured property profile returns 406
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Property" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-With-Unexisting-Property" for resource "School" with body

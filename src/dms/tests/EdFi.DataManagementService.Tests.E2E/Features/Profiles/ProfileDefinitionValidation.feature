@@ -5,8 +5,7 @@ Feature: Profile Definition Validation
 
     Rule: Profiles with non-existent resource names are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 01 Profile referencing non-existent resource is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NonExistentResource" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -35,8 +34,7 @@ Feature: Profile Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
     Rule: Profiles with non-existent properties in IncludeOnly mode are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 02 Profile with invalid IncludeOnly property is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyProperty" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -65,8 +63,7 @@ Feature: Profile Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
     Rule: Profiles with non-existent objects in IncludeOnly mode are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 03 Profile with invalid IncludeOnly nested object is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyObject" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -95,8 +92,7 @@ Feature: Profile Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
     Rule: Profiles with non-existent collections in IncludeOnly mode are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 04 Profile with invalid IncludeOnly collection is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyCollection" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -125,8 +121,7 @@ Feature: Profile Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
     Rule: Profiles with non-existent extension properties in IncludeOnly mode are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 05 Profile with invalid IncludeOnly extension property is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-ExtensionProperty" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
               And the system has these descriptors
@@ -155,8 +150,7 @@ Feature: Profile Definition Validation
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
     Rule: Profiles with ExcludeOnly excluding identity members produce warnings but are loaded
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 06 Profile with ExcludeOnly excluding identity member is loaded with warning
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Warning-ExcludeIdentity" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -185,8 +179,7 @@ Feature: Profile Definition Validation
               And the response body should contain fields "schoolId"
     Rule: Profiles with nested invalid properties in collections are rejected
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 07 Profile with invalid property in nested collection is not loaded
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NestedCollectionProperty" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors

@@ -17,7 +17,7 @@
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=ValidClientSecret1234567890!Abcd
 
-# Relational DB + password match eng/docker-compose/.env.e2e.relational.
+# DMS E2E DB + password match eng/docker-compose/.env.e2e.relational.
 @relationalDbName=edfi_datamanagementservice_relational
 @postgresPassword=abcdefgh1!
 
@@ -80,7 +80,7 @@ Authorization: bearer {{configToken}}
 @dataStoreId={{createDataStore.response.body.id}}
 
 ### 1.4 Create an application with the NoFurtherAuthorizationRequired claim set
-# (matches what the E2E relational-backend runs use — avoids namespace-authz noise while
+# (matches what the DMS E2E runs use — avoids namespace-authz noise while
 # demoing the 409 contract)
 # @name createApplication
 POST http://localhost:{{configPort}}/v3/applications

@@ -4,8 +4,7 @@ Feature: Security configuration ProblemDetails for relational authorization
 
     Rule: Relational authorization misconfiguration returns canonical ProblemDetails
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @security-configuration
         Scenario: Empty matched authorization strategy list returns security configuration ProblemDetails
             Given a claim set is uploaded to CMS that grants "school" access to "E2E-SecurityConfigurationNoStrategiesClaimSet" with no authorization strategies
@@ -35,8 +34,7 @@ Feature: Security configuration ProblemDetails for relational authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @security-configuration
         Scenario: Unknown authorization strategy returns security configuration ProblemDetails
             Given a claim set is uploaded to CMS that grants "school" access to "E2E-SecurityConfigurationUnknownStrategyClaimSet" using authorization strategy "SecurityConfigurationUnknownStrategy"
@@ -66,8 +64,7 @@ Feature: Security configuration ProblemDetails for relational authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @security-configuration
         Scenario: Authenticated client whose claim set is missing from refreshed CMS metadata returns security configuration ProblemDetails
             Given a claim set is uploaded to CMS that grants "school" access to "E2E-SecurityConfigurationMissingMetadataClaimSet"

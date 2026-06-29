@@ -36,7 +36,7 @@
 #   classPeriods[1].classPeriodReference:         { schoolId, classPeriodName, link: { rel: "ClassPeriod", href: "/ed-fi/classPeriods/<uuid>" } }
 #
 # Prereqs:
-#   /e2e start --relational          # link injection is a relational-backend feature
+#   /e2e start --relational          # starts the local DMS E2E stack
 #   /e2e status                      # confirm ed-fi-api is healthy
 #
 # Execute top-to-bottom with the VS Code REST Client extension.
@@ -48,7 +48,7 @@
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=ValidClientSecret1234567890!Abcd
 
-# Relational DB + password match eng/docker-compose/.env.e2e.relational.
+# DMS E2E DB + password match eng/docker-compose/.env.e2e.relational.
 @relationalDbName=edfi_datamanagementservice_relational
 @postgresPassword=abcdefgh1!
 
@@ -109,7 +109,7 @@ Authorization: bearer {{configToken}}
 @dataStoreId={{createDataStore.response.body.id}}
 
 ### 1.4 Create an application with NoFurtherAuthorizationRequired
-# (matches the E2E relational-backend lane; avoids namespace-authz noise for the demo)
+# (matches the DMS E2E setup; avoids namespace-authz noise for the demo)
 # @name createApplication
 POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json

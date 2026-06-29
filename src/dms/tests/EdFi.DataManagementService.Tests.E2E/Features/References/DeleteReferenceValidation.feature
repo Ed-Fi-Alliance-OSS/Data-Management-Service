@@ -11,8 +11,8 @@ Feature: Delete reference validation
                   | educationOrganizationCategories                                                                                   | gradeLevels                                                                      | schoolId  | nameOfInstitution            |
                   | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"} ] | 255901107 | Grand Bend Elementary School |
 
-        @API-084 @relational-backend
-        @relational-ci-shard-4
+        @API-084
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients cannot delete a year that is used by another item
             Given the system has these "schoolYearTypes" references
                   | schoolYear | currentSchoolYear | schoolYearDescription |
@@ -35,8 +35,8 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-085 @relational-backend
-        @relational-ci-shard-4
+        @API-085
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
             Given a POST request is made to "ed-fi/educationOrganizationCategoryDescriptors/" with
                   """
@@ -61,8 +61,8 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-086 @relational-backend
-        @relational-ci-shard-4
+        @API-086
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients cannot delete a dependent element for an item
             Given the system has these "students" references
                   | studentUniqueId | birthDate    | firstName | lastSurname |
@@ -85,8 +85,8 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-087 @relational-backend
-        @relational-ci-shard-4
+        @API-087
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyCategoryDescriptor                        | localEducationAgencyId | categories                                                                                                                  | nameOfInstitution |
@@ -109,8 +109,8 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-088 @relational-backend
-        @relational-ci-shard-4
+        @API-088
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients cannot delete a resource that is used by another items
             Given the system has these "programs" references
                   | programName                    | programTypeDescriptor                                                | educationOrganizationReference        |

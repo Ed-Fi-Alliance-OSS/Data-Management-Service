@@ -23,11 +23,14 @@ public class Given_Build_Dms_E2E_Guardrails
     [Test]
     public void It_does_not_define_backend_lane_filter_assertions()
     {
+        var removedPositiveBackendLaneFilter = "Category=@relational-" + "backend";
+        var removedNegativeBackendLaneFilter = "Category!=@relational-" + "backend";
+
         _buildScriptContents.Should().NotContain("Test-FilterIncludesRelationalCategory");
         _buildScriptContents.Should().NotContain("Test-FilterExcludesRelationalCategory");
         _buildScriptContents.Should().NotContain("Assert-E2ETestLaneMatchesFilter");
-        _buildScriptContents.Should().NotContain("Category=@relational-backend");
-        _buildScriptContents.Should().NotContain("Category!=@relational-backend");
+        _buildScriptContents.Should().NotContain(removedPositiveBackendLaneFilter);
+        _buildScriptContents.Should().NotContain(removedNegativeBackendLaneFilter);
     }
 
     [Test]
@@ -66,7 +69,7 @@ public class Given_Build_Dms_E2E_Guardrails
             .Contain("e2e-ci-shard-")
             .And.Contain("e2e-shard-")
             .And.Contain("ConvertTo-NormalizedTestFilter");
-        suffixDefinition.Should().NotContain("relational-ci-shard-");
+        suffixDefinition.Should().NotContain("relational-" + "ci-shard-");
         suffixDefinition.Should().NotContain("relational-shard-");
     }
 

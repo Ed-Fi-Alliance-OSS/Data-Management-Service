@@ -16,8 +16,7 @@ Feature: ProgramEvaluationObjective Authorization
                   | programEvaluationObjectiveId | Test Evaluation Objective       | {"programEducationOrganizationId": 255901, "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year", "programEvaluationTitle": "Test Evaluation", "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey", "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
 
     Rule: When the client is authorized
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 01 Ensure authorized client can create a ProgramEvaluationObjective
              When a POST request is made to "/ed-fi/programEvaluationObjectives" with
                   """
@@ -35,14 +34,12 @@ Feature: ProgramEvaluationObjective Authorization
                   """
              Then it should respond with 201
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 02.1 Ensure authorized client can get a ProgramEvaluationObjective by id
              When a GET request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 200
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 02.2 Ensure authorized client can get a ProgramEvaluationObjective by query
             Given a POST request is made to "/ed-fi/programEvaluationObjectives" with
                   """
@@ -78,8 +75,7 @@ Feature: ProgramEvaluationObjective Authorization
                   ]
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 03 Ensure authorized client can update a ProgramEvaluationObjective
              When a PUT request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}" with
                   """
@@ -98,8 +94,7 @@ Feature: ProgramEvaluationObjective Authorization
                   """
              Then it should respond with 204
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 04 Ensure authorized client can delete a ProgramEvaluationObjective
              When a DELETE request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 204
@@ -108,8 +103,7 @@ Feature: ProgramEvaluationObjective Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 Ensure unauthorized client can not create a ProgramEvaluationObjective
              When a POST request is made to "/ed-fi/programEvaluationObjectives" with
                   """
@@ -140,8 +134,7 @@ Feature: ProgramEvaluationObjective Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06.1 Ensure unauthorized client can not get a ProgramEvaluationObjective by id
              When a GET request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 403
@@ -159,8 +152,7 @@ Feature: ProgramEvaluationObjective Authorization
                   }
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 06.2 Ensure unauthorized client can not get a ProgramEvaluationObjective by query
              When a GET request is made to "/ed-fi/programEvaluationObjectives?programEvaluationObjectiveTitle=Test Evaluation Objective"
              Then it should respond with 200
@@ -169,8 +161,7 @@ Feature: ProgramEvaluationObjective Authorization
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Ensure unauthorized client can not update a ProgramEvaluationObjective
              When a PUT request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}" with
                   """
@@ -202,8 +193,7 @@ Feature: ProgramEvaluationObjective Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 08 Ensure unauthorized client can not delete a ProgramEvaluationObjective
              When a DELETE request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 403
