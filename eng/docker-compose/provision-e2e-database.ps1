@@ -153,7 +153,6 @@ function Assert-E2EDatabaseIsDedicated {
     }
 
     foreach ($connectionStringKey in @(
-            "DATABASE_CONNECTION_STRING",
             "DATABASE_CONNECTION_STRING_ADMIN",
             "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         )) {
