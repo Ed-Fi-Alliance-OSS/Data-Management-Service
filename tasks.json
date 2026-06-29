@@ -823,6 +823,6 @@
       "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -358,3 +358,9 @@
 - Decision: relational handlers/ProfileWritePipelineMiddleware own profile read/write behavior, so placeholder steps were not preserving useful behavior.
 - Files changed: ApiService, DmsCoreServiceExtensions, ProfileWritePipeline comment, pipeline/setup tests, deleted middleware/test files, tasks.json, progress.txt.
 - Verification: task rg returned no matches; csharpier format; Core.Tests.Unit Release passed 2657; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Core Backend: delete unused SuccessDocumentStoreRepository fake backend / remove-legacy-backend.md cleanup
+- Deleted SuccessDocumentStoreRepository; rg showed it was self-referenced only, no replacement fake needed.
+- Decision: tests should use focused doubles such as NotImplementedDocumentStoreRepository subclasses instead of a success-everything backend.
+- Files changed: deleted core SuccessDocumentStoreRepository, tasks.json, progress.txt.
+- Verification: task rg returned no matches; Core.Tests.Unit Release passed 2657; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
