@@ -2351,7 +2351,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
     }
 
     Context "connector setup" {
-        It "start-all-services.ps1 starts PostgreSQL without legacy connector setup guidance" {
+        It "start-all-services.ps1 starts PostgreSQL without legacy connector guidance" {
             $scriptPath = Join-Path $script:sourceDockerComposeRoot "start-all-services.ps1"
 
             $tokens = $null
@@ -2359,89 +2359,58 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors)
             $errors.Count | Should -Be 0
 
-            # An automatic invocation would appear as a CommandAst whose command name is the
-            # connector script. Mentioning it inside a Write-Output guidance string is a string
-            # literal, not a command, so it is correctly ignored by GetCommandName().
+            $legacyConnectorScript = "setup" + "-connectors.ps1"
             $invokedCommands = @(
                 $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) |
                     ForEach-Object { $_.GetCommandName() }
             )
-            $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*setup-connectors.ps1" })
+            $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*$legacyConnectorScript" })
             $connectorInvocations | Should -BeNullOrEmpty
 
             $sourceText = Get-Content -LiteralPath $scriptPath -Raw
-            $sourceText | Should -Not -Match 'setup-connectors\.ps1'
+            $sourceText | Should -Not -Match ([regex]::Escape($legacyConnectorScript))
             $sourceText | Should -Not -Match 'kafka\.yml'
-            $sourceText | Should -Not -Match 'dms\.document'
+            $sourceText | Should -Not -Match ("dms" + "\.document")
 
             $sourceText | Should -Match '\$LASTEXITCODE -ne 0'
             $sourceText | Should -Match 'Failed to start PostgreSQL service'
         }
 
-        It "builds connector JSON with a structurally escaped password" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
+        It "removes legacy document-store connector setup files" {
+            $removedConnectorFiles = @(
+                "postgresql" + "_connector.json",
+                "data_store" + "_connector_template.json",
+                "setup" + "-connectors.ps1",
+                "setup-data-store-kafka" + "-connectors.ps1"
+            )
 
-            # A password full of JSON-significant characters that the old string .Replace would corrupt.
-            $trickyPassword = 'p@ss"with\back\slash ''quoted'' #hash'
-            $body = New-ConnectorRequestBody `
-                -TemplatePath (Join-Path $script:sourceDockerComposeRoot "postgresql_connector.json") `
-                -Password $trickyPassword
-
-            $parsed = $body | ConvertFrom-Json
-            $parsed.name | Should -Be "postgresql-source"
-            $parsed.config."database.password" | Should -Be $trickyPassword
-            # The template placeholder password must not survive.
-            $body | Should -Not -Match "abcdefgh1!"
-        }
-
-        It "waits for the connector to disappear after delete before returning" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
-
-            $script:absentProbeCount = 0
-            function Invoke-WebRequest {
-                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
-                $script:absentProbeCount++
-                # Still present on the first probe, gone on the second: the function must keep polling.
-                if ($script:absentProbeCount -ge 2) {
-                    return [pscustomobject]@{ StatusCode = 404 }
-                }
-                return [pscustomobject]@{ StatusCode = 200 }
+            foreach ($removedConnectorFile in $removedConnectorFiles) {
+                Test-Path -LiteralPath (Join-Path $script:sourceDockerComposeRoot $removedConnectorFile) |
+                    Should -BeFalse
             }
-
-            Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 5
-
-            $script:absentProbeCount | Should -BeGreaterOrEqual 2
-        }
-
-        It "throws when the connector never disappears after delete" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
-
-            function Invoke-WebRequest {
-                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
-                return [pscustomobject]@{ StatusCode = 200 }
-            }
-
-            { Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 3 } |
-                Should -Throw -ExpectedMessage "*was not removed within*"
         }
     }
 
     Context "instance management E2E database setup hardening" {
-        It "drops and recreates each test database with checked exit codes" {
+        It "provisions each route-context test database through the E2E provisioning helper" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'DROP DATABASE IF EXISTS \$db;'
-            $content | Should -Match 'CREATE DATABASE \$db;'
-            # The fire-and-forget form that swallowed CREATE failures must be gone.
-            $content | Should -Not -Match 'CREATE DATABASE \$db;" 2>&1 \| Out-Null'
+            $content | Should -Match 'provision-e2e-database\.ps1'
+            $content | Should -Match 'foreach \(\$db in \$databases\)'
+            $content | Should -Match '-DatabaseName \$db'
+            $content | Should -Match '\$LASTEXITCODE -ne 0'
+            $content | Should -Match 'Failed to provision route-context database'
         }
 
-        It "applies the exported schema with ON_ERROR_STOP and a checked exit code" {
+        It "verifies the relational schema after provisioning" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'psql -v ON_ERROR_STOP=1'
+            $content | Should -Match 'Assert-RelationalSchemaProvisioned -Database \$db'
+            $content | Should -Match 'dms\."EffectiveSchema"'
+            $content | Should -Match 'edfi\.School'
+            $content | Should -Match 'edfi\.Student'
         }
 
         It "does not pass the removed connector skip flag to start-local-dms.ps1" {

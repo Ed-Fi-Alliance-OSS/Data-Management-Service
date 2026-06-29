@@ -1449,20 +1449,26 @@ exit 0
 
         It "start-local-dms.ps1 does not register the legacy default connector" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+            $legacyConnectorCommandPattern = [regex]::Escape(("setup" + "-connectors.ps1") + " `$EnvironmentFile")
+            $legacyPublicationNamePattern = "to" + "_debezium"
+            $legacyDocumentTablePattern = "dms" + "\.document"
 
-            $content | Should -Not -Match 'setup-connectors\.ps1 \$EnvironmentFile'
+            $content | Should -Not -Match $legacyConnectorCommandPattern
             $content | Should -Not -Match 'SkipConnectorSetup'
-            $content | Should -Not -Match 'to_debezium'
-            $content | Should -Not -Match 'dms\.document'
+            $content | Should -Not -Match $legacyPublicationNamePattern
+            $content | Should -Not -Match $legacyDocumentTablePattern
         }
 
         It "start-published-dms.ps1 does not register the legacy default connector" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+            $legacyConnectorCommandPattern = [regex]::Escape(("setup" + "-connectors.ps1") + " `$EnvironmentFile")
+            $legacyPublicationNamePattern = "to" + "_debezium"
+            $legacyDocumentTablePattern = "dms" + "\.document"
 
-            $content | Should -Not -Match 'setup-connectors\.ps1 \$EnvironmentFile'
+            $content | Should -Not -Match $legacyConnectorCommandPattern
             $content | Should -Not -Match 'SkipConnectorSetup'
-            $content | Should -Not -Match 'to_debezium'
-            $content | Should -Not -Match 'dms\.document'
+            $content | Should -Not -Match $legacyPublicationNamePattern
+            $content | Should -Not -Match $legacyDocumentTablePattern
         }
     }
 

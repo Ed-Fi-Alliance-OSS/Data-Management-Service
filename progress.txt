@@ -126,3 +126,12 @@
 - Removed Kafka collector/infrastructure state from context/cleanup/setup, removed Confluent.Kafka package and Kafka appsettings/test constants, and scrubbed local README/setup text that referenced deleted helper surface.
 - Files changed: InstanceManagement E2E feature/step/hook/infra/management files, csproj, appsettings, README, setup-local-dms.ps1, tasks.json, progress.txt.
 - Verification: task rg returned no matches; csharpier format; PowerShell parser check passed for setup-local-dms.ps1; dotnet build InstanceManagement E2E Release passed; full ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild passed 40/40; git diff --check passed.
+
+2026-06-29 - completed Legacy CDC: remove active legacy document-store Debezium connector configuration and registration / remove-legacy-backend.md Phase 4A
+- Deleted default/data-store Debezium connector scripts/configs: postgresql_connector.json, data_store_connector_template.json, setup-connectors.ps1, setup-data-store-kafka-connectors.ps1.
+- Decision: no shared non-CDC behavior remained; Kafka compose infra stays for explicit opt-in task, but no DMS source connector registration path remains.
+- Updated compose README and RestClient setup note to stop pointing at deleted connector scripts; relational CDC/Kafka pending note only.
+- Feedback-loop fix: BootstrapSchemaDeploymentSafety Instance setup guardrails now assert provision-e2e-database route-context flow, not stale drop/create/psql replay.
+- Files changed: eng/docker-compose connector files deleted, eng/docker-compose/README.md, docker-compose Pester tests, RestClient local setup, tasks.json, progress.txt.
+- Verification: task rg over eng/docker-compose no matches; BootstrapSchemaAndSecuritySelection Pester passed 62; BootstrapSchemaDeploymentSafety Pester passed 93; git diff --check passed.
+- Notes: local compose startup not run to avoid mutating developer stack; next CDC tasks still need Kafka infra opt-in and DMS E2E Kafka helper deletion.
