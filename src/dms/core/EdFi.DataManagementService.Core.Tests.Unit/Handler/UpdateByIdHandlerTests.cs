@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
@@ -125,7 +124,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -155,7 +154,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -190,7 +189,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -235,7 +234,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private ContentTypeDefinition _readContentType = null!;
         private JsonNode _writableRequestBody = null!;
@@ -377,7 +376,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -448,7 +447,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -515,7 +514,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -598,7 +597,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -657,7 +656,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -689,7 +688,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -723,7 +722,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -756,7 +755,9 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo("relationship-put-403");
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-put-403"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -829,7 +830,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "namespace-put-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -871,7 +872,9 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly Repository _repository = new();
-        private readonly RequestInfo requestInfo = No.RequestInfo("relationship-put-501");
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-put-501"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -928,7 +931,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-put-500";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -979,7 +982,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1017,7 +1020,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()

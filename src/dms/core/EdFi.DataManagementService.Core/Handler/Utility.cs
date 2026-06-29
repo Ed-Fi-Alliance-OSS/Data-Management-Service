@@ -99,6 +99,22 @@ public static class Utility
         );
     }
 
+    internal static MappingSet RequireMappingSet(RequestInfo requestInfo, string operationName)
+    {
+        ArgumentNullException.ThrowIfNull(requestInfo);
+
+        if (requestInfo.MappingSet is null)
+        {
+            throw new InvalidOperationException(
+                "A resolved relational mapping set is required before executing "
+                    + $"{operationName} requests. Ensure ResolveMappingSetMiddleware runs before the "
+                    + $"{operationName} handler."
+            );
+        }
+
+        return requestInfo.MappingSet;
+    }
+
     internal static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
         RequestInfo requestInfo
     )

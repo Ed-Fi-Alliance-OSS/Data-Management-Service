@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
@@ -105,7 +104,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -137,7 +136,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -200,7 +199,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -257,7 +256,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
         [
@@ -337,7 +336,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private ContentTypeDefinition _readContentType = null!;
         private JsonNode _writableRequestBody = null!;
@@ -473,7 +472,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -540,7 +539,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -623,7 +622,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -682,7 +681,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -714,7 +713,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -746,7 +745,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo("trace-id");
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
 
         [SetUp]
         public async Task Setup()
@@ -794,7 +793,9 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-post-403");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-post-403"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -868,7 +869,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "namespace-post-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -912,7 +913,9 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-post-501");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-post-501"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -970,7 +973,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "relationship-post-500";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -1024,7 +1027,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1060,7 +1063,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1098,7 +1101,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()

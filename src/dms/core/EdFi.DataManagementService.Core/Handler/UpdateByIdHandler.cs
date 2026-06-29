@@ -42,6 +42,7 @@ internal class UpdateByIdHandler(
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
+        var mappingSet = RequireMappingSet(requestInfo, "update");
 
         var updateResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -56,7 +57,7 @@ internal class UpdateByIdHandler(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
-                        MappingSet: requestInfo.MappingSet,
+                        MappingSet: mappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         DocumentSecurityElements: requestInfo.DocumentSecurityElements,

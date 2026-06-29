@@ -164,3 +164,10 @@
 - Kept profile validation legacy body for later profile task but skips once MappingSet exists; ProfileWritePipeline no longer needs options.
 - Files changed: core settings/middleware/startup/auth tests, E2E settings/search reset helper, build-dms, compose yml/Pester/docs, integration/frontend/unit overrides.
 - Verification: required broad rg clean; csharpier format; Core.Tests.Unit, DMS Tests.Unit, Frontend.AspNetCore.Tests.Unit, API Integration tests passed; BootstrapSchemaAndSecuritySelection Pester passed; PowerShell parser checks and git diff --check passed.
+
+2026-06-29 - completed Core Pipeline: request handlers require resolved mapping sets / remove-legacy-backend.md Phase 5
+- QueryRequestHandler/GetByIdHandler now build relational request records only; missing MappingSet fails fast through shared handler Utility message.
+- Upsert/Update/Delete handler request construction now requires MappingSet; relational write/delete interfaces and core request records expose non-null MappingSet.
+- Removed backend repository tests for impossible nullable MappingSet contract; kept RequestInfo.MappingSet nullable for progressive middleware resolution.
+- Files changed: core handler/request contracts/tests, backend relational write contract/repository tests, tasks.json, progress.txt.
+- Verification: task rg inspected; remaining new GetRequest/MappingSet branches are profile middleware pending task. Core.Tests.Unit, Backend.Tests.Unit, API Integration, solution build passed; build still has existing Reqnroll missing DeleteResourcesValidation feature warning; git diff --check passed.

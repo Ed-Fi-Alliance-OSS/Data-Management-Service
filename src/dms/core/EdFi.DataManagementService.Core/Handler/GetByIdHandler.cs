@@ -129,15 +129,13 @@ internal class GetByIdHandler(
 
     private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
     {
-        var contentType =
-            requestInfo.MappingSet is not null
-            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
-                ? ProfileHeaderParser.BuildProfileContentType(
-                    requestInfo.ResourceSchema.ResourceName.Value,
-                    requestInfo.ProfileContext.ProfileName,
-                    ProfileUsageType.Readable
-                )
-                : "application/json";
+        var contentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+            ? ProfileHeaderParser.BuildProfileContentType(
+                requestInfo.ResourceSchema.ResourceName.Value,
+                requestInfo.ProfileContext.ProfileName,
+                ProfileUsageType.Readable
+            )
+            : "application/json";
 
         return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
     }
@@ -147,22 +145,17 @@ internal class GetByIdHandler(
         IResourceAuthorizationHandler resourceAuthorizationHandler
     )
     {
-        return requestInfo.MappingSet is not null
-            ? new RelationalGetRequest(
-                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                ResourceInfo: requestInfo.ResourceInfo,
-                MappingSet: requestInfo.MappingSet,
-                AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
-                ResourceAuthorizationHandler: resourceAuthorizationHandler,
-                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-                TraceId: requestInfo.FrontendRequest.TraceId,
-                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
-            )
-            : new GetRequest(
-                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                ResourceName: requestInfo.ResourceInfo.ResourceName,
-                ResourceAuthorizationHandler: resourceAuthorizationHandler,
-                TraceId: requestInfo.FrontendRequest.TraceId
-            );
+        var mappingSet = RequireMappingSet(requestInfo, "get by id");
+
+        return new RelationalGetRequest(
+            DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+            ResourceInfo: requestInfo.ResourceInfo,
+            MappingSet: mappingSet,
+            AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            ResourceAuthorizationHandler: resourceAuthorizationHandler,
+            AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
+            TraceId: requestInfo.FrontendRequest.TraceId,
+            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+        );
     }
 }

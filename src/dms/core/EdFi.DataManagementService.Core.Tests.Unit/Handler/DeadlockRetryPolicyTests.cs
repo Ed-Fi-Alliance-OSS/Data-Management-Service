@@ -448,7 +448,7 @@ public class DeadlockRetryPolicyTests
         public async Task Setup()
         {
             _logger = new CapturingLogger();
-            _requestInfo = No.RequestInfo("test-trace-id");
+            _requestInfo = RequestInfoWithRelationalMappingSet("test-trace-id");
             var (handler, serviceProvider) = CreateGetByIdHandler(new AlwaysRetryableRepository(), _logger);
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);
@@ -514,7 +514,7 @@ public class DeadlockRetryPolicyTests
         public async Task Setup()
         {
             _logger = new CapturingLogger();
-            _requestInfo = No.RequestInfo("test-trace-id");
+            _requestInfo = RequestInfoWithRelationalMappingSet("test-trace-id");
             var (handler, serviceProvider) = CreateGetByIdHandler(new RetryThenSuccessRepository(), _logger);
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);

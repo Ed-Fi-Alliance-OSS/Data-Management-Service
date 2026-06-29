@@ -34,6 +34,7 @@ internal class DeleteByIdHandler(
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
+        var mappingSet = RequireMappingSet(requestInfo, "delete");
 
         var deleteResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -62,7 +63,7 @@ internal class DeleteByIdHandler(
                             )
                         ),
                         Headers: requestInfo.FrontendRequest.Headers,
-                        MappingSet: requestInfo.MappingSet
+                        MappingSet: mappingSet
                     )
                     {
                         AuthorizationContext = RelationalAuthorizationContext.Create(

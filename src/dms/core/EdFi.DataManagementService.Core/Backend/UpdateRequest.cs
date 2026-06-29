@@ -23,10 +23,9 @@ internal record UpdateRequest(
     /// </summary>
     DocumentInfo DocumentInfo,
     /// <summary>
-    /// The resolved runtime mapping set for the active request when relational
-    /// request handling is enabled.
+    /// The resolved runtime mapping set for the active relational request.
     /// </summary>
-    MappingSet? MappingSet,
+    MappingSet MappingSet,
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
     /// </summary>

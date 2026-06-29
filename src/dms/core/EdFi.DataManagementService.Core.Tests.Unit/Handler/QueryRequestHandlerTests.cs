@@ -63,7 +63,7 @@ public class QueryRequestHandlerTests
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -84,10 +84,62 @@ public class QueryRequestHandlerTests
         }
 
         [Test]
-        public void It_constructs_a_standard_query_request_when_no_mapping_set_is_present()
+        public void It_constructs_a_relational_query_request()
         {
-            _repository.CapturedRequest.Should().BeOfType<QueryRequest>();
-            _repository.CapturedRequest.Should().NotBeAssignableTo<IRelationalQueryRequest>();
+            var relationalRequest = _repository
+                .CapturedRequest.Should()
+                .BeAssignableTo<IRelationalQueryRequest>()
+                .Subject;
+            relationalRequest.MappingSet.Should().BeSameAs(_requestInfo.MappingSet);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_With_No_Mapping_Set : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IQueryRequest? CapturedRequest { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                CapturedRequest = queryRequest;
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            try
+            {
+                await queryHandler.Execute(_requestInfo, NullNext);
+            }
+            catch (Exception ex)
+            {
+                _exception = ex;
+            }
+        }
+
+        [Test]
+        public void It_fails_fast_with_an_actionable_configuration_error()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+            _exception!.Message.Should().Contain("query requests").And.Contain("ResolveMappingSetMiddleware");
+        }
+
+        [Test]
+        public void It_does_not_call_the_repository()
+        {
+            _repository.CapturedRequest.Should().BeNull();
         }
     }
 
@@ -103,7 +155,7 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -136,7 +188,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -201,7 +253,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "security-config";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
         private RecordingLogger _logger = null!;
 
         [SetUp]
@@ -320,7 +372,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "readchanges-security-config";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
         private RecordingLogger _logger = null!;
 
         [SetUp]
@@ -378,7 +430,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "namespace-query-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -425,7 +477,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -477,7 +529,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "descriptor-query-auth-501";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -561,7 +613,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "descriptor-query-omission-501";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -661,7 +713,7 @@ public class QueryRequestHandlerTests
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -908,7 +960,7 @@ public class QueryRequestHandlerTests
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -985,7 +1037,7 @@ public class QueryRequestHandlerTests
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
             .Create()
             .CreateSupportedMappingSet(SqlDialect.Pgsql);

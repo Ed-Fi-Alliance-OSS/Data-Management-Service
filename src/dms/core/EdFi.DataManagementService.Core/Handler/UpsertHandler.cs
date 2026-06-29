@@ -42,6 +42,7 @@ internal class UpsertHandler(
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
+        var mappingSet = RequireMappingSet(requestInfo, "upsert");
 
         var upsertResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -59,7 +60,7 @@ internal class UpsertHandler(
                     new UpsertRequest(
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
-                        MappingSet: requestInfo.MappingSet,
+                        MappingSet: mappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,

@@ -93,15 +93,13 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
 
     private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, QuerySuccess success)
     {
-        var contentType =
-            requestInfo.MappingSet is not null
-            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
-                ? ProfileHeaderParser.BuildProfileContentType(
-                    requestInfo.ResourceSchema.ResourceName.Value,
-                    requestInfo.ProfileContext.ProfileName,
-                    ProfileUsageType.Readable
-                )
-                : "application/json";
+        var contentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+            ? ProfileHeaderParser.BuildProfileContentType(
+                requestInfo.ResourceSchema.ResourceName.Value,
+                requestInfo.ProfileContext.ProfileName,
+                ProfileUsageType.Readable
+            )
+            : "application/json";
 
         return new FrontendResponse(
             StatusCode: 200,
@@ -115,30 +113,19 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
 
     private static IQueryRequest CreateQueryRequest(RequestInfo requestInfo)
     {
-        return requestInfo.MappingSet is not null
-            ? new RelationalQueryRequest(
-                ResourceInfo: requestInfo.ResourceInfo,
-                AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
-                MappingSet: requestInfo.MappingSet,
-                QueryElements: requestInfo.QueryElements,
-                AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
-                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-                PaginationParameters: requestInfo.PaginationParameters,
-                TraceId: requestInfo.FrontendRequest.TraceId,
-                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
-                ChangeVersionRange: requestInfo.ChangeVersionRange
-            )
-            // ChangeVersionRange is intentionally omitted on the legacy branch: change-version
-            // filtering is relational-backend-only (epic 10). The legacy query handler accepts
-            // minChangeVersion/maxChangeVersion but does not filter, matching the ODS semantics
-            // established by DMS-1181.
-            : new QueryRequest(
-                ResourceInfo: requestInfo.ResourceInfo,
-                QueryElements: requestInfo.QueryElements,
-                AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
-                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-                PaginationParameters: requestInfo.PaginationParameters,
-                TraceId: requestInfo.FrontendRequest.TraceId
-            );
+        var mappingSet = RequireMappingSet(requestInfo, "query");
+
+        return new RelationalQueryRequest(
+            ResourceInfo: requestInfo.ResourceInfo,
+            AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            MappingSet: mappingSet,
+            QueryElements: requestInfo.QueryElements,
+            AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
+            AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
+            PaginationParameters: requestInfo.PaginationParameters,
+            TraceId: requestInfo.FrontendRequest.TraceId,
+            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
+            ChangeVersionRange: requestInfo.ChangeVersionRange
+        );
     }
 }
