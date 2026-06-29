@@ -5,7 +5,6 @@
 
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -17,21 +16,20 @@ using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
 [Parallelizable]
-public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+public class ValidateDatabaseFingerprintMiddlewareTests
 {
     internal static (
         ValidateDatabaseFingerprintMiddleware middleware,
         IDatabaseFingerprintReader fingerprintReader,
         IDataStoreSelection dataStoreSelection,
         IServiceProvider serviceProvider
-    ) CreateMiddleware(bool enableFingerprintValidation)
+    ) CreateMiddleware()
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dataStoreSelection = A.Fake<IDataStoreSelection>();
@@ -47,20 +45,11 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
                 )
             );
 
-        var appSettings = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                UseRelationalBackend = enableFingerprintValidation,
-            }
-        );
-
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
         var middleware = new ValidateDatabaseFingerprintMiddleware(
-            appSettings,
             fingerprintProvider,
             effectiveSchemaSetProvider,
             logger
@@ -102,68 +91,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Feature_Flag_Is_Disabled : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
-    {
-        private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled;
-        private IDatabaseFingerprintReader _fingerprintReader = null!;
-        private IDataStoreSelection _dataStoreSelection = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: false
-            );
-            _fingerprintReader = fingerprintReader;
-            _dataStoreSelection = dataStoreSelection;
-            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
-
-            await middleware.Execute(
-                _requestInfo,
-                () =>
-                {
-                    _nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
-        }
-
-        [Test]
-        public void It_calls_next()
-        {
-            _nextCalled.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_does_not_interact_with_fingerprint_reader()
-        {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>.Ignored)).MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_does_not_interact_with_data_store_selection()
-        {
-            A.CallTo(_dataStoreSelection).MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_does_not_set_database_fingerprint_on_request_info()
-        {
-            _requestInfo.DatabaseFingerprint.Should().BeNull();
-        }
-
-        [Test]
-        public void It_does_not_set_error_response()
-        {
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Feature_Flag_Is_Enabled_And_Fingerprint_Is_Returned
-        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    public class Given_Fingerprint_Is_Returned : ValidateDatabaseFingerprintMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
@@ -171,9 +99,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
-            );
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
@@ -223,8 +149,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Feature_Flag_Is_Enabled_And_Fingerprint_Is_Null
-        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    public class Given_Fingerprint_Is_Null : ValidateDatabaseFingerprintMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
@@ -232,9 +157,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
-            );
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
@@ -297,8 +220,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Feature_Flag_Is_Enabled_And_Selected_Instance_Has_No_Connection_String
-        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    public class Given_Selected_Instance_Has_No_Connection_String : ValidateDatabaseFingerprintMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
@@ -307,9 +229,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
-            );
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
@@ -372,8 +292,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Feature_Flag_Is_Enabled_And_No_Dialect_Fingerprint_Reader_Is_Registered
-        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    public class Given_Fingerprint_Reader_Fails : ValidateDatabaseFingerprintMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private Func<Task> _execute = null!;
@@ -398,10 +317,6 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection)))
                 .Returns(dataStoreSelection);
 
-            var appSettings = Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            );
-
             var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet)
                 .Returns(
@@ -411,9 +326,14 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
                     )
                 );
 
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+                .Throws(
+                    new InvalidOperationException("No dialect-specific fingerprint reader is registered.")
+                );
+
             var middleware = new ValidateDatabaseFingerprintMiddleware(
-                appSettings,
-                new DatabaseFingerprintProvider(new MissingDatabaseFingerprintReader(appSettings)),
+                new DatabaseFingerprintProvider(fingerprintReader),
                 schemaSetProvider,
                 A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>()
             );

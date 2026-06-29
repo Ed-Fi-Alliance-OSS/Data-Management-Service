@@ -12,14 +12,12 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Validates that the database resource key seed matches the expected effective schema.
 /// Short-circuits with 503 if the resource key seed is mismatched.
-/// No-op when UseRelationalBackend is false.
 ///
 /// Design note: Instances known at startup are validated eagerly by
 /// ValidateStartupInstancesTask (Order 310), which pre-populates the cache.
@@ -27,7 +25,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// by validating on first request per connection string. See new-startup-flow.md §6.
 /// </summary>
 internal class ValidateResourceKeySeedMiddleware(
-    IOptions<AppSettings> appSettings,
     IResourceKeyValidator resourceKeyValidator,
     ResourceKeyValidationCacheProvider cacheProvider,
     IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
@@ -42,12 +39,6 @@ internal class ValidateResourceKeySeedMiddleware(
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            await next();
-            return;
-        }
-
         // DatabaseFingerprint is set by ValidateDatabaseFingerprintMiddleware (runs before this step).
         // If it's null, fingerprint validation already short-circuited, so this middleware won't run.
         // But guard defensively in case pipeline ordering changes.

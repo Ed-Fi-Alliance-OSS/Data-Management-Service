@@ -150,3 +150,10 @@
 - Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, tasks.json, progress.txt.
 - Verification: task rg over build-dms clean; PowerShell parser passed; csharpier on changed test; DMS Tests.Unit Release passed 34; BootstrapSchemaAndSecuritySelection Pester passed 62; git diff --check passed.
 - Notes: full E2ETest not run in this task; still depends on pending E2E tags, neutral env files, and build-script provisioning/env-injection tasks.
+
+2026-06-29 - completed Core Pipeline: database fingerprint/resource-key/mapping-set always relational / remove-legacy-backend.md Phase 5
+- Removed UseRelationalBackend constructor deps and skip branches from ValidateDatabaseFingerprintMiddleware, ValidateResourceKeySeedMiddleware, ResolveMappingSetMiddleware.
+- Deleted disabled-flag fixtures; renamed fingerprint middleware tests and kept defensive null fingerprint/compiler failure coverage.
+- Files changed: three core middleware files; core middleware unit tests; tasks.json; progress.txt.
+- Verification: targeted no-flag rg on changed middleware/tests clean; csharpier format; Core.Tests.Unit Release passed 2694; solution build Release --no-restore passed with existing Reqnroll missing DeleteResourcesValidation feature warning; git diff --check passed.
+- Notes: broad task rg still shows pending UseRelationalBackend work in app settings, document extraction, profile/authorization/startup validation, E2E helpers, docs.

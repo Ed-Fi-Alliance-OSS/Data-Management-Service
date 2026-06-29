@@ -4,25 +4,21 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Resolves the compiled mapping set for the current request's database instance
 /// and attaches it to RequestInfo. Short-circuits with 503 if the mapping set
-/// cannot be resolved or if the fingerprint prerequisite is missing. No-op when
-/// UseRelationalBackend is false.
+/// cannot be resolved or if the fingerprint prerequisite is missing.
 /// </summary>
 internal class ResolveMappingSetMiddleware(
-    IOptions<AppSettings> appSettings,
     IMappingSetProvider mappingSetProvider,
     IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     IEnumerable<IRuntimeMappingSetCompiler> runtimeCompilers,
@@ -34,22 +30,15 @@ internal class ResolveMappingSetMiddleware(
     // Resolve the configured dialect from the registered compiler(s).
     // In practice there is one compiler per deployment; if multiple are registered,
     // take the first (the backend that was configured).
-    // Null when no compiler is registered (UseRelationalBackend is disabled).
     private readonly SqlDialect? _dialect = runtimeCompilers.FirstOrDefault()?.Dialect;
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            await next();
-            return;
-        }
-
         var fingerprint = requestInfo.DatabaseFingerprint;
         if (fingerprint == null)
         {
             logger.LogError(
-                "DatabaseFingerprint was not resolved before mapping set resolution while UseRelationalBackend is enabled. "
+                "DatabaseFingerprint was not resolved before mapping set resolution. "
                     + "ValidateDatabaseFingerprintMiddleware must run before ResolveMappingSetMiddleware. TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );

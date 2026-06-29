@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
@@ -84,16 +83,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                 )
             );
 
-        var appSettings = Options.Create(
-            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-        );
-
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
         var middleware = new ValidateDatabaseFingerprintMiddleware(
-            appSettings,
             fingerprintProvider,
             effectiveSchemaSetProvider,
             middlewareLogger
