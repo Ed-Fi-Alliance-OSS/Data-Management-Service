@@ -308,7 +308,7 @@
       "Run: `rg -n \"postgresql_connector|data_store_connector|setup-connectors|to_debezium|edfi\\\\.dms\\\\.document|dms\\\\.document\" eng/docker-compose`",
       "Start the local compose stack and confirm connector registration is not attempted by default when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Legacy CDC",
