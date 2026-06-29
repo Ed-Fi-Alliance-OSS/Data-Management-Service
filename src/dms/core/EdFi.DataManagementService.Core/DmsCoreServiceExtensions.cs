@@ -125,8 +125,6 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IReadableProfileProjector, ReadableProfileProjector>()
             .AddSingleton<IProfileDataValidator, ProfileDataValidator>()
             .AddTransient<ProfileResolutionMiddleware>()
-            .AddTransient<ProfileFilteringMiddleware>()
-            .AddTransient<ProfileWriteValidationMiddleware>()
             .AddTransient<ProfileWritePipelineMiddleware>()
             .AddSingleton<ITokenInfoRelationalMappingSetResolver, TokenInfoRelationalMappingSetResolver>()
             .AddSingleton<GetTokenInfoHandler>()

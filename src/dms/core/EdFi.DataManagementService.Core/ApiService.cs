@@ -215,7 +215,6 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
@@ -253,7 +252,6 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new GetByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
         ]);
 
@@ -276,7 +274,6 @@ internal class ApiService : IApiService
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new QueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
@@ -313,7 +310,6 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),

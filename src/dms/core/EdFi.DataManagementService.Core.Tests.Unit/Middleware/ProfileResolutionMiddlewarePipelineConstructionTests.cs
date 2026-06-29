@@ -69,11 +69,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
-        services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-            NullLogger<ProfileFilteringMiddleware>.Instance
-        );
-
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 

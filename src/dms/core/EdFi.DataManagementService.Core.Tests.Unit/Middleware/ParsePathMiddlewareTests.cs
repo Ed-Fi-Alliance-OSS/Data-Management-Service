@@ -135,11 +135,6 @@ public class ParsePathMiddlewareTests
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
-        services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-            NullLogger<ProfileFilteringMiddleware>.Instance
-        );
-
         var serviceProvider = services.BuildServiceProvider();
 
         return new ApiService(
