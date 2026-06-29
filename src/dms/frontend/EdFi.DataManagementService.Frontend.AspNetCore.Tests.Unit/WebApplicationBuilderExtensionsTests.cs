@@ -177,6 +177,11 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()
                 .BeOfType<MappingSetProvider>();
+            scope.ServiceProvider.GetRequiredService<MappingSetCompiler>().Should().NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<IMappingPackStore>()
+                .Should()
+                .BeOfType<NoOpMappingPackStore>();
             scope
                 .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
                 .Should()
@@ -306,6 +311,11 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()
                 .BeOfType<MappingSetProvider>();
+            scope.ServiceProvider.GetRequiredService<MappingSetCompiler>().Should().NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<IMappingPackStore>()
+                .Should()
+                .BeOfType<NoOpMappingPackStore>();
             scope
                 .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
                 .Should()

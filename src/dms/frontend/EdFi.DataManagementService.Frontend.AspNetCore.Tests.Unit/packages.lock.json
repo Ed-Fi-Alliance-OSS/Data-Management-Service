@@ -561,6 +561,7 @@
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )"
         }

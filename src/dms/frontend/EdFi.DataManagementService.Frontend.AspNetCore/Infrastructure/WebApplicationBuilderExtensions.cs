@@ -270,23 +270,7 @@ public static class WebApplicationBuilderExtensions
         IConfiguration configuration
     )
     {
-        services.Configure<MappingSetProviderOptions>(configuration.GetSection("MappingPacks"));
-        services.TryAddSingleton<MappingSetCompiler>();
-        services.TryAddSingleton<IMappingPackStore, NoOpMappingPackStore>();
-        services.TryAddSingleton<IRuntimeMappingSetCompiler>(serviceProvider =>
-        {
-            var effectiveSchemaSetProvider =
-                serviceProvider.GetRequiredService<IEffectiveSchemaSetProvider>();
-            var mappingSetCompiler = serviceProvider.GetRequiredService<MappingSetCompiler>();
-
-            return new RuntimeMappingSetCompiler(
-                () => effectiveSchemaSetProvider.EffectiveSchemaSet,
-                mappingSetCompiler,
-                SqlDialect.Mssql,
-                new MssqlDialectRules()
-            );
-        });
-        services.TryAddSingleton<IMappingSetProvider, MappingSetProvider>();
+        services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
         services.AddMssqlReferenceResolver();
     }
 }

@@ -977,7 +977,7 @@
       "Run: `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj -c Release`.",
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Infrastructure",

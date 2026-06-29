@@ -416,3 +416,9 @@
 - Decision: keep core default registration so startup task resolution stays deterministic, but make execution fail instead of silently continuing.
 - Files changed: core startup initializer/registration, backend mapping startup tests, PostgreSQL datastore registration test, frontend datastore composition tests, tasks.json, progress.txt.
 - Verification: csharpier format; required initializer rg no NoOp matches; Core.Tests.Unit Release passed 2561; Frontend.AspNetCore.Tests.Unit Release passed 194.
+
+2026-06-29 - completed Runtime Wiring: de-duplicate relational mapping-set service registration / remove-legacy-backend.md cleanup
+- Extracted AddRelationalMappingSetServices into Backend common project; PostgreSQL and MSSQL now pass only SqlDialect and dialect rules.
+- Decision: keep helper in Backend common because both datastore composition paths already depend on Backend/Plans and need the same mapping-set provider contract.
+- Files changed: Backend helper/csproj/lock files, PostgresqlServiceExtensions, WebApplicationBuilderExtensions, frontend composition tests, tasks.json, progress.txt.
+- Verification: csharpier format; task rg shows shared registration centralized; Frontend.AspNetCore.Tests.Unit Release passed 194; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning; git diff --check passed.
