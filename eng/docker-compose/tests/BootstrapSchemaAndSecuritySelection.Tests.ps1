@@ -1447,6 +1447,68 @@ exit 0
             @($manifest.projects).projectName | Should -Not -Contain "RemovedPackage"
         }
 
+        It "run.sh skips PostgreSQL readiness checks when the datastore is MSSQL" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
+            $workspace = Join-Path $script:repo.RepoRoot "run-sh-mssql"
+            $stubDirectory = Join-Path $workspace "bin"
+            $pgIsReadyInvocationsPath = Join-Path $workspace "pg-isready-invocations.log"
+            $dotnetInvocationsPath = Join-Path $workspace "dotnet-invocations.log"
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $stubDirectory -Force | Out-Null
+
+            @'
+#!/bin/sh
+echo "$*" >> "$PG_ISREADY_INVOCATIONS_PATH"
+exit 1
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "pg_isready") -Encoding utf8
+
+            @'
+#!/bin/sh
+echo "$*" >> "$DOTNET_INVOCATIONS_PATH"
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet") -Encoding utf8
+
+            & chmod +x (Join-Path $stubDirectory "pg_isready")
+            & chmod +x (Join-Path $stubDirectory "dotnet")
+
+            $envNames = @(
+                "PATH",
+                "DATABASE_CONNECTION_STRING_ADMIN",
+                "AppSettings__Datastore",
+                "AppSettings__UseApiSchemaPath",
+                "PG_ISREADY_INVOCATIONS_PATH",
+                "DOTNET_INVOCATIONS_PATH"
+            )
+            $envSnapshot = @{}
+            foreach ($name in $envNames) {
+                $envSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            }
+
+            try {
+                $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
+                $env:DATABASE_CONNECTION_STRING_ADMIN = "Server=localhost,1433;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
+                $env:AppSettings__Datastore = "mssql"
+                $env:AppSettings__UseApiSchemaPath = "false"
+                $env:PG_ISREADY_INVOCATIONS_PATH = $pgIsReadyInvocationsPath
+                $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
+
+                $runOutput = & bash (Join-Path $script:sourceRepoRoot "src/dms/run.sh") 2>&1
+
+                $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
+                ($runOutput -join [Environment]::NewLine) |
+                    Should -Match "Skipping PostgreSQL readiness check for datastore 'mssql'\."
+            }
+            finally {
+                foreach ($name in $envNames) {
+                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                }
+            }
+
+            Test-Path -LiteralPath $pgIsReadyInvocationsPath |
+                Should -BeFalse -Because "MSSQL startup must not run PostgreSQL readiness checks"
+            Get-Content -LiteralPath $dotnetInvocationsPath |
+                Should -Contain "EdFi.DataManagementService.Frontend.AspNetCore.dll"
+        }
+
         It "start-local-dms.ps1 does not register the legacy default connector" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
             $legacyConnectorCommandPattern = [regex]::Escape(("setup" + "-connectors.ps1") + " `$EnvironmentFile")

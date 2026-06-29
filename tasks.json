@@ -759,7 +759,7 @@
       "Run: `rg -n \"pg_isready|DATABASE_CONNECTION_STRING_ADMIN|AppSettings__Datastore\" src/dms/run.sh` and confirm the PostgreSQL readiness logic is gated to PostgreSQL datastore startup.",
       "Run an MSSQL-configured DMS container smoke test when Docker dependencies are available and confirm startup reaches the DMS process without waiting on PostgreSQL."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Core Pipeline",

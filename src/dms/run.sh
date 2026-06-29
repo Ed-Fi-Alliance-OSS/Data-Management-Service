@@ -7,17 +7,23 @@
 set -e
 set +x
 
-# Safely extract a few environment variables from the admin connection string
-host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-username=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
-until pg_isready -h ${host} -p ${port} -U ${username}; do
-  echo "Waiting for PostgreSQL to start..."
-  sleep 2
-done
+if [ "$datastore" = "postgresql" ]; then
+    # Safely extract a few environment variables from the admin connection string
+    host=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+    port=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+    username=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
-echo "PostgreSQL is ready."
+    until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
+        echo "Waiting for PostgreSQL to start..."
+        sleep 2
+    done
+
+    echo "PostgreSQL is ready."
+else
+    echo "Skipping PostgreSQL readiness check for datastore '${datastore}'."
+fi
 
 if [ "$AppSettings__UseApiSchemaPath" = true ]; then
     echo "Using Api Schema Path."

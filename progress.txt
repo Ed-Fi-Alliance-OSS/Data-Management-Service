@@ -327,3 +327,9 @@
 - Started temporary dms-codex-mssql on localhost,1434; MSSQL backend integration passed 527; API integration passed 106 with PostgreSQL+MSSQL env vars; stopped temp container.
 - Files changed: tasks.json, progress.txt.
 - Blockers/notes: no code fixes needed; pre-existing unstaged deletion of final E2E Validation task in tasks.json preserved outside commit.
+
+2026-06-29 - completed Container Runtime: gate PostgreSQL readiness for MSSQL startup / remove-legacy-backend.md follow-up
+- run.sh now defaults datastore to postgresql but only parses DATABASE_CONNECTION_STRING_ADMIN and runs pg_isready when AppSettings__Datastore resolves to postgresql.
+- Decision: keep PostgreSQL wait behavior for default/explicit postgresql; MSSQL startup skips it and reaches the DMS process without a PostgreSQL-shaped admin connection string.
+- Files changed: src/dms/run.sh, eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1, tasks.json, progress.txt.
+- Verification: bash -n and sh -n run.sh; task rg inspected gated pg_isready/admin connection refs; BootstrapSchemaAndSecuritySelection Pester passed 64; container smoke with AppSettings__Datastore=mssql skipped pg_isready and reached dotnet stub; git diff --check passed.
