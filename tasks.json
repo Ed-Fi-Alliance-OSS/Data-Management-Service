@@ -727,24 +727,101 @@
     "completed": true
   },
   {
-    "category": "E2E Validation",
-    "description": "Run DMS and Instance Management E2E validation against the single relational backend path.",
+    "category": "Instance Management E2E",
+    "description": "Medium: Remove stale Kafka setup, CI, and documentation leftovers from E2E validation.",
     "acceptance-criteria": [
-      "DMS E2E runs through the repo-root build script with `.env.e2e` and no backend lane filter.",
-      "Each neutral DMS E2E shard filter runs with `@e2e-ci-shard-1` through `@e2e-ci-shard-4`.",
-      "Instance Management E2E runs through the repo-root build script after relational route-context provisioning is in place.",
-      "Existing Instance Management shard filters are preserved and run during full validation.",
-      "The Docker image has no `/app/Installer`, compose files do not set `AppSettings__UseRelationalBackend`, and startup logs show relational mapping initialization with no legacy schema installation."
+      "`src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` no longer passes `-EnableKafkaUI` or `-EnableKafka` to `start-local-dms.ps1` by default.",
+      "The setup output, comments, and usage example no longer state or imply that Kafka UI is enabled for the default Instance Management E2E setup.",
+      "DMS and Instance Management E2E CI jobs no longer add Kafka host entries or set `KAFKA_BOOTSTRAP_SERVERS` when no Kafka scenarios are run.",
+      "DMS E2E documentation no longer tells users to configure Kafka hosts or services for the default suite.",
+      "Kafka and Kafka UI remain available only through explicit docker-compose start-script opt-in switches.",
+      "Script-level guardrail tests cover the Instance Management setup script so it cannot reintroduce default Kafka or Kafka UI startup."
     ],
     "steps-to-verify": [
-      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'`",
-      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-1'`",
-      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-2'`",
-      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'`",
-      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-4'`",
-      "Run: `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild`",
-      "Run each existing Instance Management shard filter, such as `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-1'`, adjusting the shard number for all configured shards.",
-      "Inspect the built Docker image and compose environment for `/app/Installer`, `AppSettings__UseRelationalBackend`, relational mapping initialization logs, and absence of legacy schema installation logs."
+      "Run: `rg -n \"EnableKafkaUI|EnableKafka|Kafka UI\" src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1 eng/docker-compose/tests` and confirm Instance Management setup has no default opt-in.",
+      "Run: `rg -n \"KAFKA_BOOTSTRAP_SERVERS|kafka:127.0.0.1|kafka-1:127.0.0.1|kafka-2:127.0.0.1|kafka-3:127.0.0.1|run kafka tests\" .github/workflows src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md` and confirm only explicit Kafka opt-in coverage remains.",
+      "Run the relevant Pester suite under `eng/docker-compose/tests` after adding or updating the guardrail.",
+      "Run: `./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild` when Docker dependencies are available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Container Runtime",
+    "description": "Medium: Gate the DMS container PostgreSQL readiness wait so MSSQL deployments can start.",
+    "acceptance-criteria": [
+      "`src/dms/run.sh` no longer parses `DATABASE_CONNECTION_STRING_ADMIN` as a PostgreSQL connection string unless the configured datastore is PostgreSQL.",
+      "The startup script does not run `pg_isready` or wait for PostgreSQL when the configured datastore is MSSQL.",
+      "PostgreSQL container startup still waits for PostgreSQL readiness when that guard remains useful.",
+      "The startup script remains valid Bash and does not reintroduce installer-era database provisioning behavior."
+    ],
+    "steps-to-verify": [
+      "Run: `bash -n src/dms/run.sh`.",
+      "Run: `rg -n \"pg_isready|DATABASE_CONNECTION_STRING_ADMIN|AppSettings__Datastore\" src/dms/run.sh` and confirm the PostgreSQL readiness logic is gated to PostgreSQL datastore startup.",
+      "Run an MSSQL-configured DMS container smoke test when Docker dependencies are available and confirm startup reaches the DMS process without waiting on PostgreSQL."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Pipeline",
+    "description": "Low: Remove no-op profile middleware left after relational profile handling moved into the handlers and write pipeline.",
+    "acceptance-criteria": [
+      "`ProfileFilteringMiddleware` and `ProfileWriteValidationMiddleware` are deleted instead of retained as pass-through pipeline steps.",
+      "`ApiService` no longer adds the deleted no-op profile middleware to read or write pipelines.",
+      "`DmsCoreServiceExtensions` no longer registers the deleted no-op profile middleware.",
+      "Unit tests that only assert the no-op middleware calls `next()` are deleted, and remaining pipeline-ordering tests assert the direct neighboring steps that still perform work."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"ProfileFilteringMiddleware|ProfileWriteValidationMiddleware\" src/dms/core src/dms/tests src/dms/frontend` and confirm only historical or intentionally removed references remain.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Pipeline",
+    "description": "Low: Remove the unused legacy reference-extraction compatibility mode from the relational-only write path.",
+    "acceptance-criteria": [
+      "`ReferenceExtractionMode.LegacyCompatibility` and its legacy-only exception branches are deleted.",
+      "`ReferenceExtractor` keeps only the relational write-validation behavior used by production callers.",
+      "Unit tests that exist only to exercise legacy compatibility extraction are deleted or rewritten to cover relational validation behavior.",
+      "No production or test code passes a legacy reference-extraction mode after the cleanup."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"ReferenceExtractionMode|LegacyCompatibility|CreateLegacyCompatibility\" src/dms/core src/dms/backend src/dms/tests` and confirm no legacy compatibility extraction mode remains.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization",
+    "description": "Low: Simplify authorization middleware now that all resource authorization uses the relational path.",
+    "acceptance-criteria": [
+      "`ResourceActionAuthorizationMiddleware` no longer has an `IsRelationalBackendAuthorizationRequest` helper that returns true for every supported method.",
+      "Missing claim-set metadata and missing authorization strategies use the relational security-configuration responses directly.",
+      "Dead legacy forbidden-response and staged-not-implemented branches that can no longer execute are removed.",
+      "`ProvideAuthorizationFiltersMiddleware` always preserves raw relational strategy names with empty filters and no longer branches on nullable `MappingSet` to run the legacy filter-provider path.",
+      "Authorization unit tests assert the always-relational missing-security-metadata, missing-strategy, and authorization-filter behavior without backend-mode helpers or legacy filter-provider fixtures."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"IsRelationalBackendAuthorizationRequest|CreateNoStrategiesForbiddenResponse|TryCreateStagedNotImplementedResponse|Given_A_Legacy|legacy-mode|UseRelationalBackend\" src/dms/core src/dms/tests` and confirm no dead backend-selection branch remains.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Backend",
+    "description": "Low: Delete the unused SuccessDocumentStoreRepository fake backend.",
+    "acceptance-criteria": [
+      "`src/dms/core/EdFi.DataManagementService.Core/Backend/SuccessDocumentStoreRepository.cs` is deleted.",
+      "No production or test code references `SuccessDocumentStoreRepository`.",
+      "Tests that need repository fakes keep using focused test doubles such as `NotImplementedDocumentStoreRepository` subclasses."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"SuccessDocumentStoreRepository\" src/dms` and confirm no references remain.",
+      "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`.",
+      "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
     ],
     "completed": false
   }
