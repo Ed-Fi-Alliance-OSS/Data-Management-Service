@@ -257,3 +257,10 @@
 - Files changed: DMS CI workflows, tasks.json, progress.txt.
 - Verification: task rg clean; broader old-job/relational-result workflow rg clean; yq parsed affected workflows; git diff --check passed.
 - Notes: template workflow use_relational_backend cleanup remains separate pending CI task.
+
+2026-06-29 - completed CI: template workflows single backend path / remove-legacy-backend.md Phase 8
+- Removed build-populated-template use_relational_backend input and legacy/non-relational branch; template package generation always uses provision-e2e-database and registered template datastore.
+- Updated populated/minimal/smoke template workflows to use neutral template DB env names and removed caller use_relational_backend arguments.
+- Fixed reusable workflow secret declarations and bash quoting found by actionlint.
+- Files changed: template/smoke workflows, tasks.json, progress.txt.
+- Verification: task rg clean; yq parsed affected workflows; actionlint passed affected workflows; git diff --check passed.
