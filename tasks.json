@@ -724,7 +724,7 @@
       "Run when dependencies are available: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj -c Release --filter \"Category=MssqlIntegration\"`",
       "Run when dependencies are available: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E Validation",

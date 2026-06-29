@@ -319,3 +319,11 @@
 - Files changed: src/dms/Directory.Build.targets, tasks.json, progress.txt.
 - Verification: dotnet csharpier format src/dms; git diff --check passed.
 - Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
+
+2026-06-29 - completed Build Validation: solution/unit/integration validation / remove-legacy-backend.md final validation
+- Ran Release DMS solution build; passed with known Reqnroll DeleteResourcesValidation.feature.cs missing feature warning only.
+- Unit tests passed: Core 2561, Backend 1797, Frontend 187, DMS guardrails 31.
+- PostgreSQL backend integration passed 662 using existing dms-postgresql on localhost:5435.
+- Started temporary dms-codex-mssql on localhost,1434; MSSQL backend integration passed 527; API integration passed 106 with PostgreSQL+MSSQL env vars; stopped temp container.
+- Files changed: tasks.json, progress.txt.
+- Blockers/notes: no code fixes needed; pre-existing unstaged deletion of final E2E Validation task in tasks.json preserved outside commit.
