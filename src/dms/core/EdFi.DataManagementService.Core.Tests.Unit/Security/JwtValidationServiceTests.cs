@@ -360,4 +360,120 @@ public class JwtValidationServiceTests
             _clientAuthorizations!.DataStoreIds.Should().BeEmpty();
         }
     }
+
+    /// <summary>
+    /// DMS performs stateless self-inspection of bearer tokens and does not maintain
+    /// a replay cache or perform per-request revocation. The same valid token may be
+    /// presented repeatedly within its lifetime and is accepted every time.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Token_Validated_Repeatedly : JwtValidationServiceTests
+    {
+        private readonly List<(
+            ClaimsPrincipal? Principal,
+            ClientAuthorizations? ClientAuthorizations
+        )> _results = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            var claims = new[] { new Claim("jti", "replayed-token-id"), new Claim("scope", "edfi-admin") };
+
+            var token = CreateTestToken(
+                claims,
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            // Act - present the same token several times
+            for (int i = 0; i < 3; i++)
+            {
+                _results.Add(
+                    await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None)
+                );
+            }
+        }
+
+        [Test]
+        public void It_accepts_the_token_on_every_presentation()
+        {
+            _results.Should().OnlyContain(r => r.Principal != null && r.ClientAuthorizations != null);
+        }
+
+        [Test]
+        public void It_returns_the_same_token_id_each_time()
+        {
+            _results.Select(r => r.ClientAuthorizations!.TokenId).Should().AllBe("replayed-token-id");
+        }
+    }
+
+    /// <summary>
+    /// The jti claim is informational for DMS: it is copied to TokenId for correlation
+    /// but is never parsed or used in the accept/reject decision. A malformed (non-GUID)
+    /// jti therefore does not cause rejection.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Token_With_Malformed_Jti : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            var claims = new[] { new Claim("jti", "not-a-valid-guid-###"), new Claim("scope", "edfi-admin") };
+
+            var token = CreateTestToken(
+                claims,
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            // Act
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_a_valid_principal()
+        {
+            _principal.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_stores_the_malformed_jti_verbatim_as_the_token_id()
+        {
+            _clientAuthorizations!.TokenId.Should().Be("not-a-valid-guid-###");
+        }
+    }
 }
