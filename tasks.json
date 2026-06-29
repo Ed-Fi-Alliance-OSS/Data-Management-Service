@@ -653,7 +653,7 @@
       "Run: `rg -n \"\\\\.env\\\\.e2e\\\\.relational|USE_RELATIONAL_BACKEND|AppSettings__UseRelationalBackend|Category[!]?=?@?relational-backend|NEED_DATABASE_SETUP|DMS_DEPLOY_DATABASE_ON_STARTUP|AppSettings(:|__)DeployDatabaseOnStartup|RELATIONAL_E2E_DATABASE_NAME|provision-relational-e2e-database|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational|SchemaTools ddl provision\" docs/MULTI-TENANCY-GETTING-STARTED.md docs/RELATIONAL-BACKEND.md docs/CONFIGURATION.md`",
       "Inspect remaining `DeployDatabaseOnStartup` matches and confirm they are CMS-only."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",

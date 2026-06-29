@@ -291,3 +291,9 @@
 - Files changed: tasks.json, progress.txt.
 - Verification: task rg over AGENTS/README/GETTING_STARTED/docs/DOCKER/compose README clean.
 - Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
+
+2026-06-29 - completed Documentation: relational/configuration/multitenancy neutral provisioning names / remove-legacy-backend.md Phase 9
+- Updated multi-tenancy guide to prepare ApiSchema workspace, choose tenant DB names, provision per tenant with provision-dms-schema/SchemaTools, then restart DMS; removed auto first-connection deploy and dms.Document checks.
+- Decision: no changes needed in RELATIONAL-BACKEND or CONFIGURATION; remaining DeployDatabaseOnStartup doc is CMS-only.
+- Files changed: docs/MULTI-TENANCY-GETTING-STARTED.md, tasks.json, progress.txt.
+- Verification: task rg returned only intentional SchemaTools ddl provision wording; DeployDatabaseOnStartup rg is CMS-only in docs/CONFIGURATION; stale auto-deploy/dms.Document rg clean; git diff --check passed.

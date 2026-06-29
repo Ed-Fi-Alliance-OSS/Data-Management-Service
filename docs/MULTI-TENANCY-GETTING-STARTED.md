@@ -101,6 +101,16 @@ Start the DMS stack with your multi-tenancy configuration:
 ```powershell
 cd eng/docker-compose
 
+# Prepare the ApiSchema workspace used by provisioning. On a clean checkout,
+# publish the dms-schema tool first.
+$schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+$schemaToolOutput  = ".bootstrap/tools/dms-schema"
+dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
+$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
+
+pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+pwsh ./prepare-dms-claims.ps1
+
 pwsh ./start-local-dms.ps1 `
     -EnvironmentFile "./.env.multitenancy" `
     -EnableConfig `
@@ -127,10 +137,18 @@ You should see containers running for:
 - `dms-postgresql` (PostgreSQL on port 5435)
 - `ed-fi-api-swagger-ui` (Swagger UI on port 8082)
 
-## Step 3: Create Tenant Databases
+## Step 3: Choose Tenant Database Names
 
-Before creating instances in the Configuration Service, create the target
-databases. DMS will deploy the schema automatically on first connection.
+Before creating instances in the Configuration Service, choose the target
+database names. The DMS runtime does not deploy tenant schemas during startup or
+on first connection. Schema provisioning happens after the data stores exist in
+Configuration Service (Step 5).
+
+You do not need to create the databases manually. The provisioning phase uses
+the configured CMS data store connection strings, creates missing PostgreSQL
+databases, and runs the SchemaTools ddl provision workflow for each distinct
+target database. If you prefer to create empty databases yourself before
+provisioning, use commands like these:
 
 ```powershell
 # Create databases for Tenant 1 (DistrictA)
@@ -194,7 +212,8 @@ Prerequisites:
 - `ROUTE_QUALIFIER_SEGMENTS=schoolYear` in your environment file.
 - If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
   tenant-scoped Configuration Service calls.
-- Create the target PostgreSQL databases first (Step 3).
+- Choose the target PostgreSQL database names first (Step 3). Provision them
+  after creating the CMS data stores and route contexts.
 
 Steps (repeat per school year):
 
@@ -244,22 +263,31 @@ Content-Type: application/json
 Create another data store for `2025` by repeating the last two requests with a
 different database and `contextValue`.
 
-After creating data stores and route contexts, restart the DMS container so it
-reloads data store configuration:
-
-```powershell
-docker restart ed-fi-api
-```
+After creating data stores and route contexts, continue to Step 5 to provision
+the tenant databases before restarting DMS.
 
 Notes:
 
 - If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
 - Each instance needs route context entries that match `ROUTE_QUALIFIER_SEGMENTS`.
 
-## Step 5: Restart DMS Container
+## Step 5: Provision Schemas and Restart DMS
 
-After creating all instances, restart the DMS container to load the new
-configurations and deploy the database schema to each tenant database:
+After creating all instances and route contexts, provision the tenant
+databases. `provision-dms-schema.ps1` reads data stores from Configuration
+Service for the tenant named by `CONFIG_SERVICE_TENANT` in the environment
+file, translates Docker-internal PostgreSQL connection strings to host-side
+targets, creates missing databases, and invokes `dms-schema ddl provision`.
+
+For the two-tenant example, set `CONFIG_SERVICE_TENANT` to `DistrictA` in
+`.env.multitenancy`, provision, then repeat with `DistrictB`:
+
+```powershell
+pwsh ./provision-dms-schema.ps1 -EnvironmentFile "./.env.multitenancy"
+```
+
+Then restart the DMS container so it reloads data store configuration and clears
+any cached not-provisioned validation state:
 
 ```powershell
 docker restart ed-fi-api
@@ -280,8 +308,14 @@ docker logs ed-fi-api | Select-String "Successfully fetched"
 You should see:
 
 - `Successfully fetched X data stores`
-- `Deploying database schema to data store 'District A - School Year 2024'...`
-- etc.
+- Relational mapping initialization messages for the staged ApiSchema workspace
+
+Verify each tenant database was provisioned:
+
+```powershell
+docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2024 `
+    -c 'SELECT COUNT(*) FROM dms."EffectiveSchema";'
+```
 
 ## Step 6: Test the Setup
 
@@ -323,11 +357,11 @@ Create data in different instances and verify isolation:
 ```powershell
 # Check data in District A, 2024
 docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2024 \
-    -c "SELECT COUNT(*) FROM dms.Document;"
+    -c 'SELECT COUNT(*) FROM dms."Descriptor";'
 
 # Check data in District A, 2025
 docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
-    -c "SELECT COUNT(*) FROM dms.Document;"
+    -c 'SELECT COUNT(*) FROM dms."Descriptor";'
 ```
 
 ## Configuration Reference
@@ -415,6 +449,7 @@ will only work when the DistrictA tenant is selected.
 ### Database connection errors
 
 - Verify the database exists: `docker exec dms-postgresql psql -U postgres -l`
+- Verify the database was provisioned: `docker exec dms-postgresql psql -U postgres -d {database_name} -c 'SELECT COUNT(*) FROM dms."EffectiveSchema";'`
 - Check the connection string format (use internal Docker hostname `dms-postgresql`)
 - Ensure the password matches `POSTGRES_PASSWORD`
 
