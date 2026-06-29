@@ -85,6 +85,20 @@ public class Given_Build_Dms_E2E_Guardrails
         suffixDefinition.Should().NotContain("relational-shard-");
     }
 
+    [Test]
+    public void It_always_sets_the_e2e_datastore_database_name_for_the_test_process()
+    {
+        var processContextDefinition = ExtractFunctionBody("Invoke-WithE2ETestProcessContext");
+        var beforeAction = processContextDefinition.Split("& $Action", StringSplitOptions.None)[0];
+
+        beforeAction
+            .Should()
+            .Contain("AppSettings__DataStoreDatabaseName must be set")
+            .And.Contain("$env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName");
+        beforeAction.Should().NotContain("Remove-Item Env:AppSettings__DataStoreDatabaseName");
+        processContextDefinition.Should().NotContain("AppSettings__UseRelationalBackend");
+    }
+
     private string ExtractFunctionBody(string functionName)
     {
         int startIndex = _buildScriptContents.IndexOf($"function {functionName}", StringComparison.Ordinal);

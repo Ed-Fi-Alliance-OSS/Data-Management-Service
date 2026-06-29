@@ -363,13 +363,11 @@ function Invoke-WithE2ETestProcessContext {
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
-        if (-not [string]::IsNullOrWhiteSpace($E2ETestSettings.DataStoreDatabaseName)) {
-            $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
-        }
-        else {
-            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($E2ETestSettings.DataStoreDatabaseName)) {
+            throw "AppSettings__DataStoreDatabaseName must be set for the DMS E2E test process."
         }
 
+        $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         & $Action
     }
