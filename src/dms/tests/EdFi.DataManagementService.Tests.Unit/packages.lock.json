@@ -110,11 +110,6 @@
           "Json.More.Net": "2.0.1.2"
         }
       },
-      "librdkafka.redist": {
-        "type": "Transitive",
-        "resolved": "2.6.1",
-        "contentHash": "RcpH/eqmfp08RmfeQdHeJEz0OaAcYWJo8EqQiU4ohDrBygIXbWhCTksUFkhYGqap/5Ycm+HC9RVSlwetFo9SlA=="
-      },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
         "resolved": "8.0.0",
@@ -407,7 +402,6 @@
       "edfi.datamanagementservice.tests.e2e": {
         "type": "Project",
         "dependencies": {
-          "Confluent.Kafka": "[2.6.1, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FluentAssertions": "[6.12.1, )",
           "JsonSchema.Net": "[7.2.2, )",
@@ -439,15 +433,6 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
-      },
-      "Confluent.Kafka": {
-        "type": "CentralTransitive",
-        "requested": "[2.6.1, )",
-        "resolved": "2.6.1",
-        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
-        "dependencies": {
-          "librdkafka.redist": "2.6.1"
-        }
       },
       "JsonSchema.Net": {
         "type": "CentralTransitive",
