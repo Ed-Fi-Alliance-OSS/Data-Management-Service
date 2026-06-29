@@ -26,8 +26,8 @@ backend, and the DDL pipeline that provisions each baseline.
 ## What this is not
 
 - Not a docker-stack E2E. See `EdFi.DataManagementService.Tests.E2E` for tests
-  that run against a fully composed stack (DMS, CMS, identity provider,
-  Kafka).
+  that run against a fully composed stack with DMS, CMS, and an identity
+  provider.
 - Not an exhaustive matrix. Deep edge cases for backend DDL generation,
   relational write merging, and apiSchema shape coverage live in
   `EdFi.DataManagementService.Backend.Postgresql.Tests.Integration` and

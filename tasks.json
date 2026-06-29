@@ -355,7 +355,7 @@
       "Run: `rg -n \"dms\\\\.document|to_debezium|edfi\\\\.dms\\\\.document|Kafka|CDC|Debezium\" docs README.md GETTING_STARTED.md getting-started.http src/dms/tests/RestClient src/dms eng/docker-compose`",
       "Manually inspect remaining active matches and confirm they are either the pending-support note, generic non-legacy Kafka material, or out-of-scope historical content."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Feature Flag Removal",
