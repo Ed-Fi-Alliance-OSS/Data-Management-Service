@@ -26,7 +26,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 /// </summary>
 [TestFixture]
 [NonParallelizable]
-public class ForwardedHeadersTests
+public class Given_A_Reverse_Proxy_Configuration
 {
     private const string ForwardedHost = "proxied.example.com";
     private const string UseReverseProxyHeadersEnv = "AppSettings__UseReverseProxyHeaders";
@@ -69,7 +69,7 @@ public class ForwardedHeadersTests
     }
 
     [Test]
-    public async Task When_reverse_proxy_disabled_forwarded_headers_are_ignored()
+    public async Task It_ignores_forwarded_headers_when_reverse_proxy_is_disabled()
     {
         Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "false");
 
@@ -82,7 +82,7 @@ public class ForwardedHeadersTests
     }
 
     [Test]
-    public async Task When_source_is_untrusted_forwarded_headers_are_ignored()
+    public async Task It_ignores_forwarded_headers_from_an_untrusted_source()
     {
         Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
@@ -96,7 +96,7 @@ public class ForwardedHeadersTests
     }
 
     [Test]
-    public async Task When_source_is_a_trusted_proxy_ip_forwarded_headers_are_honored()
+    public async Task It_honors_forwarded_headers_from_a_trusted_proxy_ip()
     {
         Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
@@ -110,7 +110,7 @@ public class ForwardedHeadersTests
     }
 
     [Test]
-    public async Task When_source_is_in_a_trusted_network_forwarded_headers_are_honored()
+    public async Task It_honors_forwarded_headers_from_a_trusted_network()
     {
         Environment.SetEnvironmentVariable(UseReverseProxyHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownNetworksEnv, "10.10.0.0/16");
