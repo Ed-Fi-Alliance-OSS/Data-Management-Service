@@ -39,7 +39,7 @@ jobs:
       # the template package workflows (tag/release and explicit dispatch opt-in).
       publish_package: false
       use_relational_backend: true
-      environment_file: "./.env.smoke.relational"
+      environment_file: "./.env.smoke"
       verify_restore: true
       require_populated_data: true
     secrets:
@@ -111,12 +111,12 @@ jobs:
       # The smoke environment serves the four-package DS52 + TPDM + Sample + Homograph
       # surface the published ODS SDK sweep expects. The dms.EffectiveSchema fingerprint
       # requires the running schema packages and the restored database to match exactly,
-      # so the smoke test reuses the same .env.smoke.relational the in-run template was
+      # so the smoke test reuses the same .env.smoke the in-run template was
       # built from. This is smoke coverage only; the product template stays Core+TPDM.
       - name: Start DMS on the relational backend with Core, TPDM, Sample, and Homograph (SmokeTest)
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.smoke.relational" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.smoke" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for the Configuration Service to be ready
@@ -153,7 +153,7 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "./.env.smoke.relational"
+          $envValues = ReadValuesFromEnvFile "./.env.smoke"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
           $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"

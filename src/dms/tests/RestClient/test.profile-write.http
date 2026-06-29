@@ -88,7 +88,7 @@ Authorization: bearer {{configToken}}
 {
     "dataStoreType": "Test",
     "name": "Profile Write Demo Instance",
-    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_relational;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e;"
 }
 
 ###

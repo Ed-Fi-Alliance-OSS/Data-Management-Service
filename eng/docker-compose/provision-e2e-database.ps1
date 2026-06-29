@@ -5,7 +5,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$EnvironmentFile = "./.env.e2e.relational",
+    [string]$EnvironmentFile = "./.env.e2e",
 
     [string]$DatabaseName,
 

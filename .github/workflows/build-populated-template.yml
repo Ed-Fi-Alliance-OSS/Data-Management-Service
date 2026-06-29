@@ -96,7 +96,7 @@ jobs:
           $environmentFile = '${{ inputs.environment_file }}'
           $packageName = '${{ inputs.package_name }}'
 
-          $relationalEnvFiles = @('./.env.template.relational', './.env.smoke.relational')
+          $relationalEnvFiles = @('./.env.template', './.env.smoke')
           if ($useRelationalBackend -and $environmentFile -notin $relationalEnvFiles) {
             throw "use_relational_backend requires environment_file to be one of: $($relationalEnvFiles -join ', '); got '$environmentFile'."
           }
@@ -104,12 +104,12 @@ jobs:
           # The four-package smoke surface (DS52+TPDM+Sample+Homograph) is an in-run
           # smoke artifact only. It must never publish under the product template
           # contract, and must not reuse a product package name.
-          if ($environmentFile -eq './.env.smoke.relational') {
+          if ($environmentFile -eq './.env.smoke') {
             if ($publishPackage) {
-              throw "environment_file './.env.smoke.relational' is smoke-only and must not be published; set publish_package to false."
+              throw "environment_file './.env.smoke' is smoke-only and must not be published; set publish_package to false."
             }
             if ($packageName -notlike 'EdFi.Api.Smoke.Template.PostgreSql*') {
-              throw "environment_file './.env.smoke.relational' requires a smoke package_name (prefix 'EdFi.Api.Smoke.Template.PostgreSql'); got '$packageName'."
+              throw "environment_file './.env.smoke' requires a smoke package_name (prefix 'EdFi.Api.Smoke.Template.PostgreSql'); got '$packageName'."
             }
           }
 

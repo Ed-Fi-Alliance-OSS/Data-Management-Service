@@ -973,7 +973,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
       - name: Export Relational Docker Logs
         if: always() && steps.relational_e2e.outcome == 'failure'

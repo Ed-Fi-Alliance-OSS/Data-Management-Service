@@ -1534,7 +1534,7 @@ exit 0
 
         It "build-dms.ps1 relational E2E startup clears schema process env overrides around compose calls" {
             # Docker Compose gives process env vars precedence over --env-file values. Relational E2E
-            # startup must let .env.e2e.relational provide the schema package settings, even when an
+            # startup must let .env.e2e provide the schema package settings, even when an
             # earlier compose helper left empty schema env vars in the process.
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
 

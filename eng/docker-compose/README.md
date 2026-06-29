@@ -74,13 +74,13 @@ the running `dms-postgresql` container, the sequence is:
    the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
 
    ```pwsh
-   ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
+   ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
    ```
 
 2. Run the provisioning script:
 
    ```pwsh
-   ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational
+   ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
    ```
 
 3. Restart DMS so cached startup-validation state is discarded:

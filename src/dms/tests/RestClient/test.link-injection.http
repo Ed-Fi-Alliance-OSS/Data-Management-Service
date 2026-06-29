@@ -48,8 +48,8 @@
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=ValidClientSecret1234567890!Abcd
 
-# DMS E2E DB + password match eng/docker-compose/.env.e2e.relational.
-@relationalDbName=edfi_datamanagementservice_relational
+# DMS E2E DB + password match eng/docker-compose/.env.e2e.
+@relationalDbName=edfi_datamanagementservice_e2e
 @postgresPassword=abcdefgh1!
 
 # ──────────────────────────────────────────────────────────────────────────────

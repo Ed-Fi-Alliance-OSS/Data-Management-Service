@@ -561,7 +561,7 @@
       "Run: `rg --hidden -n \"RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME|USE_RELATIONAL_BACKEND|\\\\.env\\\\.e2e\\\\.relational|\\\\.env\\\\.smoke\\\\.relational|\\\\.env\\\\.template\\\\.relational\" eng eng/docker-compose/.env* src/dms/tests build-dms.ps1 .github docs README.md GETTING_STARTED.md AGENTS.md`",
       "Run DMS E2E setup through `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E Helpers",

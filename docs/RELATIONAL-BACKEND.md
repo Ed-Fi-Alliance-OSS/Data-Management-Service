@@ -307,11 +307,11 @@ E2E runs against the Docker stack. The full setup is documented in
 A typical shard run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e.relational -TestFilter "Category=@e2e-ci-shard-3"
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e -TestFilter "Category=@e2e-ci-shard-3"
 ```
 
-The environment file lives at [`eng/docker-compose/.env.e2e.relational`](../eng/docker-compose/.env.e2e.relational);
-`build-dms.ps1` resolves the `./.env.e2e.relational` argument to that location automatically.
+The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-compose/.env.e2e);
+`build-dms.ps1` resolves the `./.env.e2e` argument to that location automatically.
 
 > [!NOTE]
 > The setup/teardown helpers

@@ -4,7 +4,7 @@
 # (from src/dms/tests/.../Features/References/DeleteReferenceValidation.feature).
 #
 # Prereqs:
-#   /e2e start --relational          # dedicated edfi schema in edfi_datamanagementservice_relational
+#   /e2e start                       # dedicated edfi schema in edfi_datamanagementservice_e2e
 #   /e2e status                      # confirm ed-fi-api is healthy
 #
 # End-to-end self-contained: section 1 mints the Config-Service + DMS tokens so no manual
@@ -17,8 +17,8 @@
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=ValidClientSecret1234567890!Abcd
 
-# DMS E2E DB + password match eng/docker-compose/.env.e2e.relational.
-@relationalDbName=edfi_datamanagementservice_relational
+# DMS E2E DB + password match eng/docker-compose/.env.e2e.
+@relationalDbName=edfi_datamanagementservice_e2e
 @postgresPassword=abcdefgh1!
 
 # ──────────────────────────────────────────────────────────────────────────────

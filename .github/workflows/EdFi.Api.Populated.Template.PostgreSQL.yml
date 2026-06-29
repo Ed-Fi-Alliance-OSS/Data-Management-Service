@@ -40,7 +40,7 @@ jobs:
       provenance_file: "populated.template.intoto.jsonl"
       publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
       use_relational_backend: true
-      environment_file: "./.env.template.relational"
+      environment_file: "./.env.template"
       verify_restore: true
       require_populated_data: true
     secrets:

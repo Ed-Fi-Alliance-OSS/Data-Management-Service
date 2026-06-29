@@ -63,10 +63,10 @@ jobs:
       - name: Resolve relational database name
         run: |
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          $envValues = ReadValuesFromEnvFile "./.env.template"
           $relationalDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
           if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-            throw "E2E_DATABASE_NAME must be set in .env.template.relational"
+            throw "E2E_DATABASE_NAME must be set in .env.template"
           }
           "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
@@ -104,12 +104,12 @@ jobs:
       - name: Start DMS Docker
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Provision relational database
         run: |
-          ./provision-e2e-database.ps1 -EnvironmentFile ./.env.template.relational -Configuration Release
+          ./provision-e2e-database.ps1 -EnvironmentFile ./.env.template -Configuration Release
         working-directory: eng/docker-compose/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.
@@ -121,7 +121,7 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          $envValues = ReadValuesFromEnvFile "./.env.template"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
           $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"

@@ -96,7 +96,7 @@ jobs:
             -Configuration ${{ env.CONFIGURATION }} `
             -SkipDockerBuild `
             -IdentityProvider keycloak `
-            -EnvironmentFile './.env.e2e.relational' `
+            -EnvironmentFile './.env.e2e' `
             -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
       - name: Export Relational Docker Logs
