@@ -69,9 +69,6 @@ public abstract class ContainerSetupBase
 
     public static async Task ResetDatabase()
     {
-        // Add delay for Kafka CDC to process any pending changes before cleanup
-        await Task.Delay(2000);
-
         var hostConnectionString = BuildHostConnectionString(LegacyDatabaseName);
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();
@@ -99,9 +96,6 @@ public abstract class ContainerSetupBase
 
     public static async Task ResetRelationalDatabase()
     {
-        // Add delay for Kafka CDC to process any pending changes before cleanup
-        await Task.Delay(2000);
-
         var hostConnectionString = BuildHostConnectionString(AppSettings.DataStoreDatabaseName);
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();

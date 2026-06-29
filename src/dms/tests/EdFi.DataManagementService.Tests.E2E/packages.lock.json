@@ -2,15 +2,6 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
-      "Confluent.Kafka": {
-        "type": "Direct",
-        "requested": "[2.6.1, )",
-        "resolved": "2.6.1",
-        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
-        "dependencies": {
-          "librdkafka.redist": "2.6.1"
-        }
-      },
       "coverlet.collector": {
         "type": "Direct",
         "requested": "[6.0.2, )",
@@ -293,11 +284,6 @@
           "Humanizer.Core": "2.14.1",
           "Json.More.Net": "2.0.1.2"
         }
-      },
-      "librdkafka.redist": {
-        "type": "Transitive",
-        "resolved": "2.6.1",
-        "contentHash": "RcpH/eqmfp08RmfeQdHeJEz0OaAcYWJo8EqQiU4ohDrBygIXbWhCTksUFkhYGqap/5Ycm+HC9RVSlwetFo9SlA=="
       },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
