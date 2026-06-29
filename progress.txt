@@ -249,3 +249,11 @@
 - Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, tasks.json, progress.txt.
 - Verification: PowerShell parser passed; task rg returned only AppSettings__DataStoreDatabaseName/e2e-shard matches; focused DMS build-script guardrail tests passed 5; git diff --check passed; build-dms E2ETest .env.e2e self-contained Category=@e2e-ci-shard-3 passed 207/215 with 8 skipped in 19m58s.
 - Notes: unrelated tasks.json working-tree deletion of final E2E Validation task observed and left unstaged.
+
+2026-06-29 - completed CI: DMS workflow jobs single backend path / remove-legacy-backend.md Phase 8
+- Removed on-dms-pullrequest old PostgreSQL integration job and event_file need; no deleted old test project remains in workflow.
+- Renamed DMS E2E workflow/job/step/result labels from relational lane to neutral DMS E2E; kept shard filters as Category=@e2e-ci-shard-N.
+- Updated PR, nightly keycloak, scheduled build, and scheduled pre-image E2E log/result/timing paths from relational*.trx to e2e*.trx to match build-dms output.
+- Files changed: DMS CI workflows, tasks.json, progress.txt.
+- Verification: task rg clean; broader old-job/relational-result workflow rg clean; yq parsed affected workflows; git diff --check passed.
+- Notes: template workflow use_relational_backend cleanup remains separate pending CI task.
