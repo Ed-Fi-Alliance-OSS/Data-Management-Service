@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -37,15 +36,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // database fixture but each rebuild their own service provider with the opposite Enabled
 // value for the link-injection options. The first test captures its etag in a static
 // field; the second test asserts equality.
-
-file sealed class ResourceLinksFlagHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class ResourceLinksFlagNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -217,7 +207,6 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ResourceLinksFlagHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -31,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // Proves link.rel/href emission for references that live inside a collection table, not
 // at the document root. References are located by classPeriodName (identity field), never
 // by array index — per the project convention.
-
-file sealed class NestedCollectionHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class NestedCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -224,7 +214,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, NestedCollectionHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

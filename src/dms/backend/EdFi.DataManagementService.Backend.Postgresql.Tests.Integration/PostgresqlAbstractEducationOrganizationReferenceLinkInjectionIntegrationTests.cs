@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -33,15 +32,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // School's ResourceKeyId — if reconstitution were wrongly using the abstract
 // EducationOrganization ResourceKeyId, the resolver would throw on miss and fail the test
 // with a clear message.
-
-file sealed class AbstractRefHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class AbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -183,7 +173,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, AbstractRefHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

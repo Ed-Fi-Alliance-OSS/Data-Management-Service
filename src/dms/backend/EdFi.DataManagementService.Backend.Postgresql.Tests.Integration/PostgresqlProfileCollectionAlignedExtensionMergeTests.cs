@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -27,16 +26,6 @@ using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAlignedExtensionScenarios;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpHostApplicationLifetime
-    : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -123,10 +112,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
-        services.AddSingleton<
-            IHostApplicationLifetime,
-            PostgresqlProfileCollectionAlignedExtensionNoOpHostApplicationLifetime
-        >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

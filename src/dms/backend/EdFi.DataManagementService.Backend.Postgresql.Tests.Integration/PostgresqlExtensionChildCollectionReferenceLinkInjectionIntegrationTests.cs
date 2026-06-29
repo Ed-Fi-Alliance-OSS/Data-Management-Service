@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -31,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // adds School._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference -> sample.Bus.
 // Note: Bus's projectEndpointName is "sample" (NOT "ed-fi"), so the link href is
 // /sample/buses/<uuid:D> — the resolver and assertion both reflect that.
-
-file sealed class ExtensionChildCollectionHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class ExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -190,7 +180,6 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ExtensionChildCollectionHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

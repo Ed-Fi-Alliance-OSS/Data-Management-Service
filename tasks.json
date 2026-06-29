@@ -994,7 +994,7 @@
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Unit/EdFi.DataManagementService.Backend.Postgresql.Tests.Unit.csproj -c Release`.",
       "Run when PostgreSQL dependencies are available: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj -c Release`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Core Backend",

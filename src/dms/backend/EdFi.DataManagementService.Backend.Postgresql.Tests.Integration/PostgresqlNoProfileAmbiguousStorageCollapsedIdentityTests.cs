@@ -17,22 +17,11 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedNoOpHostApplicationLifetime
-    : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -204,10 +193,6 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<
-            IHostApplicationLifetime,
-            PostgresqlNoProfileAmbiguousStorageCollapsedNoOpHostApplicationLifetime
-        >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

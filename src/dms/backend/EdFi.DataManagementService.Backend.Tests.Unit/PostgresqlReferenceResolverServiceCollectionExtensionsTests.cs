@@ -15,7 +15,6 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Npgsql;
 using NUnit.Framework;
 
@@ -32,7 +31,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
-        services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
@@ -172,14 +170,5 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds,
             MappingSet mappingSet
         ) => Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([]);
-    }
-
-    private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime
-    {
-        public CancellationToken ApplicationStarted => CancellationToken.None;
-        public CancellationToken ApplicationStopping => CancellationToken.None;
-        public CancellationToken ApplicationStopped => CancellationToken.None;
-
-        public void StopApplication() { }
     }
 }

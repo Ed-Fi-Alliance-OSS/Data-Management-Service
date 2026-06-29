@@ -21,7 +21,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -32,15 +31,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // ---------------------------------------------------------------------------
 // File-scoped no-op stubs (same pattern as the scalar-identity fixture)
 // ---------------------------------------------------------------------------
-
-file sealed class ReferenceBackedTopLevelCollectionNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class ReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -177,10 +167,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<
-            IHostApplicationLifetime,
-            ReferenceBackedTopLevelCollectionNoOpHostApplicationLifetime
-        >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

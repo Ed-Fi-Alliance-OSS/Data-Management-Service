@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -45,15 +44,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 //      projection mutates the served body downstream; this test does NOT exercise that
 //      path (no ReadableProfileProjectionContext supplied), so the reconstituted output
 //      IS the served output and must be deep-equal across invocations.
-
-file sealed class AuthorizationHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class AuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -204,7 +194,6 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, AuthorizationHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

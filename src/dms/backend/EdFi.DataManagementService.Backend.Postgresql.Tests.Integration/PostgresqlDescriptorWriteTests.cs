@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -713,7 +712,6 @@ public class Given_PostgresqlDescriptorWriteHandler
         services.Configure<DatabaseOptions>(options =>
             options.IsolationLevel = System.Data.IsolationLevel.ReadCommitted
         );
-        services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -725,13 +723,4 @@ public class Given_PostgresqlDescriptorWriteHandler
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
     }
-}
-
-file sealed class TestHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
 }

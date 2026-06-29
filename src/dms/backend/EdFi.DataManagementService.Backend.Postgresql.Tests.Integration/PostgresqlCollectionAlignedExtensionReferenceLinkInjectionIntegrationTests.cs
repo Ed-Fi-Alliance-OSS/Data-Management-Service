@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -31,15 +30,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // the aligned _ext scope on each parents[*] base-collection element). Uses the synthetic
 // IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref fixture — see
 // task-29d notes for why authoritative/sample doesn't carry this shape.
-
-file sealed class CollectionAlignedExtHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 file sealed class CollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
@@ -184,7 +174,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, CollectionAlignedExtHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
