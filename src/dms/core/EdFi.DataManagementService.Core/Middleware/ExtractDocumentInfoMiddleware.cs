@@ -28,7 +28,13 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid", "");
+        Trace.Assert(requestInfo.ParsedBody is not null, "Body was null, pipeline config invalid", "");
+
+        var mappingSet =
+            requestInfo.MappingSet
+            ?? throw new InvalidOperationException(
+                "MappingSet must be resolved before ExtractDocumentInfoMiddleware."
+            );
 
         var (documentIdentity, superclassIdentity) = requestInfo.ResourceSchema.ExtractIdentities(
             requestInfo.ParsedBody,
@@ -57,10 +63,7 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
 
         var descriptorReferences = requestInfo.ResourceSchema.ExtractRelationalDescriptors(
             requestInfo.ResourceInfo,
-            requestInfo.MappingSet
-                ?? throw new InvalidOperationException(
-                    "MappingSet must be resolved before ExtractDocumentInfoMiddleware."
-                ),
+            mappingSet,
             requestInfo.ParsedBody,
             _logger
         );

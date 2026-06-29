@@ -401,7 +401,7 @@
       "Run: `rg -n \"ExtractDocumentInfoMiddleware|UseRelationalBackend|Given_UseRelationalBackend_Is_False|MappingSet is null|MappingSet is not null\" src/dms/core src/dms/tests src/dms/frontend`",
       "Run: `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -c Release`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Core Pipeline",

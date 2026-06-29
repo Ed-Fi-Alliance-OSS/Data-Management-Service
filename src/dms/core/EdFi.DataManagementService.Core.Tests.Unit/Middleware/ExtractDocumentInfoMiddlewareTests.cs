@@ -190,6 +190,16 @@ public class ExtractDocumentInfoMiddlewareTests
         };
     }
 
+    internal static MappingSet CreateMappingSetWithoutConcreteResource(ResourceInfo resourceInfo)
+    {
+        var mappingSet = CreateMappingSet(resourceInfo);
+
+        return mappingSet with
+        {
+            Model = mappingSet.Model with { ConcreteResourcesInNameOrder = [] },
+        };
+    }
+
     internal static ApiSchemaDocuments BuildReferenceValidationApiSchemaDocuments()
     {
         return new ApiSchemaBuilder()
@@ -316,6 +326,99 @@ public class ExtractDocumentInfoMiddlewareTests
 
     private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments) =>
         new(canonical, segments);
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_No_Resolved_Mapping_Set : ExtractDocumentInfoMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithIdentityJsonPaths(["$.schoolId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
+            RequestInfo requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                """{"schoolId":255901}""",
+                "/ed-fi/schools"
+            );
+            requestInfo.MappingSet = null;
+
+            _execute = () =>
+                BuildMiddleware()
+                    .Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_fails_as_a_pipeline_configuration_error()
+        {
+            await _execute
+                .Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("MappingSet must be resolved before ExtractDocumentInfoMiddleware.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_A_Mapping_Set_Missing_The_Concrete_Resource
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithIdentityJsonPaths(["$.schoolId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
+            RequestInfo requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                """{"schoolId":255901}""",
+                "/ed-fi/schools"
+            );
+            requestInfo.MappingSet = CreateMappingSetWithoutConcreteResource(
+                CreateResourceInfo(resourceSchema)
+            );
+
+            _execute = () =>
+                BuildMiddleware()
+                    .Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_fails_with_the_missing_relational_resource_metadata()
+        {
+            await _execute
+                .Should()
+                .ThrowAsync<KeyNotFoundException>()
+                .WithMessage(
+                    "Mapping set 'extract-document-info-test/Pgsql/v1' does not contain resource 'Ed-Fi.School' in ConcreteResourcesInNameOrder."
+                );
+        }
+    }
 
     [TestFixture]
     [Parallelizable]
