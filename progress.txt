@@ -185,3 +185,9 @@
 - Added middleware tests for unresolved MappingSet and mapping set missing requested ConcreteResourceModel; kept no-write-plan descriptor extraction tolerance because repository/write-plan guardrails own that failure.
 - Files changed: ExtractDocumentInfoMiddleware, ExtractDocumentInfoMiddlewareTests, tasks.json, progress.txt.
 - Verification: csharpier format; task rg no UseRelationalBackend/disabled-backend matches; remaining MappingSet is null/is not null hits are pending profile/handler tasks; Core.Tests.Unit Release passed 2691; git diff --check passed.
+
+2026-06-29 - completed Core Pipeline: profile write/filtering middleware relational-only / remove-legacy-backend.md Phase 5
+- Removed legacy response filter and creatability validator services/tests; ProfileFilteringMiddleware and ProfileWriteValidationMiddleware now preserve pipeline positions without old filtering/merge behavior.
+- ProfileWritePipelineMiddleware now fails fast when a profiled write reaches it without a resolved MappingSet; relational read handlers/repositories own projection and content type.
+- Files changed: profile middlewares, profile pipeline docs, DMS core service registration, profile middleware/unit setup tests, deleted old filter/creatability services/tests, tasks.json.
+- Verification: csharpier format; deleted-type rg clean; task rg inspected remaining unrelated legacy references; Core.Tests.Unit Release passed 2565; solution build Release --no-restore passed with existing Reqnroll missing DeleteResourcesValidation feature warning.

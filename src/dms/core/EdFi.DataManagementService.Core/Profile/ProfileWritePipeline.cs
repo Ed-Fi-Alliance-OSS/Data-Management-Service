@@ -112,10 +112,9 @@ public sealed record ProfileWritePipelineResult
 /// </list>
 /// </para>
 /// <para>
-/// Integration status: wired into the relational runtime write path.
-/// ProfileWritePipelineMiddleware invokes <see cref="Execute"/> for relational POST/PUT
-/// requests governed by a writable profile and attaches the resulting
-/// BackendProfileWriteContext for the backend profile-aware merge to consume.
+/// Runtime integration is owned by <see cref="Middleware.ProfileWritePipelineMiddleware" />,
+/// which invokes <see cref="Execute"/> for relational POST/PUT requests governed by a writable
+/// profile and attaches the resulting backend profile write context for relational execution.
 /// ProfileWriteValidationMiddleware still runs ahead of it in the upsert/update pipeline.
 /// </para>
 /// </remarks>

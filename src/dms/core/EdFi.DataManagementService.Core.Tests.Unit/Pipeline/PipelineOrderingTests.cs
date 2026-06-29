@@ -96,7 +96,6 @@ public class PipelineOrderingTests
             );
 
             services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
             services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
                 NullLogger<ProfileFilteringMiddleware>.Instance
             );
@@ -437,12 +436,10 @@ public class PipelineOrderingTests
             );
 
             services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
             services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
                 NullLogger<ProfileFilteringMiddleware>.Instance
             );
 
-            services.AddSingleton<IProfileCreatabilityValidator>(A.Fake<IProfileCreatabilityValidator>());
             services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
             services.AddTransient<ProfileWriteValidationMiddleware>();
             services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
