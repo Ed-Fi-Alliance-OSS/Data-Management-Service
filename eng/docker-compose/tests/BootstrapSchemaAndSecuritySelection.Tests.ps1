@@ -1581,9 +1581,20 @@ exit 0
         It "DataManagementService E2E setup calls configure-local-data-store.ps1 to create the default data store" {
             # start-local-dms.ps1 no longer creates a data store automatically after DMS-1153.
             # The DataManagementService E2E setup must call configure-local-data-store.ps1 explicitly
-            # so a default route-unqualified data store is present before the tests run.
+            # so a default route-unqualified data store points at the provisioned E2E database.
             $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
+            $dmsSetup | Should -Match "E2E_DATABASE_NAME"
+            $dmsSetup | Should -Match '-DataStoreDatabaseName\s+\$e2eDatabaseName'
+        }
+
+        It "start-published-dms.ps1 can create E2E data stores against an explicit database name" {
+            $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+
+            $publishedStartScript | Should -Match '\$DataStoreDatabaseName = ""'
+            $publishedStartScript | Should -Match '\$postgresDbName ='
+            $publishedStartScript | Should -Match '-PostgresDbName\s+\$postgresDbName'
+            $publishedStartScript | Should -Not -Match '-PostgresDbName\s+\$envValues\.POSTGRES_DB_NAME'
         }
 
         It "E2E setup scripts do not enable Kafka infrastructure by default" {

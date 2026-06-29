@@ -396,3 +396,10 @@
 - Decision: document DATABASE_CONNECTION_STRING_ADMIN as readiness/admin connection source parsed by run.sh; no setup-on-startup or installer guidance added.
 - Files changed: docs/DOCKER.md, tasks.json, progress.txt.
 - Verification: task rg showed only DATABASE_CONNECTION_STRING_ADMIN docs/run.sh matches and no remaining POSTGRES_ADMIN_/POSTGRES_PORT/POSTGRES_HOST in active docs; git diff --check passed.
+
+2026-06-29 - completed E2E Provisioning: align CMS data-store DB with E2E provisioned DB / remove-legacy-backend.md follow-up
+- Added explicit DataStoreDatabaseName override to configure-local-data-store and start-published-dms; build-dms E2ETest and direct DMS E2E setup pass E2E_DATABASE_NAME so CMS data stores target edfi_datamanagementservice_e2e.
+- Decision: keep normal local/default setup on POSTGRES_DB_NAME when no override is supplied; direct E2E setup now fails fast if E2E_DATABASE_NAME is missing.
+- Files changed: build-dms.ps1, configure-local-data-store.ps1, start-published-dms.ps1, DMS E2E setup-local-dms.ps1, E2E/Pester/C# guardrails, tasks.json, progress.txt.
+- Verification: PowerShell parser checks; csharpier on C# guardrail; DMS build-script guardrail test passed 6; BootstrapSchemaDeploymentSafety passed 96; BootstrapSchemaAndSecuritySelection passed 65; DockerBuild rebuilt/tagged ed-fi-api-local; build-dms E2ETest .env.e2e self-contained Category=@e2e-ci-shard-3 passed 235/243 with 8 skipped in 34m01s.
+- Notes: first shard run used stale ed-fi-api-local image from 2026-06-28 22:45 and failed 20 unrelated runtime scenarios; rebuilt and tagged fresh image before final shard rerun.

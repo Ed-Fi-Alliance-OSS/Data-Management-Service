@@ -100,6 +100,24 @@ public class Given_Build_Dms_E2E_Guardrails
         processContextDefinition.Should().NotContain(removedRelationalBackendSetting);
     }
 
+    [Test]
+    public void It_uses_the_e2e_datastore_database_name_when_creating_cms_data_stores()
+    {
+        var startEnvironmentDefinition = ExtractFunctionBody("Start-DockerEnvironment");
+        var e2eTestDefinition = ExtractFunctionBody("E2ETests");
+
+        startEnvironmentDefinition
+            .Should()
+            .Contain("[string]")
+            .And.Contain("$DataStoreDatabaseName = \"\"")
+            .And.Contain("configure-local-data-store.ps1")
+            .And.Contain("-DataStoreDatabaseName $DataStoreDatabaseName")
+            .And.Contain("start-published-dms.ps1")
+            .And.Contain("-DataStoreDatabaseName $DataStoreDatabaseName");
+
+        e2eTestDefinition.Should().Contain("-DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName");
+    }
+
     private string ExtractFunctionBody(string functionName)
     {
         int startIndex = _buildScriptContents.IndexOf($"function {functionName}", StringComparison.Ordinal);

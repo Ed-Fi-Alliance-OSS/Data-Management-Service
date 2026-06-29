@@ -924,7 +924,7 @@
       "Inspect `eng/docker-compose/configure-local-data-store.ps1` and `eng/docker-compose/start-published-dms.ps1` to confirm non-E2E/default setup still uses the intended default PostgreSQL database.",
       "Run the repo-root E2E build lane with Docker dependencies available: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Lock Files",

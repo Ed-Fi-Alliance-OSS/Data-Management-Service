@@ -955,6 +955,68 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
 
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
         }
+
+        It "uses an explicit database name when creating the default local data store" {
+            . $script:repo.ConfigureScript
+
+            $script:capturedPostgresDbName = $null
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore {
+                param(
+                    [string] $CmsUrl,
+                    [string] $AccessToken,
+                    [string] $PostgresPassword,
+                    [string] $PostgresDbName,
+                    [string] $PostgresUser,
+                    [string] $Name,
+                    [string] $DataStoreType,
+                    [string] $Tenant
+                )
+                $script:capturedPostgresDbName = $PostgresDbName
+                return 303
+            }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile $script:repo.EnvFile `
+                -DataStoreDatabaseName "edfi_datamanagementservice_e2e"
+
+            $script:capturedPostgresDbName | Should -Be "edfi_datamanagementservice_e2e"
+            $result.DataStoreIds | Should -Be @([long]303)
+        }
+
+        It "uses an explicit database name when creating school-year local data stores" {
+            . $script:repo.ConfigureScript
+
+            $script:capturedPostgresDbName = $null
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DmsSchoolYearInstances {
+                param(
+                    [string] $CmsUrl,
+                    [string] $AccessToken,
+                    [int] $StartYear,
+                    [int] $EndYear,
+                    [string] $PostgresPassword,
+                    [string] $PostgresDbName,
+                    [string] $PostgresUser,
+                    [string] $Tenant
+                )
+                $script:capturedPostgresDbName = $PostgresDbName
+                return @(
+                    @{ DataStoreId = [long]401; Year = 2024 },
+                    @{ DataStoreId = [long]402; Year = 2025 }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile $script:repo.EnvFile `
+                -SchoolYearRange "2024-2025" `
+                -DataStoreDatabaseName "edfi_datamanagementservice_e2e"
+
+            $script:capturedPostgresDbName | Should -Be "edfi_datamanagementservice_e2e"
+            $result.DataStoreIds | Should -Be @([long]401, [long]402)
+        }
     }
 
     Context "wrapper sequencing" {

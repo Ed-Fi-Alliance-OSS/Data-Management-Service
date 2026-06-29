@@ -11,6 +11,7 @@ param(
     [string]$EnvironmentFile,
     [switch]$NoDataStore,
     [string]$SchoolYearRange = "",
+    [string]$DataStoreDatabaseName = "",
     [switch]$AddSmokeTestCredentials
 )
 
@@ -241,6 +242,9 @@ function Invoke-ConfigureLocalDataStore {
         [string]
         $SchoolYearRange = "",
 
+        [string]
+        $DataStoreDatabaseName = "",
+
         [switch]
         $AddSmokeTestCredentials
     )
@@ -289,7 +293,13 @@ function Invoke-ConfigureLocalDataStore {
     }
 
     $postgresPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_PASSWORD"
-    $postgresDbName = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+    $postgresDbName =
+        if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+            Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+        }
+        else {
+            $DataStoreDatabaseName
+        }
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
@@ -378,4 +388,5 @@ Invoke-ConfigureLocalDataStore `
     -EnvironmentFile $EnvironmentFile `
     -NoDataStore:$NoDataStore `
     -SchoolYearRange $SchoolYearRange `
+    -DataStoreDatabaseName $DataStoreDatabaseName `
     -AddSmokeTestCredentials:$AddSmokeTestCredentials
