@@ -371,3 +371,10 @@
 - Updated backend/core tests and shared integration helpers to construct relational requests without allow-all handler stubs.
 - Files changed: core/backend request contracts and handlers, DmsCoreServiceExtensions, deleted legacy auth service/test files, backend test helpers/integration request construction, tasks.json, progress.txt.
 - Verification: csharpier format; required rg checks clean for the old handler/factory/validator surface; Core.Tests.Unit Release passed 2589; Backend.Tests.Unit Release passed 1829; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning; git diff --check passed.
+
+2026-06-29 - completed Core Pipeline: remove legacy document-security/pathway write flow / remove-legacy-backend.md follow-up
+- Removed ExtractDocumentSecurityElementsMiddleware and ProvideAuthorizationPathwayMiddleware from POST/PUT/DELETE pipelines; deleted their dead models/extractor/tests.
+- Request contracts and core write/delete records no longer carry DocumentSecurityElements or AuthorizationPathways; relational writes keep AuthorizationStrategyEvaluators plus RelationalAuthorizationContext.
+- Kept EducationOrganizationSecurityElementPath as active securable metadata for AuthorizationSecurableExtractor; ed-org hierarchy middleware now reads schema/body directly.
+- Files changed: ApiService, core/backend request contracts/handlers, RequestInfo/No, ResourceSchema, RelationalDocumentStoreRepository comment, deleted legacy middleware/extractor/tests, backend integration request construction, tasks.json, progress.txt.
+- Verification: legacy symbol rg clean; csharpier format; Core.Tests.Unit Release passed 2560; Backend.Tests.Unit Release --no-build passed 1829; DMS solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.

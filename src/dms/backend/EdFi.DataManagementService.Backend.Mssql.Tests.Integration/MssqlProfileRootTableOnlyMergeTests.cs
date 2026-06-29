@@ -224,9 +224,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler()
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -361,9 +359,7 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-hidden-preservation-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -498,9 +494,7 @@ public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-create-new-post"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -649,9 +643,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -793,9 +785,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-seed"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler()
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -848,9 +838,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-put"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

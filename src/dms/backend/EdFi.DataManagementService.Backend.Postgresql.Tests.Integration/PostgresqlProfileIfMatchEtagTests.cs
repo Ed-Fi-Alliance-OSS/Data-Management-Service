@@ -246,9 +246,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
 
@@ -280,9 +278,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler()
         );
 
         return await scope

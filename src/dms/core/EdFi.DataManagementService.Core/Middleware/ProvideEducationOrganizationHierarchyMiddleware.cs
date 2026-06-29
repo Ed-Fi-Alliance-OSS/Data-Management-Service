@@ -84,11 +84,6 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
 
     private long? FindParentEducationOrganizationId(RequestInfo requestInfo)
     {
-        if (requestInfo.DocumentSecurityElements?.EducationOrganization == null)
-        {
-            return default;
-        }
-
         var parentPaths = requestInfo.ProjectSchema.EducationOrganizationHierarchy[
             requestInfo.ResourceSchema.ResourceName
         ];

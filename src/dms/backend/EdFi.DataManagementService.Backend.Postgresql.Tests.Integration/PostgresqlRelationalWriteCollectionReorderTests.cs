@@ -215,9 +215,7 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler()
         );
 
     public static UpdateRequest CreateUpdateRequest(
@@ -233,9 +231,7 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler()
         );
 
     public static async Task<FullSurfaceCollectionReorderPersistedState> ReadPersistedStateAsync(

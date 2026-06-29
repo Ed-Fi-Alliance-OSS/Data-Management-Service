@@ -352,9 +352,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             Headers: [],
             TraceId: new TraceId("pg-32-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -381,9 +379,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             Headers: [],
             TraceId: new TraceId("pg-32-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler()
         );
 
         return await scope

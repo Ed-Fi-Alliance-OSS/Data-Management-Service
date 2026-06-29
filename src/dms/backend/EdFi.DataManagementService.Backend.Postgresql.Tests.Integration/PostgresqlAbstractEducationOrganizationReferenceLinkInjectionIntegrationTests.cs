@@ -335,9 +335,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -364,9 +362,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-course"),
             DocumentUuid: CourseDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler()
         );
 
         return await scope

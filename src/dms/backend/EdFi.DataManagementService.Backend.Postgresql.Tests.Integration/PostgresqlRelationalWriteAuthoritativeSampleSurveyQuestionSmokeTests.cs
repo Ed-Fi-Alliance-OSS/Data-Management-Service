@@ -710,9 +710,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Headers: [],
             TraceId: new TraceId("pg-authoritative-sample-survey-question-create"),
             DocumentUuid: SurveyQuestionDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleSurveyQuestionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleSurveyQuestionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -739,9 +737,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: SurveyQuestionDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleSurveyQuestionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleSurveyQuestionNoOpUpdateCascadeHandler()
         );
 
         return await scope

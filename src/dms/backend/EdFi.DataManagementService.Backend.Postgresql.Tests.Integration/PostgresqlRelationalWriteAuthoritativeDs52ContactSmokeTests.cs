@@ -699,9 +699,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             Headers: [],
             TraceId: new TraceId("pg-authoritative-ds52-contact-create"),
             DocumentUuid: ContactDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeDs52ContactWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeDs52ContactWriteNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -728,9 +726,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: ContactDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeDs52ContactWriteNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeDs52ContactWriteNoOpUpdateCascadeHandler()
         );
 
         return await scope

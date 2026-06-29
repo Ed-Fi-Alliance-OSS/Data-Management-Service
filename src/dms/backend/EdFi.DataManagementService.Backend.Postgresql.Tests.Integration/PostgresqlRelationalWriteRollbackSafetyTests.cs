@@ -231,9 +231,7 @@ file static class RollbackSafetyIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new RollbackSafetyNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new RollbackSafetyNoOpUpdateCascadeHandler()
         );
     }
 

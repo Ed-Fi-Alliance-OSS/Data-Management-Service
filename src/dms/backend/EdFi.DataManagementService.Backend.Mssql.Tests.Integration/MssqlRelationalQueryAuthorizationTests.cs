@@ -1180,7 +1180,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var request = new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
             DeleteInEdOrgHierarchy: false,
             Headers: CreateHeaders(ifMatch),
@@ -1574,9 +1573,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1626,9 +1623,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {

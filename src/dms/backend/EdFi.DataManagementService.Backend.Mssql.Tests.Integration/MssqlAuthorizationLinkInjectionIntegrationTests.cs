@@ -330,9 +330,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -359,9 +357,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler()
         );
 
         return await scope

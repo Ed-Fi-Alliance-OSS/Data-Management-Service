@@ -340,9 +340,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 Headers: [],
                 TraceId: new TraceId(traceId),
                 DocumentUuid: documentUuid,
-                DocumentSecurityElements: new([], [], [], [], []),
-                UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationPathways: []
+                UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler()
             )
         );
     }
@@ -375,9 +373,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 Headers: headers ?? [],
                 TraceId: new TraceId(traceId),
                 DocumentUuid: documentUuid,
-                DocumentSecurityElements: new([], [], [], [], []),
-                UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler(),
-                ResourceAuthorizationPathways: []
+                UpdateCascadeHandler: new PostgresqlIfMatchCascadeNoOpUpdateCascadeHandler()
             )
         );
     }

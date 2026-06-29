@@ -368,9 +368,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -401,9 +399,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId($"mssql-29c-seed-classperiod-{traceSuffix}"),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -430,9 +426,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-bellschedule"),
             DocumentUuid: BellScheduleDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope

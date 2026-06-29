@@ -380,9 +380,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             Headers: [],
             TraceId: new TraceId("pg-29c-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -413,9 +411,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             Headers: [],
             TraceId: new TraceId($"pg-29c-seed-classperiod-{traceSuffix}"),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -442,9 +438,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             Headers: [],
             TraceId: new TraceId("pg-29c-seed-bellschedule"),
             DocumentUuid: BellScheduleDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new NestedCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope

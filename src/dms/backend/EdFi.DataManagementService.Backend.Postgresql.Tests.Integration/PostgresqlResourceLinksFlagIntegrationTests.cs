@@ -365,9 +365,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             Headers: [],
             TraceId: new TraceId("pg-31-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -394,9 +392,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             Headers: [],
             TraceId: new TraceId("pg-31-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler()
         );
 
         return await scope

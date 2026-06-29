@@ -309,9 +309,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler()
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -348,9 +346,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -388,9 +384,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

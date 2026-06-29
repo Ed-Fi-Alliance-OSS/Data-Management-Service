@@ -44,19 +44,11 @@ internal record UpsertRequest(
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
-    /// The security elements extracted from the document
-    /// </summary>
-    DocumentSecurityElements DocumentSecurityElements,
-    /// <summary>
     /// This class will modify the EdFiDoc of a referencing
     /// resource when the referenced resource's identifying
     /// values are modified
     /// </summary>
     IUpdateCascadeHandler UpdateCascadeHandler,
-    /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
     /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// </summary>
@@ -70,9 +62,7 @@ internal record UpsertRequest(
         Headers,
         TraceId,
         DocumentUuid,
-        DocumentSecurityElements,
         UpdateCascadeHandler,
-        ResourceAuthorizationPathways,
         BackendProfileWriteContext
     ),
         IRelationalUpsertRequest;

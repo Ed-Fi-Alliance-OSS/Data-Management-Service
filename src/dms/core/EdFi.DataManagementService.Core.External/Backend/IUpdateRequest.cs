@@ -40,11 +40,6 @@ public interface IUpdateRequest
     WritePrecondition WritePrecondition { get; }
 
     /// <summary>
-    /// The elements extracted from the document that are being secured on
-    /// </summary>
-    DocumentSecurityElements DocumentSecurityElements { get; }
-
-    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }

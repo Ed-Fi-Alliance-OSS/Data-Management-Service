@@ -295,9 +295,7 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
             Headers: [],
             TraceId: new TraceId("pgsql-storage-collapsed-seed"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -345,9 +343,7 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
             Headers: [],
             TraceId: new TraceId("pgsql-storage-collapsed-put"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

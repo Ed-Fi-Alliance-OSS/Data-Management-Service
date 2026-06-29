@@ -337,9 +337,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             Headers: [],
             TraceId: new TraceId("pg-delete-setup"),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new DeleteByIdNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new DeleteByIdNoOpUpdateCascadeHandler()
         );
     }
 
@@ -348,7 +346,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         return new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId("pg-delete-invocation"),
             DeleteInEdOrgHierarchy: false,
             Headers: [],

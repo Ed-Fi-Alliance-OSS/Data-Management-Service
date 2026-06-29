@@ -335,9 +335,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("pg-30-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -364,9 +362,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("pg-30-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new OrphanedRefNoOpUpdateCascadeHandler()
         );
 
         return await scope

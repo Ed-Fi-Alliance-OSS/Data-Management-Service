@@ -265,9 +265,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -306,9 +304,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 
@@ -348,9 +344,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

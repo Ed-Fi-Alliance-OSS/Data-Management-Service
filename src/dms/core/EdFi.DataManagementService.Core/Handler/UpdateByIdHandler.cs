@@ -58,10 +58,8 @@ internal class UpdateByIdHandler(
                         MappingSet: mappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
-                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
                         TraceId: requestInfo.FrontendRequest.TraceId,
                         UpdateCascadeHandler: updateCascadeHandler,
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

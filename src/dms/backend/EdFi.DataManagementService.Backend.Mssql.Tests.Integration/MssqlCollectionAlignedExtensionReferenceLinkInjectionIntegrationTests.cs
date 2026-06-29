@@ -274,9 +274,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-sponsor"),
             DocumentUuid: SponsorDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -317,9 +315,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-parentresource"),
             DocumentUuid: ParentResourceDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler()
         );
 
         return await scope

@@ -347,9 +347,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             Headers: [],
             TraceId: new TraceId("mssql-delete-setup"),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlDeleteByIdNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlDeleteByIdNoOpUpdateCascadeHandler()
         );
     }
 
@@ -358,7 +356,6 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         return new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId("mssql-delete-invocation"),
             DeleteInEdOrgHierarchy: false,
             Headers: [],

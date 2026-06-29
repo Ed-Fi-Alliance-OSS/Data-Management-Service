@@ -419,9 +419,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -453,9 +451,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlReferenceBackedTopLevelCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

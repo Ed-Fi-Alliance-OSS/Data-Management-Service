@@ -335,9 +335,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             Headers: [],
             TraceId: new TraceId("pg-update-semantics-create"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler()
         );
 
     private UpdateRequest CreateUpdateRequest() =>
@@ -349,9 +347,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             Headers: [],
             TraceId: new TraceId("pg-update-semantics-update"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler()
         );
 
     private static DocumentInfo CreateDocumentInfo()

@@ -701,9 +701,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             Headers: [],
             TraceId: new TraceId($"pg-query-seed-{schoolSeed.SchoolId}"),
             DocumentUuid: schoolSeed.DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler()
         );
 
         return await scope

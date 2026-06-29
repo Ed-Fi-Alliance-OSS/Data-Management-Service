@@ -193,9 +193,7 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
             Headers: [],
             TraceId: new TraceId("pgsql-no-profile-storage-collapsed"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

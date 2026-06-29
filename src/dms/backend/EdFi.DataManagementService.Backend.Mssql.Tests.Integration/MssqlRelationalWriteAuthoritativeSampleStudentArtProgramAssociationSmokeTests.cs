@@ -482,9 +482,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlStudentArtProgramAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlStudentArtProgramAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope

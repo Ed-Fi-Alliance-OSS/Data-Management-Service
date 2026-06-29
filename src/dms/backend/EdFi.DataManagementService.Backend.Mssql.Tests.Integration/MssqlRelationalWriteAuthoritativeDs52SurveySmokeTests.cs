@@ -468,9 +468,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -497,9 +495,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: SurveyDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler()
         );
 
         return await scope

@@ -438,9 +438,7 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             Headers: [],
             TraceId: new TraceId("pg-create-baseline"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new NoOpUpdateCascadeHandler()
         );
     }
 

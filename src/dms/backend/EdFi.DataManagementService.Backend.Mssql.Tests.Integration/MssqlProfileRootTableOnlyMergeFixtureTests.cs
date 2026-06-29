@@ -297,9 +297,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler()
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -735,9 +733,7 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Roo
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-hidden-inlined-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -876,9 +872,7 @@ public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-visible-absent-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1056,9 +1050,7 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-hidden-sub-ref-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1222,9 +1214,7 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-ku-agreement-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

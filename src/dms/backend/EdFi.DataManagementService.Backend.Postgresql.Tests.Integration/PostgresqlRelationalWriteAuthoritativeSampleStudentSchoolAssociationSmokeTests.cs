@@ -1279,9 +1279,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -1308,9 +1306,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: StudentSchoolAssociationDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -2707,9 +2703,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -2736,9 +2730,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: StudentSchoolAssociationDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -3799,9 +3791,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler()
         );
 
         return await scope

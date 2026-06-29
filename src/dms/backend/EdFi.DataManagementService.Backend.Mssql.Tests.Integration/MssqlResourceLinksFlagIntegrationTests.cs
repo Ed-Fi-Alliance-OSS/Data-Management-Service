@@ -336,9 +336,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
             Headers: [],
             TraceId: new TraceId("mssql-31-seed-school"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler()
         );
 
         return await scope
@@ -365,9 +363,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
             Headers: [],
             TraceId: new TraceId("mssql-31-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlResourceLinksFlagNoOpUpdateCascadeHandler()
         );
 
         return await scope

@@ -456,19 +456,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
     public IEnumerable<JsonPath> StaffSecurityElementPaths => _staffSecurityElementPaths.Value;
 
-    private readonly Lazy<IEnumerable<string>> _authorizationPathways = new(() =>
-    {
-        return _resourceSchemaNode["authorizationPathways"]?.AsArray().GetValues<string>()
-            ?? throw new InvalidOperationException(
-                "Expected authorizationPathways to be on ResourceSchema, invalid ApiSchema"
-            );
-    });
-
-    /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
-
     private readonly Lazy<IEnumerable<DecimalValidationInfo>> _decimalPropertyValidationInfos = new(() =>
     {
         JsonNode decimalPropertyValidationInfos =

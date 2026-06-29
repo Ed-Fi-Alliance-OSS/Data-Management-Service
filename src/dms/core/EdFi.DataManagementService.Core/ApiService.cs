@@ -213,7 +213,6 @@ internal class ApiService : IApiService
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
             new ProvideEducationOrganizationHierarchyMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
@@ -227,7 +226,6 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
         ]);
 
@@ -308,7 +306,6 @@ internal class ApiService : IApiService
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
             new ProvideEducationOrganizationHierarchyMiddleware(_logger),
@@ -323,7 +320,6 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpdateByIdHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
         ]);
         return new PipelineProvider(steps);
@@ -343,7 +339,6 @@ internal class ApiService : IApiService
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);

@@ -545,9 +545,7 @@ file static class GuardedNoOpIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
         );
 
     public static UpdateRequest CreateUpdateRequest(
@@ -570,9 +568,7 @@ file static class GuardedNoOpIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
         );
 
     public static UpsertRequest CreatePostAsUpdateRequest(
@@ -597,9 +593,7 @@ file static class GuardedNoOpIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
         );
 
     public static async Task<GuardedNoOpPersistedState> ReadPersistedStateAsync(

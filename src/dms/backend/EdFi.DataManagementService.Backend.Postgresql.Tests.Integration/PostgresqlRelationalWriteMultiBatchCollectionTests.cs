@@ -319,9 +319,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler()
         );
     }
 
@@ -351,9 +349,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler()
         );
     }
 

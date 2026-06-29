@@ -282,9 +282,7 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             Headers: [],
             TraceId: new TraceId("mssql-profile-non-creatable-post"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -432,9 +430,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("mssql-profile-post-as-update-seed"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -472,9 +468,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("mssql-profile-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -618,9 +612,7 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("mssql-profile-put-seed"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: []
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler()
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -658,9 +650,7 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("mssql-profile-put-profiled"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 
