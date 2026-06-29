@@ -18,9 +18,6 @@ Feature: Identity Conflict validation
 
         @API-183
         @e2e-ci-shard-1
-        # DMS-1234: Quarantined until abstract EducationOrganization identity-table
-        # unique violations map to 409 identity-conflict responses.
-        @ignore
         Scenario: 01 Ensure client can't create a School with the same identity as another Education Organization
              When a POST request is made to "/ed-fi/schools" with
                   """
