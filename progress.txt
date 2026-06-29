@@ -346,3 +346,9 @@
 - Deleted legacy compatibility extraction fixtures; updated production/test callers to stop passing extraction mode.
 - Files changed: ReferenceExtractor, ReferenceExtractorTests, extraction callers in core middleware/backend test helpers/PostgreSQL smoke test, tasks.json, progress.txt.
 - Verification: csharpier format; task rg returned no matches; Core.Tests.Unit Release passed 2670; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.
+
+2026-06-29 - completed Authorization: simplify relational-only authorization middleware / remove-legacy-backend.md cleanup
+- ResourceActionAuthorizationMiddleware now directly uses relational security-configuration responses for missing claim sets/no strategies; removed dead staged not-implemented and legacy forbidden strategy paths.
+- ProvideAuthorizationFiltersMiddleware no longer resolves filter providers or branches on MappingSet; it preserves raw strategy names with empty filters for backend planning.
+- Files changed: ResourceActionAuthorizationMiddleware, ProvideAuthorizationFiltersMiddleware, ApiService, ProvideAuthorizationFiltersMiddlewareTests, tasks.json, progress.txt.
+- Verification: csharpier format; task rg no dead branch matches; Core.Tests.Unit Release passed 2660; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning; git diff --check passed.

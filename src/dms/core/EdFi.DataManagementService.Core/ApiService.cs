@@ -230,7 +230,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider, _authorizationServiceFactory),
         ]);
@@ -251,7 +251,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new GetByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
@@ -275,7 +275,7 @@ internal class ApiService : IApiService
             ),
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new QueryRequestHandler(_logger, _resiliencePipeline),
         ]);
@@ -329,7 +329,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpdateByIdHandler(
                 _logger,
@@ -354,7 +354,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new DeleteByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
@@ -411,7 +411,7 @@ internal class ApiService : IApiService
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
