@@ -128,6 +128,10 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                 );
             }
 
+            // MappingKey is the documentPathsMapping entry key from the ApiSchema — the bare
+            // reference/role name (e.g. "Student", "Program", "AdministrationPointOfContact.Education-
+            // Organization"). MetaEd-generated schemas never suffix it with "Reference", so ToPascalCase
+            // yields the resource-based column base directly (e.g. Student_StudentUniqueId).
             var originalReferenceBaseName = RelationalNameConventions.ToPascalCase(mapping.MappingKey);
             var referenceBaseName = ResolveReferenceBaseName(mapping, builderContext);
             var tableBuilder = ReferenceObjectPathScopeResolver
@@ -161,11 +165,15 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
             foreach (var identityBinding in mapping.ReferenceJsonPaths)
             {
-                var identityPartBaseName = ResolveReferenceIdentityPartBaseName(
+                var conventionIdentityPartBaseName = ResolveReferenceIdentityPartBaseName(
                     mapping.ReferenceObjectPath,
                     identityBinding,
                     referenceIdentityFieldBaseNameCounts
                 );
+
+                // identityPartBaseName starts at the override-free convention name; may be replaced
+                // by a nameOverride. The convention name is preserved separately in the builder context.
+                var identityPartBaseName = conventionIdentityPartBaseName;
 
                 if (
                     builderContext.TryGetNameOverride(
@@ -193,6 +201,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     var originalDescriptorColumnName = RelationalNameConventions.DescriptorIdColumnName(
                         $"{originalReferenceBaseName}_{identityPartBaseName}"
                     );
+                    // Override-free, MappingKey-derived convention name (matches concrete's override-free
+                    // naming exactly, including role-named references where MappingKey != path segment).
+                    var conventionDescriptorColumnName = RelationalNameConventions.DescriptorIdColumnName(
+                        $"{originalReferenceBaseName}_{conventionIdentityPartBaseName}"
+                    );
                     var descriptorColumn = new DbColumnModel(
                         descriptorColumnName,
                         ColumnKind.DescriptorFk,
@@ -215,6 +228,14 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                             descriptorColumnName,
                             descriptorPath.DescriptorResource
                         )
+                    );
+
+                    context.RegisterReferenceIdentityConventionColumn(
+                        resource,
+                        mapping.ReferenceObjectPath,
+                        identityBinding.ReferenceJsonPath,
+                        identityBinding.IdentityJsonPath,
+                        conventionDescriptorColumnName
                     );
 
                     identityBindings.Add(
@@ -257,6 +278,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                 var originalColumnName = new DbColumnName(
                     $"{originalReferenceBaseName}_{identityPartBaseName}"
                 );
+                // Override-free, MappingKey-derived convention name (matches concrete's override-free
+                // naming exactly, including role-named references where MappingKey != path segment).
+                var conventionColumnName = new DbColumnName(
+                    $"{originalReferenceBaseName}_{conventionIdentityPartBaseName}"
+                );
                 var scalarColumn = new DbColumnModel(
                     columnName,
                     ColumnKind.Scalar,
@@ -267,6 +293,14 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                 );
 
                 tableBuilder.AddColumn(scalarColumn, originalColumnName.Value);
+                context.RegisterReferenceIdentityConventionColumn(
+                    resource,
+                    mapping.ReferenceObjectPath,
+                    identityBinding.ReferenceJsonPath,
+                    identityBinding.IdentityJsonPath,
+                    conventionColumnName
+                );
+
                 identityBindings.Add(
                     new ReferenceIdentityBinding(
                         identityBinding.IdentityJsonPath,

@@ -7,9 +7,9 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1179
 
 ## Description
 
-Extend the existing `DbTriggerKind.DocumentStamping` render path to insert tracked-change rows when a resource is deleted or when its identifying values change.
+Extend the existing `TriggerKindParameters.DocumentStamping` render path to insert tracked-change rows when a resource is deleted or when its identifying values change.
 
-The renderers consume `TriggerKindParameters.ChangeTracking` and the associated `TrackedChangeTableInfo`. They must not re-derive tracked-change columns, descriptor joins, person joins, or key-change predicates from SQL text.
+The renderers consume `DocumentStamping.ChangeTracking` and the associated `TrackedChangeTableInfo`. They must not re-derive tracked-change columns, descriptor joins, person joins, or key-change predicates from SQL text.
 
 Deletes insert tombstones with old values populated and new values null. Identity changes insert key-change rows with old and new values populated. The row's `ChangeVersion` must be the `dms.Document.ContentVersion` produced by the same trigger fire.
 
@@ -17,7 +17,7 @@ Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `Organizati
 
 ## Acceptance Criteria
 
-- PostgreSQL and SQL Server document-stamping trigger renderers consume `TriggerKindParameters.ChangeTracking`.
+- PostgreSQL and SQL Server document-stamping trigger renderers consume `DocumentStamping.ChangeTracking`.
 - Delete branches insert tombstones into the correct `tracked_changes_*` table.
 - Update branches insert key-change rows only when the owning `DbTriggerInfo.IdentityProjectionColumns` old/new workset changes.
 - Key-change detection uses null-safe value comparisons and key-unification presence-gated canonical expressions where applicable.

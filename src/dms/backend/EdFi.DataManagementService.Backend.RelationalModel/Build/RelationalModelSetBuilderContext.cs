@@ -51,6 +51,10 @@ public sealed class RelationalModelSetBuilderContext
         DbTableName,
         List<StrictUnifiedAliasTableMetadataEntry>
     > _strictUnifiedAliasTableMetadataByTable = [];
+    private readonly Dictionary<
+        ReferenceIdentityConventionColumnKey,
+        DbColumnName
+    > _referenceIdentityConventionColumnsByBinding = [];
     private static readonly IReadOnlyList<ExtensionSite> _emptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> _emptyDescriptorPaths =
         new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
@@ -265,6 +269,62 @@ public sealed class RelationalModelSetBuilderContext
     }
 
     /// <summary>
+    /// Caches the override-free convention column name for a reference identity binding.
+    /// </summary>
+    internal void RegisterReferenceIdentityConventionColumn(
+        QualifiedResourceName resource,
+        JsonPathExpression referenceObjectPath,
+        JsonPathExpression referenceJsonPath,
+        JsonPathExpression identityJsonPath,
+        DbColumnName conventionColumn
+    )
+    {
+        var key = new ReferenceIdentityConventionColumnKey(
+            resource,
+            referenceObjectPath.Canonical,
+            referenceJsonPath.Canonical,
+            identityJsonPath.Canonical
+        );
+
+        if (_referenceIdentityConventionColumnsByBinding.TryGetValue(key, out var existing))
+        {
+            if (!string.Equals(existing.Value, conventionColumn.Value, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Reference identity binding '{referenceJsonPath.Canonical}' -> "
+                        + $"'{identityJsonPath.Canonical}' on resource '{FormatResource(resource)}' has "
+                        + $"conflicting convention columns '{existing.Value}' and '{conventionColumn.Value}'."
+                );
+            }
+
+            return;
+        }
+
+        _referenceIdentityConventionColumnsByBinding[key] = conventionColumn;
+    }
+
+    /// <summary>
+    /// Resolves the override-free convention column name for a reference identity binding.
+    /// </summary>
+    internal bool TryGetReferenceIdentityConventionColumn(
+        QualifiedResourceName resource,
+        JsonPathExpression referenceObjectPath,
+        JsonPathExpression referenceJsonPath,
+        JsonPathExpression identityJsonPath,
+        out DbColumnName conventionColumn
+    )
+    {
+        var key = new ReferenceIdentityConventionColumnKey(
+            resource,
+            referenceObjectPath.Canonical,
+            referenceJsonPath.Canonical,
+            identityJsonPath.Canonical
+        );
+
+        return _referenceIdentityConventionColumnsByBinding.TryGetValue(key, out conventionColumn);
+    }
+
+    /// <summary>
     /// Cache entry for strict unified-alias metadata keyed by a table's JSON scope and column snapshot.
     /// </summary>
     /// <param name="JsonScope">The table JSON scope used to disambiguate same-name tables across resources.</param>
@@ -274,6 +334,16 @@ public sealed class RelationalModelSetBuilderContext
         JsonPathExpression JsonScope,
         IReadOnlyList<DbColumnModel> Columns,
         UnifiedAliasStorageResolver.TableMetadata Metadata
+    );
+
+    /// <summary>
+    /// Cache key for derivation-only reference identity convention metadata.
+    /// </summary>
+    private sealed record ReferenceIdentityConventionColumnKey(
+        QualifiedResourceName Resource,
+        string ReferenceObjectPath,
+        string ReferenceJsonPath,
+        string IdentityJsonPath
     );
 
     /// <summary>

@@ -93,7 +93,7 @@ classDiagram
 | `AbstractIdentityTablesInNameOrder` | Trigger-maintained identity tables for polymorphic abstract resources |
 | `AbstractUnionViewsInNameOrder` | Diagnostic union views over concrete members of abstract resources |
 | `IndexesInCreateOrder` | Complete index inventory (PK, unique, FK-support, explicit) |
-| `TriggersInCreateOrder` | Complete trigger inventory (stamping, referential identity, abstract identity, propagation fallback) |
+| `TriggersInCreateOrder` | Complete trigger inventory (stamping, referential identity, abstract identity, `MssqlIdentityPropagationTrigger`) |
 
 ---
 
@@ -388,20 +388,20 @@ classDiagram
     class DbTriggerInfo {
         DbTriggerName Name
         DbTableName Table
-        DbTriggerKind Kind
         IReadOnlyList~DbColumnName~ KeyColumns
+        TriggerKindParameters Parameters
     }
 
-    class DbTriggerKind {
-        <<enumeration>>
+    class TriggerKindParameters {
+        <<discriminated union>>
         DocumentStamping
         ReferentialIdentityMaintenance
         AbstractIdentityMaintenance
-        IdentityPropagationFallback
+        MssqlIdentityPropagationTrigger
     }
 
     DbIndexInfo --> DbIndexKind
-    DbTriggerInfo --> DbTriggerKind
+    DbTriggerInfo --> TriggerKindParameters
 ```
 
 ---

@@ -1763,11 +1763,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" (
                 "DocumentId",
                 "BeginDate",
-                "EducationOrganizationReferenceEducationOrganizationId",
-                "ProgramReferenceEducationOrganizationId",
-                "ProgramReferenceProgramName",
-                "ProgramReferenceProgramTypeDescriptor",
-                "StudentReferenceStudentUniqueId",
+                "EducationOrganization_EducationOrganizationId",
+                "Program_EducationOrganizationId",
+                "Program_ProgramName",
+                "Program_ProgramTypeDescriptor_DescriptorId",
+                "Student_StudentUniqueId",
                 "Discriminator"
             )
             VALUES (

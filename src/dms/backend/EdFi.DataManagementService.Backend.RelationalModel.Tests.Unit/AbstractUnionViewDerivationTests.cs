@@ -142,7 +142,7 @@ public class Given_Abstract_Union_View_Derivation_With_Descriptor_Identity
     [Test]
     public void It_should_preserve_descriptor_reference_metadata_on_output_columns()
     {
-        _descriptorOutputColumn.ColumnName.Value.Should().Be("ProgramTypeDescriptor");
+        _descriptorOutputColumn.ColumnName.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
         _descriptorOutputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
         _descriptorOutputColumn
             .TargetResource.Should()
@@ -843,5 +843,229 @@ public class Given_Concrete_Resource_Without_IsSubclass_Property
     {
         _exception.Should().BeNull();
         _memberResourceNames.Should().Equal("LocalEducationAgency");
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract union view output column naming: reference-backed scalar.
+/// The abstract resource EnrollmentCarrier has identity $.schoolReference.schoolId.
+/// The union view output column must be named School_SchoolId (convention: {RefBase}_{Field}).
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_With_Reference_Backed_Scalar_Identity
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+        );
+    }
+
+    /// <summary>
+    /// Reference-backed scalar: union view output column is School_SchoolId (convention name, not
+    /// the concrete key-unified column SchoolId_Unified).
+    /// </summary>
+    [Test]
+    public void It_should_name_reference_backed_scalar_output_column_as_Ref_Field()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("School_SchoolId")
+            .And.NotContain("SchoolReferenceSchoolId");
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract union view output column naming: composite reference scalar and
+/// reference-backed descriptor.
+/// Abstract resource ProgramCarrier with identity paths under $.programReference.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_With_Composite_Reference_Identity
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "ProgramCarrier"
+        );
+    }
+
+    /// <summary>
+    /// Composite reference scalar: union view output column is Program_EducationOrganizationId.
+    /// </summary>
+    [Test]
+    public void It_should_name_composite_reference_scalar_output_column_as_Ref_Field()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("Program_EducationOrganizationId")
+            .And.NotContain("ProgramReferenceEducationOrganizationId");
+    }
+
+    /// <summary>
+    /// Second composite reference scalar: union view output column is Program_ProgramName, covering the
+    /// ticket's Program_ProgramName example for a reference-backed scalar field other than the first.
+    /// </summary>
+    [Test]
+    public void It_should_name_additional_composite_reference_scalar_output_column_as_Ref_Field()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("Program_ProgramName")
+            .And.NotContain("ProgramReferenceProgramName");
+    }
+
+    /// <summary>
+    /// Reference-backed descriptor: union view output column is Program_ProgramTypeDescriptor_DescriptorId
+    /// and carries IsDescriptorReference = true.
+    /// </summary>
+    [Test]
+    public void It_should_name_reference_backed_descriptor_output_column_as_Ref_Field_DescriptorId()
+    {
+        var descriptorColumn = _abstractUnionView.OutputColumnsInSelectOrder.Single(column =>
+            column.ColumnName.Value == "Program_ProgramTypeDescriptor_DescriptorId"
+        );
+
+        descriptorColumn.IsDescriptorReference.Should().BeTrue();
+        descriptorColumn
+            .TargetResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"));
+    }
+
+    private static JsonObject BuildProjectSchema() => ProgramCarrierTestSchema.BuildProjectSchema();
+}
+
+/// <summary>
+/// Test fixture proving the abstract union view bridges a concrete relational.nameOverrides column into the
+/// override-free abstract output column. The Campus member's reference identity column is overridden to
+/// SchoolBase_CampusId, but the abstract output column keeps the convention name SchoolBase_SchoolId; the
+/// member arm must project the overridden concrete column into that override-free output name.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_With_Overridden_Member_Reference_Column
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = SchoolCarrierOverrideTestSchema.BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "SchoolCarrier"
+        );
+    }
+
+    /// <summary>
+    /// The union view output column uses the override-free convention name, never the concrete override.
+    /// </summary>
+    [Test]
+    public void It_should_emit_the_override_free_output_column_name()
+    {
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("SchoolBase_SchoolId")
+            .And.NotContain("SchoolBase_CampusId");
+    }
+
+    /// <summary>
+    /// The member arm projects the overridden concrete column (SchoolBase_CampusId) into the override-free
+    /// abstract output column (SchoolBase_SchoolId), proving the rename bridges through the union view.
+    /// </summary>
+    [Test]
+    public void It_should_project_the_overridden_concrete_column_into_the_override_free_output()
+    {
+        var outputColumnNames = _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .ToList();
+        var identityIndex = outputColumnNames.IndexOf("SchoolBase_SchoolId");
+        identityIndex.Should().BeGreaterThan(0);
+
+        var projection = _abstractUnionView
+            .UnionArmsInOrder.Single()
+            .ProjectionExpressionsInSelectOrder[identityIndex]
+            .Should()
+            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Subject;
+
+        projection.ColumnName.Value.Should().Be("SchoolBase_CampusId");
     }
 }

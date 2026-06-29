@@ -311,57 +311,53 @@ public sealed record DbIndexInfo(
     IReadOnlyList<DbColumnName>? IncludeColumns = null
 );
 
-public enum DbTriggerKind
-{
-    // Table trigger that stamps `dms.Document` representation/identity versions (see `update-tracking.md`).
-    DocumentStamping,
-
-    // Trigger that recomputes/maintains `dms.ReferentialIdentity` for a resource when identity projection changes.
-    ReferentialIdentityMaintenance,
-
-    // Trigger that maintains `{schema}.{AbstractResource}Identity` from concrete roots.
-    AbstractIdentityMaintenance,
-
-    // Trigger-based identity-component propagation fallback (SQL Server cascade-path restrictions).
-    IdentityPropagationFallback
-}
-
 public readonly record struct DbTriggerName(string Value);
-
-public sealed record DbIdentityPropagationColumnPair(
-    DbColumnName ReferrerStorageColumn,
-    DbColumnName ReferencedStorageColumn
-);
-
-public sealed record DbIdentityPropagationReferrerAction(
-    DbTableName ReferrerTable,
-    DbColumnName ReferrerDocumentIdColumn,
-    DbColumnName ReferencedDocumentIdColumn,
-    IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
-);
-
-public sealed record DbIdentityPropagationFallbackInfo(
-    IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
-);
 
 public abstract record TriggerKindParameters
 {
-    public sealed record None : TriggerKindParameters;
-    public sealed record ChangeTracking(TrackedChangeTableInfo TrackedChangeTable) : TriggerKindParameters;
+    public sealed record DocumentStamping(TrackedChangeAttachment? ChangeTracking = null) : TriggerKindParameters;
+
+    public sealed record ReferentialIdentityMaintenance(
+        short ResourceKeyId,
+        string ProjectName,
+        string ResourceName,
+        IReadOnlyList<IdentityElementMapping> IdentityElements,
+        SuperclassAliasInfo? SuperclassAlias = null
+    ) : TriggerKindParameters;
+
+    public sealed record AbstractIdentityMaintenance(
+        DbTableName TargetTable,
+        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        string DiscriminatorValue
+    ) : TriggerKindParameters;
+
+    public sealed record MssqlIdentityPropagationTrigger(
+        IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
+    ) : TriggerKindParameters;
+
+    public sealed record AuthHierarchyMaintenance(
+        AuthEdOrgEntity Entity,
+        AuthHierarchyTriggerEvent TriggerEvent
+    ) : TriggerKindParameters;
 }
+
+public sealed record PropagationReferrerTarget(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerFkColumn,
+    IReadOnlyList<TriggerColumnMapping> ColumnMappings
+);
+
+public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnName TargetColumn);
 
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
-    DbTableName TriggerTable,
-    DbTriggerKind Kind,
+    DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    DbTableName? MaintenanceTargetTable = null,
-    DbIdentityPropagationFallbackInfo? PropagationFallback = null,
-    TriggerKindParameters? Parameters = null,
+    TriggerKindParameters Parameters,
     // The concrete root table (or `dms.Descriptor`) whose mirrored `ContentVersion` /
     // `ContentLastModifiedAt` columns this trigger updates after stamping `dms.Document`.
-    // Required (non-null) for every `Kind = DocumentStamping` entry; null for other kinds.
+    // Required (non-null) for every `Parameters is DocumentStamping` entry; null for other kinds.
     // See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
     DbTableName? MirrorStampTargetTable = null
 );
@@ -385,12 +381,12 @@ Notes:
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.
-  - `TriggerKindParameters.ChangeTracking` is valid only on `DbTriggerKind.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
-  - `MirrorStampTargetTable` is required (non-null) for every `DbTriggerKind.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `TriggerTable` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `TriggerTable`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
+  - `DocumentStamping.ChangeTracking` is valid only on `TriggerKindParameters.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
+  - `MirrorStampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
   - For key-change rows, dialect emitters use the same null-safe old/new value-diff workset already required for identity stamping. Under key unification, this includes the presence-gated canonical expressions defined in `key-unification.md`.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with two carve-outs:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
-    - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `DbTriggerKind.DocumentStamping`/`TriggerKindParameters.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
+    - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `TriggerKindParameters.DocumentStamping`/`DocumentStamping.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 - `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
 - The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.

@@ -7,7 +7,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1208
 
 ## Description
 
-Update PostgreSQL `DbTriggerKind.DocumentStamping` trigger rendering for child, nested-child, and `_ext` tables so multi-row DML allocates one `dms.ChangeVersionSequence` value per distinct affected root document, not one value per affected source row.
+Update PostgreSQL `TriggerKindParameters.DocumentStamping` trigger rendering for child, nested-child, and `_ext` tables so multi-row DML allocates one `dms.ChangeVersionSequence` value per distinct affected root document, not one value per affected source row.
 
 The current PostgreSQL renderer emits row-level `FOR EACH ROW` stamping triggers. That preserves final mirror equality because the last row-level stamp wins, but it can over-allocate `ContentVersion` values when several changed child or extension rows share the same root `DocumentId`. SQL Server already avoids this shape because its statement-level trigger builds an `affectedDocs` workset from `inserted` / `deleted` and updates each distinct document once.
 
