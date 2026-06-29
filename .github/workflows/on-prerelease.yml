@@ -59,7 +59,8 @@ jobs:
 
           ./build-dms.ps1 -Command BuildAndPublish `
               -Configuration Release `
-              -DMSVersion $packageVersion
+              -DMSVersion $packageVersion `
+              -LockedMode
 
       - name: Create DMS NuGet Package
         run: |
@@ -361,7 +362,8 @@ jobs:
           ./build-config.ps1 -Command BuildAndPublish `
               -Configuration Release `
               -DmsCSVersion $packageVersion `
-              -DmsCSAssemblyVersion $assemblyVersion
+              -DmsCSAssemblyVersion $assemblyVersion `
+              -LockedMode
 
       - name: Verify Config DLL Version Stamp
         run: |

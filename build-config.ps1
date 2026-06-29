@@ -65,6 +65,14 @@ param(
     [ValidateSet("Debug", "Release")]
     $Configuration = "Debug",
 
+    # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
+    # packages.lock.json is out of sync. The release/publish build passes this so published
+    # packages come from the committed lock graph; the PR `verify-lock-files` gate enforces lock
+    # consistency separately. Ordinary build/test jobs and local builds leave it off (see
+    # docs/NUGET-LOCK-FILES.md).
+    [switch]
+    $LockedMode,
+
     [bool]
     $DryRun = $false,
 
@@ -117,7 +125,11 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
+    Invoke-Execute {
+        $restoreArgs = @()
+        if ($LockedMode) { $restoreArgs += "--locked-mode" }
+        dotnet restore $defaultSolution --verbosity:normal @restoreArgs
+    }
 }
 
 function SetDMSAssemblyInfo {
@@ -130,6 +142,7 @@ function SetDMSAssemblyInfo {
     <PropertyGroup>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <Product>Ed-Fi API Configuration Service</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
@@ -137,6 +150,16 @@ function SetDMSAssemblyInfo {
         <VersionPrefix>$assembly_version</VersionPrefix>
         <VersionSuffix></VersionSuffix>
     </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="SonarAnalyzer.CSharp">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
 </Project>
 "@
     }
@@ -178,7 +201,9 @@ function PublishApi {
             $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
         }
 
-        dotnet publish $project -c $Configuration -o $outputPath --nologo @versionArgs
+        # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
+        # letting publish run a second, unlocked restore that would bypass the lock graph.
+        dotnet publish $project -c $Configuration -o $outputPath --nologo --no-restore @versionArgs
     }
 }
 
