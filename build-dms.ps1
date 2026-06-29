@@ -269,49 +269,20 @@ function Resolve-E2EEnvironmentFilePath {
     throw "Environment file not found: $Path"
 }
 
-function ConvertTo-Boolean {
-    param(
-        [string]
-        $Value,
-
-        [bool]
-        $DefaultValue = $false
-    )
-
-    $parsedValue = $false
-
-    if ([bool]::TryParse($Value, [ref]$parsedValue)) {
-        return $parsedValue
-    }
-
-    return $DefaultValue
-}
-
 function Get-E2ETestResultSuffix {
     param(
-        [bool]
-        $UseRelationalBackend,
-
         [string]
         $TestFilter
     )
 
     $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
 
-    if ($UseRelationalBackend) {
-        if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-ci-shard-(\d+)\b') {
-            return "relational-shard-$($Matches[1])"
-        }
-
-        return "relational"
-    }
-
     if ([string]::IsNullOrWhiteSpace($TestFilter)) {
-        return $null
+        return "e2e"
     }
 
-    if ($TestFilter -match "@relational-backend" -and $TestFilter -match "!=") {
-        return "legacy"
+    if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*e2e-ci-shard-(\d+)\b') {
+        return "e2e-shard-$($Matches[1])"
     }
 
     return "filtered"
@@ -340,95 +311,6 @@ function ConvertTo-NormalizedTestFilter {
     return $normalizedTestFilter
 }
 
-function Test-FilterIncludesRelationalCategory {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-backend\b'
-}
-
-function Test-FilterExcludesRelationalCategory {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*!=\s*relational-backend\b'
-}
-
-function Test-FilterUsesOrOperator {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '\|'
-}
-
-function Assert-E2ETestLaneMatchesFilter {
-    param(
-        [string]
-        $EnvironmentFile,
-
-        [bool]
-        $UseRelationalBackend,
-
-        [string]
-        $TestFilter
-    )
-
-    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
-    $includesRelationalCategory = Test-FilterIncludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
-    $excludesRelationalCategory = Test-FilterExcludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
-    $usesOrOperator = Test-FilterUsesOrOperator -NormalizedTestFilter $normalizedTestFilter
-
-    if ([string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
-        if ($UseRelationalBackend) {
-            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
-        }
-
-        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
-    }
-
-    if ($usesOrOperator) {
-        throw "E2E lane test filter '$TestFilter' cannot use '|'. Use '&' to further narrow the lane while preserving relational and legacy isolation."
-    }
-
-    if ($UseRelationalBackend) {
-        if (-not $includesRelationalCategory) {
-            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
-        }
-
-        if ($excludesRelationalCategory) {
-            throw "Relational E2E environment '$EnvironmentFile' cannot be combined with a test filter that excludes '@relational-backend'."
-        }
-
-        return
-    }
-
-    if ($includesRelationalCategory) {
-        throw "Legacy E2E environment '$EnvironmentFile' cannot be combined with a test filter that selects '@relational-backend'. Use './.env.e2e.relational' for relational lane runs."
-    }
-
-    if (-not $excludesRelationalCategory) {
-        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
-    }
-}
-
 function Get-E2ETestEnvironmentContext {
     param(
         [string]
@@ -454,22 +336,12 @@ function Get-E2ETestEnvironmentContext {
         -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
 
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
-    $useRelationalBackend = ConvertTo-Boolean -Value ([string]$environmentValues["USE_RELATIONAL_BACKEND"])
-
-    Assert-E2ETestLaneMatchesFilter `
-        -EnvironmentFile $environmentFilePath `
-        -UseRelationalBackend:$useRelationalBackend `
-        -TestFilter $TestFilter
+    $e2eDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
+    $useRelationalBackend = -not [string]::IsNullOrWhiteSpace($e2eDatabaseName)
 
     $dataStoreDatabaseName =
         if ($useRelationalBackend) {
-            $relationalDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
-
-            if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-                throw "Relational E2E environment '$environmentFilePath' requires E2E_DATABASE_NAME to be set."
-            }
-
-            $relationalDatabaseName
+            $e2eDatabaseName
         }
         else {
             "edfi_datamanagementservice"
@@ -479,7 +351,7 @@ function Get-E2ETestEnvironmentContext {
         EnvironmentFile = $environmentFilePath
         UseRelationalBackend = $useRelationalBackend
         DataStoreDatabaseName = $dataStoreDatabaseName
-        TestResultSuffix = Get-E2ETestResultSuffix -UseRelationalBackend:$useRelationalBackend -TestFilter $TestFilter
+        TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
 

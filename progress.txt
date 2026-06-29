@@ -142,3 +142,11 @@
 - Files changed: DMS E2E Kafka feature/step/management files, E2E csproj, ContainerSetupBase, tasks.json, progress.txt.
 - Verification: task rg returned no matches; csharpier format; DMS E2E project Release build passed with existing missing feature-codebehind warning; dotnet test --list-tests grep showed no Kafka tests; Category=kafka filter found zero tests; git diff --check passed.
 - Notes: full build-dms E2ETest command currently blocked by pending build-script/env-file lane cleanup because .env.e2e.relational no longer has USE_RELATIONAL_BACKEND but build-dms.ps1 still requires it for lane classification.
+
+2026-06-29 - completed Build Script: remove backend-lane filter logic / remove-legacy-backend.md Phase 6
+- Deleted build-dms relational/legacy lane filter helpers, USE_RELATIONAL_BACKEND read, and lane assertion errors; E2E filters now pass through without relational-backend gating.
+- Result suffix detection now recognizes neutral Category=@e2e-ci-shard-N filters and uses e2e/e2e-shard-N names.
+- Updated DMS unit guardrails to assert removed lane helpers and neutral shard suffix handling without spawning build-dms/Docker.
+- Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, tasks.json, progress.txt.
+- Verification: task rg over build-dms clean; PowerShell parser passed; csharpier on changed test; DMS Tests.Unit Release passed 34; BootstrapSchemaAndSecuritySelection Pester passed 62; git diff --check passed.
+- Notes: full E2ETest not run in this task; still depends on pending E2E tags, neutral env files, and build-script provisioning/env-injection tasks.
