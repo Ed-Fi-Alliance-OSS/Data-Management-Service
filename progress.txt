@@ -297,3 +297,10 @@
 - Decision: no changes needed in RELATIONAL-BACKEND or CONFIGURATION; remaining DeployDatabaseOnStartup doc is CMS-only.
 - Files changed: docs/MULTI-TENANCY-GETTING-STARTED.md, tasks.json, progress.txt.
 - Verification: task rg returned only intentional SchemaTools ddl provision wording; DeployDatabaseOnStartup rg is CMS-only in docs/CONFIGURATION; stale auto-deploy/dms.Document rg clean; git diff --check passed.
+
+2026-06-29 - completed Documentation: verify active docs cleanup / remove-legacy-backend.md Phase 9
+- Active doc legacy-backend/E2E env/deploy-on-startup search is clean; no doc edits needed.
+- Kafka/CDC active docs already state relational CDC/Kafka support is pending separate implementation; historical design docs untouched.
+- Files changed: tasks.json, progress.txt.
+- Verification: task rg over AGENTS/README/GETTING_STARTED/docs/compose README clean; Kafka/CDC rg shows only opt-in infra or pending-support notes.
+- Notes: preserved existing user working-tree deletion of final E2E Validation task unstaged.
