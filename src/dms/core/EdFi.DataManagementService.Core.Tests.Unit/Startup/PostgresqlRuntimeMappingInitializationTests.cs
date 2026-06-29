@@ -14,10 +14,8 @@ using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
-using EdFi.DataManagementService.Old.Postgresql.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -151,21 +149,11 @@ public class PostgresqlRuntimeMappingInitializationTests
 
     private static ServiceProvider CreateStartupServiceProvider(
         ApiSchemaDocumentNodes schemaNodes,
-        IDataStoreProvider dataStoreProvider,
-        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
         AppSettings? appSettings = null
-    ) =>
-        CreateStartupServiceProvider(
-            CreateApiSchemaProvider(schemaNodes),
-            dataStoreProvider,
-            databaseMetadataReader,
-            appSettings
-        );
+    ) => CreateStartupServiceProvider(CreateApiSchemaProvider(schemaNodes), appSettings);
 
     private static ServiceProvider CreateStartupServiceProvider(
         IApiSchemaProvider apiSchemaProvider,
-        IDataStoreProvider dataStoreProvider,
-        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
         AppSettings? appSettings = null
     )
     {
@@ -190,8 +178,6 @@ public class PostgresqlRuntimeMappingInitializationTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
         services.AddPostgresqlDatastore(configuration);
         services.AddSingleton<IBackendMappingInitializer, TestRelationalBackendMappingInitializer>();
-        services.AddSingleton(dataStoreProvider);
-        services.AddSingleton(databaseMetadataReader);
 
         return services.BuildServiceProvider();
     }
@@ -239,18 +225,6 @@ public class PostgresqlRuntimeMappingInitializationTests
             DmsStartupTaskOrderRanges.BackendMappingMinimum,
             DmsStartupTaskOrderRanges.BackendMappingMaximum,
             cancellationToken
-        );
-    }
-
-    private static PostgresqlDatabaseFingerprint CreateMatchingFingerprint(
-        EffectiveSchemaSet effectiveSchemaSet
-    )
-    {
-        return new PostgresqlDatabaseFingerprint(
-            effectiveSchemaSet.EffectiveSchema.ApiSchemaFormatVersion,
-            effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
-            effectiveSchemaSet.EffectiveSchema.ResourceKeyCount,
-            effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash
         );
     }
 
@@ -434,47 +408,12 @@ public class PostgresqlRuntimeMappingInitializationTests
     {
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
-        private IDataStoreProvider _dataStoreProvider = null!;
-        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
-        private const string ConnectionString =
-            "Host=localhost;Database=startup-instance;Username=test;Password=test";
 
         [SetUp]
         public void Setup()
         {
             _schemaNodes = CreateSchemaNodes();
-            _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-            _serviceProvider = CreateStartupServiceProvider(
-                _schemaNodes,
-                _dataStoreProvider,
-                _databaseMetadataReader,
-                CreateAppSettings()
-            );
-            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
-
-            A.CallTo(() => _dataStoreProvider.GetLoadedTenantKeys()).Returns([""]);
-            A.CallTo(() => _dataStoreProvider.GetAll(null))
-                .Returns([
-                    new DataStore(
-                        Id: 1,
-                        DataStoreType: "test",
-                        Name: "StartupInstance",
-                        ConnectionString: ConnectionString,
-                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
-                    ),
-                ]);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadFingerprintAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .Returns(
-                    new PostgresqlDatabaseFingerprintReadResult.Success(
-                        CreateMatchingFingerprint(effectiveSchemaSet)
-                    )
-                );
+            _serviceProvider = CreateStartupServiceProvider(_schemaNodes, CreateAppSettings());
         }
 
         [TearDown]
@@ -501,13 +440,8 @@ public class PostgresqlRuntimeMappingInitializationTests
     public class Given_Dms_Startup_Runs_With_Grouped_Reference_Runtime_Mapping_Initialization
         : PostgresqlRuntimeMappingInitializationTests
     {
-        private const string ConnectionString =
-            "Host=localhost;Database=startup-grouped-reference-instance;Username=test;Password=test";
-
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
-        private IDataStoreProvider _dataStoreProvider = null!;
-        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
 
         private static JsonObject CreateReferenceMapping(
             string resourceName,
@@ -632,39 +566,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         public void Setup()
         {
             _schemaNodes = CreateSchemaNodes(BuildGroupedReferenceStartupProjectSchema());
-            _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-            _serviceProvider = CreateStartupServiceProvider(
-                _schemaNodes,
-                _dataStoreProvider,
-                _databaseMetadataReader,
-                CreateAppSettings()
-            );
-
-            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
-
-            A.CallTo(() => _dataStoreProvider.GetLoadedTenantKeys()).Returns([""]);
-            A.CallTo(() => _dataStoreProvider.GetAll(null))
-                .Returns([
-                    new DataStore(
-                        Id: 2,
-                        DataStoreType: "test",
-                        Name: "GroupedReferenceStartupInstance",
-                        ConnectionString: ConnectionString,
-                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
-                    ),
-                ]);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadFingerprintAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .Returns(
-                    new PostgresqlDatabaseFingerprintReadResult.Success(
-                        CreateMatchingFingerprint(effectiveSchemaSet)
-                    )
-                );
+            _serviceProvider = CreateStartupServiceProvider(_schemaNodes, CreateAppSettings());
         }
 
         [TearDown]
@@ -707,13 +609,8 @@ public class PostgresqlRuntimeMappingInitializationTests
     public class Given_Dms_Startup_Runs_With_Extension_Bearing_Postgresql_Runtime_Mapping_Initialization
         : PostgresqlRuntimeMappingInitializationTests
     {
-        private const string ConnectionString =
-            "Host=localhost;Database=startup-extension-instance;Username=test;Password=test";
-
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
-        private IDataStoreProvider _dataStoreProvider = null!;
-        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
 
         [SetUp]
         public void Setup()
@@ -722,39 +619,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 BuildExtensionBearingStartupCoreProjectSchema(),
                 BuildExtensionBearingStartupExtensionProjectSchema()
             );
-            _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-            _serviceProvider = CreateStartupServiceProvider(
-                _schemaNodes,
-                _dataStoreProvider,
-                _databaseMetadataReader,
-                CreateAppSettings()
-            );
-
-            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
-
-            A.CallTo(() => _dataStoreProvider.GetLoadedTenantKeys()).Returns([""]);
-            A.CallTo(() => _dataStoreProvider.GetAll(null))
-                .Returns([
-                    new DataStore(
-                        Id: 3,
-                        DataStoreType: "test",
-                        Name: "ExtensionStartupInstance",
-                        ConnectionString: ConnectionString,
-                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
-                    ),
-                ]);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadFingerprintAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .Returns(
-                    new PostgresqlDatabaseFingerprintReadResult.Success(
-                        CreateMatchingFingerprint(effectiveSchemaSet)
-                    )
-                );
+            _serviceProvider = CreateStartupServiceProvider(_schemaNodes, CreateAppSettings());
         }
 
         [TearDown]
@@ -793,13 +658,8 @@ public class PostgresqlRuntimeMappingInitializationTests
     public class Given_Dms_Startup_Runs_With_Invalid_Extension_Bearing_Postgresql_Runtime_Mapping_Initialization
         : PostgresqlRuntimeMappingInitializationTests
     {
-        private const string ConnectionString =
-            "Host=localhost;Database=startup-invalid-extension-instance;Username=test;Password=test";
-
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
-        private IDataStoreProvider _dataStoreProvider = null!;
-        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
 
         [SetUp]
         public void Setup()
@@ -808,25 +668,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 BuildExtensionBearingStartupCoreProjectSchema(),
                 BuildExtensionBearingStartupExtensionProjectSchema(includeUnsupportedRootTableOverride: true)
             );
-            _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-            _serviceProvider = CreateStartupServiceProvider(
-                _schemaNodes,
-                _dataStoreProvider,
-                _databaseMetadataReader
-            );
-
-            A.CallTo(() => _dataStoreProvider.GetLoadedTenantKeys()).Returns([""]);
-            A.CallTo(() => _dataStoreProvider.GetAll(null))
-                .Returns([
-                    new DataStore(
-                        Id: 4,
-                        DataStoreType: "test",
-                        Name: "InvalidExtensionStartupInstance",
-                        ConnectionString: ConnectionString,
-                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
-                    ),
-                ]);
+            _serviceProvider = CreateStartupServiceProvider(_schemaNodes);
         }
 
         [TearDown]
@@ -868,57 +710,20 @@ public class PostgresqlRuntimeMappingInitializationTests
     public class Given_The_Raw_Api_Schema_Source_Changes_After_Api_Initialization
         : PostgresqlRuntimeMappingInitializationTests
     {
-        private const string ConnectionString =
-            "Host=localhost;Database=startup-shared-effective-schema-instance;Username=test;Password=test";
-
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _startupSchemaNodes = null!;
         private IApiSchemaProvider _apiSchemaProvider = null!;
-        private IDataStoreProvider _dataStoreProvider = null!;
-        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
 
         [SetUp]
         public void Setup()
         {
             _startupSchemaNodes = CreateSchemaNodes();
             _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-            _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-            _serviceProvider = CreateStartupServiceProvider(
-                _apiSchemaProvider,
-                _dataStoreProvider,
-                _databaseMetadataReader,
-                CreateAppSettings()
-            );
+            _serviceProvider = CreateStartupServiceProvider(_apiSchemaProvider, CreateAppSettings());
 
             A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).Returns(_startupSchemaNodes);
             A.CallTo(() => _apiSchemaProvider.IsSchemaValid).Returns(true);
             A.CallTo(() => _apiSchemaProvider.ApiSchemaFailures).Returns([]);
-
-            var effectiveSchemaSet = BuildEffectiveSchemaSet(_startupSchemaNodes);
-
-            A.CallTo(() => _dataStoreProvider.GetLoadedTenantKeys()).Returns([""]);
-            A.CallTo(() => _dataStoreProvider.GetAll(null))
-                .Returns([
-                    new DataStore(
-                        Id: 5,
-                        DataStoreType: "test",
-                        Name: "SharedEffectiveSchemaStartupInstance",
-                        ConnectionString: ConnectionString,
-                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
-                    ),
-                ]);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadFingerprintAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .Returns(
-                    new PostgresqlDatabaseFingerprintReadResult.Success(
-                        CreateMatchingFingerprint(effectiveSchemaSet)
-                    )
-                );
         }
 
         [TearDown]
@@ -969,11 +774,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         [SetUp]
         public void Setup()
         {
-            _serviceProvider = CreateStartupServiceProvider(
-                CreateSchemaNodes(),
-                A.Fake<IDataStoreProvider>(),
-                A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>()
-            );
+            _serviceProvider = CreateStartupServiceProvider(CreateSchemaNodes());
         }
 
         [TearDown]
