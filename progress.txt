@@ -197,3 +197,11 @@
 - Reworded change-query missing repository warnings/comments as explicit unsupported datastore configuration, not legacy backend selection.
 - Files changed: startup registration tests, change-query handlers/tests, tasks.json, progress.txt.
 - Verification: task rg inspected; csharpier format; Frontend.AspNetCore.Tests.Unit Release passed 187; Core.Tests.Unit Release passed 2567.
+
+2026-06-29 - completed Old Project Removal: delete old PostgreSQL backend projects / remove-legacy-backend.md removal target
+- Deleted Old.Postgresql and Old.Postgresql.Tests.Integration projects after dotnet sln removal from DMS and Docker solutions.
+- Removed remaining project references and Old.Postgresql InternalsVisibleTo entries; deleted legacy-only ReferenceHelper and PostgresqlRuntimeInstanceMappingValidator unit tests.
+- Kept runtime mapping startup tests by removing dead old metadata-reader/datastore fakes; current validation is covered by core fingerprint/resource-key startup tests.
+- Files changed: DMS solution files, backend/core csproj refs, PostgresqlRuntimeMappingInitializationTests, old project directories, tasks.json, progress.txt.
+- Verification: required old-project rg clean; csharpier format; solution build Release passed with known Reqnroll DeleteResourcesValidation feature-codebehind warning; Core.Tests.Unit and Backend.Tests.Unit Release --no-build passed.
+- Notes: remaining relational-named E2E feature files/tags are owned by pending E2E Tags task.
