@@ -170,7 +170,6 @@ public class WebApplicationBuilderExtensionsTests
             using var scope = serviceProvider.CreateScope();
 
             scope.ServiceProvider.GetServices<IAuthorizationRepository>().Should().BeEmpty();
-            scope.ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>().Should().BeEmpty();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
@@ -298,8 +297,6 @@ public class WebApplicationBuilderExtensionsTests
         {
             using var serviceProvider = CreateServices("mssql");
             using var scope = serviceProvider.CreateScope();
-
-            scope.ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>().Should().BeEmpty();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()

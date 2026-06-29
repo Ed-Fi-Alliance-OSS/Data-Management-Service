@@ -1263,12 +1263,6 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .NotContain(descriptor => descriptor.ServiceType == typeof(IAuthorizationRepository));
 
             _services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueryHandler));
-
-            _services
-                .Should()
-                .NotContain(descriptor =>
-                    descriptor.ServiceType == typeof(ITokenInfoEducationOrganizationLookup)
-                );
         }
     }
 }

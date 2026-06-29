@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
@@ -39,6 +38,7 @@ public class Given_GetTokenInfoHandler
     private IClaimSetProvider _claimSetProvider = null!;
     private IProfileService _profileService = null!;
     private ITokenInfoRelationalMappingSetResolver _tokenInfoRelationalMappingSetResolver = null!;
+    private MappingSet _mappingSet = null!;
 
     [SetUp]
     public void Setup()
@@ -47,6 +47,7 @@ public class Given_GetTokenInfoHandler
         _claimSetProvider = A.Fake<IClaimSetProvider>();
         _profileService = A.Fake<IProfileService>();
         _tokenInfoRelationalMappingSetResolver = A.Fake<ITokenInfoRelationalMappingSetResolver>();
+        _mappingSet = CreateMappingSet();
 
         A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._))
             .Returns([new ClaimSet(ClaimSetName, [])]);
@@ -59,12 +60,15 @@ public class Given_GetTokenInfoHandler
                     )
                 )
             );
+
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
+            .Returns(new TokenInfoRelationalMappingSetResolutionResult(true, _mappingSet));
     }
 
     [Test]
-    public async Task It_uses_token_info_education_organization_lookup_from_request_scope()
+    public async Task It_uses_relational_token_info_education_organization_lookup_from_request_scope()
     {
-        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
         [
             new(
@@ -84,10 +88,11 @@ public class Given_GetTokenInfoHandler
         ];
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                relationalLookup.GetEducationOrganizations(
                     A<IReadOnlyCollection<EducationOrganizationId>>.That.Matches(ids =>
                         ids.Single().Value == 255901
-                    )
+                    ),
+                    _mappingSet
                 )
             )
             .Returns(Task.FromResult(educationOrganizationRows));
@@ -97,7 +102,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup)
+            CreateScopedServiceProvider(relationalLookup)
         );
 
         await Execute(requestInfo);
@@ -122,19 +127,20 @@ public class Given_GetTokenInfoHandler
         educationOrganization["school_id"]!.GetValue<long>().Should().Be(255901);
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
-                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    _mappingSet
                 )
             )
             .MustHaveHappenedOnceExactly();
-        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
-            .MustNotHaveHappened();
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo))
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
-    public async Task It_preserves_full_response_contract_while_using_token_info_lookup()
+    public async Task It_preserves_full_response_contract_while_using_relational_token_info_lookup()
     {
-        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
         [
             new(
@@ -147,10 +153,11 @@ public class Given_GetTokenInfoHandler
         ];
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                relationalLookup.GetEducationOrganizations(
                     A<IReadOnlyCollection<EducationOrganizationId>>.That.Matches(ids =>
                         ids.Single().Value == 255901
-                    )
+                    ),
+                    _mappingSet
                 )
             )
             .Returns(Task.FromResult(educationOrganizationRows));
@@ -172,7 +179,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup),
+            CreateScopedServiceProvider(relationalLookup),
             CreateApiSchemaDocumentsWithStudentAndStaff()
         );
 
@@ -217,8 +224,9 @@ public class Given_GetTokenInfoHandler
             .Equal("Read");
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
-                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    _mappingSet
                 )
             )
             .MustHaveHappenedOnceExactly();
@@ -227,7 +235,7 @@ public class Given_GetTokenInfoHandler
     [Test]
     public async Task It_formats_relational_ed_fi_discriminators_using_existing_token_info_names()
     {
-        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
         [
             new(
@@ -247,8 +255,9 @@ public class Given_GetTokenInfoHandler
         ];
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
-                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    _mappingSet
                 )
             )
             .Returns(Task.FromResult(educationOrganizationRows));
@@ -258,7 +267,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup)
+            CreateScopedServiceProvider(relationalLookup)
         );
 
         await Execute(requestInfo);
@@ -275,7 +284,7 @@ public class Given_GetTokenInfoHandler
     [Test]
     public async Task It_formats_extension_relational_discriminators_using_project_endpoint_name()
     {
-        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
         [
             new(
@@ -295,8 +304,9 @@ public class Given_GetTokenInfoHandler
         ];
 
         A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
-                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    _mappingSet
                 )
             )
             .Returns(Task.FromResult(educationOrganizationRows));
@@ -306,7 +316,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup),
+            CreateScopedServiceProvider(relationalLookup),
             CreateApiSchemaDocumentsWithSampleExtension()
         );
 
@@ -329,7 +339,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup: null)
+            CreateScopedServiceProvider(relationalLookup: null)
         );
 
         await Execute(requestInfo);
@@ -349,7 +359,6 @@ public class Given_GetTokenInfoHandler
     [Test]
     public async Task It_resolves_mapping_set_for_relational_lookup()
     {
-        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
         var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
         var mappingSet = CreateMappingSet();
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
@@ -381,7 +390,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup, relationalLookup)
+            CreateScopedServiceProvider(relationalLookup)
         );
 
         await Execute(requestInfo);
@@ -401,12 +410,6 @@ public class Given_GetTokenInfoHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
-        A.CallTo(() =>
-                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
-                    A<IReadOnlyCollection<EducationOrganizationId>>._
-                )
-            )
-            .MustNotHaveHappened();
     }
 
     [Test]
@@ -421,10 +424,7 @@ public class Given_GetTokenInfoHandler
 
         RequestInfo requestInfo = CreateRequestInfo(
             clientAuthorizations,
-            CreateScopedServiceProvider(
-                tokenInfoEducationOrganizationLookup: null,
-                relationalLookup: relationalLookup
-            )
+            CreateScopedServiceProvider(relationalLookup)
         );
 
         await Execute(requestInfo);
@@ -436,6 +436,22 @@ public class Given_GetTokenInfoHandler
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_requires_relational_lookup_registration_for_education_organization_claims()
+    {
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(255901)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup: null)
+        );
+
+        Func<Task> action = async () => await Execute(requestInfo);
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
     }
 
     private void ConfigureJwtValidation(ClientAuthorizations clientAuthorizations)
@@ -540,8 +556,7 @@ public class Given_GetTokenInfoHandler
     }
 
     private static ServiceProvider CreateScopedServiceProvider(
-        ITokenInfoEducationOrganizationLookup? tokenInfoEducationOrganizationLookup,
-        IRelationalTokenInfoEducationOrganizationLookup? relationalLookup = null
+        IRelationalTokenInfoEducationOrganizationLookup? relationalLookup
     )
     {
         var services = new ServiceCollection();
@@ -560,11 +575,6 @@ public class Given_GetTokenInfoHandler
             );
 
         services.AddSingleton(applicationContextProvider);
-
-        if (tokenInfoEducationOrganizationLookup is not null)
-        {
-            services.AddSingleton(tokenInfoEducationOrganizationLookup);
-        }
 
         if (relationalLookup is not null)
         {
