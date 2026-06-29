@@ -545,7 +545,7 @@
       "Run: `rg -n \"AppSettings__DataStoreDatabaseName|AppSettings__UseRelationalBackend|relational-shard|e2e-shard|Relational E2E|DMS E2E\" build-dms.ps1`",
       "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E Environment",

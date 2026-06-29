@@ -242,3 +242,10 @@
 - Deleted direct legacy dms.Document reset path; SearchContainerSetup now uses neutral ResetDatabase hook against AppSettings.DataStoreDatabaseName.
 - Files changed: E2E AppSettings/appsettings.json, ContainerSetupBase, SearchContainerSetup, DMS unit guardrail tests, tasks.json, progress.txt.
 - Verification: task rg clean except expected SearchContainerSetup/provision-e2e matches; csharpier format; DMS Tests.Unit Release passed 30; full build-dms E2ETest .env.e2e self-contained SkipDockerBuild passed 777/791 with 14 skipped in 1h25m; git diff --check passed.
+
+2026-06-29 - completed Build Script: neutral DMS E2E test process env/result naming / remove-legacy-backend.md Phase 6
+- Made Invoke-WithE2ETestProcessContext fail fast without DataStoreDatabaseName and always set AppSettings__DataStoreDatabaseName before E2E test action; no UseRelationalBackend injection remains.
+- Kept neutral e2e/e2e-shard-N result suffixes; added guardrail test for unconditional datastore env injection.
+- Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, tasks.json, progress.txt.
+- Verification: PowerShell parser passed; task rg returned only AppSettings__DataStoreDatabaseName/e2e-shard matches; focused DMS build-script guardrail tests passed 5; git diff --check passed; build-dms E2ETest .env.e2e self-contained Category=@e2e-ci-shard-3 passed 207/215 with 8 skipped in 19m58s.
+- Notes: unrelated tasks.json working-tree deletion of final E2E Validation task observed and left unstaged.
