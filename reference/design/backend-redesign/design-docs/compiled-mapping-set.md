@@ -322,8 +322,8 @@ public enum DbTriggerKind
     // Trigger that maintains `{schema}.{AbstractResource}Identity` from concrete roots.
     AbstractIdentityMaintenance,
 
-    // Trigger-based identity-component propagation fallback (SQL Server cascade-path restrictions).
-    IdentityPropagationFallback
+    // SQL Server-only identity propagation trigger (cascade-path restrictions).
+    MssqlIdentityPropagationTrigger
 }
 
 public readonly record struct DbTriggerName(string Value);
@@ -340,7 +340,7 @@ public sealed record DbIdentityPropagationReferrerAction(
     IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
 );
 
-public sealed record DbIdentityPropagationFallbackInfo(
+public sealed record DbMssqlIdentityPropagationTriggerInfo(
     IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
 );
 
@@ -357,7 +357,7 @@ public sealed record DbTriggerInfo(
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
     DbTableName? MaintenanceTargetTable = null,
-    DbIdentityPropagationFallbackInfo? PropagationFallback = null,
+    DbMssqlIdentityPropagationTriggerInfo? MssqlIdentityPropagationTrigger = null,
     TriggerKindParameters? Parameters = null,
     // The concrete root table (or `dms.Descriptor`) whose mirrored `ContentVersion` /
     // `ContentLastModifiedAt` columns this trigger updates after stamping `dms.Document`.

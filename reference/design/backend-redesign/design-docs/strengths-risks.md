@@ -34,7 +34,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server propagation-fallback triggers for eligible edges), with per-site binding columns available for query compilation and reconstitution.
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers for eligible edges), with per-site binding columns available for query compilation and reconstitution.
 - Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
 
 ### Key unification for equality-constrained identity parts (single source of truth)
@@ -64,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `DbTriggerKind.IdentityPropagationFallback` triggers for eligible edges), and
+- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `DbTriggerKind.MssqlIdentityPropagationTrigger` triggers for eligible edges), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -81,7 +81,7 @@ Mitigations / guidance:
 
 SQL Server may reject FK graphs with “cycles or multiple cascade paths”. This is why the design does not use SQL Server update cascades for reference composite FKs. The DDL generator must:
 - emit `ON UPDATE NO ACTION` for all SQL Server reference composite FKs, and
-- emit deterministic, set-based `DbTriggerKind.IdentityPropagationFallback` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
+- emit deterministic, set-based `DbTriggerKind.MssqlIdentityPropagationTrigger` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
 
 Risks:
 - extra trigger complexity,

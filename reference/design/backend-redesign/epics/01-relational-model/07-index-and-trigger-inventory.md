@@ -22,7 +22,7 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 
 - Set-level (`DMS-1033`) uses two whole-schema passes over the complete derived table/constraint inventory:
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
-  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server propagation fallback fan-out
+  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server `MssqlIdentityPropagationTrigger` fan-out
     metadata.
 
 ## Scope (What This Story Is Talking About)
@@ -95,7 +95,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 - Trigger contracts interpret `IdentityProjectionColumns` as null-safe old/new value-diff compare sets, not
   `UPDATE(column)` gates.
-- SQL Server-only identity propagation is represented by explicit `DbTriggerKind.IdentityPropagationFallback` trigger
+- SQL Server-only identity propagation is represented by explicit `DbTriggerKind.MssqlIdentityPropagationTrigger` trigger
   intents with stable naming.
   - SQL Server reference composite FKs always use `ON UPDATE NO ACTION`.
   - For eligible targets (abstract targets and concrete targets with `allowIdentityUpdates=true`), inventory emits one
@@ -127,7 +127,7 @@ Out of scope for this story:
    - table stamping triggers,
    - referential identity maintenance triggers,
    - abstract identity maintenance triggers,
-   - SQL Server propagation fallback triggers (one trigger per referenced table with fan-out referrer actions).
+   - SQL Server `MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table with fan-out referrer actions).
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
 5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

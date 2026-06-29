@@ -22,7 +22,7 @@ The backend redesign relies on:
   row as stored “identity-part” columns to support query/reconstitution.
 - **DB-driven identity propagation**:
   - PostgreSQL: `ON UPDATE CASCADE` on eligible composite reference FKs.
-  - SQL Server: `ON UPDATE NO ACTION` + trigger-based propagation fallback.
+  - SQL Server: `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`.
 - **Key unification**: uses `equalityConstraints` to unify duplicated stored scalar/descriptor columns into a single
   canonical stored column *within one physical table row* (aliases remain available for API-path semantics).
 
@@ -79,7 +79,7 @@ constraints whose endpoints bind to different physical tables (`KeyUnificationIg
 
 ### 2) Identity propagation follows reference edges, not equality edges
 
-Identity propagation is defined over composite reference FKs (or their SQL Server trigger fallback). It updates the
+Identity propagation is defined over composite reference FKs (or their SQL Server `MssqlIdentityPropagationTrigger`). It updates the
 referrer’s stored identity-part columns **only for tables that directly reference the updated target**.
 
 In this scenario:
@@ -90,16 +90,16 @@ In this scenario:
 
 So the root value changes but the child values do not.
 
-### 3) SQL Server propagation fallback currently only considers root-table reference sites
+### 3) SQL Server `MssqlIdentityPropagationTrigger` currently only considers root-table reference sites
 
-The design docs call out that SQL Server propagation fallback triggers should fan out to “root and non-root reference
+The design docs call out that SQL Server `MssqlIdentityPropagationTrigger` triggers should fan out to “root and non-root reference
 sites” (`reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`).
 
 However, the current derived-trigger inventory limits reverse-reference indexing to root-table bindings only (see
 `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`, the
 “Only consider root-table bindings” filter).
 
-Even for scenarios where a child table *does* directly reference the updated target, SQL Server fallback propagation
+Even for scenarios where a child table *does* directly reference the updated target, SQL Server `MssqlIdentityPropagationTrigger` propagation
 would currently miss those non-root referrers.
 
 ## Why This Matters
@@ -117,11 +117,11 @@ propagation.
 
 Below are candidate directions (not mutually exclusive).
 
-### A) Implement SQL Server propagation fallback for non-root reference sites (baseline parity fix)
+### A) Implement SQL Server `MssqlIdentityPropagationTrigger` for non-root reference sites (baseline parity fix)
 
 Bring the implementation in line with the design intent:
 
-- Include child/extension table reference bindings when deriving `IdentityPropagationFallback` triggers.
+- Include child/extension table reference bindings when deriving `MssqlIdentityPropagationTrigger` triggers.
 - Ensure propagation updates canonical/storage columns for those non-root tables (and stamps documents appropriately).
 
 This does not solve the “SSA update must reach a child table that does not reference SSA” case by itself, but it is a
