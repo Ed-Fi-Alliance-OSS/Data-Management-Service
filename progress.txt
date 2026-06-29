@@ -352,3 +352,9 @@
 - ProvideAuthorizationFiltersMiddleware no longer resolves filter providers or branches on MappingSet; it preserves raw strategy names with empty filters for backend planning.
 - Files changed: ResourceActionAuthorizationMiddleware, ProvideAuthorizationFiltersMiddleware, ApiService, ProvideAuthorizationFiltersMiddlewareTests, tasks.json, progress.txt.
 - Verification: csharpier format; task rg no dead branch matches; Core.Tests.Unit Release passed 2660; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning; git diff --check passed.
+
+2026-06-29 - completed Core Pipeline: remove no-op profile middleware / remove-legacy-backend.md cleanup
+- Deleted ProfileFilteringMiddleware and ProfileWriteValidationMiddleware plus pass-through tests; removed ApiService pipeline steps and DmsCore registrations.
+- Decision: relational handlers/ProfileWritePipelineMiddleware own profile read/write behavior, so placeholder steps were not preserving useful behavior.
+- Files changed: ApiService, DmsCoreServiceExtensions, ProfileWritePipeline comment, pipeline/setup tests, deleted middleware/test files, tasks.json, progress.txt.
+- Verification: task rg returned no matches; csharpier format; Core.Tests.Unit Release passed 2657; solution build Release passed with known Reqnroll DeleteResourcesValidation feature warning.

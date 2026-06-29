@@ -95,11 +95,6 @@ public class PipelineOrderingTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
-            services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-                NullLogger<ProfileFilteringMiddleware>.Instance
-            );
-
             var serviceProvider = services.BuildServiceProvider();
 
             var apiService = new ApiService(
@@ -435,16 +430,7 @@ public class PipelineOrderingTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
-            services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-                NullLogger<ProfileFilteringMiddleware>.Instance
-            );
-
             services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
-            services.AddTransient<ProfileWriteValidationMiddleware>();
-            services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
-                NullLogger<ProfileWriteValidationMiddleware>.Instance
-            );
             services.AddTransient<ProfileWritePipelineMiddleware>();
             services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
                 NullLogger<ProfileWritePipelineMiddleware>.Instance
