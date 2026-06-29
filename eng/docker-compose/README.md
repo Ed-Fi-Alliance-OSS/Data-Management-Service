@@ -90,7 +90,7 @@ the running `dms-postgresql` container, the sequence is:
    ```
 
 This is the same sequence used by the `E2ETests` build target
-(`build-dms.ps1` → `Initialize-RelationalE2EDatabase`).
+(`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the

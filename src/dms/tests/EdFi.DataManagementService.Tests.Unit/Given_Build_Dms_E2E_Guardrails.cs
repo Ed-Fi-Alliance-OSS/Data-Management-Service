@@ -41,22 +41,34 @@ public class Given_Build_Dms_E2E_Guardrails
         environmentContextFunctionContents.Should().NotContain("USE" + "_RELATIONAL_BACKEND");
         environmentContextFunctionContents.Should().NotContain("ConvertTo-Boolean");
         environmentContextFunctionContents.Should().Contain("E2E_DATABASE_NAME");
+        environmentContextFunctionContents.Should().Contain("E2E_DATABASE_NAME must be set");
+        environmentContextFunctionContents.Should().Contain("ShouldProvisionE2EDatabase = $true");
+        environmentContextFunctionContents.Should().NotContain("\"edfi_datamanagementservice\"");
     }
 
     [Test]
-    public void It_restarts_dms_after_relational_database_reprovisioning()
+    public void It_restarts_dms_after_e2e_database_reprovisioning()
     {
-        var provisioningFunctionContents = ExtractFunctionBody("Invoke-RelationalE2EDatabaseProvisioning");
-        var initializeFunctionContents = ExtractFunctionBody("Initialize-RelationalE2EDatabase");
+        _buildScriptContents.Should().NotContain("Initialize-RelationalE2EDatabase");
+        _buildScriptContents.Should().NotContain("Invoke-RelationalE2EDatabaseProvisioning");
+
+        var provisioningFunctionContents = ExtractFunctionBody("Invoke-E2EDatabaseProvisioning");
+        var initializeFunctionContents = ExtractFunctionBody("Initialize-E2EDatabase");
+        var e2eTestFunctionContents = ExtractFunctionBody("E2ETests");
 
         provisioningFunctionContents.Should().Contain("./provision-e2e-database.ps1");
         initializeFunctionContents
             .Should()
-            .Contain("Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+            .Contain("Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+        e2eTestFunctionContents
+            .Should()
+            .Contain(
+                "Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }"
+            );
         initializeFunctionContents
             .Should()
             .Contain("Restart-DmsContainer")
-            .And.Contain("-Reason \"discard cached PostgreSQL pools after relational reprovisioning\"");
+            .And.Contain("-Reason \"discard cached PostgreSQL pools after E2E database reprovisioning\"");
     }
 
     [Test]

@@ -530,7 +530,7 @@
       "Run: `rg --hidden -n \"Initialize-RelationalE2EDatabase|Initialize-E2EDatabase|provision-relational-e2e-database|provision-e2e-database|RELATIONAL_E2E_DATABASE_NAME|E2E_DATABASE_NAME\" build-dms.ps1 eng/docker-compose eng/docker-compose/.env*`",
       "Run: `pwsh -NoLogo -NoProfile -Command ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'` when Docker dependencies are available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Build Script",

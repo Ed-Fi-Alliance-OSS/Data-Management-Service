@@ -213,3 +213,11 @@
 - Files changed: DMS E2E feature files, DMS unit guardrails, PR/nightly/scheduled workflows, AGENTS/docs RestClient, tasks.json, progress.txt.
 - Verification: task rg clean; csharpier format; DMS Tests.Unit Release passed 30; E2E project Release build passed with existing DeleteResourcesValidation.feature.cs warning only; git diff --check passed.
 - Notes: full Docker shard not run; env-file consolidation remains pending, so .env.e2e.relational examples remain until that task.
+
+2026-06-29 - completed Build Script: neutral unconditional DMS E2E database provisioning / remove-legacy-backend.md Phase 6
+- Renamed build-dms E2E provisioning functions to Invoke-E2EDatabaseProvisioning and Initialize-E2EDatabase; updated stale compose README function reference.
+- Made E2E_DATABASE_NAME required in E2E environment context and removed fallback to edfi_datamanagementservice so E2ETest always runs database reset/provision before tests.
+- Kept ShouldProvisionE2EDatabase true for existing schema-env plumbing until later env-file consolidation removes relational-named files.
+- Files changed: build-dms.ps1, Given_Build_Dms_E2E_Guardrails.cs, eng/docker-compose/README.md, tasks.json, progress.txt.
+- Verification: task rg clean for old function/helper names; PowerShell parser passed; csharpier format; DMS Tests.Unit Release passed 30; git diff --check passed.
+- Notes: full Docker E2ETest with .env.e2e not run because neutral env-file consolidation task is still pending; .env.e2e currently lacks E2E_DATABASE_NAME.

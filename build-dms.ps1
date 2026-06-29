@@ -320,20 +320,15 @@ function Get-E2ETestEnvironmentContext {
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
     $e2eDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
-    $shouldProvisionE2EDatabase = -not [string]::IsNullOrWhiteSpace($e2eDatabaseName)
 
-    $dataStoreDatabaseName =
-        if ($shouldProvisionE2EDatabase) {
-            $e2eDatabaseName
-        }
-        else {
-            "edfi_datamanagementservice"
-        }
+    if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
+        throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' so the DMS E2E database can be reset and provisioned before tests run."
+    }
 
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
-        ShouldProvisionE2EDatabase = $shouldProvisionE2EDatabase
-        DataStoreDatabaseName = $dataStoreDatabaseName
+        ShouldProvisionE2EDatabase = $true
+        DataStoreDatabaseName = $e2eDatabaseName
         TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
@@ -584,7 +579,7 @@ function Get-EffectiveSchemaHashFromOutput {
     return $effectiveSchemaHash
 }
 
-function Invoke-RelationalE2EDatabaseProvisioning {
+function Invoke-E2EDatabaseProvisioning {
     param(
         [pscustomobject]
         $E2ETestSettings
@@ -602,7 +597,7 @@ function Invoke-RelationalE2EDatabaseProvisioning {
         $provisionedEffectiveSchemaHash = Get-EffectiveSchemaHashFromOutput -Output $provisionOutput
 
         if ([string]::IsNullOrWhiteSpace($provisionedEffectiveSchemaHash)) {
-            throw "Relational E2E provisioning completed without reporting an effective schema hash."
+            throw "E2E database provisioning completed without reporting an effective schema hash."
         }
 
         return $provisionedEffectiveSchemaHash
@@ -702,7 +697,7 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
         $LogsSinceUtc = [datetime]::MinValue
     )
 
-    Write-Output "Validating DMS runtime effective schema before relational E2E tests..."
+    Write-Output "Validating DMS runtime effective schema before E2E tests..."
 
     $environmentValues = Get-DockerContainerEnvironmentMap -ContainerName $ContainerName
     Write-DmsSchemaContainerEnvironment -EnvironmentValues $environmentValues
@@ -711,17 +706,17 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
         -ContainerName $ContainerName `
         -LogsSinceUtc $LogsSinceUtc
 
-    Write-Output "Provisioned relational effective schema hash: $ProvisionedEffectiveSchemaHash"
+    Write-Output "Provisioned E2E effective schema hash: $ProvisionedEffectiveSchemaHash"
     Write-Output "DMS runtime effective schema hash: $dmsRuntimeEffectiveSchemaHash"
 
     if ([string]::IsNullOrWhiteSpace($dmsRuntimeEffectiveSchemaHash)) {
         docker logs --tail 120 $ContainerName 2>&1
-        throw "DMS container '$ContainerName' did not report an effective schema hash before relational E2E tests."
+        throw "DMS container '$ContainerName' did not report an effective schema hash before E2E tests."
     }
 
     if ($dmsRuntimeEffectiveSchemaHash -ne $ProvisionedEffectiveSchemaHash) {
         docker logs --tail 120 $ContainerName 2>&1
-        throw "Relational E2E setup mismatch: database was provisioned with effective schema hash '$ProvisionedEffectiveSchemaHash' but DMS runtime expects '$dmsRuntimeEffectiveSchemaHash'."
+        throw "E2E setup mismatch: database was provisioned with effective schema hash '$ProvisionedEffectiveSchemaHash' but DMS runtime expects '$dmsRuntimeEffectiveSchemaHash'."
     }
 }
 
@@ -834,7 +829,7 @@ function Start-DockerEnvironment {
     }
 }
 
-function Initialize-RelationalE2EDatabase {
+function Initialize-E2EDatabase {
     param(
         [pscustomobject]
         $E2ETestSettings,
@@ -842,10 +837,6 @@ function Initialize-RelationalE2EDatabase {
         [switch]
         $UsePublishedImage
     )
-
-    if (-not $E2ETestSettings.ShouldProvisionE2EDatabase) {
-        return
-    }
 
     $dmsContainerName =
         if ($UsePublishedImage) {
@@ -855,11 +846,11 @@ function Initialize-RelationalE2EDatabase {
             "ed-fi-api"
         }
 
-    $provisionedEffectiveSchemaHash = Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
+    $provisionedEffectiveSchemaHash = Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
     $dmsRestartStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
     Restart-DmsContainer `
         -ContainerName $dmsContainerName `
-        -Reason "discard cached PostgreSQL pools after relational reprovisioning"
+        -Reason "discard cached PostgreSQL pools after E2E database reprovisioning"
     Assert-DmsRuntimeSchemaMatchesProvisionedDatabase `
         -ProvisionedEffectiveSchemaHash $provisionedEffectiveSchemaHash `
         -ContainerName $dmsContainerName `
@@ -896,9 +887,7 @@ function E2ETests {
             -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
     }
 
-    if ($e2eTestSettings.ShouldProvisionE2EDatabase) {
-        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
-    }
+    Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
 
     Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
 }
