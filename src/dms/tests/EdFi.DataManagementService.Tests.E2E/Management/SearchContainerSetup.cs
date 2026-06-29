@@ -5,9 +5,9 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-public class SearchContainerSetup(Func<Task>? resetRelationalDatabase = null) : ContainerSetupBase
+public class SearchContainerSetup(Func<Task>? resetDatabase = null) : ContainerSetupBase
 {
-    private readonly Func<Task> _resetRelationalDatabase = resetRelationalDatabase ?? ResetRelationalDatabase;
+    private readonly Func<Task> _resetDatabase = resetDatabase ?? ResetDatabase;
 
     public override string ApiUrl()
     {
@@ -16,6 +16,6 @@ public class SearchContainerSetup(Func<Task>? resetRelationalDatabase = null) : 
 
     public override async Task ResetData()
     {
-        await _resetRelationalDatabase();
+        await _resetDatabase();
     }
 }

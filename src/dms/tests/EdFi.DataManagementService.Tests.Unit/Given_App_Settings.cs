@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Tests.Unit;
 public class Given_App_Settings
 {
     [Test]
-    public void It_uses_the_default_data_store_database_name_when_not_configured()
+    public void It_uses_the_default_e2e_data_store_database_name_when_not_configured()
     {
         var settings = AppSettings.Create(
             new ConfigurationBuilder()
@@ -26,7 +26,7 @@ public class Given_App_Settings
                 .Build()
         );
 
-        settings.DataStoreDatabaseName.Should().Be(AppSettings.LegacyDataStoreDatabaseName);
+        settings.DataStoreDatabaseName.Should().Be(AppSettings.DefaultDataStoreDatabaseName);
     }
 
     [Test]
@@ -37,13 +37,13 @@ public class Given_App_Settings
                 .AddInMemoryCollection([
                     KeyValuePair.Create<string, string?>(
                         nameof(AppSettings.DataStoreDatabaseName),
-                        "edfi_datamanagementservice_relational"
+                        "edfi_datamanagementservice_e2e_override"
                     ),
                 ])
                 .Build()
         );
 
-        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational");
+        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_e2e_override");
     }
 
     [Test]
@@ -54,12 +54,12 @@ public class Given_App_Settings
                 .AddInMemoryCollection([
                     KeyValuePair.Create<string, string?>(
                         nameof(AppSettings.DataStoreDatabaseName),
-                        "edfi_datamanagementservice_relational_top_level"
+                        "edfi_datamanagementservice_e2e_top_level"
                     ),
                 ])
                 .Build()
         );
 
-        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational_top_level");
+        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_e2e_top_level");
     }
 }

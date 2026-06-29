@@ -13,8 +13,7 @@ public abstract class ContainerSetupBase
     private const string PgAdminPassword = "abcdefgh1!";
 
     private const ushort DbPortExternal = 5435;
-    private const string LegacyDatabaseName = "edfi_datamanagementservice";
-    private static readonly string _relationalResetSql = """
+    private static readonly string _resetSql = """
         DO $$
         DECLARE
             truncate_sql text;
@@ -69,38 +68,11 @@ public abstract class ContainerSetupBase
 
     public static async Task ResetDatabase()
     {
-        var hostConnectionString = BuildHostConnectionString(LegacyDatabaseName);
-        using var conn = new NpgsqlConnection(hostConnectionString);
-        await conn.OpenAsync();
-
-        await DeleteData("dms.Reference");
-        await DeleteData("dms.Alias");
-        await DeleteDataWithCondition("dms.Document", "'SchoolYearType'");
-        await DeleteData("dms.EducationOrganizationHierarchyTermsLookup");
-        await DeleteData("dms.EducationOrganizationHierarchy");
-
-        async Task DeleteData(string tableName)
-        {
-            var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);
-            await deleteRefCmd.ExecuteNonQueryAsync();
-        }
-        async Task DeleteDataWithCondition(string tableName, string resourcename)
-        {
-            var deleteCmd = new NpgsqlCommand(
-                $"DELETE FROM {tableName} WHERE resourcename != {resourcename};",
-                conn
-            );
-            await deleteCmd.ExecuteNonQueryAsync();
-        }
-    }
-
-    public static async Task ResetRelationalDatabase()
-    {
         var hostConnectionString = BuildHostConnectionString(AppSettings.DataStoreDatabaseName);
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();
 
-        var resetCommand = new NpgsqlCommand(_relationalResetSql, conn);
+        var resetCommand = new NpgsqlCommand(_resetSql, conn);
         await resetCommand.ExecuteNonQueryAsync();
     }
 
