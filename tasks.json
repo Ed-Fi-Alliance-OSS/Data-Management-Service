@@ -1012,6 +1012,6 @@
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -c Release`.",
       "Run: `dotnet build src/dms/EdFi.DataManagementService.sln -c Release`."
     ],
-    "completed": false
+    "completed": true
   }
 ]

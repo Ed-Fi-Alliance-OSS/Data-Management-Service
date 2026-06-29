@@ -4,40 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
-
-/// <summary>
-/// A query request to a query handler
-/// </summary>
-internal record QueryRequest(
-    /// <summary>
-    /// The ResourceInfo for the resource being retrieved
-    /// </summary>
-    ResourceInfo ResourceInfo,
-    /// <summary>
-    /// The elements of this query. This must not include pagination parameters.
-    /// </summary>
-    QueryElement[] QueryElements,
-    /// <summary>
-    /// Collection of authorization securable info
-    /// </summary>
-    AuthorizationSecurableInfo[] AuthorizationSecurableInfo,
-    /// Collection of authorization strategy filters, each specifying
-    /// collection of filters and filter operator
-    /// </summary>
-    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
-    /// <summary>
-    /// The pagination parameters for this query
-    /// </summary>
-    PaginationParameters PaginationParameters,
-    /// <summary>
-    /// The request TraceId
-    /// </summary>
-    TraceId TraceId
-) : IQueryRequest;
 
 /// <summary>
 /// A relational query request to a query handler.
@@ -76,16 +45,7 @@ internal sealed record RelationalQueryRequest(
     TraceId TraceId,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null
-)
-    : QueryRequest(
-        ResourceInfo: ResourceInfo,
-        QueryElements: QueryElements,
-        AuthorizationSecurableInfo: AuthorizationSecurableInfo,
-        AuthorizationStrategyEvaluators: AuthorizationStrategyEvaluators,
-        PaginationParameters: PaginationParameters,
-        TraceId: TraceId
-    ),
-        IRelationalQueryRequest
+) : IRelationalQueryRequest
 {
     ChangeVersionRange IRelationalQueryRequest.ChangeVersionRange =>
         ChangeVersionRange ?? External.Model.ChangeVersionRange.None;
