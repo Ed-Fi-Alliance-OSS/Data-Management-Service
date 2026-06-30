@@ -203,14 +203,16 @@ public class Given_Embedded_Claims_Json
         }
     }
 
-    [Test]
-    public async Task It_projects_smoke_ReadChanges_claim_metadata()
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public async Task It_projects_smoke_ReadChanges_claim_metadata(string standardFolder)
     {
         const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
         const string relationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
         const string relationshipsWithEdOrgsAndPeopleIncludingDeletes =
             "RelationshipsWithEdOrgsAndPeopleIncludingDeletes";
 
+        _claims = LoadEmbeddedClaims(standardFolder);
         var metadata = await CreateClaimSetMetadata("EdFiSandbox");
 
         AssertActionStrategies(
@@ -253,6 +255,28 @@ public class Given_Embedded_Claims_Json
             "Read",
             relationshipsWithEdOrgsAndPeople
         );
+
+        if (standardFolder == "ds61")
+        {
+            foreach (
+                var specialEducationClaimName in new[]
+                {
+                    "IDEAEvent",
+                    "StudentIEP",
+                    "StudentIEPGoal",
+                    "StudentIEPServiceDelivery",
+                    "StudentIEPServicePrescription",
+                }.Select(EdFiClaim)
+            )
+            {
+                AssertActionStrategies(
+                    metadata,
+                    specialEducationClaimName,
+                    "ReadChanges",
+                    relationshipsWithEdOrgsAndPeopleIncludingDeletes
+                );
+            }
+        }
     }
 
     [TestCaseSource(nameof(SeedLoaderInventorySource))]
