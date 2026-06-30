@@ -243,8 +243,43 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+  cheap-check-summary:
+    name: Cheap Check Summary
+    runs-on: ubuntu-latest
+    needs:
+      [
+        scan-actions-bidi,
+        run-bootstrap-pester-tests,
+        verify-lock-files,
+        run-unit-tests,
+      ]
+    if: always()
+    steps:
+      - name: Check Cheap Validation Results
+        shell: pwsh
+        run: |
+          $results = @(
+            @{ Name = "Scan Actions, scan all files for BIDI Trojan Attacks"; Result = "${{ needs.scan-actions-bidi.result }}" },
+            @{ Name = "Run Bootstrap Pester Tests"; Result = "${{ needs.run-bootstrap-pester-tests.result }}" },
+            @{ Name = "Verify DMS Lock Files"; Result = "${{ needs.verify-lock-files.result }}" },
+            @{ Name = "Run Unit Tests"; Result = "${{ needs.run-unit-tests.result }}" }
+          )
+
+          $failedJobs = @(
+            $results | Where-Object { $_.Result -ne "success" } | ForEach-Object {
+              "$($_.Name): $($_.Result)"
+            }
+          )
+
+          if ($failedJobs.Count -gt 0) {
+            throw "Cheap validation failed: $($failedJobs -join '; ')"
+          }
+
+          Write-Host "All cheap validation jobs passed."
+
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -353,6 +388,7 @@ jobs:
 
   run-dms-api-mssql-integration-tests:
     name: Run DMS API MSSQL Integration Tests
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -425,6 +461,7 @@ jobs:
 
   run-backend-postgresql-integration-tests:
     name: Run Backend PostgreSQL Integration Tests
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -495,6 +532,7 @@ jobs:
 
   run-dms-api-postgresql-integration-tests:
     name: Run DMS API PostgreSQL Integration Tests
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -568,6 +606,7 @@ jobs:
 
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -657,6 +696,7 @@ jobs:
 
   run-schematools-postgresql-integration-tests:
     name: Run SchemaTools PostgreSQL Integration Tests
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -746,6 +786,7 @@ jobs:
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -836,6 +877,7 @@ jobs:
 
   run-e2e-tests:
     name: Run PostgreSQL DMS E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -984,6 +1026,7 @@ jobs:
   # filter has no shard, so RunE2E writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-ds61:
     name: Run PostgreSQL DMS E2E (DS 6.1, version-coupled)
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1146,6 +1189,7 @@ jobs:
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1298,6 +1342,7 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
+    needs: cheap-check-summary
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1578,7 +1623,7 @@ jobs:
 
   fresh-rebuild-docker-images:
     name: Fresh Rebuild DMS and Config Docker Images
-    needs: detect-fresh-build-changes
+    needs: [detect-fresh-build-changes, cheap-check-summary]
     if: needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -1649,6 +1694,7 @@ jobs:
       [
         verify-lock-files,
         run-unit-tests,
+        cheap-check-summary,
         run-e2e-tests,
         e2e-summary,
         run-instance-management-e2e-tests,
