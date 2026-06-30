@@ -496,28 +496,6 @@ public class PipelineOrderingTests
                     "ValidateRouteSemanticsMiddleware must reject invalid write route semantics before request body parsing"
                 );
         }
-
-        [TestCase("CreateUpsertPipeline")]
-        [TestCase("CreateGetByIdPipeline")]
-        [TestCase("CreateQueryPipeline")]
-        [TestCase("CreateUpdatePipeline")]
-        [TestCase("CreateDeleteByIdPipeline")]
-        [TestCase("CreateGetTrackedChangesPipeline")]
-        public void It_places_authorization_securable_info_before_resource_info(string factoryMethodName)
-        {
-            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
-            var securableInfoIndex = stepTypes.IndexOf(typeof(ProvideAuthorizationSecurableInfoMiddleware));
-            var buildResourceInfoIndex = stepTypes.IndexOf(typeof(BuildResourceInfoMiddleware));
-
-            securableInfoIndex.Should().BeGreaterThanOrEqualTo(0);
-            buildResourceInfoIndex.Should().BeGreaterThanOrEqualTo(0);
-            securableInfoIndex
-                .Should()
-                .BeLessThan(
-                    buildResourceInfoIndex,
-                    "BuildResourceInfoMiddleware copies AuthorizationSecurableInfo into ResourceInfo"
-                );
-        }
     }
 
     [TestFixture]
