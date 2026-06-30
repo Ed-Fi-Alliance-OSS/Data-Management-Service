@@ -23,32 +23,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
@@ -72,9 +46,7 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
@@ -181,8 +153,7 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId("pgsql-no-profile-storage-collapsed"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new PostgresqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

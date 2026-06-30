@@ -9522,13 +9522,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ResourceName: new ResourceName(resourceName),
             IsDescriptor: isDescriptor,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                false,
-                default,
-                default
-            ),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -11087,8 +11081,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new RelationalAuthorizationContext(claimEducationOrganizationIds, namespacePrefixes ?? [])
             );
-        A.CallTo(() => queryRequest.AuthorizationSecurableInfo)
-            .Returns(Array.Empty<AuthorizationSecurableInfo>());
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
         A.CallTo(() => queryRequest.PaginationParameters)
             .Returns(

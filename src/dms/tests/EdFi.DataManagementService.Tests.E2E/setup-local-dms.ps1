@@ -19,6 +19,8 @@
     The script runs:
     ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
     ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DataStoreDatabaseName <E2E_DATABASE_NAME>
+    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file>
+    docker restart ed-fi-api
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -29,6 +31,35 @@ param(
     # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
     [string] $DataStandardVersion
 )
+
+function Wait-DmsHealthy {
+    param(
+        [string] $DmsBaseUrl,
+        [int] $TimeoutSeconds = 60
+    )
+
+    $healthUrl = "$($DmsBaseUrl.TrimEnd('/'))/health"
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while ($true) {
+        try {
+            $response = Invoke-WebRequest -Uri $healthUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                Write-Host "DMS service is healthy." -ForegroundColor Green
+                return
+            }
+        }
+        catch {
+            $null = $_
+        }
+
+        if ([datetime]::UtcNow -ge $deadline) {
+            throw "DMS health check timed out after $TimeoutSeconds seconds. Endpoint: $healthUrl"
+        }
+
+        Start-Sleep -Seconds 2
+    }
+}
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
@@ -120,6 +151,27 @@ try {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
+
+    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host "`nRestarting DMS container to discard cached database state..." -ForegroundColor Cyan
+    $restartOutput = docker restart ed-fi-api 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $restartOutput -ForegroundColor Red
+        Write-Error "Failed to restart DMS container after E2E database provisioning. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host $restartOutput -ForegroundColor Gray
+    $dmsBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
+    Write-Host "Waiting for DMS to become healthy at $dmsBaseUrl..." -ForegroundColor Yellow
+    Wait-DmsHealthy -DmsBaseUrl $dmsBaseUrl
 
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan

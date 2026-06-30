@@ -31,32 +31,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref fixture — see
 // task-29d notes for why authoritative/sample doesn't carry this shape.
 
-file sealed class CollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -247,9 +221,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task<UpsertResult> UpsertSponsorAsync()
@@ -270,8 +242,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-sponsor"),
-            DocumentUuid: SponsorDocumentUuid,
-            UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler()
+            DocumentUuid: SponsorDocumentUuid
         );
 
         return await scope
@@ -311,8 +282,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-parentresource"),
-            DocumentUuid: ParentResourceDocumentUuid,
-            UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler()
+            DocumentUuid: ParentResourceDocumentUuid
         );
 
         return await scope
@@ -330,7 +300,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _parentResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

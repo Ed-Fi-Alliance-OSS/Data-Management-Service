@@ -41,32 +41,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 /// <summary>
 /// Test-configurable <see cref="IStoredStateProjectionInvoker"/> for MSSQL Slice 2 fixtures.
 /// Emits a single non-collection stored scope at <c>$</c> with caller-supplied visibility
@@ -123,9 +97,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
         ResourceName: new ResourceName("NamingStressItem"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider()
@@ -223,8 +195,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -359,7 +330,6 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-hidden-preservation-put"),
             DocumentUuid: DocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -494,7 +464,6 @@ public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-create-new-post"),
             DocumentUuid: DocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -643,7 +612,6 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -694,9 +662,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("99999999-9999-9999-9999-999999999999")
@@ -784,8 +750,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler()
+            DocumentUuid: ExistingDocumentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -838,7 +803,6 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             Headers: [],
             TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-put"),
             DocumentUuid: ExistingDocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

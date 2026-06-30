@@ -28,32 +28,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 internal sealed class MssqlProfileTopLevelCollectionMergeProjectionInvoker(
     ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows
 ) : IStoredStateProjectionInvoker
@@ -115,9 +89,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider()
@@ -264,8 +236,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -304,7 +275,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 
@@ -344,7 +314,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlProfileTopLevelCollectionMergeNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

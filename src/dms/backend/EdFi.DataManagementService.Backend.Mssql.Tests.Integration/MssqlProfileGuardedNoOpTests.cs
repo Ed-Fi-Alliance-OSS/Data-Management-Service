@@ -366,7 +366,6 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("mssql-profile-guarded-no-op-put-update"),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 
@@ -423,7 +422,6 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("mssql-profile-guarded-no-op-post-as-update"),
             DocumentUuid: incomingDocumentUuid,
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

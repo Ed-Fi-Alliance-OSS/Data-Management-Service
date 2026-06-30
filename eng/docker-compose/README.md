@@ -65,29 +65,21 @@ By default, authentication uses the Self-Contained (OpenIddict) identity provide
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. Because `provision-e2e-database.ps1` provisions inside
-the running `dms-postgresql` container, the sequence is:
+it can serve requests. The DMS E2E setup wrapper starts the stack, configures
+the CMS data store, provisions the E2E database, and restarts DMS:
 
-1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
-   the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
+```pwsh
+../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
+```
 
-   ```pwsh
-   ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
-   ```
+To reprovision the E2E database manually after the stack is already running:
 
-2. Run the provisioning script:
+```pwsh
+./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
+docker restart ed-fi-api
+```
 
-   ```pwsh
-   ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
-   ```
-
-3. Restart DMS so cached startup-validation state is discarded:
-
-   ```pwsh
-   docker restart ed-fi-api
-   ```
-
-This is the same sequence used by the `E2ETests` build target
+This provisioning and restart sequence is also used by the `E2ETests` build target
 (`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
 If DMS starts before provisioning has run (or against a database missing

@@ -62,9 +62,7 @@ public class ExtractDocumentInfoMiddlewareTests
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
     }
 
@@ -265,9 +263,7 @@ public class ExtractDocumentInfoMiddlewareTests
             ResourceName: new ResourceName("StudentProgramAssociation"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
         var referenceDescriptorPath = CreatePath(
@@ -298,9 +294,7 @@ public class ExtractDocumentInfoMiddlewareTests
             ResourceName: new ResourceName("StudentProgramAssociation"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
         var referenceDescriptorPath = CreatePath(
@@ -614,9 +608,7 @@ public class ExtractDocumentInfoMiddlewareTests
                 ResourceName: new ResourceName("StudentProgramAssociation"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.MappingSet = CreateReferenceDescriptorMappingSetWithoutWritePlan();
             _nextCalled = false;
@@ -810,9 +802,7 @@ public class ExtractDocumentInfoMiddlewareTests
                 ResourceName: new ResourceName("StudentProgramAssociation"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.MappingSet = CreateReferenceDescriptorMappingSet();
 

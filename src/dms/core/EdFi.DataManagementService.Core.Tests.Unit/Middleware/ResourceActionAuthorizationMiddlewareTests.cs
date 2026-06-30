@@ -133,9 +133,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             requestInfo.ResourceSchema.ResourceName,
             requestInfo.ResourceSchema.IsDescriptor,
             requestInfo.ProjectSchema.ResourceVersion,
-            requestInfo.ResourceSchema.AllowIdentityUpdates,
-            No.EducationOrganizationHierarchyInfo,
-            []
+            requestInfo.ResourceSchema.AllowIdentityUpdates
         );
 
         return requestInfo;

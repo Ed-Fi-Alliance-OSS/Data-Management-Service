@@ -7,7 +7,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -689,16 +688,8 @@ actual: {requestInfo.FrontendResponse.Body}
             _resourceInfo = resourceInfo;
             WriteExecutor = writeExecutor;
             _serviceProvider = new RepositoryServiceProvider(repository);
-            _upsertHandler = new UpsertHandler(
-                NullLogger.Instance,
-                ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider()
-            );
-            _updateHandler = new UpdateByIdHandler(
-                NullLogger.Instance,
-                ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider()
-            );
+            _upsertHandler = new UpsertHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+            _updateHandler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
         }
 
         public CapturingWriteExecutor WriteExecutor { get; }
@@ -912,24 +903,5 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             return serviceType == typeof(IDocumentStoreRepository) ? repository : null;
         }
-    }
-
-    private sealed class StaticApiSchemaProvider : IApiSchemaProvider
-    {
-        private static readonly JsonNode _apiSchemaRootNode =
-            JsonNode.Parse(
-                "{\"projectNameMapping\":{},\"projectSchemas\":{\"ed-fi\":{\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"Test\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"1.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}}}}"
-            ) ?? new JsonObject();
-
-        public ApiSchemaDocumentNodes GetApiSchemaNodes()
-        {
-            return new ApiSchemaDocumentNodes(_apiSchemaRootNode, []);
-        }
-
-        public Guid SchemaLoadId => Guid.Empty;
-
-        public bool IsSchemaValid => true;
-
-        public List<ApiSchemaFailure> ApiSchemaFailures => [];
     }
 }

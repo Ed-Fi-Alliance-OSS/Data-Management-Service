@@ -68,32 +68,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class ProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 /// <summary>
 /// Test-configurable <see cref="IStoredStateProjectionInvoker"/> that emits the root scope plus
 /// the inlined non-collection scopes used by the ProfileRootOnlyMergeItem fixture:
@@ -185,9 +159,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         ResourceName: new ResourceName("ProfileRootOnlyMergeItem"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private static readonly (string JsonScope, ScopeKind Kind) ProfileScopeInlinedScope = (
@@ -339,8 +311,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -781,7 +752,6 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Root_Scop
             Headers: [],
             TraceId: new TraceId("profile-root-only-hidden-inlined-put"),
             DocumentUuid: DocumentUuid,
-            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -925,7 +895,6 @@ public class Given_A_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Cleara
             Headers: [],
             TraceId: new TraceId("profile-root-only-visible-absent-put"),
             DocumentUuid: DocumentUuid,
-            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1104,7 +1073,6 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
             Headers: [],
             TraceId: new TraceId("profile-root-only-hidden-sub-ref-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1272,7 +1240,6 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
             Headers: [],
             TraceId: new TraceId("profile-root-only-ku-agreement-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

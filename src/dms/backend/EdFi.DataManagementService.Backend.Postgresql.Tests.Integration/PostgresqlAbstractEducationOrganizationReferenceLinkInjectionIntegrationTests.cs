@@ -33,32 +33,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // EducationOrganization ResourceKeyId, the resolver would throw on miss and fail the test
 // with a clear message.
 
-file sealed class AbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -250,9 +224,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -323,8 +295,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -350,8 +321,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-course"),
-            DocumentUuid: CourseDocumentUuid,
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler()
+            DocumentUuid: CourseDocumentUuid
         );
 
         return await scope
@@ -369,7 +339,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _courseResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

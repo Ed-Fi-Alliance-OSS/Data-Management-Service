@@ -214,8 +214,6 @@ internal class ApiService : IApiService
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideEducationOrganizationHierarchyMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -226,7 +224,7 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
+            new UpsertHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -246,7 +244,6 @@ internal class ApiService : IApiService
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
 
@@ -261,7 +258,6 @@ internal class ApiService : IApiService
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -308,8 +304,6 @@ internal class ApiService : IApiService
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideEducationOrganizationHierarchyMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -320,7 +314,7 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new UpdateByIdHandler(_logger, _resiliencePipeline, _apiSchemaProvider),
+            new UpdateByIdHandler(_logger, _resiliencePipeline),
         ]);
         return new PipelineProvider(steps);
     }
@@ -339,7 +333,6 @@ internal class ApiService : IApiService
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
 
@@ -386,7 +379,6 @@ internal class ApiService : IApiService
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()

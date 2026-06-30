@@ -116,18 +116,6 @@ internal class RequestInfo(
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];
 
     /// <summary>
-    /// EducationOrganizationHierarchyInfo for the submitted document
-    /// </summary>
-    public EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo { get; set; } =
-        No.EducationOrganizationHierarchyInfo;
-
-    /// <summary>
-    /// Student Authorization Securable info for the submitted document
-    /// </summary>
-    public AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; set; } =
-        No.AuthorizationSecurableInfo;
-
-    /// <summary>
     /// ApiDetails retrieved from the token, used for resource authorization.
     /// This will be null when the frontend passes the request, and will be populated
     /// by the JWT authentication middleware in Core.

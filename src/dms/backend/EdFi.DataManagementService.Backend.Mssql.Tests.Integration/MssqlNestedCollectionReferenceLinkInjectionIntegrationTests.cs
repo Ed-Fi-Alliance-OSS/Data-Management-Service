@@ -28,32 +28,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // BellSchedule.classPeriods[*].classPeriodReference -> ClassPeriod. References located
 // by classPeriodName identity field, never by array index.
 
-file sealed class MssqlNestedCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -294,9 +268,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -367,8 +339,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -398,8 +369,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId($"mssql-29c-seed-classperiod-{traceSuffix}"),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         return await scope
@@ -425,8 +395,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-bellschedule"),
-            DocumentUuid: BellScheduleDocumentUuid,
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: BellScheduleDocumentUuid
         );
 
         return await scope
@@ -444,7 +413,6 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _bellScheduleResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

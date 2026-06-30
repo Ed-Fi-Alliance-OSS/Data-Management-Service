@@ -955,7 +955,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
             MappingSet: MappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: resourceHandle.ResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1039,7 +1038,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
-            DeleteInEdOrgHierarchy: false,
             Headers: CreateHeaders(ifMatch),
             MappingSet: MappingSet
         )
@@ -1383,7 +1381,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1433,7 +1430,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1669,9 +1665,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
         var resourceHandle = new ResourceHandle(projectSchema, resourceSchema, resourceInfo);

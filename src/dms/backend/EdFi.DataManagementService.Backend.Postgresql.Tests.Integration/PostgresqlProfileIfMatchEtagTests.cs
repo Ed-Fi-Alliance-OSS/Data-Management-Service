@@ -22,32 +22,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class PostgresqlProfileIfMatchNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 file static class PostgresqlProfileIfMatchEtagTestSupport
 {
     private const int MaximumPageSize = 25;
@@ -173,9 +147,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: PostgresqlProfileRootTableOnlyMergeSupport
-                .NamingStressItemResourceInfo
-                .AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: MaximumPageSize,
@@ -235,7 +206,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
 
@@ -266,8 +236,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         return await scope

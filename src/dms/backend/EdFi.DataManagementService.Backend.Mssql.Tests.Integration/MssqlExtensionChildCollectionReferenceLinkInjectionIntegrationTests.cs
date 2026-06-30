@@ -29,32 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // School._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference -> sample.Bus.
 // Bus belongs to the Sample project, so href is /sample/buses/<uuid:D>.
 
-file sealed class MssqlExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -250,9 +224,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -323,8 +295,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29e-seed-bus"),
-            DocumentUuid: BusDocumentUuid,
-            UpdateCascadeHandler: new MssqlExtensionChildCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: BusDocumentUuid
         );
 
         return await scope
@@ -364,8 +335,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29e-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlExtensionChildCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -383,7 +353,6 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _schoolResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

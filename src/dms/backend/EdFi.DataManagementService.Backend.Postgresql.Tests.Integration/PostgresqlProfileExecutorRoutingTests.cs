@@ -26,32 +26,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 /// <summary>
 /// Concrete <see cref="IStoredStateProjectionInvoker"/> that mirrors the request's visible
 /// non-collection scope states into stored state for routing-focused integration tests.
@@ -186,9 +160,7 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111")
@@ -283,7 +255,6 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             Headers: [],
             TraceId: new TraceId("profile-non-creatable-post"),
             DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -322,9 +293,7 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("bbbbbbbb-2222-2222-2222-222222222222")
@@ -424,8 +393,7 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("profile-post-as-update-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler()
+            DocumentUuid: ExistingDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -463,7 +431,6 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -501,9 +468,7 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("cccccccc-4444-4444-4444-444444444444")
@@ -600,8 +565,7 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("profile-put-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler()
+            DocumentUuid: ExistingDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -639,7 +603,6 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-put-profiled"),
             DocumentUuid: ExistingDocumentUuid,
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileWriteContext
         );
 

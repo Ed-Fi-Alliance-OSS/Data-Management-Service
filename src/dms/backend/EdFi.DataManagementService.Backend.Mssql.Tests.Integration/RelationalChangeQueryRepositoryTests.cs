@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -118,32 +117,6 @@ public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepos
         _repositoryResult.Should().Be(_rawResult);
         _repositoryResult.Should().Be(5L);
     }
-}
-
-file sealed class ChangeQueryNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
 }
 
 file sealed record TestTrackedChangeQueryRequest(
@@ -531,9 +504,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -605,8 +576,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("mssql-change-query-seed-school"),
-                    DocumentUuid: SchoolDocumentUuid,
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
+                    DocumentUuid: SchoolDocumentUuid
                 )
             )
         );
@@ -629,8 +599,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("mssql-change-query-seed-academicweek"),
-                    DocumentUuid: AcademicWeekDocumentUuid,
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler()
+                    DocumentUuid: AcademicWeekDocumentUuid
                 )
             )
         );

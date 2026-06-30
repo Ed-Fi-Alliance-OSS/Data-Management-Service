@@ -34,11 +34,7 @@ public class UpsertHandlerTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new UpsertHandler(
-            NullLogger.Instance,
-            ResiliencePipeline.Empty,
-            new UpdateByIdHandlerTests.Provider()
-        );
+        var handler = new UpsertHandler(NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }
@@ -340,13 +336,7 @@ public class UpsertHandlerTests
                 ResourceName: new ResourceName("Student"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
 
         private static ResourceSchema CreateResourceSchema() =>

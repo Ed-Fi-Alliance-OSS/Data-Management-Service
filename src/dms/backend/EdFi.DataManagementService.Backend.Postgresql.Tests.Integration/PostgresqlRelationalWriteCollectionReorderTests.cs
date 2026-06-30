@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -24,32 +23,6 @@ using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class FullSurfaceCollectionReorderUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 internal sealed record FullSurfaceCollectionReorderDocumentRow(
     long DocumentId,
@@ -165,9 +138,7 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider()
@@ -200,8 +171,7 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             EdfiDoc: JsonNode.Parse(CreateRequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
     public static UpdateRequest CreateUpdateRequest(
@@ -216,8 +186,7 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
             EdfiDoc: JsonNode.Parse(UpdateRequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new FullSurfaceCollectionReorderUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
     public static async Task<FullSurfaceCollectionReorderPersistedState> ReadPersistedStateAsync(
