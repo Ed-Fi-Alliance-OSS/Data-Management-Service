@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
@@ -94,10 +93,7 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
-        var relationalUpsertRequest = RequireRelationalRequest<IRelationalUpsertRequest>(
-            upsertRequest,
-            nameof(upsertRequest)
-        );
+        var relationalUpsertRequest = upsertRequest;
         var mappingSet = relationalUpsertRequest.MappingSet;
 
         _logger.LogDebug(
@@ -193,10 +189,7 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         ArgumentNullException.ThrowIfNull(getRequest);
-        var relationalGetRequest = RequireRelationalRequest<IRelationalGetRequest>(
-            getRequest,
-            nameof(getRequest)
-        );
+        var relationalGetRequest = getRequest;
         var mappingSet = relationalGetRequest.MappingSet;
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
 
@@ -242,10 +235,7 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         ArgumentNullException.ThrowIfNull(updateRequest);
-        var relationalUpdateRequest = RequireRelationalRequest<IRelationalUpdateRequest>(
-            updateRequest,
-            nameof(updateRequest)
-        );
+        var relationalUpdateRequest = updateRequest;
         var mappingSet = relationalUpdateRequest.MappingSet;
         ArgumentNullException.ThrowIfNull(mappingSet);
 
@@ -335,10 +325,7 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         ArgumentNullException.ThrowIfNull(deleteRequest);
-        var relationalDeleteRequest = RequireRelationalRequest<IRelationalDeleteRequest>(
-            deleteRequest,
-            nameof(deleteRequest)
-        );
+        var relationalDeleteRequest = deleteRequest;
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
@@ -393,7 +380,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<DeleteResult> DeleteDocumentByIdAsync(
-        IRelationalDeleteRequest relationalDeleteRequest,
+        IDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         WritePrecondition writePrecondition,
@@ -777,7 +764,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
-        IRelationalDeleteRequest relationalDeleteRequest,
+        IDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource
     )
@@ -1035,10 +1022,7 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
-        var relationalQueryRequest = RequireRelationalRequest<IRelationalQueryRequest>(
-            queryRequest,
-            nameof(queryRequest)
-        );
+        var relationalQueryRequest = queryRequest;
         var mappingSet = relationalQueryRequest.MappingSet;
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalQueryRequest.ResourceInfo);
 
@@ -1491,7 +1475,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipIfRequired(
-        IRelationalUpsertRequest relationalUpsertRequest,
+        IUpsertRequest relationalUpsertRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ResourceWritePlan writePlan
@@ -1837,7 +1821,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private WriteGuardRailPreflightResult<UpdateResult> AuthorizePutRelationshipIfRequired(
-        IRelationalUpdateRequest relationalUpdateRequest,
+        IUpdateRequest relationalUpdateRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ResourceWritePlan writePlan
@@ -2400,7 +2384,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<GetResult> GetDocumentByIdAsync(
-        IRelationalGetRequest relationalGetRequest,
+        IGetRequest relationalGetRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan
@@ -2618,7 +2602,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
-        IRelationalGetRequest relationalGetRequest,
+        IGetRequest relationalGetRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource
     )
@@ -2780,7 +2764,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<GetAuthorizationOutcome> AuthorizeGetByIdAgainstTargetAsync(
-        IRelationalGetRequest relationalGetRequest,
+        IGetRequest relationalGetRequest,
         MappingSet mappingSet,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationshipAuthorizationResult storedRelationshipAuthorization,
@@ -3022,7 +3006,7 @@ public sealed class RelationalDocumentStoreRepository(
         };
     }
 
-    private static bool ShouldBypassSingleRecordAuthorization(IRelationalGetRequest relationalGetRequest) =>
+    private static bool ShouldBypassSingleRecordAuthorization(IGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode switch
         {
             RelationalGetRequestReadMode.StoredDocument => true,
@@ -3088,7 +3072,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
+    private static bool ShouldApplyReadableProfileProjection(IGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
@@ -3917,7 +3901,7 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private QueryResult BuildQuerySuccess(
-        IRelationalQueryRequest relationalQueryRequest,
+        IQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         HydratedPage hydratedPage
@@ -3972,19 +3956,6 @@ public sealed class RelationalDocumentStoreRepository(
                 )
                 : null
         );
-    }
-
-    private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
-        object request,
-        string paramName
-    )
-        where TRelationalRequest : class
-    {
-        return request as TRelationalRequest
-            ?? throw new ArgumentException(
-                $"Relational repository requires requests that implement {typeof(TRelationalRequest).Name}.",
-                paramName
-            );
     }
 
     private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>

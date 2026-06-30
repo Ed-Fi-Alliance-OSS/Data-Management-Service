@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
@@ -242,13 +241,11 @@ public class UpsertHandlerTests
     {
         internal sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalUpsertRequest CapturedRequest { get; private set; } = null!;
+            public IUpsertRequest CapturedRequest { get; private set; } = null!;
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                CapturedRequest =
-                    upsertRequest as IRelationalUpsertRequest
-                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpsertRequest)} request.");
+                CapturedRequest = upsertRequest;
 
                 return Task.FromResult<UpsertResult>(new InsertSuccess(CapturedRequest.DocumentUuid));
             }
@@ -320,13 +317,11 @@ public class UpsertHandlerTests
     {
         internal sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalUpsertRequest CapturedRequest { get; private set; } = null!;
+            public IUpsertRequest CapturedRequest { get; private set; } = null!;
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                CapturedRequest =
-                    upsertRequest as IRelationalUpsertRequest
-                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpsertRequest)} request.");
+                CapturedRequest = upsertRequest;
 
                 return Task.FromResult<UpsertResult>(
                     new InsertSuccess(CapturedRequest.DocumentUuid, "\"71\"")

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
@@ -73,22 +72,44 @@ public sealed record RelationalAuthorizationContext
 }
 
 /// <summary>
-/// Backend-local relational query request.
-/// <see cref="IQueryRequest.ResourceInfo"/> already carries the fully qualified resource identity,
-/// so the relational seam only adds metadata that should stay off the public Core.External contract.
+/// Relational query request.
 /// </summary>
-public interface IRelationalQueryRequest : IQueryRequest
+public interface IQueryRequest : IRequestWithMappingSet
 {
+    /// <summary>
+    /// The ResourceInfo for the resource being retrieved.
+    /// </summary>
+    ResourceInfo ResourceInfo { get; }
+
+    /// <summary>
+    /// The elements of this query. This must not include pagination parameters.
+    /// </summary>
+    QueryElement[] QueryElements { get; }
+
+    /// <summary>
+    /// Collection of authorization securable info.
+    /// </summary>
+    AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; }
+
+    /// <summary>
+    /// Collection of authorization strategy filters, each specifying collection of filters and filter operator.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+
+    /// <summary>
+    /// The pagination parameters for this query.
+    /// </summary>
+    PaginationParameters PaginationParameters { get; }
+
+    /// <summary>
+    /// The request TraceId.
+    /// </summary>
+    TraceId TraceId { get; }
+
     /// <summary>
     /// Typed request-scoped authorization inputs for relational authorization planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }
-
-    /// <summary>
-    /// The resolved runtime mapping set for the active relational request.
-    /// Relational GET-many only executes after mapping-set resolution.
-    /// </summary>
-    MappingSet MappingSet { get; }
 
     /// <summary>
     /// Optional readable-profile projection inputs for relational query responses.

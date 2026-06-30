@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -38,20 +37,29 @@ public sealed record ReadableProfileProjectionContext(
 );
 
 /// <summary>
-/// Backend-local relational GET request.
+/// Relational GET request.
 /// </summary>
-public interface IRelationalGetRequest : IGetRequest
+public interface IGetRequest : IRequestWithMappingSet
 {
+    /// <summary>
+    /// The document UUID to get.
+    /// </summary>
+    DocumentUuid DocumentUuid { get; }
+
+    /// <summary>
+    /// The ResourceName for the resource being retrieved.
+    /// </summary>
+    ResourceName ResourceName { get; }
+
+    /// <summary>
+    /// The request TraceId.
+    /// </summary>
+    TraceId TraceId { get; }
+
     /// <summary>
     /// Typed request-scoped authorization inputs for relational single-record planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }
-
-    /// <summary>
-    /// The resolved runtime mapping set for the active request.
-    /// Relational GET-by-id only executes after mapping-set resolution.
-    /// </summary>
-    MappingSet MappingSet { get; }
 
     /// <summary>
     /// The fully qualified/base resource identifier for the request.
