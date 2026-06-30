@@ -399,6 +399,10 @@ public class JwtValidationServiceTests
                 tokenHandler
             );
 
+            // NUnit reuses a single fixture instance across the fixture's tests and runs
+            // SetUp before each, so reset before repopulating to avoid accumulation.
+            _results.Clear();
+
             // Act - present the same token several times
             for (int i = 0; i < 3; i++)
             {

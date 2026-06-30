@@ -159,6 +159,10 @@ public class OpenIddictTokenManagerTests
 
             var manager = CreateConfiguredTokenManager();
 
+            // NUnit reuses a single fixture instance and runs SetUp before each test, so
+            // reset before repopulating to avoid accumulation across tests.
+            _results.Clear();
+
             // Present the same token several times to prove it is reusable while valid.
             for (int i = 0; i < 3; i++)
             {
@@ -206,6 +210,51 @@ public class OpenIddictTokenManagerTests
         public void It_rejects_the_revoked_token()
         {
             _result.Should().BeFalse();
+        }
+    }
+
+    // Replayability lasts only until expiry: the lifetime check runs before the status
+    // lookup, so an expired token is rejected even when its stored status is "valid".
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WithAnExpiredToken : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+
+            // A "valid" status must not rescue an expired token.
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[] { new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()) },
+                expired: true
+            );
+
+            _result = await CreateConfiguredTokenManager().ValidateTokenAsync(token);
+        }
+
+        [Test]
+        public void It_rejects_the_expired_token()
+        {
+            _result.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_reach_the_status_check()
+        {
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
         }
     }
 

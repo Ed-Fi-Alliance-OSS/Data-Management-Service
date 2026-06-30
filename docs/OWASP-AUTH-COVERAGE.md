@@ -140,9 +140,11 @@ The behaviors above are exercised by automated tests:
   validated repeatedly (replay is accepted)**, and **`jti` is informational
   (malformed/opaque `jti` does not affect the decision)**.
 - CMS — `EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictTokenManagerTests.cs`:
-  `ValidateTokenAsync` accepts a token whose status is `valid` and **rejects**
-  revoked / unknown-`jti` / missing-`jti` / malformed-`jti` tokens; `RevokeTokenAsync`
-  delegates revocation for a valid `jti` and is a no-op for missing/malformed `jti`.
+  `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
+  presentation (reusable while valid) and **rejects** expired (lifetime check, before
+  the status lookup), revoked, unknown-`jti`, missing-`jti`, and malformed-`jti`
+  tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` and is a no-op
+  for missing/malformed `jti`.
 
 **End-to-end tests**
 
