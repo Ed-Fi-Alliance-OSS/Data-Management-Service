@@ -23,9 +23,9 @@ try {
     sudo certbot renew --standalone --non-interactive
 
     $live = "/etc/letsencrypt/live/$PublicHost"
-    sudo cp "$live/fullchain.pem" ssl/server.crt
-    sudo cp "$live/privkey.pem"  ssl/server.key
-    sudo chown "$(whoami)" ssl/server.crt ssl/server.key
+    # install (not cp) keeps the private key owner-only (cp would inherit the shell umask).
+    sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
+    sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
 
     Write-Host "Restarting gateway..." -ForegroundColor Cyan
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d gateway

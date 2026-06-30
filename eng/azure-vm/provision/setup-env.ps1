@@ -39,24 +39,33 @@ param(
 $ErrorActionPreference = "Stop"
 
 # --- secret helpers ---------------------------------------------------------
+# All generators draw from the cryptographically secure RandomNumberGenerator, NOT Get-Random
+# (System.Random is a predictable, non-cryptographic PRNG). GetInt32(n) yields an unbiased index.
+function Get-SecureChar([string]$Set) {
+    return $Set[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($Set.Length)]
+}
 function New-ComplexSecret([int]$Length = 40) {
     # Meets CMS/Keycloak complexity: lower, upper, digit, special; 32-128 chars.
     # Special set avoids characters significant in .env / connection strings / URLs.
     $lower = 'abcdefghijkmnopqrstuvwxyz'; $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $digit = '23456789'; $special = '!@#%^*-_+.'
-    $all = ($lower + $upper + $digit + $special).ToCharArray()
-    $chars = @(
-        (Get-Random -InputObject $lower.ToCharArray()),
-        (Get-Random -InputObject $upper.ToCharArray()),
-        (Get-Random -InputObject $digit.ToCharArray()),
-        (Get-Random -InputObject $special.ToCharArray())
-    )
-    while ($chars.Count -lt $Length) { $chars += (Get-Random -InputObject $all) }
-    -join ($chars | Sort-Object { Get-Random })
+    $all = $lower + $upper + $digit + $special
+    $chars = [System.Collections.Generic.List[char]]::new()
+    # Guarantee at least one character from each required class.
+    $chars.Add((Get-SecureChar $lower)); $chars.Add((Get-SecureChar $upper))
+    $chars.Add((Get-SecureChar $digit)); $chars.Add((Get-SecureChar $special))
+    while ($chars.Count -lt $Length) { $chars.Add((Get-SecureChar $all)) }
+    # Fisher-Yates shuffle (CSPRNG) so the guaranteed-class characters are not always in front.
+    for ($i = $chars.Count - 1; $i -gt 0; $i--) {
+        $j = [System.Security.Cryptography.RandomNumberGenerator]::GetInt32($i + 1)
+        $tmp = $chars[$i]; $chars[$i] = $chars[$j]; $chars[$j] = $tmp
+    }
+    -join $chars
 }
 function New-Key32 {
-    $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
-    -join (1..32 | ForEach-Object { Get-Random -InputObject $a })
+    # Exactly 32 characters (the CMS database encryption key requires length 32).
+    $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    -join (1..32 | ForEach-Object { Get-SecureChar $a })
 }
 function New-Base64Key {
     $b = New-Object byte[] 32
@@ -123,9 +132,10 @@ try {
         sudo certbot certonly --standalone --non-interactive --agree-tos -m $LetsEncryptEmail -d $PublicHost
         if ($LASTEXITCODE -ne 0) { throw "certbot failed. Check that DNS resolves to this VM and port 80 is open." }
         $live = "/etc/letsencrypt/live/$PublicHost"
-        sudo cp "$live/fullchain.pem" ssl/server.crt
-        sudo cp "$live/privkey.pem"  ssl/server.key
-        sudo chown "$(whoami)" ssl/server.crt ssl/server.key
+        # install (not cp) sets the destination mode atomically: the private key stays owner-only
+        # (a bare cp inherits the shell umask, often leaving the key group/other-readable).
+        sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
+        sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
         $insecureBootstrap = $false   # cert is valid (bootstrap still uses loopback below)
     }
     elseif (Test-Path "ssl/server.crt") {

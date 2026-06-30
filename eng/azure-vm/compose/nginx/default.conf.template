@@ -11,6 +11,7 @@
 server {
     listen 80 default_server;
     server_name _;
+    server_tokens off;
     return 301 https://$host$request_uri;
 }
 
@@ -28,6 +29,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     client_max_body_size 20M;
+    server_tokens off;   # don't leak the nginx version in headers / error pages
 
     # Defense in depth: never expose CMS dynamic client self-registration through the public
     # gateway. AllowRegistration is already false on both config services; this also returns 403

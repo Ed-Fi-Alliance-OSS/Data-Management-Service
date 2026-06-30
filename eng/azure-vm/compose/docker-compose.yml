@@ -34,10 +34,7 @@ x-dms-common-env: &dms-common-env
   # (so it only works with a publicly-trusted cert) -- clients should authenticate against this
   # Keycloak URL directly. JWT validation is unaffected (it uses JwtAuthentication__MetadataAddress).
   AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
-  NEED_DATABASE_SETUP: "false"
-  AppSettings__DeployDatabaseOnStartup: "false"  # data DBs are provisioned out-of-band by dms-schema; never run the legacy DbUp installer
-  AppSettings__UseRelationalBackend: "${USE_RELATIONAL_BACKEND:-true}"
-  AppSettings__BypassStringTypeCoercion: "false"
+  AppSettings__DeployDatabaseOnStartup: "false"  # DMS data DBs are provisioned out-of-band by the dms-schema tool, not on startup
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
@@ -109,6 +106,8 @@ x-cms-common-env: &cms-common-env
 x-app-defaults: &app-defaults
   restart: unless-stopped
   networks: [dms-sec]
+  # Prevent privilege escalation via setuid/setgid binaries inside the container.
+  security_opt: ["no-new-privileges:true"]
 
 services:
   # =========================================================================
@@ -133,6 +132,7 @@ services:
       retries: 30
     networks: [dms-sec]
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
 
   # =========================================================================
   # Single-tenant stack
@@ -265,6 +265,7 @@ services:
       - mt-config
     networks: [dms-sec]
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
 
 networks:
   dms-sec:
