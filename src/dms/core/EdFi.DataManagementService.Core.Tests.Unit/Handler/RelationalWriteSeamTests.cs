@@ -639,7 +639,7 @@ actual: {requestInfo.FrontendResponse.Body}
     }
 
     [Test]
-    public void It_keeps_missing_mapping_set_as_a_defensive_invariant_for_direct_handler_calls()
+    public async Task It_keeps_missing_mapping_set_as_a_defensive_invariant_for_direct_handler_calls()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
@@ -653,7 +653,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 _fixture.CreateDocumentInfo()
             );
 
-        var exception = act.Should().ThrowAsync<InvalidOperationException>().Result.Which;
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
         exception.Message.Should().Contain("upsert requests").And.Contain("ResolveMappingSetMiddleware");
     }
 
