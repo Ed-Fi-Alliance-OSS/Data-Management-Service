@@ -1067,7 +1067,7 @@ function Wait-ForPostgreSQL {
         Write-Host "Checking PostgreSQL readiness (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
 
         try {
-            $result = docker exec dms-postgresql pg_isready -U postgres 2>&1
+            $null = docker exec dms-postgresql pg_isready -U postgres 2>&1
             if ($LASTEXITCODE -eq 0) {
                 $ready = $true
                 Write-Host "PostgreSQL is ready!" -ForegroundColor Green
