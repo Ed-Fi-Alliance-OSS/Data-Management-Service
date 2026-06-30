@@ -31,32 +31,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // DocumentLinkSlugResolverTests. The other reference shapes (abstract, nested-collection,
 // _ext scope, _ext child collection) are tracked as task subtasks 29b-29e.
 
-file sealed class LinkInjectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -244,9 +218,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -320,8 +292,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-link-injection-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -347,8 +318,7 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-link-injection-seed-academicweek"),
-            DocumentUuid: AcademicWeekDocumentUuid,
-            UpdateCascadeHandler: new LinkInjectionNoOpUpdateCascadeHandler()
+            DocumentUuid: AcademicWeekDocumentUuid
         );
 
         return await scope
@@ -366,7 +336,6 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

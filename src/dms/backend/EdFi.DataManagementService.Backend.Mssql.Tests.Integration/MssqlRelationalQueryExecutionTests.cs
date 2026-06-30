@@ -569,9 +569,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task<QueryResult> ExecuteQueryAsync(
@@ -591,7 +589,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: queryElements,
-            AuthorizationSecurableInfo: _resourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: limit,

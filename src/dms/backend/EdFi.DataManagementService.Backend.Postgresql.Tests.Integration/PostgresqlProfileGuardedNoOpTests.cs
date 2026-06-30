@@ -369,7 +369,6 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("pg-profile-guarded-no-op-put-update"),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 
@@ -426,7 +425,6 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("pg-profile-guarded-no-op-post-as-update"),
             DocumentUuid: incomingDocumentUuid,
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

@@ -27,25 +27,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class UpdateByIdHandlerTests
 {
-    private static readonly JsonNode _apiSchemaRootNode =
-        JsonNode.Parse(
-            "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
-        ) ?? new JsonObject();
-
-    internal class Provider : IApiSchemaProvider
-    {
-        public ApiSchemaDocumentNodes GetApiSchemaNodes()
-        {
-            return new(_apiSchemaRootNode, []);
-        }
-
-        public Guid SchemaLoadId => Guid.Empty;
-
-        public bool IsSchemaValid => true;
-
-        public List<ApiSchemaFailure> ApiSchemaFailures => [];
-    }
-
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
     )
@@ -54,7 +35,7 @@ public class UpdateByIdHandlerTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty, new Provider());
+        var handler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }
@@ -236,13 +217,7 @@ public class UpdateByIdHandlerTests
                 ResourceName: new ResourceName("Student"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
 
         private static ResourceSchema CreateProfileAwareResourceSchema() =>

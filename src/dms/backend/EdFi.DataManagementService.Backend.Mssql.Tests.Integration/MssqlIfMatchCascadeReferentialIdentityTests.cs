@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -26,32 +25,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlIfMatchCascadeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
 {
     public const string FixtureRelativePath =
@@ -68,9 +41,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         ResourceName: new ResourceName("Student"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: true,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: true
     );
 
     public static readonly ResourceInfo ResourceAResourceInfo = new(
@@ -78,9 +49,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         ResourceName: new ResourceName("ResourceA"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider()
@@ -334,8 +303,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 EdfiDoc: requestBody,
                 Headers: [],
                 TraceId: new TraceId(traceId),
-                DocumentUuid: documentUuid,
-                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler()
+                DocumentUuid: documentUuid
             )
         );
     }
@@ -367,8 +335,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 EdfiDoc: requestBody,
                 Headers: headers ?? [],
                 TraceId: new TraceId(traceId),
-                DocumentUuid: documentUuid,
-                UpdateCascadeHandler: new MssqlIfMatchCascadeNoOpUpdateCascadeHandler()
+                DocumentUuid: documentUuid
             )
         );
     }

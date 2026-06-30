@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -26,32 +25,6 @@ using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class AuthoritativeSampleWriteNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 file static class AuthoritativeSampleWriteIntegrationTestSupport
 {
@@ -118,9 +91,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     public static DocumentInfo CreateDocumentInfo(
@@ -886,8 +857,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-authoritative-sample-create"),
-            DocumentUuid: AssociationDocumentUuid,
-            UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler()
+            DocumentUuid: AssociationDocumentUuid
         );
 
         return await scope
@@ -926,8 +896,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-authoritative-sample-changed-update"),
-            DocumentUuid: AssociationDocumentUuid,
-            UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler()
+            DocumentUuid: AssociationDocumentUuid
         );
 
         return await scope
@@ -966,8 +935,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-authoritative-sample-no-op-update"),
-            DocumentUuid: AssociationDocumentUuid,
-            UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler()
+            DocumentUuid: AssociationDocumentUuid
         );
 
         return await scope
@@ -2034,8 +2002,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-propagated-reference-identity-cascade-create"),
-            DocumentUuid: AssociationDocumentUuid,
-            UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler()
+            DocumentUuid: AssociationDocumentUuid
         );
 
         return await scope

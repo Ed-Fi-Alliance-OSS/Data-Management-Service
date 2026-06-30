@@ -104,8 +104,7 @@ internal static class MssqlProfileNestedSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -144,7 +143,6 @@ internal static class MssqlProfileNestedSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

@@ -70,9 +70,7 @@ internal static class No
         ResourceName: new ResourceName(""),
         IsDescriptor: false,
         ResourceVersion: new SemVer(""),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, default),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     /// <summary>
@@ -114,24 +112,6 @@ internal static class No
     /// The null object for ResourceClaim
     /// </summary>
     public static readonly ResourceClaim ResourceClaim = new("", "", []);
-
-    /// <summary>
-    /// The null object for EducationOrganizationHierarchyInfo
-    /// </summary>
-    public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
-        new EducationOrganizationHierarchyInfo(
-            IsInEducationOrganizationHierarchy: false,
-            Id: default,
-            ParentId: default
-        );
-
-    /// <summary>
-    /// The null object for AuthorizationSecurableInfo
-    /// </summary>
-    public static readonly AuthorizationSecurableInfo[] AuthorizationSecurableInfo =
-    [
-        new AuthorizationSecurableInfo(""),
-    ];
 
     /// <summary>
     /// A constructor of a RequestInfo initialized with null objects

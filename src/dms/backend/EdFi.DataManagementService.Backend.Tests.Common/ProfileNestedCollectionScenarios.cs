@@ -5,12 +5,10 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
@@ -42,9 +40,7 @@ public static class ProfileNestedCollectionScenarios
         ResourceName: new ResourceName("ParentResource"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static JsonNode CreateParentResourceBody(
@@ -430,35 +426,4 @@ public static class ProfileNestedCollectionScenarios
             [.. storedRootExtChildRows ?? []],
             storedRootExtScope
         );
-
-    /// <summary>
-    /// Identity update-cascade handler that returns the referencing document unchanged. Used
-    /// by the nested-collection integration suites where update-cascade behavior is not under
-    /// test.
-    /// </summary>
-    public sealed class NoOpUpdateCascadeHandler : IUpdateCascadeHandler
-    {
-        public UpdateCascadeResult Cascade(
-            JsonElement originalEdFiDoc,
-            ProjectName originalDocumentProjectName,
-            ResourceName originalDocumentResourceName,
-            JsonNode modifiedEdFiDoc,
-            JsonNode referencingEdFiDoc,
-            long referencingDocumentId,
-            short referencingDocumentPartitionKey,
-            Guid referencingDocumentUuid,
-            ProjectName referencingProjectName,
-            ResourceName referencingResourceName
-        ) =>
-            new(
-                OriginalEdFiDoc: referencingEdFiDoc,
-                ModifiedEdFiDoc: referencingEdFiDoc,
-                Id: referencingDocumentId,
-                DocumentPartitionKey: referencingDocumentPartitionKey,
-                DocumentUuid: referencingDocumentUuid,
-                ProjectName: referencingProjectName,
-                ResourceName: referencingResourceName,
-                isIdentityUpdate: false
-            );
-    }
 }

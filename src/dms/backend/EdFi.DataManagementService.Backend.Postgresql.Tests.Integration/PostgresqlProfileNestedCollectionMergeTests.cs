@@ -106,8 +106,7 @@ internal static class PostgresqlProfileNestedSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -146,7 +145,6 @@ internal static class PostgresqlProfileNestedSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

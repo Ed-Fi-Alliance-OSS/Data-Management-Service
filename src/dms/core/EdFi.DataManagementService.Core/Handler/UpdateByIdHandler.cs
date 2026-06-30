@@ -5,7 +5,6 @@
 
 using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -23,11 +22,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpdateByIdHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IApiSchemaProvider _apiSchemaProvider
-) : IPipelineStep
+internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -38,7 +33,6 @@ internal class UpdateByIdHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
         var mappingSet = RequireMappingSet(requestInfo, "update");
 
         var updateResult = await ExecuteWithRetryLogging(
@@ -58,7 +52,6 @@ internal class UpdateByIdHandler(
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
-                        UpdateCascadeHandler: updateCascadeHandler,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

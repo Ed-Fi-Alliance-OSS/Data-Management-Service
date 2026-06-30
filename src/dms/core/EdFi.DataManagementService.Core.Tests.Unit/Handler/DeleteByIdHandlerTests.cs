@@ -574,13 +574,7 @@ actual: {_requestInfo.FrontendResponse.Body}
                 ResourceName: new ResourceName("Assessment"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
 
         private static ProfileContext CreateWriteProfileContext() =>

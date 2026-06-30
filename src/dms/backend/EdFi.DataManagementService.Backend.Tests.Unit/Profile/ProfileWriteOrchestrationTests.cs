@@ -498,13 +498,7 @@ internal static class OrchestrationTestHelpers
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                false,
-                default,
-                default
-            ),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
 
     public static DocumentInfo CreateDocumentInfo() =>

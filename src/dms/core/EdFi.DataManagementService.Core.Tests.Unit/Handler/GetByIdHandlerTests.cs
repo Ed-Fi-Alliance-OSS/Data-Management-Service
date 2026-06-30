@@ -502,13 +502,7 @@ public class GetByIdHandlerTests
                 ResourceName: new ResourceName("SchoolTypeDescriptor"),
                 IsDescriptor: true,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.ResourceSchema = new ResourceSchema(
                 new JsonObject
@@ -622,13 +616,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ResourceName: new ResourceName(resourceName),
                 IsDescriptor: isDescriptor,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
         }
 
@@ -850,13 +838,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ResourceName: new ResourceName("Student"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.MappingSet = _mappingSet;
             _requestInfo.AuthorizationStrategyEvaluators =
@@ -932,13 +914,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ResourceName: new ResourceName(resourceName),
                 IsDescriptor: isDescriptor,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
         }
 

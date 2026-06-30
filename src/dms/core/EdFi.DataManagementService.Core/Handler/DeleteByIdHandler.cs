@@ -43,11 +43,6 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         TraceId: requestInfo.FrontendRequest.TraceId,
-                        DeleteInEdOrgHierarchy: (
-                            requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
-                                requestInfo.ResourceSchema.ResourceName
-                            )
-                        ),
                         Headers: requestInfo.FrontendRequest.Headers,
                         MappingSet: mappingSet
                     )

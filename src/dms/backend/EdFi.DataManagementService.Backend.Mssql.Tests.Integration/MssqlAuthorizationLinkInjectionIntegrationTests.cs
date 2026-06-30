@@ -34,32 +34,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 //   2. caller-agnostic equivalence: two independent query invocations against the same
 //      source return byte-equal reconstituted intermediate JSON and identical _etag.
 
-file sealed class MssqlAuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -256,9 +230,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -329,8 +301,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -356,8 +327,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-academicweek"),
-            DocumentUuid: AcademicWeekDocumentUuid,
-            UpdateCascadeHandler: new MssqlAuthorizationNoOpUpdateCascadeHandler()
+            DocumentUuid: AcademicWeekDocumentUuid
         );
 
         return await scope
@@ -375,7 +345,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

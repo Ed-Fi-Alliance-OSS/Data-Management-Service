@@ -30,32 +30,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // ResourceKeyId, so a miss (wrong resolution) would throw with a clear message rather
 // than producing a misleading link.
 
-file sealed class MssqlAbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -244,9 +218,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -317,8 +289,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -344,8 +315,7 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-course"),
-            DocumentUuid: CourseDocumentUuid,
-            UpdateCascadeHandler: new MssqlAbstractRefNoOpUpdateCascadeHandler()
+            DocumentUuid: CourseDocumentUuid
         );
 
         return await scope
@@ -363,7 +333,6 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _courseResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

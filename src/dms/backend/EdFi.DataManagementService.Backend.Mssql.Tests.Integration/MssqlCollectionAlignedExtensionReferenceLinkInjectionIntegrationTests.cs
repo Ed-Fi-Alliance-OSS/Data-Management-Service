@@ -29,32 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // in the aligned _ext scope of each parents[*] element. Uses the synthetic fixture
 // IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref.
 
-file sealed class MssqlCollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -250,9 +224,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task<UpsertResult> UpsertSponsorAsync()
@@ -273,8 +245,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-sponsor"),
-            DocumentUuid: SponsorDocumentUuid,
-            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler()
+            DocumentUuid: SponsorDocumentUuid
         );
 
         return await scope
@@ -314,8 +285,7 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-parentresource"),
-            DocumentUuid: ParentResourceDocumentUuid,
-            UpdateCascadeHandler: new MssqlCollectionAlignedExtNoOpUpdateCascadeHandler()
+            DocumentUuid: ParentResourceDocumentUuid
         );
 
         return await scope
@@ -333,7 +303,6 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _parentResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

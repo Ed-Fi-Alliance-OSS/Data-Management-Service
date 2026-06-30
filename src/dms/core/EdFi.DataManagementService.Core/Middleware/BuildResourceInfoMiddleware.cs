@@ -27,9 +27,7 @@ internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowI
             ResourceName: requestInfo.ResourceSchema.ResourceName,
             IsDescriptor: requestInfo.ResourceSchema.IsDescriptor,
             AllowIdentityUpdates: requestInfo.ResourceSchema.AllowIdentityUpdates
-                || _allowIdentityUpdateOverrides.Contains(requestInfo.ResourceSchema.ResourceName.Value),
-            EducationOrganizationHierarchyInfo: requestInfo.EducationOrganizationHierarchyInfo,
-            AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo
+                || _allowIdentityUpdateOverrides.Contains(requestInfo.ResourceSchema.ResourceName.Value)
         );
 
         await next();

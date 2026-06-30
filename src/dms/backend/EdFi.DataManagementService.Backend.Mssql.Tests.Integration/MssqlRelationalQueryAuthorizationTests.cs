@@ -6,7 +6,6 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -31,32 +30,6 @@ using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
-
-file sealed class MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 internal sealed record MssqlRelationalQueryAuthorizationRecordedCommand(int SessionId, string CommandText);
 
@@ -1097,7 +1070,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
             MappingSet: mappingSet,
             QueryElements: queryElements is null ? [] : [.. queryElements],
-            AuthorizationSecurableInfo: resourceHandle.ResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1181,7 +1153,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
-            DeleteInEdOrgHierarchy: false,
             Headers: CreateHeaders(ifMatch),
             MappingSet: MappingSet
         )
@@ -1573,7 +1544,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1623,7 +1593,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new MssqlRelationalQueryAuthorizationNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1859,9 +1828,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
         var resourceHandle = new ResourceHandle(projectSchema, resourceSchema, resourceInfo);

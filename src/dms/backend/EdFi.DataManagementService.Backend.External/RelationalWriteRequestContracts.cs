@@ -88,11 +88,6 @@ public interface IUpdateRequest : IWriteRequest
     /// The DocumentUuid of the document.
     /// </summary>
     DocumentUuid DocumentUuid { get; }
-
-    /// <summary>
-    /// Callback that updates referencing resources when referenced identifying values change.
-    /// </summary>
-    IUpdateCascadeHandler UpdateCascadeHandler { get; }
 }
 
 /// <summary>
@@ -114,11 +109,6 @@ public interface IDeleteRequest : IRequestWithMappingSet
     /// The request TraceId.
     /// </summary>
     TraceId TraceId { get; }
-
-    /// <summary>
-    /// Determines whether this is a deletable Education Organization hierarchy.
-    /// </summary>
-    bool DeleteInEdOrgHierarchy { get; }
 
     /// <summary>
     /// Request headers provided by the frontend service.

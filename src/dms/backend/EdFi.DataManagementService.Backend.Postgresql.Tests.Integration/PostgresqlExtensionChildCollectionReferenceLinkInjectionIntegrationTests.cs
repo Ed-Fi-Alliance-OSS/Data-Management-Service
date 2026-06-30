@@ -31,32 +31,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // Note: Bus's projectEndpointName is "sample" (NOT "ed-fi"), so the link href is
 // /sample/buses/<uuid:D> — the resolver and assertion both reflect that.
 
-file sealed class ExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -253,9 +227,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -326,8 +298,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29e-seed-bus"),
-            DocumentUuid: BusDocumentUuid,
-            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: BusDocumentUuid
         );
 
         return await scope
@@ -367,8 +338,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29e-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new ExtensionChildCollectionNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -386,7 +356,6 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _schoolResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

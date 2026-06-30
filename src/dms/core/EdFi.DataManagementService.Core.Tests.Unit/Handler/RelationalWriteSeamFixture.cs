@@ -92,13 +92,7 @@ internal sealed record RelationalWriteSeamFixture(
                 ResourceName: new ResourceName("Student"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             ),
             SchoolResourceInfo: new BaseResourceInfo(
                 new ProjectName("Ed-Fi"),

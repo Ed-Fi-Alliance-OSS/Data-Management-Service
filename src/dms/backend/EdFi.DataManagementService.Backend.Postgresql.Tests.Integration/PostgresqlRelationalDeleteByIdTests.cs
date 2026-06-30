@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -23,32 +22,6 @@ using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class DeleteByIdNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -81,9 +54,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private static readonly ResourceInfo _unrelatedResourceInfo = new(
@@ -91,9 +62,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         ResourceName: new ResourceName("Program"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
@@ -326,8 +295,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("pg-delete-setup"),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new DeleteByIdNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
     }
 
@@ -337,7 +305,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
             TraceId: new TraceId("pg-delete-invocation"),
-            DeleteInEdOrgHierarchy: false,
             Headers: [],
             MappingSet: _mappingSet
         );

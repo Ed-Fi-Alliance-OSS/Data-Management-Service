@@ -27,32 +27,6 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAl
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 internal sealed class PostgresqlProfileCollectionAlignedExtensionProjectionInvoker(
     ImmutableArray<StoredParentRow> storedParentRows,
     ImmutableArray<StoredAlignedScope> storedAlignedScopes,
@@ -187,8 +161,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -227,7 +200,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 
@@ -267,7 +239,6 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new PostgresqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 

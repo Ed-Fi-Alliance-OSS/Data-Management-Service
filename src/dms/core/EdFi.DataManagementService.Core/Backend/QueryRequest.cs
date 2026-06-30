@@ -21,7 +21,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// The resolved runtime mapping set for the active relational request.
 /// </param>
 /// <param name="QueryElements">The elements of this query. This must not include pagination parameters.</param>
-/// <param name="AuthorizationSecurableInfo">Collection of authorization securable info.</param>
 /// <param name="AuthorizationStrategyEvaluators">
 /// Collection of authorization strategy filters, each specifying collection of filters and filter operator.
 /// </param>
@@ -39,7 +38,6 @@ internal sealed record RelationalQueryRequest(
     RelationalAuthorizationContext AuthorizationContext,
     MappingSet MappingSet,
     QueryElement[] QueryElements,
-    AuthorizationSecurableInfo[] AuthorizationSecurableInfo,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     PaginationParameters PaginationParameters,
     TraceId TraceId,

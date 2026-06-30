@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -24,11 +23,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpsertHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IApiSchemaProvider _apiSchemaProvider
-) : IPipelineStep
+internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -38,7 +33,6 @@ internal class UpsertHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
         var mappingSet = RequireMappingSet(requestInfo, "upsert");
 
         var upsertResult = await ExecuteWithRetryLogging(
@@ -62,7 +56,6 @@ internal class UpsertHandler(
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
                         DocumentUuid: candidateDocumentUuid,
-                        UpdateCascadeHandler: updateCascadeHandler,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

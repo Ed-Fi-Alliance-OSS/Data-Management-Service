@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -25,32 +24,6 @@ using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class GuardedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
     NpgsqlDataSourceProvider dataSourceProvider
@@ -460,9 +433,7 @@ file static class GuardedNoOpIntegrationTestSupport
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider(Action<IServiceCollection>? configureServices = null)
@@ -533,8 +504,7 @@ file static class GuardedNoOpIntegrationTestSupport
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
     public static UpdateRequest CreateUpdateRequest(
@@ -556,8 +526,7 @@ file static class GuardedNoOpIntegrationTestSupport
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
     public static UpsertRequest CreatePostAsUpdateRequest(
@@ -581,8 +550,7 @@ file static class GuardedNoOpIntegrationTestSupport
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler()
+            DocumentUuid: documentUuid
         );
 
     public static async Task<GuardedNoOpPersistedState> ReadPersistedStateAsync(

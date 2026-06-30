@@ -119,7 +119,6 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
             MappingSet: mappingSet,
             QueryElements: requestInfo.QueryElements,
-            AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             PaginationParameters: requestInfo.PaginationParameters,
             TraceId: requestInfo.FrontendRequest.TraceId,

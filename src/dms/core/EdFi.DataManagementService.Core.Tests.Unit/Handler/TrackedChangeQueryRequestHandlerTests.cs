@@ -417,9 +417,7 @@ public class TrackedChangeQueryRequestHandlerTests
             ResourceName: new ResourceName(resource.ResourceName),
             IsDescriptor: isDescriptor,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: No.EducationOrganizationHierarchyInfo,
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
 
     private static MappingSet CreateMappingSet(

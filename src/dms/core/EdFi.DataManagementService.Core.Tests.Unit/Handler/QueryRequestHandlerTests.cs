@@ -276,9 +276,7 @@ public class QueryRequestHandlerTests
                 ResourceName: new ResourceName("School"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("5.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: No.EducationOrganizationHierarchyInfo,
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.ResourceActionAuthStrategies = ["OwnershipBased", "CustomAuthorizationStrategy"];
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -541,13 +539,7 @@ public class QueryRequestHandlerTests
                 ResourceName: new ResourceName("SchoolTypeDescriptor"),
                 IsDescriptor: true,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.ResourceSchema = new ResourceSchema(
                 new JsonObject
@@ -625,13 +617,7 @@ public class QueryRequestHandlerTests
                 ResourceName: new ResourceName("SchoolTypeDescriptor"),
                 IsDescriptor: true,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
             _requestInfo.ResourceSchema = new ResourceSchema(
                 new JsonObject
@@ -689,13 +675,7 @@ public class QueryRequestHandlerTests
                 ResourceName: new ResourceName(resourceName),
                 IsDescriptor: isDescriptor,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
         }
 
@@ -846,13 +826,7 @@ public class QueryRequestHandlerTests
                         ResourceName: new ResourceName("Student"),
                         IsDescriptor: false,
                         ResourceVersion: new SemVer("1.0.0"),
-                        AllowIdentityUpdates: false,
-                        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                            false,
-                            default,
-                            default
-                        ),
-                        AuthorizationSecurableInfo: []
+                        AllowIdentityUpdates: false
                     )
                 );
             _repository.CapturedRequest.ReadableProfileProjectionContext.Should().NotBeNull();
@@ -936,13 +910,7 @@ public class QueryRequestHandlerTests
                 ResourceName: new ResourceName(resourceName),
                 IsDescriptor: isDescriptor,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
         }
 

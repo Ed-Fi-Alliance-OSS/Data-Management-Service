@@ -1271,13 +1271,7 @@ public class Given_TrackedChangeQueryPlanner
             new ResourceName(resource.ResourceName),
             isDescriptor,
             new SemVer("5.0.0"),
-            AllowIdentityUpdates: false,
-            new EducationOrganizationHierarchyInfo(
-                IsInEducationOrganizationHierarchy: false,
-                Id: 0,
-                ParentId: null
-            ),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
 
     private static string NormalizeSql(string sql) => Regex.Replace(sql, @"\s+", " ").Trim();

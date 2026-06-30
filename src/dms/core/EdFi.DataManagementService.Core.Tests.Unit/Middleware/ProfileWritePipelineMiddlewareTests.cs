@@ -113,9 +113,7 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -225,9 +223,7 @@ public class Given_A_Writable_Profile_Post_Request_With_No_Mapping_Set
                 ResourceName: new ResourceName("School"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             ),
             ProfileContext = new ProfileContext(
                 ProfileName: "TestWriteProfile",
@@ -361,9 +357,7 @@ public class Given_A_Writable_Profile_Post_Request_That_May_Resolve_To_An_Existi
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -412,9 +406,7 @@ public class Given_A_Writable_Profile_Post_Request_Without_Preseeded_ResourceInf
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
 
         _requestInfo = new RequestInfo(
@@ -616,9 +608,7 @@ public class Given_A_Writable_Profile_Post_Create_New_With_Profile_Hiding_A_Requ
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -779,9 +769,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -933,9 +921,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -1087,9 +1073,7 @@ public class Given_A_Writable_Profile_Post_Update_Stored_State_Projection_With_H
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 

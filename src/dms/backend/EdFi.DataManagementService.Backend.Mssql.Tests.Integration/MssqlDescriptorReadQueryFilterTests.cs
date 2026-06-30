@@ -516,7 +516,6 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: queryElements,
-            AuthorizationSecurableInfo: _resourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: limit,

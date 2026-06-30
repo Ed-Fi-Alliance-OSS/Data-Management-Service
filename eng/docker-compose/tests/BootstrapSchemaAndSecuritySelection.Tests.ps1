@@ -1586,6 +1586,8 @@ exit 0
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
             $dmsSetup | Should -Match "E2E_DATABASE_NAME"
             $dmsSetup | Should -Match '-DataStoreDatabaseName\s+\$e2eDatabaseName'
+            $dmsSetup | Should -Match "provision-e2e-database\.ps1"
+            $dmsSetup | Should -Match "docker restart ed-fi-api"
         }
 
         It "start-published-dms.ps1 can create E2E data stores against an explicit database name" {

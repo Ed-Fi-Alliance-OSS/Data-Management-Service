@@ -45,32 +45,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 //      path (no ReadableProfileProjectionContext supplied), so the reconstituted output
 //      IS the served output and must be deep-equal across invocations.
 
-file sealed class AuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -267,9 +241,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -340,8 +312,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-32-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -367,8 +338,7 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-32-seed-academicweek"),
-            DocumentUuid: AcademicWeekDocumentUuid,
-            UpdateCascadeHandler: new AuthorizationNoOpUpdateCascadeHandler()
+            DocumentUuid: AcademicWeekDocumentUuid
         );
 
         return await scope
@@ -386,7 +356,6 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

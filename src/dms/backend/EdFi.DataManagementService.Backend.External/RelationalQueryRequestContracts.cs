@@ -87,11 +87,6 @@ public interface IQueryRequest : IRequestWithMappingSet
     QueryElement[] QueryElements { get; }
 
     /// <summary>
-    /// Collection of authorization securable info.
-    /// </summary>
-    AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; }
-
-    /// <summary>
     /// Collection of authorization strategy filters, each specifying collection of filters and filter operator.
     /// </summary>
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }

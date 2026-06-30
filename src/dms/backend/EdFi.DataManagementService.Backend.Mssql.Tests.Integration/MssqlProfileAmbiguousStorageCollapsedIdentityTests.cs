@@ -27,32 +27,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 file sealed class MssqlProfileAmbiguousStorageCollapsedProjectionInvoker(
     ImmutableArray<VisibleStoredCollectionRow> visibleStoredRows
 ) : IStoredStateProjectionInvoker
@@ -100,9 +74,7 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
@@ -285,8 +257,7 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId("mssql-storage-collapsed-seed"),
-            DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler()
+            DocumentUuid: SchoolDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -334,7 +305,6 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
             Headers: [],
             TraceId: new TraceId("mssql-storage-collapsed-put"),
             DocumentUuid: SchoolDocumentUuid,
-            UpdateCascadeHandler: new MssqlProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandler(),
             BackendProfileWriteContext: profileContext
         );
 
