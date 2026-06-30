@@ -387,9 +387,9 @@ public class PipelineOrderingTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_The_Write_Pipelines : PipelineOrderingTests
+    public class Given_The_Routed_Resource_Pipelines : PipelineOrderingTests
     {
-        private static List<Type> GetWritePipelineStepTypes(string factoryMethodName)
+        private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName)
         {
             var services = new ServiceCollection();
 
@@ -463,7 +463,7 @@ public class PipelineOrderingTests
         [TestCase("CreateDeleteByIdPipeline")]
         public void It_places_validate_route_semantics_after_validate_endpoint(string factoryMethodName)
         {
-            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
             var validateEndpointIndex = stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
 
@@ -483,7 +483,7 @@ public class PipelineOrderingTests
             string factoryMethodName
         )
         {
-            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
             var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
             var parseBodyIndex = stepTypes.IndexOf(typeof(ParseBodyMiddleware));
 
@@ -494,6 +494,28 @@ public class PipelineOrderingTests
                 .BeLessThan(
                     parseBodyIndex,
                     "ValidateRouteSemanticsMiddleware must reject invalid write route semantics before request body parsing"
+                );
+        }
+
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_places_authorization_securable_info_before_resource_info(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var securableInfoIndex = stepTypes.IndexOf(typeof(ProvideAuthorizationSecurableInfoMiddleware));
+            var buildResourceInfoIndex = stepTypes.IndexOf(typeof(BuildResourceInfoMiddleware));
+
+            securableInfoIndex.Should().BeGreaterThanOrEqualTo(0);
+            buildResourceInfoIndex.Should().BeGreaterThanOrEqualTo(0);
+            securableInfoIndex
+                .Should()
+                .BeLessThan(
+                    buildResourceInfoIndex,
+                    "BuildResourceInfoMiddleware copies AuthorizationSecurableInfo into ResourceInfo"
                 );
         }
     }
