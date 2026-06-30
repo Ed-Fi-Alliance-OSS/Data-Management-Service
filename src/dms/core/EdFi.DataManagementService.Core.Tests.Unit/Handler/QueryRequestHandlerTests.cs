@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
@@ -88,7 +87,7 @@ public class QueryRequestHandlerTests
         {
             var relationalRequest = _repository
                 .CapturedRequest.Should()
-                .BeAssignableTo<IRelationalQueryRequest>()
+                .BeAssignableTo<IQueryRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(_requestInfo.MappingSet);
         }
@@ -702,11 +701,11 @@ public class QueryRequestHandlerTests
 
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+            public IQueryRequest? CapturedRequest { get; private set; }
 
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                CapturedRequest = queryRequest as IRelationalQueryRequest;
+                CapturedRequest = queryRequest;
 
                 return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
             }
@@ -949,11 +948,11 @@ public class QueryRequestHandlerTests
 
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+            public IQueryRequest? CapturedRequest { get; private set; }
 
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                CapturedRequest = queryRequest as IRelationalQueryRequest;
+                CapturedRequest = queryRequest;
 
                 return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
             }
@@ -1026,11 +1025,11 @@ public class QueryRequestHandlerTests
     {
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalQueryRequest? CapturedRequest { get; private set; }
+            public IQueryRequest? CapturedRequest { get; private set; }
 
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                CapturedRequest = queryRequest as IRelationalQueryRequest;
+                CapturedRequest = queryRequest;
 
                 return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
             }

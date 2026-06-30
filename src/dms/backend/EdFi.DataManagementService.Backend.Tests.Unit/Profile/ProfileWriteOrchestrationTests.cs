@@ -88,7 +88,7 @@ public class Given_No_Profile_Relational_Post
             A.Fake<INamespaceAuthorizationExecutor>()
         );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
@@ -204,7 +204,7 @@ public class Given_No_Profile_Relational_Put
             A.Fake<INamespaceAuthorizationExecutor>()
         );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
@@ -320,7 +320,7 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<INamespaceAuthorizationExecutor>()
         );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
@@ -435,7 +435,7 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<INamespaceAuthorizationExecutor>()
         );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());

@@ -52,7 +52,7 @@ internal record UpdateRequest(
     /// Optional profile write context when a writable profile applies.
     /// </summary>
     BackendProfileWriteContext? BackendProfileWriteContext = null
-) : IRelationalUpdateRequest
+) : IUpdateRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
 

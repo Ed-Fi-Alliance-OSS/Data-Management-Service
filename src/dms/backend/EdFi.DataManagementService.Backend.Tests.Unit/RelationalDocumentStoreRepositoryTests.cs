@@ -4422,7 +4422,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_formats_people_missing_proposed_binding_security_configuration_failures_with_people_wording()
     {
         const string studentPath = "$.studentReference.studentUniqueId";
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(_schoolResourceInfo));
@@ -5210,7 +5210,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -5288,7 +5288,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -5352,7 +5352,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(documentInfo);
@@ -5398,7 +5398,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -5435,7 +5435,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_post_security_configuration_failure_before_known_but_not_enabled_result()
     {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -5467,7 +5467,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_post_relationship_not_authorized_for_empty_edorg_claims_before_target_lookup()
     {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -5539,7 +5539,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateNamespaceAndRelationshipWriteMappingSet(_schoolResourceInfo));
@@ -5596,7 +5596,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateNamespaceAndRelationshipWriteMappingSet(_schoolResourceInfo));
@@ -5652,7 +5652,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -5726,7 +5726,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -5797,7 +5797,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithDirectStudentSubject(_schoolResourceInfo));
@@ -5879,7 +5879,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_studentResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithSelfStudentSubjectAndPeopleAuthViews());
@@ -5951,7 +5951,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -6000,7 +6000,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateNamespaceWriteMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6042,7 +6042,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_a_namespace_no_prefixes_403_for_post_without_calling_the_write_executor()
     {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateNamespaceWriteMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6073,7 +6073,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_a_security_configuration_500_for_post_when_no_usable_root_namespace_column()
     {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -6106,7 +6106,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var mappingSet = CreateNamespaceWriteMappingSet(_schoolResourceInfo, SqlDialect.Mssql);
         string[] tooManyPrefixes = [.. Enumerable.Range(0, 2000).Select(index => $"uri://prefix-{index}/")];
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6141,7 +6141,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(documentInfo);
@@ -6176,7 +6176,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_put_security_configuration_failure_before_known_but_not_enabled_result()
     {
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6226,7 +6226,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateNamespaceWriteMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6279,7 +6279,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     )
                 )
             );
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -6324,7 +6324,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         _targetLookupService.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -6370,7 +6370,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     )
                 )
             );
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
@@ -6414,7 +6414,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         _targetLookupService.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6474,7 +6474,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6535,7 +6535,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6596,7 +6596,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -6659,7 +6659,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6706,7 +6706,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -6763,7 +6763,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6810,7 +6810,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
@@ -6847,7 +6847,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo)
@@ -6881,7 +6881,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6912,7 +6912,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -6935,7 +6935,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(expectedResult);
         UseDescriptorWriteHandler(descriptorHandler);
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -6962,7 +6962,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(expectedResult);
         UseDescriptorWriteHandler(descriptorHandler);
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7008,7 +7008,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7059,7 +7059,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7105,7 +7105,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7156,7 +7156,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7210,7 +7210,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(expectedMappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -7274,7 +7274,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(expectedMappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -7311,7 +7311,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(expectedResult);
         UseDescriptorWriteHandler(descriptorHandler);
 
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        var deleteRequest = A.Fake<IDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => deleteRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7373,7 +7373,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        var deleteRequest = A.Fake<IDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => deleteRequest.MappingSet).Returns(expectedMappingSet);
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(expectedDocumentUuid);
@@ -7434,7 +7434,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _namespaceAuthorizationExecutor
         );
 
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        var deleteRequest = A.Fake<IDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => deleteRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -7446,17 +7446,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         capturedRequest.WritePrecondition.Should().Be(expectedWritePrecondition);
-    }
-
-    [Test]
-    public async Task It_throws_when_the_delete_request_does_not_implement_IRelationalDeleteRequest()
-    {
-        var deleteRequest = A.Fake<IDeleteRequest>();
-        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
-
-        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
-
-        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Test]
@@ -8924,7 +8913,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
@@ -8953,7 +8942,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
             + "but no entry was found. This indicates an internal compilation/selection bug.";
 
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
@@ -8987,7 +8976,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
         );
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
@@ -9016,7 +9005,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
             + "but no entry was found. This indicates an internal compilation/selection bug.";
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
@@ -9048,7 +9037,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             )
             .Throws(internalFailure);
 
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -9107,7 +9096,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
-    private static IRelationalDeleteRequest CreateNonDescriptorDeleteRequest(
+    private static IDeleteRequest CreateNonDescriptorDeleteRequest(
         MappingSet mappingSet,
         WritePrecondition? writePrecondition = null,
         DocumentUuid? documentUuid = null,
@@ -9116,7 +9105,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         resourceInfo ??= _schoolResourceInfo;
 
-        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        var deleteRequest = A.Fake<IDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(documentUuid ?? new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("delete-trace"));
@@ -9358,7 +9347,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
-    private static IRelationalGetRequest CreateGetRequest(
+    private static IGetRequest CreateGetRequest(
         DocumentUuid documentUuid,
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
@@ -9369,7 +9358,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         IReadOnlyList<string>? namespacePrefixes = null
     )
     {
-        var getRequest = A.Fake<IRelationalGetRequest>();
+        var getRequest = A.Fake<IGetRequest>();
         A.CallTo(() => getRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => getRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => getRequest.ResourceInfo)
@@ -11075,7 +11064,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
-    private static IRelationalQueryRequest CreateQueryRequest(
+    private static IQueryRequest CreateQueryRequest(
         MappingSet mappingSet,
         QueryElement[] queryElements,
         bool totalCount,
@@ -11090,7 +11079,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         claimEducationOrganizationIds ??= [];
         resourceInfo ??= _schoolResourceInfo;
 
-        var queryRequest = A.Fake<IRelationalQueryRequest>();
+        var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);

@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -214,13 +213,11 @@ public class UpdateByIdHandlerTests
     {
         internal sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalUpdateRequest CapturedRequest { get; private set; } = null!;
+            public IUpdateRequest CapturedRequest { get; private set; } = null!;
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                CapturedRequest =
-                    updateRequest as IRelationalUpdateRequest
-                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpdateRequest)} request.");
+                CapturedRequest = updateRequest;
 
                 return Task.FromResult<UpdateResult>(
                     new UpdateSuccess(CapturedRequest.DocumentUuid, "\"72\"")

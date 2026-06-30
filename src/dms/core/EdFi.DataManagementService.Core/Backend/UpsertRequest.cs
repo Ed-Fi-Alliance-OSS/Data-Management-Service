@@ -65,4 +65,4 @@ internal record UpsertRequest(
         UpdateCascadeHandler,
         BackendProfileWriteContext
     ),
-        IRelationalUpsertRequest;
+        IUpsertRequest;

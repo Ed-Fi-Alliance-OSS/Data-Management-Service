@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
@@ -130,7 +129,7 @@ public class GetByIdHandlerTests
         {
             var relationalRequest = _repository
                 .CapturedRequest.Should()
-                .BeAssignableTo<IRelationalGetRequest>()
+                .BeAssignableTo<IGetRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(requestInfo.MappingSet);
         }
@@ -635,11 +634,11 @@ actual: {requestInfo.FrontendResponse.Body}
 
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalGetRequest? CapturedRequest { get; private set; }
+            public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
-                CapturedRequest = getRequest as IRelationalGetRequest;
+                CapturedRequest = getRequest;
 
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
@@ -777,11 +776,11 @@ actual: {requestInfo.FrontendResponse.Body}
     {
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalGetRequest? CapturedRequest { get; private set; }
+            public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
-                CapturedRequest = getRequest as IRelationalGetRequest;
+                CapturedRequest = getRequest;
 
                 return Task.FromResult<GetResult>(
                     new GetFailureRelationshipNotAuthorized(CreateEmptyClaimsRelationshipFailure())
@@ -945,11 +944,11 @@ actual: {requestInfo.FrontendResponse.Body}
 
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalGetRequest? CapturedRequest { get; private set; }
+            public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
-                CapturedRequest = getRequest as IRelationalGetRequest;
+                CapturedRequest = getRequest;
 
                 return Task.FromResult<GetResult>(
                     new GetSuccess(

@@ -22,7 +22,7 @@ public sealed record IntegrationRelationalGetRequest(
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-) : IRelationalGetRequest
+) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;
 

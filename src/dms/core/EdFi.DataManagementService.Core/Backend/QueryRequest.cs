@@ -45,8 +45,8 @@ internal sealed record RelationalQueryRequest(
     TraceId TraceId,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null
-) : IRelationalQueryRequest
+) : IQueryRequest
 {
-    ChangeVersionRange IRelationalQueryRequest.ChangeVersionRange =>
+    ChangeVersionRange IQueryRequest.ChangeVersionRange =>
         ChangeVersionRange ?? External.Model.ChangeVersionRange.None;
 }
