@@ -38,12 +38,9 @@ When running E2E tests from a shell that has `NODE_OPTIONS` set, clear it for th
 
 ### Run Data Management Service E2E tests
 
-For DMS E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path instead of manually running `setup-local-dms.ps1` followed by `dotnet test`.
+For DMS E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path when you want a complete test run.
 
-The build script performs required relational-only setup that direct local setup does not:
-- Provisions `E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
-- Sets `AppSettings__DataStoreDatabaseName` for the E2E test process.
-- Restarts DMS after relational database reprovisioning to clear cached database state.
+The build script performs the Docker setup, provisions `E2E_DATABASE_NAME` with generated DDL including `dms."EffectiveSchema"`, starts or restarts DMS against the provisioned database, clears unsupported `NODE_OPTIONS`, and sets `AppSettings__DataStoreDatabaseName` for the E2E test process.
 
 Example shard run from the repository root:
 
@@ -51,7 +48,7 @@ Example shard run from the repository root:
 ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'
 ```
 
-Do not treat `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` plus direct `dotnet test` as a valid relational E2E signal unless you also manually run the relational provisioning helper and set the test-process database environment variables. Otherwise tests can fail before the scenario payload with `503 Database Not Provisioned` because the CMS-created DMS instance points at the legacy `edfi_datamanagementservice` database or a database without `dms."EffectiveSchema"`.
+The direct setup path is also valid for local relational E2E testing. `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` configures the CMS data store to use `E2E_DATABASE_NAME`, provisions that database with generated DDL including `dms."EffectiveSchema"`, and starts DMS after provisioning. Direct `dotnet test` is valid after this setup when the test process is configured for the same database; the default `.env.e2e` and E2E `appsettings.json` both use `edfi_datamanagementservice_e2e`. If a custom environment file changes `E2E_DATABASE_NAME`, also set `AppSettings__DataStoreDatabaseName` to that value for direct `dotnet test` runs.
 
 If you only need to inspect the relational Docker environment manually, you can use this setup path:
 
