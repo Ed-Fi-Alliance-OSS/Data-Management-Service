@@ -14,7 +14,7 @@ In scope:
 - Resource API CRUD, query, and Change Query behavior through the public HTTP API.
 - DMS app instrumentation for backend read/write phases and SQL command execution.
 - PostgreSQL database statistics, wait signals, WAL activity, lock activity, and statement-level timing.
-- Load generation with `/home/brad/work/dms-root/Suite-3-Performance-Testing/src/edfi-performance-test`.
+- Load generation with `Suite-3-Performance-Testing/src/edfi-performance-test`.
 
 Out of scope for this initial plan:
 
@@ -95,7 +95,7 @@ After each run:
 Use the existing performance project as the only load generator:
 
 ```bash
-cd /home/brad/work/dms-root/Suite-3-Performance-Testing/src/edfi-performance-test
+cd Suite-3-Performance-Testing/src/edfi-performance-test
 poetry install
 ```
 
