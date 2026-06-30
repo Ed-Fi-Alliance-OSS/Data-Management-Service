@@ -113,7 +113,6 @@ try {
     # --- 4. (optional) Grand Bend sample data -------------------------------
     if ($LoadGrandbend) {
         Write-Host "Loading Grand Bend sample data (populated template)..." -ForegroundColor Cyan
-        Set-EnvValue ".env" "DMS_DEPLOY_DATABASE_ON_STARTUP" "false"   # template SQL creates the schema
         docker network inspect dms-sec *> $null
         if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
         docker compose -f docker-compose.yml --env-file .env up -d postgres
@@ -123,6 +122,7 @@ try {
             $pg = (docker inspect -f '{{.State.Health.Status}}' dms-sec-postgres 2>$null)
         } while ($pg -ne "healthy" -and (Get-Date) -lt $pgDeadline)
         bash ./seed/grandbend.sh
+        Write-Host "Grand Bend template loaded into edfi_st (schema + data). Single-tenant is ready to start; the multi-tenant DBs still need schema + seed." -ForegroundColor DarkGray
     }
 
     # --- 5. start identity + CMS (NOT the DMS services yet) -----------------

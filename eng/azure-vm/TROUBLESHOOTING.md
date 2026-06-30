@@ -14,7 +14,7 @@ docker logs dms-sec-keycloak --tail 100
 for p in st-dms st-config mt-dms mt-config; do
   curl -sk -o /dev/null -w "$p %{http_code}\n" "https://localhost/$p/health"
 done
-curl -sk https://localhost/auth/health/ready      # Keycloak
+curl -sk -o /dev/null -w "keycloak %{http_code}\n" https://localhost/auth/realms/master   # Keycloak up? (health is on KC's mgmt port, not the /auth route)
 ```
 
 ## Get inside a container / the database
@@ -39,8 +39,8 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 | Cert / TLS errors during setup | Self-signed locally (use `-k` / `-Insecure`); Let's Encrypt on the VM needs port 80 reachable and DNS resolving to the VM. |
 | Container won't start after `Stop`→`Start` | `restart: unless-stopped` should resume them; if not, `./up.sh`. |
 | **DMS crash-loops** with `Realm does not exist` (or never binds `/health`) | DMS loads CMS data stores at startup and fails fast if identity/CMS aren't ready (`DMS-1093`/`DMS-1109`). Run `bootstrap/bootstrap.ps1` **before** starting `st-dms`/`mt-dms`. |
-| **Bulk-load can't fetch XSDs** against `/mt-dms` | Multi-tenant XSD metadata 404s (`DMS-1230`). Seed `edfi_st` via the API, then `seed/clone-data.sh` to copy into the tenant DBs. |
-| Bulk-load **`invalid_client` / 401** with a fresh key | The minted secret contains `+`/`%` and the client isn't URL-encoding it (`DMS-1231`). Re-mint until the secret is `+`/`%`/space-free, or URL-encode it in the Basic header. |
+| **Bulk-load can't fetch XSDs** against `/mt-dms` (404) | `DMS-1230`, fixed in `:pre` ≥ 2026-06-24 (#1048). If you still see 404s, your image predates the fix — `docker compose … pull`. (`seed/clone-data.sh` remains a faster MT seeding path.) |
+| Bulk-load **`invalid_client` / 401** with a fresh key | `DMS-1231`, fixed in `:pre` ≥ 2026-06-24 (#1047) — generated secrets are now Basic-safe. On an older image the secret may contain `+`/`%`; re-mint until `+`/`%`/space-free, or URL-encode it in the Basic header. |
 | Bulk-load **429 / "circuit is now open"** mid-run | Rate limiter + circuit breaker (`FAILURE_RATIO=0.01`) tripped by parallel load. Load descriptors first, raise the rate limit, then resources; or use `seed/clone-data.sh`. |
 
 ## Reset (keep the Keycloak realm)

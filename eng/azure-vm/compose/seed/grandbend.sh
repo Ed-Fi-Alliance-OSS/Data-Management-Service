@@ -3,7 +3,7 @@
 #
 # Restore an Ed-Fi "Grand Bend" POPULATED DATABASE TEMPLATE into a DMS data database.
 # This is the "quick restore" path: no API bulk-load, no rate limiter, no XSD download
-# (so it also sidesteps the multi-tenant XSD bug, DMS-1230).
+# (fastest seeding, and it avoids the bulk-load rate-limiter tuning entirely).
 #
 # ⚠️ RELATIONAL BACKEND REQUIRED. This stack runs the DMS *relational* backend
 # (per-resource edfi.* tables + a dms.EffectiveSchema fingerprint). You MUST use a
