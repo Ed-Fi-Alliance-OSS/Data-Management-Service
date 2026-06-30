@@ -12,8 +12,7 @@ Feature: Live resource endpoints filter by change version.
                   | 920100001 | Live Filter School   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 01 Live programs collection filters by minChangeVersion
              When a POST request is made to "/ed-fi/programs" with
@@ -43,8 +42,7 @@ Feature: Live resource endpoints filter by change version.
               And the response body path "0.programName" should have value "Live Filter Program B"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 02 Live programs collection filters by maxChangeVersion
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
@@ -77,8 +75,7 @@ Feature: Live resource endpoints filter by change version.
               And the response body path "0.programName" should have value "Live Max Program A"
 
         @ods-migrated
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 03 Live programs collection filters by a change version window
              # The window relies on the ContentVersion-advances-per-write invariant: each write gets a

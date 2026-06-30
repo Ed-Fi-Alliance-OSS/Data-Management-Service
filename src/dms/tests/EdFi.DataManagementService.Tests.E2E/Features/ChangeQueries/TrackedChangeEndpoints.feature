@@ -7,8 +7,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade              |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 Deleted School appears in deletes response
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -46,8 +45,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And the response body path "0.id" should equal request variable "deletedSchoolId"
               And the response body path "0.keyValues.schoolId" should have value "8118601"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 02 Recreated School is suppressed from deletes response
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -107,8 +105,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 ClassPeriod key changes collapse to one response item
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -182,8 +179,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And the response body path "0.newKeyValues.classPeriodName" should have value "third period"
               And the response body path "0.newKeyValues.schoolId" should have value "8118603"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 Descriptor keyChanges returns empty array
              When a GET request is made to "/ed-fi/gradeLevelDescriptors/keyChanges?totalCount=true&limit=1&offset=0"
              Then it should respond with 200
@@ -194,8 +190,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 Invalid change version parameter returns validation ProblemDetails
              When a GET request is made to "/ed-fi/schools/deletes?minChangeVersion=abc"
              Then it should respond with 400
@@ -214,8 +209,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06 Deleted Descriptor appears in deletes response
              When a POST request is made to "/ed-fi/gradeLevelDescriptors" with
                   """
@@ -245,8 +239,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And the response body path "0.keyValues.namespace" should have value "uri://ed-fi.org/GradeLevelDescriptor"
               And the response body path "0.keyValues.codeValue" should have value "Tracked Delete Descriptor"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Recreated Descriptor is suppressed from deletes response
              When a POST request is made to "/ed-fi/gradeLevelDescriptors" with
                   """
@@ -288,8 +281,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 08 Recreated Program with recreated descriptor identity is suppressed from deletes response
              When a POST request is made to "/ed-fi/programTypeDescriptors" with
                   """
@@ -374,8 +366,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 09 Concrete abstract keyChanges returns empty array
              When a GET request is made to "/ed-fi/schools/keyChanges?totalCount=true&limit=1&offset=0"
              Then it should respond with 200
@@ -390,8 +381,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 10 Deletes response supports limit and offset
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -453,8 +443,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
               And the response body path "0.id" should equal request variable "pagingSchoolBId"
               And the response body path "0.keyValues.schoolId" should have value "8118606"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 13 Deletes response is served when no query parameters are supplied
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -480,8 +469,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
              When a GET request is made to "/ed-fi/schools/deletes"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 14 Deletes response is served when only minChangeVersion is supplied
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -524,8 +512,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                       | studentUniqueId | firstName | lastSurname | birthDate  |
                       | "11"            | Tracked   | Student     | 2008-01-01 |
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             Scenario: 11 Deleted StudentSchoolAssociation appears in deletes response with student natural key
                  When a POST request is made to "/ed-fi/studentSchoolAssociations" with
                       """
@@ -561,8 +548,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   And the response body path "0.keyValues.schoolId" should have value "1255901001"
                   And the response body path "0.keyValues.entryDate" should have value "2023-08-01"
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             Scenario: 12 Recreated StudentSchoolAssociation is suppressed from deletes response
                  When a POST request is made to "/ed-fi/studentSchoolAssociations" with
                       """
@@ -623,8 +609,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
             # (HTTP 200, total-count 0) rather than a 403 — except for the two configuration-error
             # cases (unsupported strategy => 500, NamespaceBased with no prefixes => 403).
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             @ResetClaimsetsAfterScenario
             @reset-data-before-scenario
             Scenario: 15 RelationshipsWithEdOrgs ReadChanges shows a deleted association to an authorized education organization and hides it from others
@@ -688,8 +673,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                       []
                       """
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             @ResetClaimsetsAfterScenario
             @reset-data-before-scenario
             Scenario: 16 NamespaceBased ReadChanges shows a deleted descriptor to a matching namespace and hides it from a non-matching namespace
@@ -742,8 +726,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                       []
                       """
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             @ResetClaimsetsAfterScenario
             @reset-data-before-scenario
             Scenario: 17 NoFurtherAuthorizationRequired ReadChanges returns descriptor deletes regardless of the caller's authorization scope
@@ -780,8 +763,7 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   And the response body path "0.keyValues.namespace" should have value "uri://ed-fi.org/GradeLevelDescriptor"
                   And the response body path "0.keyValues.codeValue" should have value "Tracked NFA Delete Descriptor"
 
-            @relational-backend
-            @relational-ci-shard-3
+            @e2e-ci-shard-3
             @ResetClaimsetsAfterScenario
             @reset-data-before-scenario
             Scenario: 18 ReadChanges configured with an unsupported authorization strategy returns a security configuration ProblemDetails

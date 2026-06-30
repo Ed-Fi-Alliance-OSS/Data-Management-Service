@@ -59,7 +59,6 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
         var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
         var fakeDecimalValidator = A.Fake<IDecimalValidator>();
-        var fakeAuthorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
         var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
         var fakeResourceDependencyGraphFactory = A.Fake<IResourceDependencyGraphFactory>();
         var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
@@ -91,7 +90,6 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             fakeDecimalValidator,
             NullLogger<ApiService>.Instance,
             appSettings,
-            fakeAuthorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             serviceProvider,
@@ -221,7 +219,6 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
         var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
         var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
         var fakeDecimalValidator = A.Fake<IDecimalValidator>();
-        var fakeAuthorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
         var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
         var fakeResourceDependencyGraphFactory = A.Fake<IResourceDependencyGraphFactory>();
         var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
@@ -252,7 +249,6 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             fakeDecimalValidator,
             NullLogger<ApiService>.Instance,
             appSettings,
-            fakeAuthorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             serviceProvider,

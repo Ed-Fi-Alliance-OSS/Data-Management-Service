@@ -38,18 +38,9 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep Middleware(
         string action = "Create",
         params string[] expectedAuthStrategies
-    ) => MiddlewareCore(action, useRelationalBackend: false, expectedAuthStrategies);
+    ) => MiddlewareCore(action, expectedAuthStrategies);
 
-    internal static IPipelineStep RelationalBackendMiddleware(
-        string action = "Create",
-        params string[] expectedAuthStrategies
-    ) => MiddlewareCore(action, useRelationalBackend: true, expectedAuthStrategies);
-
-    private static IPipelineStep MiddlewareCore(
-        string action,
-        bool useRelationalBackend,
-        params string[] expectedAuthStrategies
-    )
+    private static IPipelineStep MiddlewareCore(string action, params string[] expectedAuthStrategies)
     {
         string[] authorizationStrategies =
             expectedAuthStrategies.Length == 0
@@ -75,11 +66,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(
-            claimSetProvider,
-            NullLogger.Instance,
-            useRelationalBackend
-        );
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static IPipelineStep MiddlewareCoreReadChanges(string action, params string[] strategies)
@@ -99,7 +86,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance, true);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static RequestInfo CreateRequestInfo(
@@ -146,9 +133,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             requestInfo.ResourceSchema.ResourceName,
             requestInfo.ResourceSchema.IsDescriptor,
             requestInfo.ProjectSchema.ResourceVersion,
-            requestInfo.ResourceSchema.AllowIdentityUpdates,
-            No.EducationOrganizationHierarchyInfo,
-            []
+            requestInfo.ResourceSchema.AllowIdentityUpdates
         );
 
         return requestInfo;
@@ -206,30 +191,16 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     internal static IPipelineStep MiddlewareWithClaimSets(params ClaimSet[] claimSets) =>
-        MiddlewareWithClaimSetsCore(useRelationalBackend: false, claimSets);
+        MiddlewareWithClaimSetsCore(claimSets);
 
-    internal static IPipelineStep RelationalBackendMiddlewareWithClaimSets(params ClaimSet[] claimSets) =>
-        MiddlewareWithClaimSetsCore(useRelationalBackend: true, claimSets);
-
-    private static IPipelineStep MiddlewareWithClaimSetsCore(
-        bool useRelationalBackend,
-        params ClaimSet[] claimSets
-    )
+    private static IPipelineStep MiddlewareWithClaimSetsCore(params ClaimSet[] claimSets)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns(claimSets.ToList());
-        return new ResourceActionAuthorizationMiddleware(
-            claimSetProvider,
-            NullLogger.Instance,
-            useRelationalBackend
-        );
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
-    internal static IPipelineStep NoAuthStrategyMiddleware(
-        string action = "Create",
-        ILogger? logger = null,
-        bool useRelationalBackend = false
-    )
+    internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create", ILogger? logger = null)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
@@ -246,11 +217,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(
-            claimSetProvider,
-            logger ?? NullLogger.Instance,
-            useRelationalBackend
-        );
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, logger ?? NullLogger.Instance);
     }
 
     [TestFixture]
@@ -338,9 +305,12 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
 
         [Test]
-        public void It_has_forbidden_response()
+        public void It_returns_missing_security_metadata_problem_details()
         {
-            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                SecurityConfigurationFailureMessages.MissingSecurityMetadata
+            );
         }
     }
 
@@ -640,16 +610,17 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
 
         [Test]
-        public void It_has_forbidden_response()
+        public void It_returns_security_configuration_problem_details()
         {
-            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                $"No authorization strategies were defined for the requested action 'Create' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
+            );
         }
 
         [Test]
-        public void It_returns_message_body_with_failures()
+        public void It_returns_the_matched_resource_claim_uri()
         {
-            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
-
             string response = JsonSerializer.Serialize(
                 _requestInfo.FrontendResponse.Body,
                 UtilityService.SerializerOptions
@@ -658,7 +629,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['School'] matched by the caller's claim 'SIS-Vendor'.\"]"
+                    $"\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'.\"]"
                 );
         }
     }
@@ -711,16 +682,15 @@ public class ResourceActionAuthorizationMiddlewareTests
     public class Given_RelationshipsWithEdOrgsOnlyInverted_On_Non_Query_Request
         : ResourceActionAuthorizationMiddlewareTests
     {
-        [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "GET-by-id")]
-        [TestCase("POST", "Create", "ed-fi/schools", false, "POST")]
-        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "PUT")]
-        [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true, "DELETE")]
-        public async Task It_returns_not_implemented(
+        [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
+        [TestCase("POST", "Create", "ed-fi/schools", false)]
+        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
+        [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
+        public async Task It_allows_the_strategy_for_the_relational_authorization_pipeline(
             string requestMethodName,
             string action,
             string path,
-            bool hasDocumentUuidSegment,
-            string operationLabel
+            bool hasDocumentUuidSegment
         )
         {
             var requestMethod = Enum.Parse<RequestMethod>(requestMethodName);
@@ -729,13 +699,10 @@ public class ResourceActionAuthorizationMiddlewareTests
             await Middleware(action, AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
                 .Execute(_requestInfo, NullNext);
 
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
             _requestInfo
-                .FrontendResponse.Body?["error"]?.GetValue<string>()
-                .Should()
-                .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
-                .And.Contain(operationLabel);
-            _requestInfo.FrontendResponse.Body?["correlationId"]?.GetValue<string>().Should().Be("traceId");
+                .ResourceActionAuthStrategies.Should()
+                .ContainSingle(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
         }
     }
 
@@ -961,16 +928,14 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Relational_Backend_Flag_With_No_Matching_ClaimSet
-        : ResourceActionAuthorizationMiddlewareTests
+    public class Given_Get_Many_With_No_Matching_ClaimSet : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
             _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
 
-            await RelationalBackendMiddlewareWithClaimSets(new ClaimSet("OtherClaimSet", []))
-                .Execute(_requestInfo, NullNext);
+            await MiddlewareWithClaimSets(new ClaimSet("OtherClaimSet", [])).Execute(_requestInfo, NullNext);
         }
 
         [Test]
@@ -985,7 +950,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Relational_Backend_Flag_With_No_Authorization_Strategies_Before_Mapping_Set
+    public class Given_No_Authorization_Strategies_Before_Mapping_Set
         : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -993,8 +958,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
 
-            await NoAuthStrategyMiddleware("Read", useRelationalBackend: true)
-                .Execute(_requestInfo, NullNext);
+            await NoAuthStrategyMiddleware("Read").Execute(_requestInfo, NullNext);
         }
 
         [Test]

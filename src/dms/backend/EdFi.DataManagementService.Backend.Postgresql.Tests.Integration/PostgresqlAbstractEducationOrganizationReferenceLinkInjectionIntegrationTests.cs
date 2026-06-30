@@ -6,6 +6,7 @@
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -14,11 +15,9 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -33,50 +32,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // School's ResourceKeyId — if reconstitution were wrongly using the abstract
 // EducationOrganization ResourceKeyId, the resolver would throw on miss and fail the test
 // with a clear message.
-
-file sealed class AbstractRefHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class AbstractRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class AbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 [TestFixture]
 [NonParallelizable]
@@ -192,7 +147,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, AbstractRefHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -270,9 +224,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -343,11 +295,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AbstractRefAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -373,11 +321,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-course"),
-            DocumentUuid: CourseDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AbstractRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AbstractRefAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: CourseDocumentUuid
         );
 
         return await scope
@@ -395,7 +339,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _courseResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

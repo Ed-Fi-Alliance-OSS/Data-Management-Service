@@ -567,6 +567,7 @@
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )"
         }
@@ -611,8 +612,8 @@
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "EdFi.DataManagementService.Old.Postgresql": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Npgsql": "[8.0.4, )"
         }
@@ -671,7 +672,6 @@
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "EdFi.DataManagementService.Old.Postgresql": "[1.0.0, )",
           "EdFi.DataStandard52.ApiSchema": "[1.0.332, )",
           "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.332, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
@@ -682,26 +682,6 @@
           "Serilog.Settings.Configuration": "[8.0.2, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
           "Serilog.Sinks.File": "[6.0.0, )"
-        }
-      },
-      "edfi.datamanagementservice.old.postgresql": {
-        "type": "Project",
-        "dependencies": {
-          "EdFi.DataManagementService.Backend": "[1.0.0, )",
-          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
-          "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )",
-          "EdFi.DataManagementService.Core": "[1.0.0, )",
-          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "JsonPath.Net": "[1.1.6, )",
-          "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Options": "[10.0.1, )",
-          "Npgsql": "[8.0.4, )",
-          "Npgsql.DependencyInjection": "[8.0.3, )",
-          "Polly.Core": "[8.4.2, )",
-          "dbup-core": "[5.0.87, )",
-          "dbup-postgresql": "[5.0.40, )"
         }
       },
       "AspNetCore.HealthChecks.NpgSql": {
@@ -719,22 +699,6 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
-      },
-      "dbup-core": {
-        "type": "CentralTransitive",
-        "requested": "[5.0.87, )",
-        "resolved": "5.0.87",
-        "contentHash": "KhcbHJfaxNA4yRwFGGewD4znkOweyPLIbSQnUU2tMjLDkEWiBNFKlojhk46J7qsyKssk/RSzC0s/Rohjp4Y9xA=="
-      },
-      "dbup-postgresql": {
-        "type": "CentralTransitive",
-        "requested": "[5.0.40, )",
-        "resolved": "5.0.40",
-        "contentHash": "w7uUc6ZIOIfp0BYV3PashcLP+GZTCG5oOkDJSk3pO/7B3zCbaeKTATtdnBzWbgL8ci6SYrCWgth3KvMtNMkvmg==",
-        "dependencies": {
-          "Npgsql": "3.2.7",
-          "dbup-core": "5.0.37"
-        }
       },
       "EdFi.DataStandard52.TPDM.ApiSchema": {
         "type": "CentralTransitive",
@@ -1027,16 +991,6 @@
         "contentHash": "vaYEUlF/pB9m8bs21wQv3Da0kMHT4A9USe47VfY/L2BO97xz5KfIxhEu22QS9d68ZrLxvtL3wQDfDLPr2OjbjA==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "8.0.0"
-        }
-      },
-      "Npgsql.DependencyInjection": {
-        "type": "CentralTransitive",
-        "requested": "[8.0.3, )",
-        "resolved": "8.0.3",
-        "contentHash": "+5YsjIr2j8vV2IllGWbIrRkMYyHEUBUoH3nCrADg9nI4V/QhQATXjRtnq95z37/U6JQKb5m4eL388QWcKFmqUQ==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
-          "Npgsql": "8.0.3"
         }
       },
       "Polly.Core": {

@@ -6,7 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Old.Postgresql;
+using EdFi.DataManagementService.Backend.Postgresql;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;

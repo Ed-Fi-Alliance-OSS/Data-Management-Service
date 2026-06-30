@@ -23,41 +23,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileIfMatchAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlProfileIfMatchNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 file static class MssqlProfileIfMatchEtagTestSupport
 {
     private const int MaximumPageSize = 25;
@@ -155,7 +120,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             ResourceInfo: MssqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
             AuthorizationContext: new RelationalAuthorizationContext([]),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -182,9 +146,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: MssqlProfileRootTableOnlyMergeSupport
-                .NamingStressItemResourceInfo
-                .AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: MaximumPageSize,
@@ -244,10 +205,6 @@ file static class MssqlProfileIfMatchEtagTestSupport
             Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
 
@@ -278,11 +235,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope

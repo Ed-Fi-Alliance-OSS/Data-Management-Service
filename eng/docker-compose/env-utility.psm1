@@ -434,9 +434,6 @@ function Resolve-BootstrapDerivedEnv {
         -TargetPath $DerivedTargetPath `
         -KeyOverrides @{
             FAILURE_RATIO = "0.95"
-            NEED_DATABASE_SETUP = "false"
-            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            AppSettings__DeployDatabaseOnStartup = "false"
         }
 
     return $DerivedTargetPath

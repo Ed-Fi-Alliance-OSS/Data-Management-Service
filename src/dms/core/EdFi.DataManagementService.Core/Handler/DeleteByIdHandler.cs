@@ -5,11 +5,9 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -21,11 +19,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class DeleteByIdHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IAuthorizationServiceFactory authorizationServiceFactory
-) : IPipelineStep
+internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -34,6 +28,7 @@ internal class DeleteByIdHandler(
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
+        var mappingSet = RequireMappingSet(requestInfo, "delete");
 
         var deleteResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -48,21 +43,8 @@ internal class DeleteByIdHandler(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         TraceId: requestInfo.FrontendRequest.TraceId,
-                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                            requestInfo.AuthorizationStrategyEvaluators,
-                            requestInfo.AuthorizationSecurableInfo,
-                            authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider,
-                            _logger
-                        ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
-                        DeleteInEdOrgHierarchy: (
-                            requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
-                                requestInfo.ResourceSchema.ResourceName
-                            )
-                        ),
                         Headers: requestInfo.FrontendRequest.Headers,
-                        MappingSet: requestInfo.MappingSet
+                        MappingSet: mappingSet
                     )
                     {
                         AuthorizationContext = RelationalAuthorizationContext.Create(

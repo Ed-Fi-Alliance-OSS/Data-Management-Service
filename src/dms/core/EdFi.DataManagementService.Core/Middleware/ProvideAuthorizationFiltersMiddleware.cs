@@ -8,8 +8,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -17,10 +15,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Provides authorization filters
 /// </summary>
-internal class ProvideAuthorizationFiltersMiddleware(
-    IAuthorizationServiceFactory _authorizationServiceFactory,
-    ILogger _logger
-) : IPipelineStep
+internal class ProvideAuthorizationFiltersMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -51,70 +46,16 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 return;
             }
 
-            if (IsRelationalBackendAuthorizationRequest(requestInfo))
-            {
-                // Relational backend-planned authorization classifies strategy names in the
-                // backend planner, so middleware must preserve raw names and avoid premature provider failures.
-                requestInfo.AuthorizationStrategyEvaluators =
-                [
-                    .. requestInfo.ResourceActionAuthStrategies.Select(
-                        static authorizationStrategy => new AuthorizationStrategyEvaluator(
-                            authorizationStrategy,
-                            [],
-                            FilterOperator.Or
-                        )
-                    ),
-                ];
-
-                await next();
-                return;
-            }
-
-            List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
-            foreach (string authorizationStrategy in requestInfo.ResourceActionAuthStrategies)
-            {
-                var authFiltersProvider =
-                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+            requestInfo.AuthorizationStrategyEvaluators =
+            [
+                .. requestInfo.ResourceActionAuthStrategies.Select(
+                    static authorizationStrategy => new AuthorizationStrategyEvaluator(
                         authorizationStrategy,
-                        requestInfo.ScopedServiceProvider
-                    );
-                if (authFiltersProvider is null)
-                {
-                    requestInfo.FrontendResponse = new FrontendResponse(
-                        StatusCode: (int)HttpStatusCode.Forbidden,
-                        Body: FailureResponse.ForForbidden(
-                            traceId: requestInfo.FrontendRequest.TraceId,
-                            errors:
-                            [
-                                $"Could not find authorization filters implementation for the following strategy: '{authorizationStrategy}'.",
-                            ]
-                        ),
-                        Headers: [],
-                        ContentType: "application/problem+json"
-                    );
-                    return;
-                }
-
-                authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(requestInfo.ClientAuthorizations)
-                );
-            }
-
-            requestInfo.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
-        }
-        catch (AuthorizationException ex)
-        {
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: (int)HttpStatusCode.Forbidden,
-                Body: FailureResponse.ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: [ex.Message]
+                        [],
+                        FilterOperator.Or
+                    )
                 ),
-                Headers: [],
-                ContentType: "application/problem+json"
-            );
-
-            return;
+            ];
         }
         catch (Exception ex)
         {
@@ -137,13 +78,4 @@ internal class ProvideAuthorizationFiltersMiddleware(
 
         await next();
     }
-
-    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
-        requestInfo.MappingSet is not null
-        && (
-            requestInfo.Method == RequestMethod.GET
-            || requestInfo.Method == RequestMethod.DELETE
-            || requestInfo.Method == RequestMethod.POST
-            || requestInfo.Method == RequestMethod.PUT
-        );
 }

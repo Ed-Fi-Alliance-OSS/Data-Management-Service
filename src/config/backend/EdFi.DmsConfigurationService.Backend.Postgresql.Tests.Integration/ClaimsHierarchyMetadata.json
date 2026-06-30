@@ -10,6 +10,14 @@
               "name": "NoFurtherAuthorizationRequired"
             }
           ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
         }
       ]
     },
@@ -27,6 +35,9 @@
         "actions": [
           {
             "name": "Read"
+          },
+          {
+            "name": "ReadChanges"
           }
         ]
       },
@@ -7932,7 +7943,7 @@
               "name": "ReadChanges",
               "authorizationStrategies": [
                 {
-                  "name": "RelationshipsWithEdOrgsAndPeople"
+                  "name": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
                 }
               ]
             }
@@ -8151,7 +8162,7 @@
           "name": "ReadChanges",
           "authorizationStrategies": [
             {
-              "name": "RelationshipsWithEdOrgsAndPeople"
+              "name": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
             }
           ]
         }

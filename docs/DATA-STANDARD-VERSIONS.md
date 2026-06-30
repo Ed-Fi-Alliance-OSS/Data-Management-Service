@@ -124,7 +124,7 @@ Workflows that build per-version artifacts select the version through a per-work
 
   > The template surface is intentionally reduced versus the local dev surface
   > (Core + TPDM + Sample + Homograph in `.env.ds<NN>`): DS 5.2 is Core + TPDM
-  > (`.env.template.relational`); DS 6.1 is Core only (`.env.template.relational.ds61`,
+  > (`.env.template`); DS 6.1 is Core only (`.env.template.ds61`,
   > TPDM folded into core). Each version gets its own standalone template env file,
   > referenced from the matrix `include` entry — it is **not** the dev `.env.ds<NN>` overlay.
 
@@ -138,7 +138,7 @@ Workflows that build per-version artifacts select the version through a per-work
   feed the wrong leg's hash to provenance once a second version is added. The reusable
   workflow keeps each leg's build → SBOM → provenance pipeline self-contained, and each leg
   uses a distinct package name and provenance file so artifacts never collide.
-  - The **Minimal template** `6.1.0` leg reuses the `.env.template.relational.ds61` template
+  - The **Minimal template** `6.1.0` leg reuses the `.env.template.ds61` template
     env file (Core only).
   - The **SDK** lanes generate each package from the OpenAPI document a running DMS serves,
     so the `6.1.0` leg starts DMS with `-DataStandardVersion 6.1` (the `.env.ds61` overlay)
@@ -175,20 +175,20 @@ dropped.
 ### Per-PR E2E scope — DS 6.1 version-coupled lane
 
 The every-change (per-PR) relational E2E lane runs **DS 5.2** as the full sharded suite
-(`on-dms-pullrequest.yml` → `run-e2e-tests`: four shards, `-EnvironmentFile './.env.e2e.relational'`,
+(`on-dms-pullrequest.yml` → `run-e2e-tests`: four shards, `-EnvironmentFile './.env.e2e'`,
 no `-DataStandardVersion`). DS 6.1 is covered per-PR by a **dedicated, lean lane**
 (`run-e2e-tests-ds61`) that brings up a 6.1 stack (`-DataStandardVersion 6.1`) and runs **only the
 version-coupled scenarios** — the `@StandardVersion-6_1`-tagged XSDMetadata and Discovery-root
 variants:
 
 ```
-build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e.relational' -DataStandardVersion 6.1 \
-  -TestFilter 'Category=@relational-backend&Category=@StandardVersion-6_1'
+build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 \
+  -TestFilter 'Category=@StandardVersion-6_1'
 ```
 
 Those scenarios carry **no shard tag**, so the 5.2 shard lanes (which filter on a
-`@relational-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
-version-independent suite. Both lanes gate the PR through `relational-e2e-summary`.
+`@e2e-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
+version-independent suite. Both lanes gate the PR through `e2e-summary`.
 
 This keeps per-PR cost contained: the version-coupled scenarios are exactly what differs between
 versions, while **full DS 6.1 E2E coverage runs in the scheduled smoke test** rather than on every
@@ -225,7 +225,7 @@ Adding a version is the same set of small edits regardless of which version:
    version-coupled features (`XSDMetadata.feature`, `DiscoveryAPI.feature`) — captured from a running
    stack of that version, not hand-written — and add a per-PR lane that runs them with
    `-DataStandardVersion <N.N>` and
-   `-TestFilter 'Category=@relational-backend&Category=@StandardVersion-<NN>'` (see *Per-PR E2E scope*
+   `-TestFilter 'Category=@StandardVersion-<NN>'` (see *Per-PR E2E scope*
    above). Give the variants **no** shard category so the default-version shard lanes skip them.
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:

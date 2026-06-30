@@ -9,15 +9,12 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Npgsql;
 using NUnit.Framework;
 
@@ -34,7 +31,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
-        services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
@@ -129,23 +125,19 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void ServiceCollection_registers_postgresql_relational_token_info_lookup_without_replacing_base_lookup()
+    public void ServiceCollection_replaces_existing_relational_token_info_lookup_with_postgresql_lookup()
     {
         var services = new ServiceCollection();
 
         services.AddScoped<IRelationalCommandExecutor>(_ => A.Fake<IRelationalCommandExecutor>());
-        services.AddScoped<ITokenInfoEducationOrganizationLookup, StubTokenInfoEducationOrganizationLookup>();
+        services.AddScoped<
+            IRelationalTokenInfoEducationOrganizationLookup,
+            StubRelationalTokenInfoEducationOrganizationLookup
+        >();
         services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
-
-        scope
-            .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .BeOfType<StubTokenInfoEducationOrganizationLookup>();
 
         scope
             .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
@@ -171,19 +163,12 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
     }
 
-    private sealed class StubTokenInfoEducationOrganizationLookup : ITokenInfoEducationOrganizationLookup
+    private sealed class StubRelationalTokenInfoEducationOrganizationLookup
+        : IRelationalTokenInfoEducationOrganizationLookup
     {
         public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
-            IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
+            IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds,
+            MappingSet mappingSet
         ) => Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([]);
-    }
-
-    private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime
-    {
-        public CancellationToken ApplicationStarted => CancellationToken.None;
-        public CancellationToken ApplicationStopping => CancellationToken.None;
-        public CancellationToken ApplicationStopped => CancellationToken.None;
-
-        public void StopApplication() { }
     }
 }

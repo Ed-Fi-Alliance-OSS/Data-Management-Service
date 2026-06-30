@@ -131,16 +131,6 @@ internal sealed record StudentEducationOrganizationResponsibilityAssociationSeed
 
 internal sealed record ClassPeriodReferenceSeed(string ClassPeriodName, int SchoolId);
 
-internal sealed class RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
 internal static class RelationalQueryAuthorizationRequestBodies
 {
     public static JsonNode CreateSchoolRequestBody(int schoolId, string nameOfInstitution)

@@ -23,10 +23,9 @@ internal record UpdateRequest(
     /// </summary>
     DocumentInfo DocumentInfo,
     /// <summary>
-    /// The resolved runtime mapping set for the active request when relational
-    /// request handling is enabled.
+    /// The resolved runtime mapping set for the active relational request.
     /// </summary>
-    MappingSet? MappingSet,
+    MappingSet MappingSet,
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
     /// </summary>
@@ -44,29 +43,10 @@ internal record UpdateRequest(
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
-    /// The security elements extracted from the document
-    /// </summary>
-    DocumentSecurityElements DocumentSecurityElements,
-    /// <summary>
-    /// This class will modify the EdFiDoc of a referencing
-    /// resource when the referenced resource's identifying
-    /// values are modified
-    /// </summary>
-    IUpdateCascadeHandler UpdateCascadeHandler,
-    /// <summary>
-    /// The backend should use this handler to determine whether
-    /// the client is authorized to get the document
-    /// </summary>
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
-    /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// </summary>
     BackendProfileWriteContext? BackendProfileWriteContext = null
-) : IRelationalUpdateRequest
+) : IUpdateRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
 

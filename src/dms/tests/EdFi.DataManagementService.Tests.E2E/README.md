@@ -23,8 +23,14 @@ From the repository root:
 - If you have stale volumes with old data run
   `pwsh eng/docker-compose/start-local-dms.ps1 -d -v` to stop services and
   delete volumes
-- Run `pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`
-- You must have the following hosts entry to run kafka tests: `127.0.0.1 dms-kafka1`
+- Run the E2E build target, which starts the Docker stack, provisions the
+  relational E2E database, restarts DMS, and executes the tests:
+  `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './eng/docker-compose/.env.e2e'`
+
+The setup wrapper is still useful when you only need a prepared local Docker
+stack for debugging; it starts infra and CMS, configures the E2E data store,
+provisions the E2E database, then starts DMS:
+`pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`
 
 ### Testing locally with API in debug mode
 
@@ -39,17 +45,15 @@ To debug the API while running the tests, change `ApiUrl` in
 
 ## Running The Tests
 
-Run the tests how you run any other test suite. For example:
+Use the repository-root build target for a complete local E2E signal:
 
-- Visual Studio Test Explorer
-- from `/src/tests` run: `dotnet test
-  EdFi.DataManagementService.Tests.E2E`.
+```pwsh
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './eng/docker-compose/.env.e2e'
+```
 
 > [!TIP]
-> In case you need to run specific tests you can tag your
-> scenarios using the character @ `@smokeTest`,
-> in order to run the desired tests you can use the command  
-> `dotnet test --filter "Category=@smokeTest" EdFi.DataManagementService.Tests.E2E`
+> In case you need to run specific tests, pass a filter to the build target:
+> `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './eng/docker-compose/.env.e2e' -TestFilter 'Category=@smokeTest'`
 
 ### Setup
 

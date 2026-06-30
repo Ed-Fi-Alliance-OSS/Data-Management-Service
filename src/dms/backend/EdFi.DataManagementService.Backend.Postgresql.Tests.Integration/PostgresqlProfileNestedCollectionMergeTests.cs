@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -15,10 +16,8 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -27,21 +26,11 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ProfileNestedCollec
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file sealed class PostgresqlProfileNestedNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
 internal static class PostgresqlProfileNestedSupport
 {
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
-        services.AddSingleton<IHostApplicationLifetime, PostgresqlProfileNestedNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -117,11 +106,7 @@ internal static class PostgresqlProfileNestedSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -160,10 +145,6 @@ internal static class PostgresqlProfileNestedSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new NoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

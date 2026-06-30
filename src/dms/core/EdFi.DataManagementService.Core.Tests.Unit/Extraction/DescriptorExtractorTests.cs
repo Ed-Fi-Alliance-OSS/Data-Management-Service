@@ -93,9 +93,7 @@ public class DescriptorExtractorTests
             ResourceName: new ResourceName(resourceName),
             IsDescriptor: isDescriptor,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 

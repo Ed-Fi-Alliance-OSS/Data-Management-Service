@@ -140,13 +140,6 @@ public class InvalidResourceSchemasTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
-            // Register Profile Filtering services
-            services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter, ProfileResponseFilter>();
-            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-                NullLogger<ProfileFilteringMiddleware>.Instance
-            );
-
             // Register ValidateDatabaseFingerprintMiddleware and its dependencies
             var appSettingsOptions = Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" });
             services.AddSingleton(appSettingsOptions);
@@ -172,7 +165,6 @@ public class InvalidResourceSchemasTests
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                new NamedAuthorizationServiceFactory(),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 serviceProvider,

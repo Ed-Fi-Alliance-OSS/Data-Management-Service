@@ -1402,7 +1402,6 @@ exit 0
             $envNames = @(
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
-                "NEED_DATABASE_SETUP",
                 "AppSettings__UseApiSchemaPath",
                 "AppSettings__ApiSchemaPath",
                 "SCHEMA_PACKAGES",
@@ -1416,7 +1415,6 @@ exit 0
             try {
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "host=localhost;port=5432;username=postgres"
-                $env:NEED_DATABASE_SETUP = "false"
                 $env:AppSettings__UseApiSchemaPath = "true"
                 $env:AppSettings__ApiSchemaPath = $apiSchemaPath
                 $env:SCHEMA_PACKAGES = '[{"name":"KeptPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
@@ -1449,35 +1447,90 @@ exit 0
             @($manifest.projects).projectName | Should -Not -Contain "RemovedPackage"
         }
 
-        It "start-local-dms.ps1 gates default connector registration on bootstrap mode in DMS-only and full-stack paths" {
-            # Bootstrap mode provisions the redesigned relational schema which does not include the
-            # legacy dms.document table or the to_debezium publication that the default Debezium connector
-            # requires. Both start scripts must check $bootstrapMode before calling setup-connectors.ps1
-            # in both startup paths so the connector is never registered against a schema where its
-            # required tables and publication do not exist.
-            $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+        It "run.sh skips PostgreSQL readiness checks when the datastore is MSSQL" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
+            $workspace = Join-Path $script:repo.RepoRoot "run-sh-mssql"
+            $stubDirectory = Join-Path $workspace "bin"
+            $pgIsReadyInvocationsPath = Join-Path $workspace "pg-isready-invocations.log"
+            $dotnetInvocationsPath = Join-Path $workspace "dotnet-invocations.log"
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $stubDirectory -Force | Out-Null
 
-            $connectorGatePattern = 'if \(\$bootstrapMode\)\s*\{[\s\S]*?Skipping default connector setup: bootstrap mode[\s\S]*?\}\s*elseif \(-not \$SkipConnectorSetup\)\s*\{[\s\S]*?setup-connectors\.ps1 \$EnvironmentFile[\s\S]*?\}\s*else\s*\{[\s\S]*?Skipping default connector setup\.'
-            $connectorGates = [regex]::Matches($content, $connectorGatePattern)
+            @'
+#!/bin/sh
+echo "$*" >> "$PG_ISREADY_INVOCATIONS_PATH"
+exit 1
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "pg_isready") -Encoding utf8
 
-            $connectorGates.Count | Should -Be 2 -Because "start-local-dms.ps1 must guard default connector setup in both the -DmsOnly and full-stack startup paths"
+            @'
+#!/bin/sh
+echo "$*" >> "$DOTNET_INVOCATIONS_PATH"
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet") -Encoding utf8
 
-            # The script must still retain -SkipConnectorSetup for non-bootstrap harnesses
-            $content | Should -Match 'SkipConnectorSetup' -Because "start-local-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses (e.g. Instance Management E2E)"
+            & chmod +x (Join-Path $stubDirectory "pg_isready")
+            & chmod +x (Join-Path $stubDirectory "dotnet")
 
-            # The skip message for bootstrap mode must distinguish it from the explicit-flag path
-            $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
+            $envNames = @(
+                "PATH",
+                "DATABASE_CONNECTION_STRING_ADMIN",
+                "AppSettings__Datastore",
+                "AppSettings__UseApiSchemaPath",
+                "PG_ISREADY_INVOCATIONS_PATH",
+                "DOTNET_INVOCATIONS_PATH"
+            )
+            $envSnapshot = @{}
+            foreach ($name in $envNames) {
+                $envSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            }
+
+            try {
+                $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
+                $env:DATABASE_CONNECTION_STRING_ADMIN = "Server=localhost,1433;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
+                $env:AppSettings__Datastore = "mssql"
+                $env:AppSettings__UseApiSchemaPath = "false"
+                $env:PG_ISREADY_INVOCATIONS_PATH = $pgIsReadyInvocationsPath
+                $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
+
+                $runOutput = & bash (Join-Path $script:sourceRepoRoot "src/dms/run.sh") 2>&1
+
+                $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
+                ($runOutput -join [Environment]::NewLine) |
+                    Should -Match "Skipping PostgreSQL readiness check for datastore 'mssql'\."
+            }
+            finally {
+                foreach ($name in $envNames) {
+                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                }
+            }
+
+            Test-Path -LiteralPath $pgIsReadyInvocationsPath |
+                Should -BeFalse -Because "MSSQL startup must not run PostgreSQL readiness checks"
+            Get-Content -LiteralPath $dotnetInvocationsPath |
+                Should -Contain "EdFi.DataManagementService.Frontend.AspNetCore.dll"
         }
 
-        It "start-published-dms.ps1 gates default connector registration on bootstrap mode in DMS-only and full-stack paths" {
+        It "start-local-dms.ps1 does not register the legacy default connector" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+            $legacyConnectorCommandPattern = [regex]::Escape(("setup" + "-connectors.ps1") + " `$EnvironmentFile")
+            $legacyPublicationNamePattern = "to" + "_debezium"
+            $legacyDocumentTablePattern = "dms" + "\.document"
+
+            $content | Should -Not -Match $legacyConnectorCommandPattern
+            $content | Should -Not -Match 'SkipConnectorSetup'
+            $content | Should -Not -Match $legacyPublicationNamePattern
+            $content | Should -Not -Match $legacyDocumentTablePattern
+        }
+
+        It "start-published-dms.ps1 does not register the legacy default connector" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+            $legacyConnectorCommandPattern = [regex]::Escape(("setup" + "-connectors.ps1") + " `$EnvironmentFile")
+            $legacyPublicationNamePattern = "to" + "_debezium"
+            $legacyDocumentTablePattern = "dms" + "\.document"
 
-            $connectorGatePattern = 'if \(\$bootstrapMode\)\s*\{[\s\S]*?Skipping default connector setup: bootstrap mode[\s\S]*?\}\s*elseif \(-not \$SkipConnectorSetup\)\s*\{[\s\S]*?setup-connectors\.ps1 \$EnvironmentFile[\s\S]*?\}\s*else\s*\{[\s\S]*?Skipping default connector setup\.'
-            $connectorGates = [regex]::Matches($content, $connectorGatePattern)
-
-            $connectorGates.Count | Should -Be 2 -Because "start-published-dms.ps1 must guard default connector setup in both the -DmsOnly and full-stack startup paths"
-            $content | Should -Match 'SkipConnectorSetup' -Because "start-published-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses"
-            $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
+            $content | Should -Not -Match $legacyConnectorCommandPattern
+            $content | Should -Not -Match 'SkipConnectorSetup'
+            $content | Should -Not -Match $legacyPublicationNamePattern
+            $content | Should -Not -Match $legacyDocumentTablePattern
         }
     }
 
@@ -1525,12 +1578,74 @@ exit 0
             $imSetup | Should -Not -Match "start-local-dms\.ps1[^`n]*-NoDataStore"
         }
 
-        It "DataManagementService E2E setup calls configure-local-data-store.ps1 to create the default data store" {
+        It "DataManagementService E2E setup uses the infra/configure/provision/DMS phase flow" {
             # start-local-dms.ps1 no longer creates a data store automatically after DMS-1153.
             # The DataManagementService E2E setup must call configure-local-data-store.ps1 explicitly
-            # so a default route-unqualified data store is present before the tests run.
+            # so a default route-unqualified data store points at the provisioned E2E database.
             $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+            $phaseFlowPattern = '(?ms)^\s*\./start-local-dms\.ps1[^\r\n]*-InfraOnly[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile.*^\s*\./configure-local-data-store\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile[^\r\n]*-DataStoreDatabaseName\s+\$e2eDatabaseName.*^\s*\./provision-e2e-database\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile[^\r\n]*-DatabaseName\s+\$e2eDatabaseName.*^\s*\./start-local-dms\.ps1[^\r\n]*-DmsOnly[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Match $phaseFlowPattern
+            $dmsSetup | Should -Match "start-local-dms\.ps1[^\r\n]*-InfraOnly"
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
+            $dmsSetup | Should -Match "E2E_DATABASE_NAME"
+            $dmsSetup | Should -Match '-DataStoreDatabaseName\s+\$e2eDatabaseName'
+            $dmsSetup | Should -Match "provision-e2e-database\.ps1"
+            $dmsSetup | Should -Match '-DatabaseName\s+\$e2eDatabaseName'
+            $dmsSetup | Should -Match "start-local-dms\.ps1[^\r\n]*-DmsOnly"
+            $dmsSetup | Should -Not -Match "docker restart ed-fi-api"
+        }
+
+        It "DataManagementService E2E setup composes the Data Standard env file before start, configure, and provision" {
+            $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+            $composeBeforeReadPattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile.*\$envValues\s*=\s*ReadValuesFromEnvFile\s+\$resolvedEnvironmentFile'
+
+            $dmsSetup | Should -Match $composeBeforeReadPattern
+            $dmsSetup | Should -Match 'configure-local-data-store\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Match 'provision-e2e-database\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Not -Match 'start-local-dms\.ps1[^\r\n]*-DataStandardVersion'
+        }
+
+        It "InstanceManagement E2E setup composes the Data Standard env file before start and route-context provisioning" {
+            $imSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
+            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*\.env\.routeContext\.e2e.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
+
+            $imSetup | Should -Match $composePattern
+            $imSetup | Should -Match 'start-local-dms\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $imSetup | Should -Match 'provision-e2e-database\.ps1'
+            $imSetup | Should -Match '-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $imSetup | Should -Not -Match 'start-local-dms\.ps1[^\r\n]*-DataStandardVersion'
+        }
+
+        It "start-published-dms.ps1 can create E2E data stores against an explicit database name" {
+            $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+
+            $publishedStartScript | Should -Match '\$DataStoreDatabaseName = ""'
+            $publishedStartScript | Should -Match '\$postgresDbName ='
+            $publishedStartScript | Should -Match '-PostgresDbName\s+\$postgresDbName'
+            $publishedStartScript | Should -Not -Match '-PostgresDbName\s+\$envValues\.POSTGRES_DB_NAME'
+        }
+
+        It "E2E setup scripts do not enable Kafka infrastructure by default" {
+            foreach ($setupScript in @(
+                "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1",
+                "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+            )) {
+                $setup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot $setupScript) -Raw
+
+                $setup | Should -Match "start-local-dms\.ps1"
+                $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafka"
+                $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafkaUI"
+            }
+        }
+
+        It "active Docker Compose env files do not retain legacy DMS backend switches" {
+            $legacyDmsEnvironmentVariablePattern = '(?m)^(NEED_DATABASE_SETUP|USE_RELATIONAL_BACKEND|DMS_DEPLOY_DATABASE_ON_STARTUP|DMS_QUERYHANDLER|AppSettings__UseRelationalBackend)\s*='
+
+            Get-ChildItem -LiteralPath $script:sourceDockerComposeRoot -Force -File -Filter ".env*" |
+                ForEach-Object {
+                    $content = Get-Content -LiteralPath $_.FullName -Raw
+                    $content | Should -Not -Match $legacyDmsEnvironmentVariablePattern -Because "$($_.Name) must not reintroduce the legacy DMS backend selection or startup provisioning surface"
+                }
         }
 
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {
@@ -1543,7 +1658,7 @@ exit 0
 
         It "build-dms.ps1 relational E2E startup clears schema process env overrides around compose calls" {
             # Docker Compose gives process env vars precedence over --env-file values. Relational E2E
-            # startup must let .env.e2e.relational provide the schema package settings, even when an
+            # startup must let .env.e2e provide the schema package settings, even when an
             # earlier compose helper left empty schema env vars in the process.
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
 
@@ -1553,11 +1668,30 @@ exit 0
             $buildScript | Should -Match '"SCHEMA_PACKAGES"'
             $buildScript | Should -Match 'Remove-Item "Env:\$name"'
             $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
-            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 6
-            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 4
+            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 4
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
-            $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.UseRelationalBackend'
+            $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
+        }
+
+        It "build-dms.ps1 StartEnvironment uses the bootstrap phase contract" {
+            # StartEnvironment is a developer stack command, not the E2E generated-database path.
+            # It must use the bootstrap wrapper so configure-local-data-store.ps1 and
+            # provision-dms-schema.ps1 complete before the DMS-only startup phase.
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+
+            $buildScript | Should -Match "function Start-BootstrapDockerEnvironment"
+            $buildScript | Should -Match "bootstrap-local-dms\.ps1 @bootstrapArgs"
+            $buildScript | Should -Match "bootstrap-published-dms\.ps1 @bootstrapArgs"
+            $buildScript | Should -Match "StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment"
+        }
+
+        It "build-dms.ps1 fails fast when restarted DMS never becomes healthy" {
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+
+            $buildScript | Should -Match "DMS container '\`$ContainerName' did not become ready within the timeout period"
+            $buildScript | Should -Not -Match "DMS did not become ready, but continuing anyway"
         }
 
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {

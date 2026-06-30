@@ -10,14 +10,12 @@ using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,11 +84,7 @@ public class DeleteByIdHandlerTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new DeleteByIdHandler(
-            NullLogger.Instance,
-            ResiliencePipeline.Empty,
-            new NoAuthorizationServiceFactory()
-        );
+        var handler = new DeleteByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }
@@ -124,7 +118,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -160,7 +154,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -199,7 +193,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -239,7 +233,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -277,7 +271,9 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo("relationship-delete-403");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-delete-403"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -349,7 +345,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "namespace-delete-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -395,7 +391,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-delete-501";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -452,7 +448,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-delete-500";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -510,7 +506,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -568,7 +564,9 @@ actual: {_requestInfo.FrontendResponse.Body}
         }
 
         private readonly Repository _repository = new();
-        private readonly RequestInfo _requestInfo = No.RequestInfo("delete-profile-trace");
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+            "delete-profile-trace"
+        );
 
         private static ResourceInfo CreateResourceInfo() =>
             new(
@@ -576,13 +574,7 @@ actual: {_requestInfo.FrontendResponse.Body}
                 ResourceName: new ResourceName("Assessment"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
 
         private static ProfileContext CreateWriteProfileContext() =>
@@ -679,7 +671,7 @@ actual: {_requestInfo.FrontendResponse.Body}
         {
             var relationalRequest = _repository
                 .CapturedRequest.Should()
-                .BeAssignableTo<IRelationalDeleteRequest>()
+                .BeAssignableTo<IDeleteRequest>()
                 .Subject;
 
             relationalRequest

@@ -57,8 +57,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 IncludeOnly reference profile preserves server-generated link on surviving references
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-Profile-Resource-References-IncludeOnly-Read" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-Profile-Resource-References-IncludeOnly-Read" for resource "School"
@@ -126,8 +125,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 02 ExcludeOnly profile excludes configured reference properties on read
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School"
@@ -189,8 +187,7 @@ Feature: Profile Reference Filtering
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 IncludeOnly reference write profile is currently unsupported on write
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-IncludeOnly" for resource "School" with body
@@ -225,8 +222,7 @@ Feature: Profile Reference Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 ExcludeOnly reference write profile excludes configured reference members
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-References-ExcludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-References-ExcludeOnly" for resource "School" with body
@@ -305,8 +301,7 @@ Feature: Profile Reference Filtering
         # ReadableProfileProjector.ProjectRoot "Always preserve metadata and identity
         # fields at the document root"). This scenario therefore only asserts the
         # DMS-1145 link-preservation contract on the nested classPeriodReference.
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 05 IncludeOnly profile preserves link on classPeriods[*].classPeriodReference
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/bellSchedules/{id}" with profile "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly" for resource "BellSchedule"

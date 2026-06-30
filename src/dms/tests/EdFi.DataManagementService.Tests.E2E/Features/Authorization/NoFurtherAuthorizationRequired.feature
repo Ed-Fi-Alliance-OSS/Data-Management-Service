@@ -13,8 +13,7 @@ Feature: NoFurtherAuthorizationRequired strategy is a no-op for relational read 
                   | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School              |
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade                                 |
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: Read paths return resources whose EdOrg context is disjoint from the caller's claim
             # Seed the SEA/LEA/School hierarchy with a claim set authorized for the target EdOrg context.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
@@ -53,8 +52,7 @@ Feature: NoFurtherAuthorizationRequired strategy is a no-op for relational read 
              When a GET request is made to "/ed-fi/schools/{SchoolId1}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: Write paths succeed when the caller's claim contains no EdOrgs that cover the target resource
             # Seed only the SEA/LEA hierarchy with a claim set authorized for the target EdOrg context.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201"

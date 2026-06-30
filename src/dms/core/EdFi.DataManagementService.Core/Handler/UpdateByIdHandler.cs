@@ -5,13 +5,10 @@
 
 using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -25,12 +22,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpdateByIdHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IApiSchemaProvider _apiSchemaProvider,
-    IAuthorizationServiceFactory authorizationServiceFactory
-) : IPipelineStep
+internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -41,7 +33,7 @@ internal class UpdateByIdHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
+        var mappingSet = RequireMappingSet(requestInfo, "update");
 
         var updateResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -56,20 +48,10 @@ internal class UpdateByIdHandler(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
-                        MappingSet: requestInfo.MappingSet,
+                        MappingSet: mappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
-                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
                         TraceId: requestInfo.FrontendRequest.TraceId,
-                        UpdateCascadeHandler: updateCascadeHandler,
-                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                            requestInfo.AuthorizationStrategyEvaluators,
-                            requestInfo.AuthorizationSecurableInfo,
-                            authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider,
-                            _logger
-                        ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
@@ -356,7 +355,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:UseRelationalBackend"] = "true",
                             ["AppSettings:UseApiSchemaPath"] = "true",
                             ["AppSettings:ApiSchemaPath"] = _schemaDirectory,
                             ["AppSettings:StartupStatusFilePath"] = _startupStatusFilePath,

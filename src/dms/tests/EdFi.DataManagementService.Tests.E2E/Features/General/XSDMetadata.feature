@@ -1,7 +1,6 @@
 Feature: XSD Metadata Endpoint
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients can retrieve XSD endpoint information
              When a GET request is made to "/metadata/xsd"
              Then it should respond with 200
@@ -34,8 +33,7 @@ Feature: XSD Metadata Endpoint
                       }
                     ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients can retrieve Core schema (Ed-Fi) files for the data model
              When a GET request is made to "/metadata/xsd/ed-fi/files"
              Then it should respond with 200
@@ -71,8 +69,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/ed-fi/SchemaAnnotation.xsd"
                     ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients can retrieve Extension (Sample) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/sample/files"
              Then it should respond with 200
@@ -118,8 +115,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentTranscript-Extension.xsd"
                     ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients can retrieve Extension (Homograph) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/homograph/files"
              Then it should respond with 200
@@ -155,8 +151,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/homograph/SchemaAnnotation.xsd"
                     ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients can retrieve Extension (TPDM) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/tpdm/files"
              Then it should respond with 200
@@ -199,8 +194,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/tpdm/EXTENSION-Interchange-Survey-Extension.xsd"
                     ]
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 Ensure clients can retrieve XSD content of TPDM Extension
              When a GET request is made to "/metadata/xsd/tpdm/EXTENSION-Interchange-Survey-Extension.xsd"
              Then it should respond with 200
@@ -238,8 +232,7 @@ Feature: XSD Metadata Endpoint
                       </xs:element>
                     </xs:schema>
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Ensure clients can retrieve XSD content of Sample Extension
              When a GET request is made to "/metadata/xsd/sample/EXTENSION-Interchange-StudentProgram-Extension.xsd"
              Then it should respond with 200
@@ -272,8 +265,7 @@ Feature: XSD Metadata Endpoint
                     </xs:element>
                     </xs:schema>
                   """
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Ensure clients can retrieve XSD content of Core
              When a GET request is made to "/metadata/xsd/ed-fi/Interchange-Survey.xsd"
              Then it should respond with 200
@@ -315,7 +307,6 @@ Feature: XSD Metadata Endpoint
         # shard lanes never pick them up. Educator preparation is folded into core (epdm) in 6.1, so
         # there is no separate TPDM extension and the two TPDM scenarios (05, 06) have no 6.1 variant.
         # ---------------------------------------------------------------------------------------------
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 01 Ensure clients can retrieve XSD endpoint information (DS 6.1)
              When a GET request is made to "/metadata/xsd"
@@ -343,7 +334,6 @@ Feature: XSD Metadata Endpoint
                       }
                     ]
                   """
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 02 Ensure clients can retrieve Core schema (Ed-Fi) files for the data model (DS 6.1)
              When a GET request is made to "/metadata/xsd/ed-fi/files"
@@ -386,7 +376,6 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/ed-fi/SchemaAnnotation.xsd"
                     ]
                   """
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 03 Ensure clients can retrieve Extension (Sample) blended with Core schema files for the data model (DS 6.1)
              When a GET request is made to "/metadata/xsd/sample/files"
@@ -442,7 +431,6 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/EXTENSION-Interchange-StudentTranscript-Extension.xsd"
                     ]
                   """
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 04 Ensure clients can retrieve Extension (Homograph) blended with Core schema files for the data model (DS 6.1)
              When a GET request is made to "/metadata/xsd/homograph/files"
@@ -485,7 +473,6 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/homograph/SchemaAnnotation.xsd"
                     ]
                   """
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 07 Ensure clients can retrieve XSD content of Sample Extension (DS 6.1)
              When a GET request is made to "/metadata/xsd/sample/EXTENSION-Interchange-StudentProgram-Extension.xsd"
@@ -520,7 +507,6 @@ Feature: XSD Metadata Endpoint
                     </xs:element>
                   </xs:schema>
                   """
-        @relational-backend
         @StandardVersion-6_1
         Scenario: 08 Ensure clients can retrieve XSD content of Core (DS 6.1)
              When a GET request is made to "/metadata/xsd/ed-fi/Interchange-Survey.xsd"

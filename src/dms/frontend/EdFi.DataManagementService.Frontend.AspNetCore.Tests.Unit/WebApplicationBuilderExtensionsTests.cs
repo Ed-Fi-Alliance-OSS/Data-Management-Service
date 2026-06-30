@@ -9,9 +9,8 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -75,66 +74,9 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public void It_keeps_only_the_legacy_postgresql_repository_surface_when_relational_backend_is_disabled()
+        public void It_registers_the_relational_repository_surface()
         {
             using var serviceProvider = CreateServices("postgresql");
-            using var scope = serviceProvider.CreateScope();
-
-            scope
-                .ServiceProvider.GetServices<IDocumentStoreRepository>()
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<PostgresqlDocumentStoreRepository>();
-            scope
-                .ServiceProvider.GetServices<IQueryHandler>()
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<PostgresqlDocumentStoreRepository>();
-        }
-
-        [Test]
-        public void It_uses_the_legacy_token_info_lookup_adapter_when_relational_backend_is_disabled()
-        {
-            using var serviceProvider = CreateServices("postgresql");
-            using var scope = serviceProvider.CreateScope();
-
-            scope
-                .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter>();
-        }
-
-        [Test]
-        public void It_does_not_register_relational_reference_resolution_services_by_default()
-        {
-            using var serviceProvider = CreateServices("postgresql");
-            using var scope = serviceProvider.CreateScope();
-
-            scope.ServiceProvider.GetService<IReferenceResolver>().Should().BeNull();
-            scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
-            scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
-            scope.ServiceProvider.GetService<IReferenceResolverAdapterFactory>().Should().BeNull();
-            scope.ServiceProvider.GetService<IReferenceResolverAdapter>().Should().BeNull();
-            scope.ServiceProvider.GetService<IRelationalCommandExecutor>().Should().BeNull();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Postgresql_Datastore_With_Relational_Backend_Enabled
-        : WebApplicationBuilderExtensionsTests
-    {
-        [Test]
-        public void It_replaces_the_legacy_repository_surface_with_the_relational_repository()
-        {
-            using var serviceProvider = CreateServices(
-                "postgresql",
-                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
-            );
             using var scope = serviceProvider.CreateScope();
 
             scope
@@ -149,15 +91,25 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Should()
                 .BeOfType<RelationalDocumentStoreRepository>();
+        }
+
+        [Test]
+        public void It_replaces_the_core_backend_mapping_initializer_with_the_relational_initializer()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+
+            serviceProvider
+                .GetServices<IBackendMappingInitializer>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalBackendMappingInitializer>();
         }
 
         [Test]
         public void It_registers_the_postgresql_relational_runtime_composition_surface()
         {
-            using var serviceProvider = CreateServices(
-                "postgresql",
-                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
-            );
+            using var serviceProvider = CreateServices("postgresql");
             using var scope = serviceProvider.CreateScope();
 
             scope
@@ -213,9 +165,22 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<PostgresqlRelationalCommandExecutor>();
             scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>()
+                .Should()
+                .NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>()
+                .Should()
+                .NotBeNull();
+            scope
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()
                 .BeOfType<MappingSetProvider>();
+            scope.ServiceProvider.GetRequiredService<MappingSetCompiler>().Should().NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<IMappingPackStore>()
+                .Should()
+                .BeOfType<NoOpMappingPackStore>();
             scope
                 .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
                 .Should()
@@ -225,27 +190,10 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public void It_keeps_the_legacy_token_info_lookup_and_registers_the_postgresql_relational_lookup()
+        public void It_registers_only_the_postgresql_relational_token_info_lookup()
         {
-            using var serviceProvider = CreateServices(
-                "postgresql",
-                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
-            );
+            using var serviceProvider = CreateServices("postgresql");
             using var scope = serviceProvider.CreateScope();
-
-            scope
-                .ServiceProvider.GetServices<IAuthorizationRepository>()
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<PostgresqlAuthorizationRepository>();
-
-            scope
-                .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter>();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
@@ -269,20 +217,11 @@ public class WebApplicationBuilderExtensionsTests
 
             fingerprintReader.Should().BeOfType<MssqlDatabaseFingerprintReader>();
         }
-    }
 
-    [TestFixture]
-    [Parallelizable]
-    public class Given_An_Mssql_Datastore_With_Relational_Backend_Enabled
-        : WebApplicationBuilderExtensionsTests
-    {
         [Test]
         public void It_registers_the_mssql_relational_runtime_composition_surface()
         {
-            using var serviceProvider = CreateServices(
-                "mssql",
-                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
-            );
+            using var serviceProvider = CreateServices("mssql");
             using var scope = serviceProvider.CreateScope();
 
             scope
@@ -358,9 +297,22 @@ public class WebApplicationBuilderExtensionsTests
                     executor.GetType().Name == "MssqlRelationalCommandExecutor"
                 );
             scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>()
+                .Should()
+                .NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>()
+                .Should()
+                .NotBeNull();
+            scope
                 .ServiceProvider.GetRequiredService<IMappingSetProvider>()
                 .Should()
                 .BeOfType<MappingSetProvider>();
+            scope.ServiceProvider.GetRequiredService<MappingSetCompiler>().Should().NotBeNull();
+            scope
+                .ServiceProvider.GetRequiredService<IMappingPackStore>()
+                .Should()
+                .BeOfType<NoOpMappingPackStore>();
             scope
                 .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
                 .Should()
@@ -380,13 +332,8 @@ public class WebApplicationBuilderExtensionsTests
         [Test]
         public void It_registers_the_mssql_relational_token_info_lookup()
         {
-            using var serviceProvider = CreateServices(
-                "mssql",
-                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
-            );
+            using var serviceProvider = CreateServices("mssql");
             using var scope = serviceProvider.CreateScope();
-
-            scope.ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>().Should().BeEmpty();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
@@ -394,6 +341,19 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Should()
                 .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
+        }
+
+        [Test]
+        public void It_replaces_the_core_backend_mapping_initializer_with_the_relational_initializer()
+        {
+            using var serviceProvider = CreateServices("mssql");
+
+            serviceProvider
+                .GetServices<IBackendMappingInitializer>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalBackendMappingInitializer>();
         }
     }
 }

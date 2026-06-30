@@ -10,9 +10,7 @@
 > building production deployments. This reference architecture will not be tuned
 > for real-world production usage. For example, it will not include service
 > clustering, may not be well secured, and it will not utilize cloud providers'
-> manage services. Also see [Debezium Connector for
-> PostgreSQL](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html)
-> for additional notes on securely configuring replication.
+> managed services.
 
 ## Starting Services with Docker Compose
 
@@ -30,40 +28,15 @@ start up different configurations:
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
 
-After starting the environment, you’ll need to install the Kafka connector
-configuration. The file `setup-connectors.ps1` will do this for you.
+Kafka and Kafka UI compose files remain available for local infrastructure
+testing. Relational DMS CDC/Kafka support is pending a separate implementation,
+so this compose setup does not register DMS source connectors.
 
-> [!IMPORTANT]
-> Register the connector only after DMS has started and deployed the schema.
-> The Debezium PostgreSQL source connector snapshots `dms.document` the moment it
-> is registered, so registering it against a missing or empty table leaves the
-> connector silently not streaming changes. The `start-local-dms.ps1` and
-> `start-published-dms.ps1` scripts already defer connector registration until
-> after schema provisioning. For the `start-all-services.ps1` local-debugger
-> workflow you must run it yourself once DMS is up (see below).
+Convenience PowerShell scripts have been included in the directory, which start
+the appropriate services.
 
-```pwsh
-./setup-connectors.ps1
-```
-
-> [!NOTE]
-> `setup-connectors.ps1` waits for the Kafka Connect REST API to become
-> available, replaces any existing connector, and then verifies the connector and
-> all of its tasks reach the `RUNNING` state before returning. A failed
-> registration is reported as an error rather than as silent success, and a
-> not-yet-present connector on first run is handled without surfacing a spurious
-> 404.
-
-Convenience PowerShell scripts have been included in the directory, which
-startup the appropriate services and inject the Kafka connectors (where
-relevant).
-
-* `start-all-services.ps1` launches both `postgresql.yml` and
-  `kafka.yml`, without starting the DMS. Useful for running DMS in a
-  local debugger. Because the DMS schema does not exist until you start DMS
-  from your debugger, this script does **not** register the Kafka connector;
-  run `./setup-connectors.ps1` yourself after DMS is up and the schema is
-  deployed.
+* `start-all-services.ps1` launches `postgresql.yml`, without starting the DMS.
+  Useful for running DMS in a local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
   services.
 * `start-published-dms.ps1` launches the DMS published build along with all
@@ -90,37 +63,32 @@ also append `-v`. Examples:
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
-When `USE_RELATIONAL_BACKEND=true`, the relational E2E database must be
+When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. Because `provision-relational-e2e-database.ps1`
-provisions inside the running `dms-postgresql` container, the sequence is:
+it can serve requests. The DMS E2E setup wrapper starts infra and CMS, configures
+the CMS data store, provisions the E2E database, then starts DMS:
 
-1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
-   the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
+```pwsh
+../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
+```
 
-   ```pwsh
-   ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
-   ```
+To run the late phases manually after `start-local-dms.ps1 -InfraOnly` has
+already brought up infra and CMS:
 
-2. Run the provisioning script:
+```pwsh
+./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
+./start-local-dms.ps1 -DmsOnly -EnvironmentFile ./.env.e2e -AddExtensionSecurityMetadata
+```
 
-   ```pwsh
-   ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational
-   ```
-
-3. Restart DMS so cached startup-validation state is discarded:
-
-   ```pwsh
-   docker restart ed-fi-api
-   ```
-
-This is the same sequence used by the `E2ETests` build target
-(`build-dms.ps1` → `Initialize-RelationalE2EDatabase`).
+The same E2E provisioning requirement is handled by the `E2ETests` build target
+(`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
-affected data stores return HTTP 503 (Service Unavailable). To recover, run the
-provisioning script and restart DMS as in steps 2 and 3 above.
+affected data stores return HTTP 503 (Service Unavailable). To recover, stop or
+restart the running DMS process after provisioning so it reloads database state.
+The E2E setup wrapper avoids that state by not starting DMS until provisioning is
+complete.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 
@@ -239,11 +207,9 @@ or in-repo schema directories that are not published as NuGet packages.
 ```
 
 As of DMS-1153, `start-local-dms.ps1` is infrastructure-lifecycle-only: it no
-longer creates data stores or provisions the DMS schema, and with a bootstrap
-manifest present it disables startup database provisioning. Running it bare
-after staging leaves the stack without a configured instance or provisioned
-schema. Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases
-manually:
+longer creates data stores or provisions the DMS schema. Running it bare after
+staging leaves the stack without a configured instance or provisioned schema.
+Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases manually:
 
 ```pwsh
 ./start-local-dms.ps1 -InfraOnly
@@ -268,13 +234,9 @@ the full in-repo schema requires `-ClaimsDirectoryPath` with a TPDM
 `*-claimset.json` fragment. For a schema set containing only core, Sample, and
 Homograph, the claims command can be run without `-ClaimsDirectoryPath`.
 
-In bootstrap mode the default Debezium source connector is **not** registered.
-The default connector targets the legacy document-store CDC path
-(`publication.name=to_debezium`, `table.include.list=dms.document,...`), which
-depends on tables and a publication created only by the legacy installer DDL —
-none of which exist in the redesigned relational schema that bootstrap mode
-provisions. Use `-SkipConnectorSetup` when running non-bootstrap harnesses that
-create their own connectors after provisioning (e.g. Instance Management E2E).
+Bootstrap mode provisions the relational DMS schema only. Relational DMS
+CDC/Kafka support is pending a separate implementation, so bootstrap startup
+does not register DMS source connectors.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
@@ -586,98 +548,9 @@ cd eng/docker-compose
 pwsh teardown-local-dms.ps1
 ```
 
-## Kafka Topic-Per-Data-Store Architecture
-
-For E2E testing and production deployments that require strict data isolation,
-DMS supports topic-per-data-store architecture where each data store publishes to
-its own dedicated Kafka topic.
-
-### Overview
-
-**Standard Setup:**
-
-* All data stores → Single topic: `edfi.dms.document`
-
-**Topic-Per-Data-Store Setup:**
-
-* Data store 1 → Topic: `edfi.dms.1.document`
-* Data store 2 → Topic: `edfi.dms.2.document`
-* Data store 3 → Topic: `edfi.dms.3.document`
-
-This architecture is critical for:
-
-* **FERPA Compliance**: Prevents cross-data-store data leakage
-* **Multi-tenant Isolation**: Each tenant/district has isolated message streams
-* **Selective Consumption**: Consumers can subscribe to specific data stores
-
-### Automated Setup for E2E Tests
-
-The Instance Management E2E tests automatically configure topic-per-data-store via the build script:
+## Kafka UI
 
 ```powershell
-.\build-dms.ps1 InstanceE2ETest -Configuration Release
-```
-
-The build script:
-
-1. Creates test databases for each data store
-2. Creates PostgreSQL publications for CDC
-3. Configures data-store-specific Debezium connectors
-4. Runs E2E tests with Kafka validation
-
-### Manual Setup for Development
-
-#### 1. Create PostgreSQL Publications
-
-Each data store database needs its own publication for Debezium:
-
-```powershell
-# Data store 1
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_datastore_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
-
-# Data store 2
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_datastore_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
-
-# Data store 3
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_datastore_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
-```
-
-#### 2. Configure Debezium Connectors
-
-Use the automated setup script (from `eng/docker-compose` directory):
-
-```powershell
-$dataStores = @(
-    @{ DataStoreId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
-    @{ DataStoreId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
-    @{ DataStoreId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
-)
-
-.\setup-data-store-kafka-connectors.ps1 -DataStores $dataStores
-```
-
-This creates separate Debezium connectors with data-store-specific topics.
-
-#### 3. Verify Topics Were Created
-
-```powershell
-docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
-# Should show: edfi.dms.1.document, edfi.dms.2.document, edfi.dms.3.document
-```
-
-### Files
-
-* **`data_store_connector_template.json`**: Template for data-store-specific Debezium connectors
-* **`setup-data-store-kafka-connectors.ps1`**: Automated script to deploy connectors
-* **`postgresql_connector.json`**: Standard single-topic connector (for reference)
-
-### Monitoring
-
-```powershell
-# Check connector status
-curl http://localhost:8083/connectors/postgresql-source-datastore-1/status
-
-# View messages in Kafka UI
 # Open http://localhost:8088
 ```
 

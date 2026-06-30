@@ -32,7 +32,6 @@
 #    "AppSettings": {
 #        "AuthenticationService": "http://localhost:8045/realms/edfi/protocol/openid-connect/token",
 #        "Datastore": "postgresql",
-#        "DeployDatabaseOnStartup": true,
 #        "BypassTypeCoercion": "false",
 #        "CorrelationIdHeader": "",
 #        "AllowIdentityUpdateOverrides": "",
@@ -56,10 +55,8 @@
 #    "ConnectionStrings": {
 #        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 #    },
-# 7. After DMS has started and deployed its schema, register the Kafka source connector. The Debezium
-#    PostgreSQL source connector snapshots `dms.document` on registration, so it must run only after
-#    the schema exists - `start-all-services.ps1` deliberately does not register it. In
-#    `eng/docker-compose`, run: `./setup-connectors.ps1`
+# 7. Relational DMS CDC/Kafka support is pending a separate implementation; there is no DMS source
+#    connector registration step for this setup.
 # 8. Run these steps from top to bottom.
 
 @configPort=5126

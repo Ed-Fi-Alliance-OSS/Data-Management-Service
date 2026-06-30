@@ -27,42 +27,6 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ProfileCollectionAl
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 internal sealed class MssqlProfileCollectionAlignedExtensionProjectionInvoker(
     ImmutableArray<StoredParentRow> storedParentRows,
     ImmutableArray<StoredAlignedScope> storedAlignedScopes,
@@ -195,11 +159,7 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -238,10 +198,6 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 
@@ -281,10 +237,6 @@ internal static class MssqlProfileCollectionAlignedExtensionSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileCollectionAlignedExtensionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileCollectionAlignedExtensionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 

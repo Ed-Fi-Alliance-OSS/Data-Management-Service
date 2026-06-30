@@ -5,9 +5,9 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -15,60 +15,14 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-internal sealed class UpdateSemanticsNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-internal sealed class UpdateSemanticsAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-internal sealed class UpdateSemanticsNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 internal sealed record UpdateSemanticsDocumentRow(
     long DocumentId,
@@ -169,9 +123,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002")
@@ -343,11 +295,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             EdfiDoc: JsonNode.Parse(CreateRequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("pg-update-semantics-create"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new UpdateSemanticsAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
     private UpdateRequest CreateUpdateRequest() =>
@@ -358,11 +306,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             EdfiDoc: JsonNode.Parse(UpdateRequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("pg-update-semantics-update"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new UpdateSemanticsNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new UpdateSemanticsAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
     private static DocumentInfo CreateDocumentInfo()
@@ -385,7 +329,6 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, UpdateSemanticsNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

@@ -6,6 +6,7 @@
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -14,11 +15,9 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -37,50 +36,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // database fixture but each rebuild their own service provider with the opposite Enabled
 // value for the link-injection options. The first test captures its etag in a static
 // field; the second test asserts equality.
-
-file sealed class ResourceLinksFlagHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ResourceLinksFlagAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ResourceLinksFlagNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 [TestFixture]
 [NonParallelizable]
@@ -226,7 +181,6 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ResourceLinksFlagHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -300,9 +254,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -373,11 +325,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-31-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ResourceLinksFlagAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -403,11 +351,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-31-seed-academicweek"),
-            DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ResourceLinksFlagNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ResourceLinksFlagAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: AcademicWeekDocumentUuid
         );
 
         return await scope
@@ -425,7 +369,6 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

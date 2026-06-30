@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Startup;
 
@@ -14,7 +12,6 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Validates that relational resource key validation has a concrete backend reader.
 /// </summary>
 internal sealed class ValidateResourceKeyRowReaderRegistrationTask(
-    IOptions<AppSettings> appSettings,
     IResourceKeyRowReader resourceKeyRowReader,
     ILogger<ValidateResourceKeyRowReaderRegistrationTask> logger
 ) : IDmsStartupTask
@@ -26,15 +23,6 @@ internal sealed class ValidateResourceKeyRowReaderRegistrationTask(
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            logger.LogDebug(
-                "Skipping resource key row reader registration validation because UseRelationalBackend is disabled"
-            );
-
-            return Task.CompletedTask;
-        }
 
         if (resourceKeyRowReader is MissingResourceKeyRowReader)
         {

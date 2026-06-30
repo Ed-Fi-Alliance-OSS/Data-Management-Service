@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -25,41 +24,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
-
-file sealed class MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlSurveyRuntimeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 file static class MssqlSurveyRuntimeIntegrationTestSupport
 {
@@ -123,9 +87,7 @@ file static class MssqlSurveyRuntimeIntegrationTestSupport
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     public static DocumentInfo CreateDocumentInfo(
@@ -476,11 +438,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope
@@ -506,11 +464,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: SurveyDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SurveyDocumentUuid
         );
 
         return await scope
@@ -527,7 +481,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId)
         );

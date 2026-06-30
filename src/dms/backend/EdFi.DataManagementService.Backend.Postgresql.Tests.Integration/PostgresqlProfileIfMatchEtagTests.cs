@@ -6,6 +6,7 @@
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -13,59 +14,13 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class PostgresqlProfileIfMatchHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class PostgresqlProfileIfMatchNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 file static class PostgresqlProfileIfMatchEtagTestSupport
 {
@@ -90,7 +45,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, PostgresqlProfileIfMatchHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -167,7 +121,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
             AuthorizationContext: new RelationalAuthorizationContext([]),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -194,9 +147,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: PostgresqlProfileRootTableOnlyMergeSupport
-                .NamingStressItemResourceInfo
-                .AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: MaximumPageSize,
@@ -256,10 +206,6 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: CreateWritableProfileContext(mappingSet, requestBody)
         );
 
@@ -290,11 +236,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlProfileIfMatchNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope

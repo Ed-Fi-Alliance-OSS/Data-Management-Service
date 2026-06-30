@@ -18,12 +18,11 @@ public sealed record IntegrationRelationalGetRequest(
     DocumentUuid DocumentUuid,
     BaseResourceInfo ResourceInfo,
     MappingSet MappingSet,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-) : IRelationalGetRequest
+) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;
 

@@ -1,6 +1,7 @@
 # Instance Routing Manual Test
 # Run ./build-dms.ps1 InstanceE2ETest first to set up the environment
-# This will test that data routes to the correct instance databases and Kafka topics
+# This will test that data routes to the correct instance databases.
+# Relational DMS CDC/Kafka support is pending a separate implementation.
 
 @dmsUrl = http://localhost:8080
 @configUrl = http://localhost:8081
@@ -252,7 +253,6 @@ grant_type=client_credentials
 ###############################################################################
 # STEP 8: Post to Instance 1 (districtId=255901, schoolYear=2024)
 # Expected: Data in edfi_datamanagementservice_d255901_sy2024
-# Expected: Kafka messages in edfi.dms.1.document
 ###############################################################################
 
 ### POST ContentClassDescriptor to Instance 1
@@ -282,7 +282,6 @@ Authorization: Bearer {{accessToken}}
 ###############################################################################
 # STEP 9: Post to Instance 2 (districtId=255901, schoolYear=2025)
 # Expected: Data in edfi_datamanagementservice_d255901_sy2025
-# Expected: Kafka messages in edfi.dms.2.document
 ###############################################################################
 
 ### POST ContentClassDescriptor to Instance 2
@@ -312,7 +311,6 @@ Authorization: Bearer {{accessToken}}
 ###############################################################################
 # STEP 10: Post to Instance 3 (districtId=255902, schoolYear=2024)
 # Expected: Data in edfi_datamanagementservice_d255902_sy2024
-# Expected: Kafka messages in edfi.dms.3.document
 ###############################################################################
 
 ### POST ContentClassDescriptor to Instance 3
@@ -343,18 +341,10 @@ Authorization: Bearer {{accessToken}}
 # VERIFICATION COMMANDS (run in PowerShell)
 ###############################################################################
 
-# Check document counts in each database:
-# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as instance1_count FROM dms.document;"
-# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "SELECT COUNT(*) as instance2_count FROM dms.document;"
-# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "SELECT COUNT(*) as instance3_count FROM dms.document;"
-
-# Main database should have 0 new documents:
-# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -c "SELECT COUNT(*) as main_db_count FROM dms.document;"
-
-# Check Kafka topics at http://localhost:8090
-# - edfi.dms.1.document should have messages
-# - edfi.dms.2.document should have messages
-# - edfi.dms.3.document should have messages
+# Check descriptor rows in each routed database:
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) AS instance1_count FROM dms.\"Descriptor\" WHERE \"Namespace\" = 'uri://ed-fi.org/ContentClassDescriptor' AND \"CodeValue\" = 'Presentation-Instance1';"
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "SELECT COUNT(*) AS instance2_count FROM dms.\"Descriptor\" WHERE \"Namespace\" = 'uri://ed-fi.org/ContentClassDescriptor' AND \"CodeValue\" = 'Testing-Instance2';"
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "SELECT COUNT(*) AS instance3_count FROM dms.\"Descriptor\" WHERE \"Namespace\" = 'uri://ed-fi.org/ContentClassDescriptor' AND \"CodeValue\" = 'Assignment-Instance3';"
 
 ###############################################################################
 # CLEANUP

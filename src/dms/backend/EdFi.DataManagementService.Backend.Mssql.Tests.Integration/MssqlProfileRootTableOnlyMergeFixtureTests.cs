@@ -32,42 +32,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 /// <summary>
 /// MSSQL-flavored projection invoker; emits the root scope plus the inlined
 /// non-collection scopes used by the ProfileRootOnlyMergeItem fixture:
@@ -155,9 +119,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         ResourceName: new ResourceName("ProfileRootOnlyMergeItem"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private static readonly (string JsonScope, ScopeKind Kind) ProfileScopeInlinedScope = (
@@ -306,11 +268,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -746,10 +704,6 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Roo
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-hidden-inlined-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -888,10 +842,6 @@ public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-visible-absent-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1069,10 +1019,6 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-hidden-sub-ref-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -1236,10 +1182,6 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
             Headers: [],
             TraceId: new TraceId("mssql-profile-root-only-ku-agreement-put"),
             DocumentUuid: new DocumentUuid(ItemDocumentUuid),
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

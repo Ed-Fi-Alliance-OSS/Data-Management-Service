@@ -10,6 +10,11 @@ namespace EdFi.DataManagementService.Tests.Unit;
 [TestFixture]
 public class Given_E2E_Feature_File_Guardrails
 {
+    private const string E2EShardTagPrefix = "@e2e-ci-shard-";
+    private const string StandardVersionTagPrefix = "@StandardVersion-";
+    private static readonly string RemovedBackendLaneTag = "@relational-" + "backend";
+    private static readonly string RemovedRelationalShardTagPrefix = "@relational-" + "ci-shard-";
+
     private DirectoryInfo _repositoryRoot = null!;
     private DirectoryInfo _dmsFeaturesDirectory = null!;
     private DirectoryInfo _instanceManagementFeaturesDirectory = null!;
@@ -41,7 +46,7 @@ public class Given_E2E_Feature_File_Guardrails
     }
 
     [Test]
-    public void It_does_not_mix_fake_background_scenarios_with_relational_tags_in_the_same_feature_file()
+    public void It_does_not_use_removed_relational_backend_lane_tags()
     {
         string[] offendingFeatureFiles =
         [
@@ -53,9 +58,9 @@ public class Given_E2E_Feature_File_Guardrails
                     Contents = File.ReadAllText(featureFile.FullName),
                 })
                 .Where(featureFile =>
-                    featureFile.Contents.Contains("Scenario: 00 Background", StringComparison.Ordinal)
-                    && featureFile.Contents.Contains(
-                        "@relational-backend",
+                    featureFile.Contents.Contains(RemovedBackendLaneTag, StringComparison.OrdinalIgnoreCase)
+                    || featureFile.Contents.Contains(
+                        RemovedRelationalShardTagPrefix,
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
@@ -64,25 +69,21 @@ public class Given_E2E_Feature_File_Guardrails
 
         offendingFeatureFiles
             .Should()
-            .BeEmpty(
-                "relational-tagged scenarios run under category filters, so fake seed scenarios in the same feature are skipped"
-            );
+            .BeEmpty("DMS E2E scenarios all run on the single backend path and use neutral shard tags");
     }
 
     [Test]
-    public void It_assigns_exactly_one_relational_ci_shard_tag_to_every_sharded_relational_backend_scenario()
+    public void It_assigns_exactly_one_e2e_ci_shard_tag_to_every_default_version_dms_scenario()
     {
         string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
-            .Where(s => s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase))
             // Version-coupled scenarios (@StandardVersion-<NN>) run in a dedicated per-version E2E lane
             // that filters on the version tag, not in the sharded default-version lane, so they carry
             // no shard tag and are exempt from the shard-balance rule.
             .Where(s =>
-                !s.Tags.Any(t => t.StartsWith("@StandardVersion-", StringComparison.OrdinalIgnoreCase))
+                !s.Tags.Any(t => t.StartsWith(StandardVersionTagPrefix, StringComparison.OrdinalIgnoreCase))
             )
             .Where(s =>
-                s.Tags.Count(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
-                != 1
+                s.Tags.Count(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)) != 1
             )
             .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
             .ToArray();
@@ -90,57 +91,38 @@ public class Given_E2E_Feature_File_Guardrails
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each sharded @relational-backend scenario must carry exactly one @relational-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN> scenarios run in their own lane and are exempt)"
+                "each default-version DMS E2E scenario must carry exactly one @e2e-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN> scenarios run in their own lane and are exempt)"
             );
     }
 
     [Test]
-    public void It_runs_every_version_coupled_relational_scenario_in_its_own_lane_without_a_shard_tag()
+    public void It_runs_every_version_coupled_dms_scenario_in_its_own_lane_without_a_shard_tag()
     {
-        // A @StandardVersion-<NN> scenario is run by a dedicated per-version relational E2E job that
-        // filters on the version tag (e.g. run-e2e-tests-ds61 in on-dms-pullrequest.yml). It must be in
-        // the relational lane (@relational-backend) and must NOT also carry a shard tag, or it would run
-        // twice — once in its version lane and again in a default-version shard.
+        // A @StandardVersion-<NN> scenario is run by a dedicated per-version E2E job that filters on
+        // the version tag (e.g. run-e2e-tests-ds61 in on-dms-pullrequest.yml). It must not also carry
+        // a shard tag, or it would run twice: once in its version lane and again in a default-version
+        // shard.
         string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .Where(s =>
-                s.Tags.Any(t => t.StartsWith("@StandardVersion-", StringComparison.OrdinalIgnoreCase))
+                s.Tags.Any(t => t.StartsWith(StandardVersionTagPrefix, StringComparison.OrdinalIgnoreCase))
             )
-            .Where(s =>
-                !s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase)
-                || s.Tags.Any(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
-            )
+            .Where(s => s.Tags.Any(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)))
             .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
             .ToArray();
 
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each @StandardVersion-<NN> scenario must be in the relational lane (@relational-backend) and carry no @relational-ci-shard-N tag, since it runs in its own version-coupled lane"
+                "each @StandardVersion-<NN> scenario must carry no @e2e-ci-shard-N tag, since it runs in its own version-coupled lane"
             );
     }
 
     [Test]
-    public void It_never_applies_a_relational_ci_shard_tag_outside_the_relational_lane()
-    {
-        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
-            .Where(s =>
-                s.Tags.Any(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
-            )
-            .Where(s => !s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase))
-            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
-            .ToArray();
-
-        offendingScenarios
-            .Should()
-            .BeEmpty("@relational-ci-shard-N tags belong only to scenarios in the relational lane");
-    }
-
-    [Test]
-    public void It_only_uses_relational_ci_shard_numbers_in_the_supported_range()
+    public void It_only_uses_e2e_ci_shard_numbers_in_the_supported_range()
     {
         string[] offendingTags = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .SelectMany(s =>
-                s.Tags.Where(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
+                s.Tags.Where(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase))
                     .Select(t => new
                     {
                         s.RelativePath,
@@ -150,7 +132,7 @@ public class Given_E2E_Feature_File_Guardrails
             )
             .Where(x =>
             {
-                string suffix = x.Tag.Substring("@relational-ci-shard-".Length);
+                string suffix = x.Tag.Substring(E2EShardTagPrefix.Length);
                 return !int.TryParse(suffix, out int n) || n < 1 || n > 4;
             })
             .Select(x => $"{x.RelativePath}:{x.LineNumber} ({x.Tag})")

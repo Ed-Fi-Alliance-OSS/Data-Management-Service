@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
@@ -23,10 +22,9 @@ internal record UpsertRequest(
     /// </summary>
     DocumentInfo DocumentInfo,
     /// <summary>
-    /// The resolved runtime mapping set for the active request when relational
-    /// request handling is enabled.
+    /// The resolved runtime mapping set for the active relational request.
     /// </summary>
-    MappingSet? MappingSet,
+    MappingSet MappingSet,
     /// <summary>
     /// The EdfiDoc of the document to upsert, as a JsonNode
     /// </summary>
@@ -45,25 +43,6 @@ internal record UpsertRequest(
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
-    /// The security elements extracted from the document
-    /// </summary>
-    DocumentSecurityElements DocumentSecurityElements,
-    /// <summary>
-    /// This class will modify the EdFiDoc of a referencing
-    /// resource when the referenced resource's identifying
-    /// values are modified
-    /// </summary>
-    IUpdateCascadeHandler UpdateCascadeHandler,
-    /// <summary>
-    /// The backend should use this handler to determine whether
-    /// the client is authorized to get the document
-    /// </summary>
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    /// <summary>
-    /// The AuthorizationPathways the resource is part of.
-    /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
-    /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// </summary>
     BackendProfileWriteContext? BackendProfileWriteContext = null
@@ -76,10 +55,6 @@ internal record UpsertRequest(
         Headers,
         TraceId,
         DocumentUuid,
-        DocumentSecurityElements,
-        UpdateCascadeHandler,
-        ResourceAuthorizationHandler,
-        ResourceAuthorizationPathways,
         BackendProfileWriteContext
     ),
-        IRelationalUpsertRequest;
+        IUpsertRequest;

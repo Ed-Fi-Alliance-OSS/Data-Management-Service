@@ -1,0 +1,361 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Startup;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
+
+[TestFixture]
+[Parallelizable]
+public class ValidateDatabaseFingerprintMiddlewareTests
+{
+    internal static (
+        ValidateDatabaseFingerprintMiddleware middleware,
+        IDatabaseFingerprintReader fingerprintReader,
+        IDataStoreSelection dataStoreSelection,
+        IServiceProvider serviceProvider
+    ) CreateMiddleware()
+    {
+        var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
+        var logger = A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>();
+        var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+        // Default schema set with hash "abc123" to match test fingerprints
+        A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
+            .Returns(
+                new EffectiveSchemaSet(
+                    new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                    []
+                )
+            );
+
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
+
+        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+        var middleware = new ValidateDatabaseFingerprintMiddleware(
+            fingerprintProvider,
+            effectiveSchemaSetProvider,
+            logger
+        );
+
+        return (middleware, fingerprintReader, dataStoreSelection, serviceProvider);
+    }
+
+    private static RequestInfo CreateRequestInfoWithAuthorizations(
+        IServiceProvider? scopedServiceProvider = null
+    )
+    {
+        var frontendRequest = new FrontendRequest(
+            Path: "/ed-fi/students",
+            Body: null,
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId("test-trace-id"),
+            RouteQualifiers: []
+        );
+
+        return new RequestInfo(
+            frontendRequest,
+            RequestMethod.GET,
+            scopedServiceProvider ?? No.ServiceProvider
+        )
+        {
+            ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token123",
+                ClientId: "client123",
+                ClaimSetName: "test",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: [],
+                DataStoreIds: [new DataStoreId(1)]
+            ),
+        };
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Is_Returned : ValidateDatabaseFingerprintMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: "Server=test;Database=testdb",
+                        RouteContext: []
+                    )
+                );
+
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+                .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray()));
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_sets_database_fingerprint_on_request_info()
+        {
+            _requestInfo.DatabaseFingerprint.Should().NotBeNull();
+            _requestInfo.DatabaseFingerprint!.EffectiveSchemaHash.Should().Be("abc123");
+        }
+
+        [Test]
+        public void It_does_not_set_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Is_Null : ValidateDatabaseFingerprintMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: "Server=test;Database=unprovisioned",
+                        RouteContext: []
+                    )
+                );
+
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=unprovisioned"))
+                .Returns((DatabaseFingerprint?)null);
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_does_not_set_database_fingerprint()
+        {
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_error_body_with_provisioning_guidance()
+        {
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("ddl provision");
+        }
+
+        [Test]
+        public void It_returns_error_body_with_restart_guidance()
+        {
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("restart the Ed-Fi API service");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Selected_Instance_Has_No_Connection_String : ValidateDatabaseFingerprintMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
+            _fingerprintReader = fingerprintReader;
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: null,
+                        RouteContext: []
+                    )
+                );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_interact_with_the_fingerprint_reader()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_a_service_configuration_error()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Service Configuration Error");
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Database connection not configured");
+        }
+
+        [Test]
+        public void It_does_not_set_database_fingerprint()
+        {
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Reader_Fails : ValidateDatabaseFingerprintMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var dataStoreSelection = A.Fake<IDataStoreSelection>();
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: "Server=test;Database=testdb",
+                        RouteContext: []
+                    )
+                );
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection)))
+                .Returns(dataStoreSelection);
+
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet)
+                .Returns(
+                    new EffectiveSchemaSet(
+                        new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                        []
+                    )
+                );
+
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+                .Throws(
+                    new InvalidOperationException("No dialect-specific fingerprint reader is registered.")
+                );
+
+            var middleware = new ValidateDatabaseFingerprintMiddleware(
+                new DatabaseFingerprintProvider(fingerprintReader),
+                schemaSetProvider,
+                A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>()
+            );
+
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            _execute = () => middleware.Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public async Task It_returns_503_service_unavailable()
+        {
+            await _execute();
+
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public async Task It_does_not_set_database_fingerprint()
+        {
+            await _execute();
+
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+    }
+}

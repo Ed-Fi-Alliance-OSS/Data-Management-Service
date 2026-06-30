@@ -73,7 +73,6 @@ public class ApiServiceOpenApiTests
             Options.Create(
                 new AppSettings { AllowIdentityUpdateOverrides = "", AuthenticationService = TokenUrl }
             ),
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             new ServiceCollection().BuildServiceProvider(),

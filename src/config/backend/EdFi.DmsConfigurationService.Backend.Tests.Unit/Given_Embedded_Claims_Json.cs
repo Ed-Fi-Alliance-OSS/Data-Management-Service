@@ -25,7 +25,7 @@ public class Given_Embedded_Claims_Json
     // Resource claims whose SeedLoader Create grant declares an explicit
     // NoFurtherAuthorizationRequired override because the inherited authorization chain does not
     // cover Create. The canonical example is schoolYearType: the parent edFiTypes
-    // defaultAuthorization only defines Read, so the SeedLoader Application would otherwise see
+    // defaultAuthorization does not define Create, so the SeedLoader Application would otherwise see
     // zero strategies on Create and 403 the Story-02 REST precondition POST. See
     // bootstrap-design.md §7.2 "schoolYearType override" for the design rationale.
     private static readonly HashSet<string> SeedLoaderCreateOverrideExceptions = new(StringComparer.Ordinal)
@@ -203,6 +203,82 @@ public class Given_Embedded_Claims_Json
         }
     }
 
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public async Task It_projects_smoke_ReadChanges_claim_metadata(string standardFolder)
+    {
+        const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
+        const string relationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
+        const string relationshipsWithEdOrgsAndPeopleIncludingDeletes =
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes";
+
+        _claims = LoadEmbeddedClaims(standardFolder);
+        var metadata = await CreateClaimSetMetadata("EdFiSandbox");
+
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("schoolYearType"),
+            "ReadChanges",
+            noFurtherAuthorizationRequired
+        );
+
+        foreach (
+            var financeClaimName in new[]
+            {
+                "chartOfAccount",
+                "localAccount",
+                "localActual",
+                "localBudget",
+                "localContractedStaff",
+                "localEncumbrance",
+                "localPayroll",
+            }.Select(EdFiClaim)
+        )
+        {
+            AssertActionStrategies(
+                metadata,
+                financeClaimName,
+                "ReadChanges",
+                relationshipsWithEdOrgsAndPeopleIncludingDeletes
+            );
+        }
+
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentHealth"),
+            "ReadChanges",
+            relationshipsWithEdOrgsAndPeopleIncludingDeletes
+        );
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentHealth"),
+            "Read",
+            relationshipsWithEdOrgsAndPeople
+        );
+
+        if (standardFolder == "ds61")
+        {
+            foreach (
+                var specialEducationClaimName in new[]
+                {
+                    "IDEAEvent",
+                    "StudentIEP",
+                    "StudentIEPGoal",
+                    "StudentIEPServiceDelivery",
+                    "StudentIEPServicePrescription",
+                }.Select(EdFiClaim)
+            )
+            {
+                AssertActionStrategies(
+                    metadata,
+                    specialEducationClaimName,
+                    "ReadChanges",
+                    relationshipsWithEdOrgsAndPeopleIncludingDeletes
+                );
+            }
+        }
+    }
+
     [TestCaseSource(nameof(SeedLoaderInventorySource))]
     public void It_grants_SeedLoader_Create_with_inherited_authorization(string resourceClaimUri)
     {
@@ -229,7 +305,7 @@ public class Given_Embedded_Claims_Json
                 .BeTrue(
                     $"SeedLoader Create on '{resourceClaimUri}' must declare an explicit "
                         + "authorizationStrategyOverrides entry because the inherited authorization chain "
-                        + "does not cover Create (e.g. edFiTypes defaultAuthorization defines only Read for "
+                        + "does not cover Create (e.g. edFiTypes defaultAuthorization does not define Create for "
                         + "closed-XSD-enum types); see bootstrap-design.md §7.2 'schoolYearType override'"
                 );
         }

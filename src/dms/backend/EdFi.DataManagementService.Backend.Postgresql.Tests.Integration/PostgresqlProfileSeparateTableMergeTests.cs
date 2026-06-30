@@ -37,6 +37,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -45,60 +46,13 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class ProfileSeparateTableMergeNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ProfileSeparateTableMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 /// <summary>
 /// Test-configurable <see cref="IStoredStateProjectionInvoker"/> for Slice 3 separate-table
@@ -180,9 +134,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
         ResourceName: new ResourceName("ProfileSeparateTableMergeItem"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public const string ExtScopeAddress = "$._ext.sample";
@@ -190,10 +142,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
-        services.AddSingleton<
-            IHostApplicationLifetime,
-            ProfileSeparateTableMergeNoOpHostApplicationLifetime
-        >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -318,11 +266,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -359,10 +303,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -400,10 +340,6 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileSeparateTableMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileSeparateTableMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

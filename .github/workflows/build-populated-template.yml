@@ -29,16 +29,11 @@ on:
         required: false
         type: boolean
         default: true
-      use_relational_backend:
-        description: "Build the populated template from a DMS stack running the relational backend"
-        required: false
-        type: boolean
-        default: false
       environment_file:
         description: "Docker compose environment file used to start/provision the stack"
         required: false
         type: string
-        default: "./.env.e2e"
+        default: "./.env.template"
       verify_restore:
         description: "Run template package restore verification"
         required: false
@@ -55,6 +50,8 @@ on:
       AZURE_ARTIFACTS_USER_NAME:
         # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
         # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
+        required: false
+      SLACK_WEBHOOK_URL:
         required: false
     outputs:
       hash-code:
@@ -93,22 +90,21 @@ jobs:
     steps:
       - name: Validate workflow inputs
         run: |
-          $useRelationalBackend = [bool]::Parse('${{ inputs.use_relational_backend }}')
           $verifyRestore = [bool]::Parse('${{ inputs.verify_restore }}')
           $requirePopulatedData = [bool]::Parse('${{ inputs.require_populated_data }}')
           $publishPackage = [bool]::Parse('${{ inputs.publish_package }}')
           $environmentFile = '${{ inputs.environment_file }}'
           $packageName = '${{ inputs.package_name }}'
 
-          $relationalEnvFiles = @('./.env.template.relational', './.env.template.relational.ds61', './.env.smoke.relational', './.env.smoke.relational.ds61')
-          if ($useRelationalBackend -and $environmentFile -notin $relationalEnvFiles) {
-            throw "use_relational_backend requires environment_file to be one of: $($relationalEnvFiles -join ', '); got '$environmentFile'."
+          $templateEnvFiles = @('./.env.template', './.env.template.ds61', './.env.smoke', './.env.smoke.ds61')
+          if ($environmentFile -notin $templateEnvFiles) {
+            throw "environment_file must be one of: $($templateEnvFiles -join ', '); got '$environmentFile'."
           }
 
           # The smoke surface (Core+[TPDM]+Sample+Homograph) is an in-run smoke artifact only. It
           # must never publish under the product template contract, and must not reuse a product
           # package name.
-          $smokeEnvFiles = @('./.env.smoke.relational', './.env.smoke.relational.ds61')
+          $smokeEnvFiles = @('./.env.smoke', './.env.smoke.ds61')
           if ($environmentFile -in $smokeEnvFiles) {
             if ($publishPackage) {
               throw "environment_file '$environmentFile' is smoke-only and must not be published; set publish_package to false."
@@ -120,9 +116,6 @@ jobs:
 
           if ($requirePopulatedData -and -not $verifyRestore) {
             throw "require_populated_data requires verify_restore."
-          }
-          if ($verifyRestore -and -not $useRelationalBackend) {
-            throw "verify_restore requires use_relational_backend; verification compares the restored package against the relational source database."
           }
 
       - name: Checkout the repo
@@ -138,21 +131,19 @@ jobs:
           ref: v${{ inputs.standard_version }} # Added v prefix to match the tag format
 
       - name: Setup dotnet
-        if: ${{ inputs.use_relational_backend }}
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
 
-      - name: Resolve relational database name
-        if: ${{ inputs.use_relational_backend }}
+      - name: Resolve template database name
         run: |
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
-          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
-          if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-            throw "RELATIONAL_E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
+          $templateDatabaseName = [string]$envValues["E2E_DATABASE_NAME"]
+          if ([string]::IsNullOrWhiteSpace($templateDatabaseName)) {
+            throw "E2E_DATABASE_NAME must be set in ${{ inputs.environment_file }}"
           }
-          "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TEMPLATE_DB_NAME=$templateDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
       - name: Set up Docker Buildx
@@ -185,74 +176,40 @@ jobs:
           Import-Module ./package-helpers.psm1
           Get-VersionNumber -projectPrefix "dms" # Match the DMS version
 
-      - name: Start DMS Docker
-        if: ${{ !inputs.use_relational_backend }}
-        run: |
-          $env:USE_API_SCHEMA_PATH="false"
-          $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -enableConfig
-        working-directory: eng/docker-compose/
-
-      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the
-      # claims-ready gate does not apply, and DMS fails fatally at startup when CMS has no data
-      # stores; no data store is created by default. This non-relational path uses
-      # USE_API_SCHEMA_PATH=false (DLL-backed runtime loading).
-      - name: Register non-relational data store
-        if: ${{ !inputs.use_relational_backend }}
-        run: |
-          Import-Module ../Dms-Management.psm1 -Force
-          Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
-          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
-          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -Name "Non-Relational Template Data Store" -DataStoreType "Template"
-          if (-not $dataStoreId) {
-            throw "Failed to register the non-relational data store."
-          }
-        working-directory: eng/docker-compose/
-
-      - name: Restart DMS to load the provisioned non-relational data store
-        if: ${{ !inputs.use_relational_backend }}
-        run: |
-          docker restart ed-fi-api
-
-      - name: Start DMS Docker (relational backend)
-        if: ${{ inputs.use_relational_backend }}
+      - name: Start DMS infrastructure
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -InfraOnly
         working-directory: eng/docker-compose/
 
-      - name: Provision relational database
-        if: ${{ inputs.use_relational_backend }}
-        run: |
-          ./provision-relational-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
-        working-directory: eng/docker-compose/
-
-      # DMS fails fatally at startup when the Configuration Service has no data stores.
-      # No data store is created by default; register the single relational data store here
-      # and hand its id forward; the Configuration Service protects data store connection
+      # No data store is created by default; register the template data store before
+      # DMS starts and hand its id forward. The Configuration Service protects connection
       # strings in API responses, so the id from registration is the only reliable way to
       # select this data store later.
-      - name: Register relational data store
-        if: ${{ inputs.use_relational_backend }}
+      - name: Register template data store
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:TEMPLATE_DB_NAME -Name "Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
-            throw "Failed to register the relational data store."
+            throw "Failed to register the template data store."
           }
-          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TEMPLATE_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
-      - name: Restart DMS to load the provisioned relational schema
-        if: ${{ inputs.use_relational_backend }}
+      - name: Provision template database
         run: |
-          docker restart ed-fi-api
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+        working-directory: eng/docker-compose/
+
+      - name: Start DMS Docker
+        run: |
+          $env:LOG_LEVEL="Warning"
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -DmsOnly
+        working-directory: eng/docker-compose/
 
       - name: Wait for DMS to be ready
         run: |
@@ -282,29 +239,6 @@ jobs:
           }
 
       - name: Generate Populated Template package
-        if: ${{ !inputs.use_relational_backend }}
-        run: |
-          Import-Module ./Template-Management.psm1 -Force
-
-          # Generate unique application name for this run
-          $uniqueAppName = "Demo application ${{ github.run_id }}"
-
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
-          Build-Template `
-                  -TemplateType Populated `
-                  -DmsUrl 'http://localhost:8080' `
-                  -CmsUrl 'http://localhost:8081' `
-                  -MinimalSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Descriptors' `
-                  -PopulatedSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Samples/Sample XML' `
-                  -Extension 'ed-fi'`
-                  -ConfigFilePath './PopulatedTemplateSettings.psd1' `
-                  -StandardVersion '${{ inputs.standard_version }}'`
-                  -PackageVersion $packageVersion `
-                  -ApplicationName $uniqueAppName
-        working-directory: eng/DatabaseTemplates/
-
-      - name: Generate Populated Template package (relational backend)
-        if: ${{ inputs.use_relational_backend }}
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
@@ -323,15 +257,15 @@ jobs:
                   -StandardVersion '${{ inputs.standard_version }}' `
                   -PackageVersion $packageVersion `
                   -ApplicationName $uniqueAppName `
-                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
-                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
+                  -DataStoreDatabaseName $env:TEMPLATE_DB_NAME `
+                  -DataStoreId $env:TEMPLATE_DATA_STORE_ID `
                   -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 
       - name: Verify template package restore
         if: ${{ inputs.verify_restore }}
         run: |
-          $verifyParams = @{ SourceDatabaseName = $env:RELATIONAL_DB_NAME }
+          $verifyParams = @{ SourceDatabaseName = $env:TEMPLATE_DB_NAME }
           if ([bool]::Parse('${{ inputs.require_populated_data }}')) {
             $verifyParams.RequirePopulatedData = $true
           }
@@ -435,8 +369,8 @@ jobs:
         shell: bash
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
-          sbom_hash=$(sha256sum ./${{ inputs.manifest_file }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          sbom_hash=$(sha256sum "./${{ inputs.manifest_file }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   generate-package-provenance:
     name: Create DMS Provenance

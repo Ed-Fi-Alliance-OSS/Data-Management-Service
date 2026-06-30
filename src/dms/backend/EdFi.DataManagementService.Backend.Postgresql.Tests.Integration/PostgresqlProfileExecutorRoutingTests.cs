@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -17,59 +18,13 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class ProfileRoutingNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ProfileRoutingAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 /// <summary>
 /// Concrete <see cref="IStoredStateProjectionInvoker"/> that mirrors the request's visible
@@ -107,7 +62,6 @@ file static class ProfileRoutingTestSupport
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ProfileRoutingNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -206,9 +160,7 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111")
@@ -303,10 +255,6 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             Headers: [],
             TraceId: new TraceId("profile-non-creatable-post"),
             DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -345,9 +293,7 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("bbbbbbbb-2222-2222-2222-222222222222")
@@ -447,11 +393,7 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("profile-post-as-update-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: ExistingDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -489,10 +431,6 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 
@@ -530,9 +468,7 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("cccccccc-4444-4444-4444-444444444444")
@@ -629,11 +565,7 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("profile-put-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: ExistingDocumentUuid
         );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -671,10 +603,6 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-put-profiled"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
 

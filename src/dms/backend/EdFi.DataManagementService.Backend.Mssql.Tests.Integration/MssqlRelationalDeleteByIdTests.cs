@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -22,41 +21,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
-
-file sealed class MssqlDeleteByIdAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlDeleteByIdNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -90,9 +54,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private static readonly ResourceInfo _unrelatedResourceInfo = new(
@@ -100,9 +62,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         ResourceName: new ResourceName("Program"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
@@ -355,11 +315,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("mssql-delete-setup"),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlDeleteByIdNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlDeleteByIdAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
     }
 
@@ -368,10 +324,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         return new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceInfo,
-            ResourceAuthorizationHandler: new MssqlDeleteByIdAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId("mssql-delete-invocation"),
-            DeleteInEdOrgHierarchy: false,
             Headers: [],
             MappingSet: _mappingSet
         );

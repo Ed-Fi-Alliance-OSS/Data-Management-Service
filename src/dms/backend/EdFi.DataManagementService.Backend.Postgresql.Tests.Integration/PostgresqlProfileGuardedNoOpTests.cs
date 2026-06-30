@@ -19,6 +19,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -26,26 +27,15 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class ProfileGuardedNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
 
 /// <summary>
 /// Stale-compare freshness checker for the profiled guarded no-op suite. The first
@@ -248,7 +238,6 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
     )
     {
         ServiceCollection services = [];
-        services.AddSingleton<IHostApplicationLifetime, ProfileGuardedNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -380,10 +369,6 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("pg-profile-guarded-no-op-put-update"),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 
@@ -440,10 +425,6 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
             Headers: [],
             TraceId: new TraceId("pg-profile-guarded-no-op-post-as-update"),
             DocumentUuid: incomingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileGuardedNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileGuardedNoOpAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
 
