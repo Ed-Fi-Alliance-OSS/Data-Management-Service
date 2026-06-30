@@ -29,6 +29,15 @@ server {
 
     client_max_body_size 20M;
 
+    # Defense in depth: never expose CMS dynamic client self-registration through the public
+    # gateway. AllowRegistration is already false on both config services; this also returns 403
+    # at the edge for /st-config/connect/register and /mt-config/connect/register (and subpaths).
+    # Regex locations take precedence over the prefix routes below, so this wins for that path
+    # while /connect/token, /connect/introspect, and /connect/revoke continue to pass through.
+    location ~ ^/(st|mt)-config/connect/register {
+        return 403;
+    }
+
     # ----- Single-tenant stack -----
     location /st-dms {
         resolver 127.0.0.11 valid=10s;

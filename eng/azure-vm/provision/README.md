@@ -45,6 +45,11 @@ data stores, the review apps). It does **not** start the DMS services — provis
 schema (below), then start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`).
 Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
+Re-running `setup-env.ps1` is safe: secrets are written only when `.env` is first created (pass
+`-RotateSecrets` to force-rotate — and then reset the dependent volumes), and bootstrap runs only
+on first stand-up (pass `-Bootstrap` to force). The `-StartDms` pass preserves every secret and
+skips bootstrap, so it only starts the DMS services.
+
 > **The relational schema provisioning and Grand Bend seeding are manual** — `setup-env.ps1` does
 > not do them. See [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed)
 > for the order: provision each data DB with `dms-schema` (or restore the relational populated
