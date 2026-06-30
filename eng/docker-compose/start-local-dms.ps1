@@ -147,7 +147,13 @@ param (
     # provisioning, smoke-credential, or seed work is performed — those are caller preconditions.
     # See .DESCRIPTION for the two -InfraOnly workflow shapes.
     [string]
-    $DmsBaseUrl
+    $DmsBaseUrl,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). When supplied, the matching
+    # .env.ds<NN> overlay is composed onto -EnvironmentFile so the stack runs that data standard.
+    # Omit for the default (DS 5.2) behavior driven entirely by the base environment file.
+    [string]
+    $DataStandardVersion
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -182,6 +188,9 @@ $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
+# Compose the data-standard overlay onto the base env file when a version is requested; with no
+# -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+$EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues

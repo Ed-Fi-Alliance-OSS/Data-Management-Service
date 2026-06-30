@@ -24,7 +24,10 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param(
-    [string] $EnvironmentFile = "./.env.e2e"
+    [string] $EnvironmentFile = "./.env.e2e",
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
+    [string] $DataStandardVersion
 )
 
 Write-Host @"
@@ -86,7 +89,7 @@ try {
     Write-Output "Using file-based schema packages from $EnvironmentFile for E2E (non-bootstrap compatibility path)."
 
     # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"

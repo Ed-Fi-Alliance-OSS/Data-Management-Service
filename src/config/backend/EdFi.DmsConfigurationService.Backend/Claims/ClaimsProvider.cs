@@ -42,6 +42,11 @@ public enum ClaimsSource
 public class ClaimsOptions
 {
     /// <summary>
+    /// Default Ed-Fi Data Standard version used when none is configured.
+    /// </summary>
+    public const string DefaultDataStandardVersion = "5.2";
+
+    /// <summary>
     /// The source for loading claims configuration
     /// </summary>
     public ClaimsSource ClaimsSource { get; set; } = ClaimsSource.Embedded;
@@ -50,6 +55,12 @@ public class ClaimsOptions
     /// Directory path for filesystem-based claims loading
     /// </summary>
     public string ClaimsDirectory { get; set; } = "";
+
+    /// <summary>
+    /// The Ed-Fi Data Standard version whose embedded base claims to load (e.g. "5.2", "6.1").
+    /// Selects the Claims/Standards/ds&lt;NN&gt;/Claims.json embedded resource. Defaults to DS 5.2.
+    /// </summary>
+    public string DataStandardVersion { get; set; } = DefaultDataStandardVersion;
 
     /// <summary>
     /// When enabled, allows dynamic loading and reloading of claims via management endpoints.
@@ -452,6 +463,25 @@ public class ClaimsProvider(
     }
 
     /// <summary>
+    /// Resolves the configured Ed-Fi Data Standard version, falling back to the default when unset.
+    /// </summary>
+    private string ResolveDataStandardVersion()
+    {
+        string version = claimsOptions.Value.DataStandardVersion;
+        return string.IsNullOrWhiteSpace(version) ? ClaimsOptions.DefaultDataStandardVersion : version.Trim();
+    }
+
+    /// <summary>
+    /// Builds the embedded resource name for a data standard version. Version "5.2" maps to the
+    /// Claims/Standards/ds52/ folder, preserving the historical DS 5.2 base claims.
+    /// </summary>
+    private static string EmbeddedClaimsResourceName(Assembly assembly, string dataStandardVersion)
+    {
+        string folder = "ds" + dataStandardVersion.Replace(".", "");
+        return $"{assembly.GetName().Name}.Claims.Standards.{folder}.Claims.json";
+    }
+
+    /// <summary>
     /// Loads claims from assembly
     /// </summary>
     private ClaimsLoadResult LoadClaimsFromAssembly()
@@ -459,14 +489,15 @@ public class ClaimsProvider(
         try
         {
             Assembly assembly = GetAssemblyForEmbeddedResource();
-            string resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+            string dataStandardVersion = ResolveDataStandardVersion();
+            string resourceName = EmbeddedClaimsResourceName(assembly, dataStandardVersion);
 
             using Stream? stream = assembly.GetManifestResourceStream(resourceName);
             if (stream == null)
             {
                 ClaimsFailure failure = new(
                     "Configuration",
-                    $"Could not load assembly-bundled Claims.json file '{resourceName}'"
+                    $"Could not load embedded Claims.json for data standard version '{dataStandardVersion}' (resource '{resourceName}')"
                 );
                 logger.LogError(failure.Message);
                 return new ClaimsLoadResult(null, [failure]);
@@ -499,7 +530,10 @@ public class ClaimsProvider(
                 return new ClaimsLoadResult(null, [failure]);
             }
 
-            logger.LogInformation("Loaded Claims.json from assembly resource");
+            logger.LogInformation(
+                "Loaded embedded Claims.json for data standard version {DataStandardVersion}",
+                dataStandardVersion
+            );
 
             return new ClaimsLoadResult(new ClaimsDocument(claimSetsNode, claimsHierarchyNode), []);
         }

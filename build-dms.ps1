@@ -126,7 +126,12 @@ param(
 
     # Optional test filter for dotnet test operations
     [string]
-    $TestFilter
+    $TestFilter,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). Forwarded to the start scripts, which
+    # compose the matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    [string]
+    $DataStandardVersion
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -446,6 +451,18 @@ function Get-E2ETestEnvironmentContext {
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+
+    # Compose the requested data-standard overlay (.env.ds<NN>) onto the base env file once, here, so
+    # every downstream consumer - relational provisioning, seed loading, configure, and DMS startup -
+    # reads the same data-standard values. Without this single composition point, startup composed the
+    # overlay (via start-local-dms.ps1 -DataStandardVersion) while provisioning/seed/configure read the
+    # raw base file, mixing e.g. DS 6.1 runtime schema with a DS 5.2 template/seed. With no
+    # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+    $environmentFilePath = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $environmentFilePath `
+        -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
     $useRelationalBackend = ConvertTo-Boolean -Value ([string]$environmentValues["USE_RELATIONAL_BACKEND"])
 
@@ -897,9 +914,18 @@ function Start-DockerEnvironment {
 
     $environmentFilePath =
         if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
-            Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+            # Standalone entry points (e.g. StartEnvironment) bypass Get-E2ETestEnvironmentContext, so
+            # compose the data-standard overlay here too; otherwise the seed/configure steps below would
+            # read the raw base env file while DMS started on the selected data standard version.
+            Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+            $baseEnvironmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+            Resolve-DataStandardEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -BaseEnvironmentFile $baseEnvironmentFilePath `
+                -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
         }
         else {
+            # Already composed by Get-E2ETestEnvironmentContext; use as-is (no double-composition).
             $ResolvedEnvironmentFile
         }
 
@@ -1252,7 +1278,13 @@ function InstanceE2ETests {
         $SkipDockerBuild,
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        # Optional Ed-Fi Data Standard version forwarded to the instance setup script so the
+        # route-context stack AND its database provisioning run on the requested version (e.g. 6.1).
+        # Empty (the default) leaves the DS 5.2 behavior unchanged.
+        [string]
+        $DataStandardVersion
     )
 
     # Instance management tests require the DMS environment to be started with route qualifiers
@@ -1265,10 +1297,10 @@ function InstanceE2ETests {
         Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
         Invoke-Execute {
             if ($SkipDockerBuild) {
-                & $instanceSetupScript -SkipDockerBuild
+                & $instanceSetupScript -SkipDockerBuild -DataStandardVersion $DataStandardVersion
             }
             else {
-                & $instanceSetupScript
+                & $instanceSetupScript -DataStandardVersion $DataStandardVersion
             }
         }
     }
@@ -1473,7 +1505,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
-        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter } }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter -DataStandardVersion $DataStandardVersion } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

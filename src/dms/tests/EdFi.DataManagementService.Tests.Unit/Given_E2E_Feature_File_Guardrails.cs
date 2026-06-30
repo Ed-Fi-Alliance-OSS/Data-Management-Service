@@ -70,10 +70,16 @@ public class Given_E2E_Feature_File_Guardrails
     }
 
     [Test]
-    public void It_assigns_exactly_one_relational_ci_shard_tag_to_every_relational_backend_scenario()
+    public void It_assigns_exactly_one_relational_ci_shard_tag_to_every_sharded_relational_backend_scenario()
     {
         string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .Where(s => s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase))
+            // Version-coupled scenarios (@StandardVersion-<NN>) run in a dedicated per-version E2E lane
+            // that filters on the version tag, not in the sharded default-version lane, so they carry
+            // no shard tag and are exempt from the shard-balance rule.
+            .Where(s =>
+                !s.Tags.Any(t => t.StartsWith("@StandardVersion-", StringComparison.OrdinalIgnoreCase))
+            )
             .Where(s =>
                 s.Tags.Count(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
                 != 1
@@ -84,7 +90,32 @@ public class Given_E2E_Feature_File_Guardrails
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each @relational-backend scenario must carry exactly one @relational-ci-shard-N tag so PR CI shards balance and never overlap"
+                "each sharded @relational-backend scenario must carry exactly one @relational-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN> scenarios run in their own lane and are exempt)"
+            );
+    }
+
+    [Test]
+    public void It_runs_every_version_coupled_relational_scenario_in_its_own_lane_without_a_shard_tag()
+    {
+        // A @StandardVersion-<NN> scenario is run by a dedicated per-version relational E2E job that
+        // filters on the version tag (e.g. run-e2e-tests-ds61 in on-dms-pullrequest.yml). It must be in
+        // the relational lane (@relational-backend) and must NOT also carry a shard tag, or it would run
+        // twice — once in its version lane and again in a default-version shard.
+        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
+            .Where(s =>
+                s.Tags.Any(t => t.StartsWith("@StandardVersion-", StringComparison.OrdinalIgnoreCase))
+            )
+            .Where(s =>
+                !s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase)
+                || s.Tags.Any(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
+            )
+            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
+            .ToArray();
+
+        offendingScenarios
+            .Should()
+            .BeEmpty(
+                "each @StandardVersion-<NN> scenario must be in the relational lane (@relational-backend) and carry no @relational-ci-shard-N tag, since it runs in its own version-coupled lane"
             );
     }
 

@@ -96,7 +96,13 @@ param (
     # directory that is already mounted at /app/additional-claims by published-config.yml.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
-    $AddExtensionSecurityMetadata
+    $AddExtensionSecurityMetadata,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). When supplied, the matching
+    # .env.ds<NN> overlay is composed onto -EnvironmentFile so the stack runs that data standard.
+    # Omit for the default (DS 5.2) behavior driven entirely by the base environment file.
+    [string]
+    $DataStandardVersion
 )
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
@@ -121,6 +127,9 @@ $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
+# Compose the data-standard overlay onto the base env file when a version is requested; with no
+# -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+$EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues

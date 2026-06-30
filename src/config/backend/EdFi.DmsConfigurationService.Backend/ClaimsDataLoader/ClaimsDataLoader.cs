@@ -26,9 +26,15 @@ public class ClaimsDataLoader(
     IClaimsHierarchyRepository claimsHierarchyRepository,
     IClaimsTableValidator claimsTableValidator,
     IClaimsDocumentRepository claimsDocumentRepository,
-    ILogger<ClaimsDataLoader> logger
+    ILogger<ClaimsDataLoader> logger,
+    IResourceClaimMetadataRepository? resourceClaimMetadataRepository = null
 ) : IClaimsDataLoader
 {
+    // ResourceClaim seeding is PostgreSQL-only; absent a registered repository
+    // (e.g. the MSSQL backend) the loader falls back to a no-op.
+    private readonly IResourceClaimMetadataRepository _resourceClaimMetadataRepository =
+        resourceClaimMetadataRepository ?? new NoOpResourceClaimMetadataRepository();
+
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -95,12 +101,15 @@ public class ClaimsDataLoader(
             // Load claim sets
             int claimSetsLoaded = await LoadClaimSetsAsync(claimsNodes.ClaimSetsNode);
 
+            int resourceClaimsLoaded = await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
+
             // Load claims hierarchy
             bool hierarchyLoaded = await LoadClaimsHierarchyAsync(claimsNodes.ClaimsHierarchyNode);
 
             logger.LogInformation(
-                "Successfully loaded {ClaimSetCount} claim sets and hierarchy data",
-                claimSetsLoaded
+                "Successfully loaded {ClaimSetCount} claim sets, {ResourceClaimCount} resource claims, and hierarchy data",
+                claimSetsLoaded,
+                resourceClaimsLoaded
             );
 
             return new ClaimsDataLoadResult.Success(claimSetsLoaded, hierarchyLoaded);
@@ -188,6 +197,81 @@ public class ClaimsDataLoader(
     }
 
     /// <summary>
+    /// Loads resource-claim metadata derived from the Claims.json hierarchy.
+    /// </summary>
+    /// <param name="hierarchyNode">JSON array containing the hierarchical claims structure.</param>
+    /// <returns>The number of resource-claim rows inserted.</returns>
+    private async Task<int> LoadResourceClaimsAsync(JsonNode? hierarchyNode)
+    {
+        if (hierarchyNode is not JsonArray hierarchyArray)
+        {
+            logger.LogWarning("No claims hierarchy found in Claims.json or invalid format");
+            return 0;
+        }
+
+        List<ResourceClaimMetadataSeed> resourceClaims = DeriveResourceClaimMetadata(hierarchyArray);
+        if (resourceClaims.Count == 0)
+        {
+            logger.LogWarning("No resource claims found in Claims.json hierarchy");
+            return 0;
+        }
+
+        return await _resourceClaimMetadataRepository.SeedResourceClaims(resourceClaims);
+    }
+
+    internal static List<ResourceClaimMetadataSeed> DeriveResourceClaimMetadata(JsonArray hierarchyArray)
+    {
+        var resourceClaims = new List<ResourceClaimMetadataSeed>();
+        var claimNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (JsonNode? claimNode in hierarchyArray)
+        {
+            AddResourceClaimMetadata(claimNode, resourceClaims, claimNames);
+        }
+
+        return resourceClaims;
+    }
+
+    private static void AddResourceClaimMetadata(
+        JsonNode? claimNode,
+        List<ResourceClaimMetadataSeed> resourceClaims,
+        HashSet<string> claimNames
+    )
+    {
+        if (claimNode is not JsonObject claimObject)
+        {
+            return;
+        }
+
+        string? claimName = claimObject["name"]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(claimName) && claimNames.Add(claimName))
+        {
+            resourceClaims.Add(new ResourceClaimMetadataSeed(ResourceName(claimName), claimName));
+        }
+
+        if (claimObject["claims"] is not JsonArray childClaims)
+        {
+            return;
+        }
+
+        foreach (JsonNode? childClaim in childClaims)
+        {
+            AddResourceClaimMetadata(childClaim, resourceClaims, claimNames);
+        }
+    }
+
+    private static string ResourceName(string claimName)
+    {
+        if (claimName.Equals("http://ed-fi.org/identity/claims/domains/edFiTypes", StringComparison.Ordinal))
+        {
+            return "types";
+        }
+
+        string[] segments = claimName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0 ? claimName : segments[^1];
+    }
+
+    /// <summary>
     /// Loads the claims hierarchy from JSON data into the ClaimsHierarchy table.
     /// </summary>
     /// <param name="hierarchyNode">JSON array containing the hierarchical claims structure.</param>
@@ -263,17 +347,47 @@ public class ClaimsDataLoader(
         {
             logger.LogInformation("Updating claims data in database");
 
+            // Replace the claim sets and hierarchy wholesale in ReplaceClaimsDocument's own
+            // transaction FIRST. ResourceClaim metadata seeding runs on a separate connection that
+            // commits immediately, so it must happen only AFTER the document is durably applied —
+            // otherwise a rolled-back/failed replace (validation error, multi-user conflict, FK
+            // violation, etc.) would orphan ResourceClaim rows for a claims document that was never
+            // applied. The replace never reads ResourceClaim; the metadata is consumed by claim-set
+            // projections on later requests, so seeding after the commit is correct.
             ClaimsDocumentUpdateResult result = await claimsDocumentRepository.ReplaceClaimsDocument(
                 claimsNodes
             );
 
+            if (result is ClaimsDocumentUpdateResult.Success success)
+            {
+                // Document committed. Seed any resource-claim metadata the new hierarchy introduces
+                // (insert-missing, idempotent) so ResourceClaim-backed projections — which require
+                // every hierarchy claim to resolve to a ResourceClaim row — stay consistent. No-op on
+                // the MSSQL backend (no registered repository). If this rare post-commit step fails,
+                // the document is already applied; report it so the operator re-runs the (idempotent)
+                // load to seed the new claims' metadata rather than silently serving 404-prone claims.
+                try
+                {
+                    await LoadResourceClaimsAsync(claimsNodes.ClaimsHierarchyNode);
+                }
+                catch (DatabaseOperationException ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Claims document was applied, but seeding resource-claim metadata failed; "
+                            + "re-run the claims load to seed the new claims' metadata"
+                    );
+                    return new ClaimsDataLoadResult.DatabaseFailure(
+                        "Claims document was applied, but resource-claim metadata seeding failed; "
+                            + "re-run the claims load to complete it"
+                    );
+                }
+
+                return new ClaimsDataLoadResult.Success(success.ClaimSetsInserted, success.HierarchyUpdated);
+            }
+
             return result switch
             {
-                ClaimsDocumentUpdateResult.Success success => new ClaimsDataLoadResult.Success(
-                    success.ClaimSetsInserted,
-                    success.HierarchyUpdated
-                ),
-
                 ClaimsDocumentUpdateResult.ValidationFailure validation =>
                     new ClaimsDataLoadResult.ValidationFailure(validation.Errors),
 
@@ -291,6 +405,11 @@ public class ClaimsDataLoader(
                     $"Unexpected result type: {result.GetType().Name}"
                 ),
             };
+        }
+        catch (DatabaseOperationException ex)
+        {
+            logger.LogError(ex, "Database error during claims update");
+            return new ClaimsDataLoadResult.DatabaseFailure(ex.Message);
         }
         catch (JsonException ex)
         {

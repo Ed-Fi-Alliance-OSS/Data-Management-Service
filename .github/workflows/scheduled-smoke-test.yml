@@ -19,6 +19,13 @@ on:
       - 'build-sdk.ps1'
       - 'eng/smoke_test/**'
       - 'eng/sdkGen/**'
+      # The populated-template build this workflow consumes per Data Standard version: its reusable
+      # workflow, the per-version smoke template env files, and the template build/restore/filtering
+      # logic (incl. the DS 6.1 educator-prep filter + tolerance). Listed so a change to the DS 6.1
+      # (or 5.2) smoke path is validated on PRs instead of only the cron run (DMS-1136).
+      - '.github/workflows/build-populated-template.yml'
+      - 'eng/docker-compose/.env.smoke.relational*'
+      - 'eng/DatabaseTemplates/**'
 
 permissions:
   contents: write
@@ -27,28 +34,60 @@ permissions:
 
 jobs:
   build-populated-template:
-    name: Build Populated Template Package
+    name: Build Populated Template ${{ matrix.standard_version }}
+    # One leg per supported Ed-Fi Data Standard version (kept in sync with the smoke-test
+    # matrix below). To add or drop a version, edit both `include` blocks; see
+    # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - standard_version: "5.2.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+            provenance_file: "populated.template.intoto.jsonl"
+            environment_file: "./.env.smoke.relational"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
+            provenance_file: "populated.template.6.1.0.intoto.jsonl"
+            environment_file: "./.env.smoke.relational.ds61"
     uses: ./.github/workflows/build-populated-template.yml
     with:
-      standard_version: "5.2.0"
-      package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+      standard_version: ${{ matrix.standard_version }}
+      package_name: ${{ matrix.package_name }}
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
-      provenance_file: "populated.template.intoto.jsonl"
+      provenance_file: ${{ matrix.provenance_file }}
       # The smoke test consumes the template artifact built in this run; nothing is
       # published to the package feed from the smoke path. Feed publishing stays with
       # the template package workflows (tag/release and explicit dispatch opt-in).
       publish_package: false
       use_relational_backend: true
-      environment_file: "./.env.smoke.relational"
+      environment_file: ${{ matrix.environment_file }}
       verify_restore: true
       require_populated_data: true
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
 
   smoke-test:
-    name: Smoke Tests
+    name: Smoke Tests ${{ matrix.standard_version }}
     needs: build-populated-template
     runs-on: ubuntu-latest
+    # Each leg smoke-tests the template built for the same version. Keep this matrix in sync
+    # with the build-populated-template matrix above.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - standard_version: "5.2.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+            environment_file: "./.env.smoke.relational"
+            # The published ODS SDK sweep uses EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0,
+            # which is DS 5.2-specific, so it only runs on the 5.2 leg.
+            run_ods_sdk_tests: true
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
+            environment_file: "./.env.smoke.relational.ds61"
+            run_ods_sdk_tests: false
 
     env:
       SMOKE_DATABASE_NAME: edfi_datamanagementservice_smoke
@@ -105,7 +144,7 @@ jobs:
       - name: Download Populated Template Package artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0-NuGet"
+          name: "${{ matrix.package_name }}-NuGet"
           path: ${{ github.workspace }}/template-package
 
       # The smoke environment serves the four-package DS52 + TPDM + Sample + Homograph
@@ -116,7 +155,7 @@ jobs:
       - name: Start DMS on the relational backend with Core, TPDM, Sample, and Homograph (SmokeTest)
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.smoke.relational" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "${{ matrix.environment_file }}" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for the Configuration Service to be ready
@@ -153,7 +192,7 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "./.env.smoke.relational"
+          $envValues = ReadValuesFromEnvFile "${{ matrix.environment_file }}"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
           $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
@@ -250,12 +289,16 @@ jobs:
           ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.Api.TestSdk/bin/Release/net10.0/EdFi.Api.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
+      # The ODS SDK sweep uses the published EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 (DS 5.2),
+      # so it only runs on the DS 5.2 leg. DS 6.1 is still covered by the API + DMS SDK tests above.
       - name: Run NonDestructive ODS SDK Tests
+        if: ${{ matrix.run_ods_sdk_tests }}
         run: |
           ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive ODS SDK Tests
+        if: ${{ matrix.run_ods_sdk_tests }}
         run: |
           ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
@@ -299,7 +342,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -319,7 +362,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Backend:* Relational\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

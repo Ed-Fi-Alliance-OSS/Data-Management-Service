@@ -45,6 +45,7 @@ for detailed information on how to contribute source code.
 ## Developer Documents
 
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
+- [Data Standard Versions](./docs/DATA-STANDARD-VERSIONS.md)
 - [Configuration](./docs/CONFIGURATION.md)
 - [Relational Backend Developer Guide](./docs/RELATIONAL-BACKEND.md)
 - [Docker](./docs/DOCKER.md)

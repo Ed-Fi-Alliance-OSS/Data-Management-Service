@@ -143,6 +143,76 @@ public class ClaimsDataLoaderTests
     }
 
     [Test]
+    public async Task Given_successful_load_It_should_seed_resource_claim_metadata_from_claims_hierarchy()
+    {
+        // Arrange
+        var resourceClaimMetadataRepository = A.Fake<IResourceClaimMetadataRepository>();
+        var claimsDataLoader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+            _claimsProvider,
+            _claimSetRepository,
+            _claimsHierarchyRepository,
+            _claimsTableValidator,
+            _claimsDocumentRepository,
+            _logger,
+            resourceClaimMetadataRepository
+        );
+
+        var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test", "isSystemReserved": true }]""");
+        var hierarchyJson = JsonNode.Parse(
+            """
+            [
+                {
+                    "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+                    "claims": [
+                        { "name": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" }
+                    ]
+                }
+            ]
+            """
+        );
+
+        var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
+        A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes()).Returns(claimsNodes);
+        A.CallTo(() => _claimsProvider.IsClaimsValid).Returns(true);
+
+        A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>._))
+            .Returns(new ClaimSetInsertResult.Success(1));
+        A.CallTo(() =>
+                resourceClaimMetadataRepository.SeedResourceClaims(
+                    A<IReadOnlyList<ResourceClaimMetadataSeed>>._
+                )
+            )
+            .Returns(2);
+        A.CallTo(() =>
+                _claimsHierarchyRepository.SaveClaimsHierarchy(
+                    A<List<Claim>>._,
+                    A<DateTime>._,
+                    A<System.Data.Common.DbTransaction?>._
+                )
+            )
+            .Returns(new ClaimsHierarchySaveResult.Success());
+
+        // Act
+        var result = await claimsDataLoader.LoadInitialClaimsAsync();
+
+        // Assert
+        Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
+        A.CallTo(() =>
+                resourceClaimMetadataRepository.SeedResourceClaims(
+                    A<IReadOnlyList<ResourceClaimMetadataSeed>>.That.Matches(resourceClaims =>
+                        resourceClaims.Count == 2
+                        && resourceClaims[0].ResourceName == "types"
+                        && resourceClaims[0].ClaimName == "http://ed-fi.org/identity/claims/domains/edFiTypes"
+                        && resourceClaims[1].ResourceName == "schoolYearType"
+                        && resourceClaims[1].ClaimName
+                            == "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task Given_claimset_insert_fails_It_should_return_database_failure()
     {
         // Arrange
