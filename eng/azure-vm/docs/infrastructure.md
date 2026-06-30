@@ -60,7 +60,7 @@ Base: `https://<PUBLIC_HOST>`
 |-----------|-----|
 | Landing page | `/` |
 | Single-tenant DMS — Discovery | `/st-dms` |
-| Single-tenant DMS — token | `/st-dms/oauth/token` |
+| OAuth token (both stacks) | `/auth/realms/edfi/protocol/openid-connect/token` (advertised in each Discovery `urls.oauth`; the `/{st,mt}-dms/oauth/token` proxy also forwards here, with a trusted cert) |
 | Single-tenant DMS — data | `/st-dms/data/ed-fi/{resource}` |
 | Single-tenant Config Service | `/st-config` (Swagger at `/st-config/swagger` if enabled) |
 | Multi-tenant DMS — Discovery | `/mt-dms` |
@@ -105,9 +105,11 @@ Scope: **single-tenant + two isolated tenants** = three apps.
 | multi-tenant / tenant1 | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_mt` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
 | multi-tenant / tenant2 | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
 
-Token endpoint per env (HTTP Basic `key:secret`, `grant_type=client_credentials`, flat — no
-tenant/year prefix): `…/st-dms/oauth/token`, `…/mt-dms/oauth/token`. A ready sampler that
-tokens + reads a spread of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
+Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
+realm at `…/auth/realms/edfi/protocol/openid-connect/token`, which each stack's Discovery API
+advertises as `urls.oauth`. The DMS `…/st-dms/oauth/token` / `…/mt-dms/oauth/token` proxy forwards
+to the same endpoint (needs a publicly-trusted cert). A ready sampler that tokens + reads a spread
+of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
 
 ## Network configuration
 
@@ -129,14 +131,18 @@ disabled (`NEED_DATABASE_SETUP=false`), and the staged ApiSchema is mounted read
 
 Order used to stand the environment up (and that a re-deploy should follow):
 
-1. `./up.sh` brings up PostgreSQL; `postgres/init-databases.sh` creates the empty databases.
+1. Bring up everything **except** the DMS services — PostgreSQL, Keycloak, the Configuration
+   Services, and the gateway (`setup-env.ps1`, or `docker compose -f docker-compose.yml -f
+   keycloak.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin
+   gateway`). `postgres/init-databases.sh` creates the empty databases. (Bare `./up.sh` starts the
+   **full** stack including the DMS — only safe once bootstrap + schema already exist, e.g. a restart.)
 2. **Provision the relational schema** into each DMS data DB (`edfi_st`, `edfi_mt`,
    `edfi_mt_t2`) with the `dms-schema` tool, against the same `ApiSchema.json` that is
    mounted into the DMS containers. (`dms-schema` is build-from-source — see issue 5.)
 3. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
    tenants / data stores, and the review applications. This **must run before the DMS
    services start** (issue 3).
-4. Start the DMS services; each `/health` should return 200.
+4. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
 5. **Seed data:**
    - **single-tenant** (`edfi_st`): API bulk-load (ODS BulkLoadClient), descriptors first
      then resources; or restore a *relational* populated template via `seed/grandbend.sh`.

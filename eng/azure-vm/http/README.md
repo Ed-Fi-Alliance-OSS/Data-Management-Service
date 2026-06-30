@@ -4,10 +4,10 @@ REST Client (`.http`) files demonstrating the API surface for each environment.
 Tested with the VS Code `humao.rest-client` extension (also works in Visual Studio
 and JetBrains IDEs).
 
-The `.http` files are pre-filled with the deployed env's FQDN and the live review-app
-credentials (also recorded in `docs/infrastructure.md` — **keep this repo private**).
-Because some secrets contain characters REST Client treats as variables (`{{ }}`), the
-`Basic` auth header is pre-encoded as base64(`key:secret`).
+The `.http` files ship with placeholders — fill in the deployed env's FQDN and the review-app
+credentials locally from your **private** vault / credentials doc (never commit real values; this
+repo stays secret-free). Because some secrets contain characters REST Client treats as variables
+(`{{ }}`), the `Basic` auth header is pre-encoded as base64(`key:secret`).
 
 > Self-signed certificate: in VS Code set `"rest-client.verifySsl": false` (or trust the
 > cert) before running these.

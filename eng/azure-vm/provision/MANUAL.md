@@ -154,24 +154,30 @@ Or **self-signed** (testing): `./ssl/generate-certificate.sh "$FQDN"`
 
 ---
 
-## Step 8 — Start the stack (on the VM)
+## Step 8 — Start identity + CMS (NOT the DMS services yet)
+
+The DMS fail-fasts on boot if the Keycloak realm / clients / data stores don't exist, so start
+everything EXCEPT `st-dms`/`mt-dms` first; they come up at the end of Step 9 (after bootstrap +
+schema).
 
 ```bash
 docker network create dms-sec
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d
+# --no-deps so the gateway does not pull the DMS services up early (it resolves upstreams at
+# request time and starts fine without them).
+docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
+  postgres keycloak st-config mt-config pgadmin gateway
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env ps
 ```
 
-Wait for health:
+Wait for health (identity + config only):
 
 ```bash
-for p in st-dms st-config mt-dms mt-config; do
+for p in st-config mt-config; do
   curl -sk -o /dev/null -w "$p %{http_code}\n" "https://localhost/$p/health"
 done
-# NOTE: st-dms/mt-dms will NOT be healthy yet — they crash-loop until Step 9 (bootstrap)
-# creates the Keycloak realm + data stores, AND the relational schema must already be
-# provisioned out of band (dms-schema). st-config/mt-config should reach 200. See
-# provision/README.md "Known gaps" #1 and #3.
+curl -sk -o /dev/null -w "keycloak %{http_code}\n" "https://localhost/auth/realms/master"
+# st-config/mt-config and keycloak should reach 200. The DMS services are intentionally not
+# started yet — see provision/README.md "What setup-env.ps1 does NOT do".
 ```
 
 ---
@@ -185,8 +191,11 @@ data-store API calls). Run it over the loopback:
 pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
 ```
 
-It prints the **API key/secret** for the single-tenant app and each tenant — copy them into
-`docs/infrastructure.md`.
+It prints the **API key/secret** for the single-tenant app and each tenant — record them in your
+**private** vault / credentials doc, **never** in this repo (`docs/infrastructure.md` is tracked).
+
+After bootstrap, provision the relational schema (dms-schema; see `provision/README.md`), then
+start the DMS services: `./up.sh st-dms mt-dms`. They reach `/health` 200 once the schema exists.
 
 ---
 

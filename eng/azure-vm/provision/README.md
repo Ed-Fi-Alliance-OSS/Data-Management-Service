@@ -40,9 +40,10 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 ```
 
 `setup-env.ps1` generates secrets into `.env`, obtains the TLS cert (omit `-LetsEncryptEmail` for
-self-signed), starts the stack, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, data
-stores, the review apps). Record the generated credentials in your private deployment doc, then
-verify with [`../http/`](../http/).
+self-signed), starts identity + CMS, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants,
+data stores, the review apps). It does **not** start the DMS services — provision the relational
+schema (below), then start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`).
+Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
 > **The relational schema provisioning and Grand Bend seeding are manual** — `setup-env.ps1` does
 > not do them. See [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed)
@@ -70,6 +71,7 @@ verify with [`../http/`](../http/).
   `dms-schema` (build-from-source; publishing it is **OPT-2**, unfiled), **or** restore the relational
   populated template (**DMS-1159**, e.g. `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
 - **Startup order** — the DMS fail-fast crash-loops until Keycloak + CMS data stores exist
-  (**DMS-1093 / DMS-1109**); the bring-up order above bootstraps before starting the DMS.
+  (**DMS-1093 / DMS-1109**); `setup-env.ps1` therefore bootstraps first and starts the DMS only
+  with `-StartDms` (after the schema is provisioned).
 - **Multi-tenant seeding** — the BulkLoadClient can't seed MT (**DMS-1230**); use `seed/clone-data.sh`.
   Mint client secrets `+`/`%`-free so HTTP Basic works without URL-encoding (**DMS-1231**).
