@@ -176,20 +176,14 @@ jobs:
           Import-Module ./package-helpers.psm1
           Get-VersionNumber -projectPrefix "dms" # Match the DMS version
 
-      - name: Start DMS Docker
+      - name: Start DMS infrastructure
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -InfraOnly
         working-directory: eng/docker-compose/
 
-      - name: Provision template database
-        run: |
-          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
-        working-directory: eng/docker-compose/
-
-      # DMS fails fatally at startup when the Configuration Service has no data stores.
-      # No data store is created by default; register the template data store here
-      # and hand its id forward; the Configuration Service protects data store connection
+      # No data store is created by default; register the template data store before
+      # DMS starts and hand its id forward. The Configuration Service protects connection
       # strings in API responses, so the id from registration is the only reliable way to
       # select this data store later.
       - name: Register template data store
@@ -206,9 +200,16 @@ jobs:
           "TEMPLATE_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
-      - name: Restart DMS to load the provisioned schema
+      - name: Provision template database
         run: |
-          docker restart ed-fi-api
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+        working-directory: eng/docker-compose/
+
+      - name: Start DMS Docker
+        run: |
+          $env:LOG_LEVEL="Warning"
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -DmsOnly
+        working-directory: eng/docker-compose/
 
       - name: Wait for DMS to be ready
         run: |
