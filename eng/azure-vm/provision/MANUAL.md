@@ -232,10 +232,13 @@ cd ~/dms-src/eng/azure-vm/compose && git pull && \
   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && \
   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d
 
-# Data reset, keep Keycloak realm (on the VM):
-docker compose -f docker-compose.yml --env-file .env down -v && \
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d && \
-  pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
+# Data reset, keep Keycloak realm (on the VM). reset.sh drops the data and restarts infra/CMS only
+# (NOT the DMS services -- after a -v reset they must start after bootstrap + schema, like a first
+# stand-up), then prints the remaining steps:
+./reset.sh
+pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
+# provision the relational schema (dms-schema; see docs/infrastructure.md), then:
+./up.sh st-dms mt-dms
 
 # Tear everything down (workstation):
 az group delete -n "$RG" --yes

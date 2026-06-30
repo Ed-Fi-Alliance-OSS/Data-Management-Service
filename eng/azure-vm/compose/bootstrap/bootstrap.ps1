@@ -102,10 +102,21 @@ if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" `
         -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET")
+
+    # Bootstrap admin client -- created directly in Keycloak (full_access scope + cms-client role)
+    # so we never rely on the CMS public self-registration endpoint (/connect/register), which is
+    # disabled. The shared realm backs both stacks, so this one client authenticates against
+    # st-config and mt-config alike.
+    & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
+        -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
+        -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret
 }
 elseif ($IdentityProvider -eq "self-contained") {
-    Write-Warning "Identity provider 'self-contained' selected. This scaffold provisions Keycloak only."
-    Write-Warning "For self-contained, vendor eng/docker-compose/setup-openiddict.ps1 and provision OpenIddict keys/clients here."
+    # Public self-registration (/connect/register) is disabled, so there is no automated path to
+    # create the bootstrap admin client in self-contained mode -- it must be provisioned out of band
+    # (OpenIddict keys/clients via eng/docker-compose/setup-openiddict.ps1). Fail fast and clearly
+    # rather than erroring later on the first token request.
+    throw "bootstrap.ps1 automates the Keycloak identity provider only. For 'self-contained', provision the OpenIddict bootstrap admin client out of band (see eng/docker-compose/setup-openiddict.ps1) and then re-run with -SkipKeycloak."
 }
 
 # --- Helper: provision one application and capture credentials --------------
@@ -138,7 +149,8 @@ function New-ReviewApplication {
 
 # --- 2. Single-tenant -------------------------------------------------------
 Write-Host "== Bootstrapping single-tenant stack ($stConfig) ==" -ForegroundColor Cyan
-Add-CmsClient -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret -DisplayName "Bootstrap Admin"
+# The bootstrap admin client already exists in Keycloak (created above, or pre-existing under
+# -SkipKeycloak); authenticate with it directly -- no CMS self-registration.
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Single-Tenant Data Store" `
     -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresPassword $pgPassword
@@ -150,7 +162,7 @@ New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stTo
 
 # --- 3. Multi-tenant --------------------------------------------------------
 Write-Host "== Bootstrapping multi-tenant stack ($mtConfig) ==" -ForegroundColor Cyan
-Add-CmsClient -CmsUrl $mtConfig -ClientId $adminClientId -ClientSecret $adminClientSecret -DisplayName "Bootstrap Admin"
+# Same Keycloak bootstrap admin client (shared realm) -- authenticate against mt-config directly.
 $mtToken = Get-CmsToken -CmsUrl $mtConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 
 foreach ($t in @($tenant1, $tenant2)) {

@@ -77,7 +77,11 @@ x-cms-common-env: &cms-common-env
   AppSettings__DeployDatabaseOnStartup: "true"
   AppSettings__IdentityProvider: "${IDENTITY_PROVIDER:-keycloak}"
   AppSettings__UseReverseProxyHeaders: "true"
-  IdentitySettings__AllowRegistration: "true"
+  # Public self-registration is DISABLED. With it on, the anonymous /connect/register endpoint
+  # mints a CMS client with admin scope -- an unauthenticated admin-takeover path on a gateway-
+  # exposed config service. The bootstrap admin client is instead created directly in Keycloak
+  # (bootstrap.ps1), so registration is never needed; the gateway also denies the route.
+  IdentitySettings__AllowRegistration: "false"
   IdentitySettings__ConfigServiceRole: "cms-client"
   IdentitySettings__ClientRole: "dms-client"
   IdentitySettings__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
@@ -151,7 +155,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/st-dms/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/st-dms/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 30
@@ -171,7 +175,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/st-config/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8081/st-config/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 30
@@ -197,7 +201,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/mt-dms/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/mt-dms/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 30
@@ -217,7 +221,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/mt-config/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8081/mt-config/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 30

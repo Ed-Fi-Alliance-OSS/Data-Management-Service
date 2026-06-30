@@ -87,7 +87,7 @@ Multi-tenant requests (note the two systems identify the tenant differently):
 |------|-------|-------|
 | Keycloak admin | `/auth/admin` | `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` (.env) |
 | pgAdmin login | `/pgadmin` | `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` (.env) |
-| Bootstrap admin (CMS) | both `*-config` | `BOOTSTRAP_ADMIN_CLIENT_ID` / `BOOTSTRAP_ADMIN_CLIENT_SECRET` (.env) |
+| Bootstrap admin | Keycloak | `BOOTSTRAP_ADMIN_CLIENT_ID` / `BOOTSTRAP_ADMIN_CLIENT_SECRET` (.env) |
 | CMS full-access client | Keycloak | `DmsConfigurationService` / `DMS_CONFIG_IDENTITY_CLIENT_SECRET` (.env) |
 | CMS read-only client | Keycloak | `CMSReadOnlyAccess` / `CONFIG_SERVICE_CLIENT_SECRET` (.env) |
 
@@ -120,6 +120,10 @@ of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
 - Recommended NSG rules: **443 open** to the review team (the application attack surface);
   **22 (SSH) and the gateway only** otherwise; pgAdmin/Keycloak admin reachable only over
   443 and gated by their own logins. Lock SSH to admin IPs.
+- **Public CMS self-registration is disabled** (`IdentitySettings__AllowRegistration=false` on
+  both config services) and the gateway returns 403 for `/{st,mt}-config/connect/register`. The
+  bootstrap admin client is provisioned directly in Keycloak, so there is no unauthenticated path
+  to mint an admin-scoped CMS client.
 
 ## Provisioning method (as deployed)
 

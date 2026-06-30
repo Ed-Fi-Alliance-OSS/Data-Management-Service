@@ -9,6 +9,12 @@
 #   5. wait for identity/CMS health, then run bootstrap (clients, tenants, data stores)
 #   6. (with -StartDms, after the relational schema is provisioned) start the DMS services
 #
+# Idempotent re-runs: secrets are written only when .env is first created (or with -RotateSecrets);
+# the documented second pass (-StartDms, after schema provisioning) preserves every secret and
+# skips bootstrap. Regenerating secrets on a re-run would break the existing Postgres volume,
+# Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
+# Use -Bootstrap to force a re-bootstrap on an existing .env (e.g. after reset.sh).
+#
 # ⚠️ GAP: this does NOT provision the relational schema (dms-schema), stage
 #    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
 #    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
@@ -26,6 +32,8 @@ param(
     [string]$LetsEncryptEmail = "",                            # if set, obtain a Let's Encrypt cert
     [switch]$LoadGrandbend,                                     # load the Grand Bend populated template
     [switch]$SkipBootstrap,
+    [switch]$RotateSecrets,                                     # regenerate .env secrets even if .env exists (you MUST also reset dependent volumes/registrations)
+    [switch]$Bootstrap,                                         # force bootstrap on a re-run (default: bootstrap runs only when .env is first created)
     [switch]$StartDms                                           # start the DMS services (only after the relational schema is provisioned)
 )
 $ErrorActionPreference = "Stop"
@@ -79,19 +87,34 @@ if ($LASTEXITCODE -ne 0) { throw "Cannot talk to Docker. Log out and back in (so
 
 Push-Location $composeDir
 try {
-    # --- 2. .env with generated secrets -------------------------------------
-    if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
-    Write-Host "Writing .env (host + generated secrets)..." -ForegroundColor Cyan
+    # --- 2. .env: host (always) + generated secrets (first run / -RotateSecrets only) -------
+    $freshEnv = -not (Test-Path ".env")
+    if ($freshEnv) { Copy-Item ".env.example" ".env" }
+
+    # Host / base URL are deterministic from -PublicHost, so they are safe to (re)write every run.
+    Write-Host "Writing .env host values..." -ForegroundColor Cyan
     Set-EnvValue ".env" "PUBLIC_BASE_URL" "https://$PublicHost"
     Set-EnvValue ".env" "PUBLIC_HOST"     $PublicHost
-    Set-EnvValue ".env" "POSTGRES_PASSWORD"                  (New-ComplexSecret)
-    Set-EnvValue ".env" "KEYCLOAK_ADMIN_PASSWORD"            (New-ComplexSecret)
-    Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_CLIENT_SECRET"  (New-ComplexSecret)
-    Set-EnvValue ".env" "CONFIG_SERVICE_CLIENT_SECRET"       (New-ComplexSecret)
-    Set-EnvValue ".env" "BOOTSTRAP_ADMIN_CLIENT_SECRET"      (New-ComplexSecret)
-    Set-EnvValue ".env" "PGADMIN_DEFAULT_PASSWORD"           (New-ComplexSecret)
-    Set-EnvValue ".env" "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" (New-Key32)
-    Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY" (New-Base64Key)
+
+    # Secrets are persisted state: the Postgres volume, the Keycloak realm/clients, and the
+    # CMS-encrypted rows are all keyed to the FIRST-run values. Regenerating them on a re-run (e.g.
+    # the documented '-StartDms' second pass) would break DB auth / token auth / decryption against
+    # the existing volumes. Generate only when .env is first created, or on an explicit
+    # -RotateSecrets (which implies you will also reset the dependent volumes/registrations).
+    if ($freshEnv -or $RotateSecrets) {
+        Write-Host "Writing generated secrets to .env..." -ForegroundColor Cyan
+        Set-EnvValue ".env" "POSTGRES_PASSWORD"                  (New-ComplexSecret)
+        Set-EnvValue ".env" "KEYCLOAK_ADMIN_PASSWORD"            (New-ComplexSecret)
+        Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_CLIENT_SECRET"  (New-ComplexSecret)
+        Set-EnvValue ".env" "CONFIG_SERVICE_CLIENT_SECRET"       (New-ComplexSecret)
+        Set-EnvValue ".env" "BOOTSTRAP_ADMIN_CLIENT_SECRET"      (New-ComplexSecret)
+        Set-EnvValue ".env" "PGADMIN_DEFAULT_PASSWORD"           (New-ComplexSecret)
+        Set-EnvValue ".env" "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" (New-Key32)
+        Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY" (New-Base64Key)
+    }
+    else {
+        Write-Host "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)." -ForegroundColor DarkGray
+    }
 
     # --- 3. TLS certificate -------------------------------------------------
     $insecureBootstrap = $true
@@ -104,6 +127,9 @@ try {
         sudo cp "$live/privkey.pem"  ssl/server.key
         sudo chown "$(whoami)" ssl/server.crt ssl/server.key
         $insecureBootstrap = $false   # cert is valid (bootstrap still uses loopback below)
+    }
+    elseif (Test-Path "ssl/server.crt") {
+        Write-Host "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)." -ForegroundColor DarkGray
     }
     else {
         Write-Host "No -LetsEncryptEmail: generating a self-signed certificate." -ForegroundColor Yellow
@@ -153,9 +179,16 @@ try {
     if ($healthy) { Write-Host "Identity + config services healthy." -ForegroundColor Green }
     else { Write-Warning "Identity/config not all healthy yet. Check './logs.sh' before continuing." }
 
-    if (-not $SkipBootstrap) {
+    # Bootstrap on first stand-up only. On a re-run (e.g. the '-StartDms' second pass) the realm,
+    # clients, tenants, and data stores already exist; re-running would also fail on the now-existing
+    # bootstrap admin client. So bootstrap runs only for a fresh .env unless -Bootstrap forces it.
+    $runBootstrap = (-not $SkipBootstrap) -and ($freshEnv -or $Bootstrap)
+    if ($runBootstrap) {
         Write-Host "Running bootstrap (over loopback)..." -ForegroundColor Cyan
         & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+    }
+    elseif (-not $SkipBootstrap) {
+        Write-Host "Skipping bootstrap: .env already exists (pass -Bootstrap to force re-bootstrap)." -ForegroundColor DarkGray
     }
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
