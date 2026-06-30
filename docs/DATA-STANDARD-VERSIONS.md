@@ -188,7 +188,7 @@ build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1
 
 Those scenarios carry **no shard tag**, so the 5.2 shard lanes (which filter on a
 `@e2e-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
-version-independent suite. Both lanes gate the PR through `relational-e2e-summary`.
+version-independent suite. Both lanes gate the PR through `e2e-summary`.
 
 This keeps per-PR cost contained: the version-coupled scenarios are exactly what differs between
 versions, while **full DS 6.1 E2E coverage runs in the scheduled smoke test** rather than on every

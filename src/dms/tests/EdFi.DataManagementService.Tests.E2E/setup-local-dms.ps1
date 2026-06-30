@@ -28,7 +28,7 @@
 param(
     [string] $EnvironmentFile = "./.env.e2e",
 
-    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment file.
     [string] $DataStandardVersion
 )
 
@@ -69,7 +69,11 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
 
-    $resolvedEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+    $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $baseEnvironmentFile `
+        -DockerComposeRoot $dockerComposeDir
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
     $e2eDatabaseName = Get-EnvValue -EnvValues $envValues -Name "E2E_DATABASE_NAME"
 
@@ -102,7 +106,7 @@ try {
 
     # Start only the infrastructure and Configuration Service first. DMS starts after the
     # E2E data store exists and the relational schema has been provisioned.
-    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
@@ -129,7 +133,7 @@ try {
     }
 
     Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
-    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"

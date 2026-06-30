@@ -1595,6 +1595,27 @@ exit 0
             $dmsSetup | Should -Not -Match "docker restart ed-fi-api"
         }
 
+        It "DataManagementService E2E setup composes the Data Standard env file before start, configure, and provision" {
+            $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+            $composeBeforeReadPattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile.*\$envValues\s*=\s*ReadValuesFromEnvFile\s+\$resolvedEnvironmentFile'
+
+            $dmsSetup | Should -Match $composeBeforeReadPattern
+            $dmsSetup | Should -Match 'configure-local-data-store\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Match 'provision-e2e-database\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Not -Match 'start-local-dms\.ps1[^\r\n]*-DataStandardVersion'
+        }
+
+        It "InstanceManagement E2E setup composes the Data Standard env file before start and route-context provisioning" {
+            $imSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
+            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*\.env\.routeContext\.e2e.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
+
+            $imSetup | Should -Match $composePattern
+            $imSetup | Should -Match 'start-local-dms\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $imSetup | Should -Match 'provision-e2e-database\.ps1'
+            $imSetup | Should -Match '-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $imSetup | Should -Not -Match 'start-local-dms\.ps1[^\r\n]*-DataStandardVersion'
+        }
+
         It "start-published-dms.ps1 can create E2E data stores against an explicit database name" {
             $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
 
@@ -1615,6 +1636,16 @@ exit 0
                 $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafka"
                 $setup | Should -Not -Match "start-local-dms\.ps1[^\r\n]*-EnableKafkaUI"
             }
+        }
+
+        It "active Docker Compose env files do not retain legacy DMS backend switches" {
+            $legacyDmsEnvironmentVariablePattern = '(?m)^(NEED_DATABASE_SETUP|USE_RELATIONAL_BACKEND|DMS_DEPLOY_DATABASE_ON_STARTUP|DMS_QUERYHANDLER|AppSettings__UseRelationalBackend)\s*='
+
+            Get-ChildItem -LiteralPath $script:sourceDockerComposeRoot -Force -File -Filter ".env*" |
+                ForEach-Object {
+                    $content = Get-Content -LiteralPath $_.FullName -Raw
+                    $content | Should -Not -Match $legacyDmsEnvironmentVariablePattern -Because "$($_.Name) must not reintroduce the legacy DMS backend selection or startup provisioning surface"
+                }
         }
 
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {
@@ -1654,6 +1685,13 @@ exit 0
             $buildScript | Should -Match "bootstrap-local-dms\.ps1 @bootstrapArgs"
             $buildScript | Should -Match "bootstrap-published-dms\.ps1 @bootstrapArgs"
             $buildScript | Should -Match "StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment"
+        }
+
+        It "build-dms.ps1 fails fast when restarted DMS never becomes healthy" {
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+
+            $buildScript | Should -Match "DMS container '\`$ContainerName' did not become ready within the timeout period"
+            $buildScript | Should -Not -Match "DMS did not become ready, but continuing anyway"
         }
 
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {

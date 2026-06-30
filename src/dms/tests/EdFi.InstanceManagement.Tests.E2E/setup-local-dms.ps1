@@ -17,7 +17,7 @@
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -26,7 +26,7 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment file.
     [string]
     $DataStandardVersion
 )
@@ -137,6 +137,13 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
 try {
     Set-Location $dockerComposeDir
+    Import-Module ./env-utility.psm1 -Force
+
+    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "./.env.routeContext.e2e" -DockerComposeRoot $dockerComposeDir
+    $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $baseEnvironmentFile `
+        -DockerComposeRoot $dockerComposeDir
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
@@ -152,7 +159,7 @@ try {
     Write-Host "Starting DMS environment with Instance Management E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
-    Write-Host "  - Environment File: ./.env.routeContext.e2e" -ForegroundColor Gray
+    Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: $(if ($SkipDockerBuild) { "No" } else { "Yes" })" -ForegroundColor Gray
     Write-Host "  - Route Qualifiers: districtId, schoolYear" -ForegroundColor Cyan
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
@@ -161,13 +168,13 @@ try {
     Write-Host "NOTE: Tenant and instance records will be created by tests" -ForegroundColor Yellow
     Write-Host ""
 
-    Write-Output "Using file-based schema packages from .env.routeContext.e2e for E2E (non-bootstrap compatibility path)."
+    Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
     $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
     try {
-        # .env.routeContext.e2e carries the file-based ApiSchema package settings. Process
+        # The resolved environment file carries the file-based ApiSchema package settings. Process
         # env values win over docker compose --env-file entries, so clear stale overrides
         # left by teardown or earlier bootstrap runs and let the env file provide
         # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
@@ -177,10 +184,10 @@ try {
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
-            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -IdentityProvider self-contained -AddExtensionSecurityMetadata
         }
         else {
-            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
         }
     }
     finally {
@@ -222,7 +229,7 @@ try {
 
     foreach ($db in $databases) {
         & $provisionE2EDatabaseScript `
-            -EnvironmentFile ./.env.routeContext.e2e `
+            -EnvironmentFile $resolvedEnvironmentFile `
             -DatabaseName $db `
             -Configuration Release
 

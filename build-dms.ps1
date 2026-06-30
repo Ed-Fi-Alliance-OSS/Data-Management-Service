@@ -1052,7 +1052,7 @@ function Restart-DmsContainer {
     }
 
     if (-not $ready) {
-        Write-Host "DMS did not become ready, but continuing anyway..." -ForegroundColor Yellow
+        throw "DMS container '$ContainerName' did not become ready within the timeout period"
     }
 }
 
