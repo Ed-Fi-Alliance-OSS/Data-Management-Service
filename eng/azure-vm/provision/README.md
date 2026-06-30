@@ -73,5 +73,6 @@ Record the generated credentials in your private deployment doc, then verify wit
 - **Startup order** — the DMS fail-fast crash-loops until Keycloak + CMS data stores exist
   (**DMS-1093 / DMS-1109**); `setup-env.ps1` therefore bootstraps first and starts the DMS only
   with `-StartDms` (after the schema is provisioned).
-- **Multi-tenant seeding** — the BulkLoadClient can't seed MT (**DMS-1230**); use `seed/clone-data.sh`.
-  Mint client secrets `+`/`%`-free so HTTP Basic works without URL-encoding (**DMS-1231**).
+- **Multi-tenant seeding** — `DMS-1230` (the MT XSD 404) is fixed in `:pre` ≥ 2026-06-24, so MT can
+  be API-seeded directly, or use `seed/clone-data.sh` (faster). Generated client secrets are now
+  Basic/form-safe by construction (**DMS-1231**, fixed) — `docker compose … pull` to get both.

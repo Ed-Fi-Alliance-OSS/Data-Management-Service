@@ -5,10 +5,10 @@
 # databases that have ALREADY been provisioned with the SAME relational schema (same
 # image / same dms.EffectiveSchema hash).
 #
-# This is how the multi-tenant tenants were populated in this environment: the API
-# bulk-load can seed single-tenant, but the multi-tenant XSD metadata bug (DMS-1230)
-# blocks the BulkLoadClient against /mt-dms, so each tenant DB is seeded by copying the
-# single-tenant data instead. Drop this step once DMS-1230 is fixed upstream.
+# This is how the multi-tenant tenants were populated in this environment. NOTE: the MT XSD
+# metadata bug that originally forced this (DMS-1230) is now fixed upstream (:pre >= 2026-06-24),
+# so the BulkLoadClient CAN seed /mt-dms directly. This clone path is kept as a FASTER
+# alternative -- copying the already-seeded single-tenant data beats re-bulk-loading each tenant.
 #
 # It copies document/descriptor data only (data-only, triggers disabled) and EXCLUDES the
 # schema-fingerprint / provisioning tables (EffectiveSchema, SchemaComponent, ResourceKey),
