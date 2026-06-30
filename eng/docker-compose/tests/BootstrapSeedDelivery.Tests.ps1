@@ -3190,17 +3190,17 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $script:wrapperModuleContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
         }
 
-        It "build-dms.ps1 -LoadSeedData local path runs the direct-SQL template seed, not start-local-dms.ps1 -LoadSeedData" {
+        It "build-dms.ps1 E2E -LoadSeedData local path runs the direct-SQL template seed, not start-local-dms.ps1 -LoadSeedData" {
             # start-local-dms.ps1 is infrastructure-lifecycle-only as of DMS-1153 and no longer
-            # accepts -LoadSeedData. The local-image path in build-dms.ps1 hosts the relocated
+            # accepts -LoadSeedData. The E2E local-image path in build-dms.ps1 hosts the relocated
             # direct-SQL database-template seed (setup-database-template.psm1 LoadSeedData) until
             # the bootstrap-design.md Section 6.4 Story-04 verification gate closes.
             $script:buildDmsContent | Should -Not -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must not forward -LoadSeedData to start-local-dms.ps1 (de-scoped in DMS-1153)"
-            $script:buildDmsContent | Should -Match 'setup-database-template\.psm1' -Because "build-dms.ps1 local -LoadSeedData path must import the database-template module"
-            $script:buildDmsContent | Should -Match '(?m)^\s*LoadSeedData\s+-EnvironmentFile' -Because "build-dms.ps1 local -LoadSeedData path must invoke the module's LoadSeedData"
+            $script:buildDmsContent | Should -Match 'setup-database-template\.psm1' -Because "build-dms.ps1 E2E local -LoadSeedData path must import the database-template module"
+            $script:buildDmsContent | Should -Match '(?m)^\s*LoadSeedData\s+-EnvironmentFile' -Because "build-dms.ps1 E2E local -LoadSeedData path must invoke the module's LoadSeedData"
         }
 
-        It "build-dms.ps1 local path must NOT call load-dms-seed-data.ps1 (manifest is guaranteed absent)" {
+        It "build-dms.ps1 E2E local path must NOT call load-dms-seed-data.ps1 (manifest is guaranteed absent)" {
             # The API-based load-dms-seed-data.ps1 hard-requires a staged bootstrap manifest, but
             # Start-DockerEnvironment tears down with -RemoveBootstrap in the same invocation, so a
             # manifest can never be present when the seed step runs. Routing this flow to
@@ -3211,10 +3211,10 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $script:buildDmsContent | Should -Not -Match '\./load-dms-seed-data\.ps1' -Because "build-dms.ps1 must not route seed loading through the manifest-requiring API path while its teardown removes the manifest"
         }
 
-        It "build-dms.ps1 -LoadSeedData published-image path still forwards to start-published-dms.ps1" {
+        It "build-dms.ps1 E2E -LoadSeedData published-image path still forwards to start-published-dms.ps1" {
             # Published-image behavior is unchanged: start-published-dms.ps1 retains -LoadSeedData
             # until the bootstrap-design.md Section 6.4 verification gate closes.
-            $script:buildDmsContent | Should -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward -LoadSeedData to start-published-dms.ps1 (UsePublishedImage branch)"
+            $script:buildDmsContent | Should -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward E2E -LoadSeedData to start-published-dms.ps1 (UsePublishedImage branch)"
         }
 
         It "shared wrapper module normalizes -SeedDataPath against caller CWD before Push-Location" {
