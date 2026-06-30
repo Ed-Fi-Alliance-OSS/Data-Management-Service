@@ -254,6 +254,41 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             );
     }
 
+    [Test]
+    public void It_resolves_nested_reference_backed_identity_values_for_abstract_identity_conflicts()
+    {
+        // A reference-backed concrete identity element (a GeneralStudentProgramAssociation member's
+        // $.programReference.educationOrganizationId) is addressed by a multi-segment JSONPath. The mapper
+        // must read its duplicate value by walking the nested request body, and report it under the trailing
+        // path segment (educationOrganizationId), proving the abstract-identity conflict path is not limited
+        // to top-level scalar identities.
+        var classifier = new RecordingRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                AbstractIdentitySchoolTestData.GeneralStudentProgramAssociationNaturalKeyConstraintName
+            ),
+        };
+        var mapper = new RelationalWriteDatabaseFailureResultMapper(
+            classifier,
+            new RelationalWriteConstraintResolver()
+        );
+        var request = CreateReferenceBackedSubclassAbstractIdentityRequest();
+
+        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("StudentProgramAssociation"),
+                        [new KeyValuePair<string, string>("educationOrganizationId", "255901001")]
+                    )
+                )
+            );
+    }
+
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
         IReadOnlyList<DocumentReference>? documentReferences = null
@@ -419,6 +454,33 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             JsonNode.Parse("""{"localEducationAgencyId":155901,"nameOfInstitution":"Grand Bend ISD"}""")!,
             allowIdentityUpdates: false,
             new TraceId("abstract-identity-conflict-lea-test"),
+            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
+            new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+        );
+    }
+
+    // Builds a POST request for a concrete GeneralStudentProgramAssociation member whose identity element is
+    // reference-backed, so the mapper's nested-path identity-value resolution is exercised through the
+    // abstract-identity conflict path. The body nests the duplicate value under $.programReference.
+    private static RelationalWriteExecutorRequest CreateReferenceBackedSubclassAbstractIdentityRequest()
+    {
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildReferenceBackedSubclassWriteModel();
+        var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+
+        return new RelationalWriteExecutorRequest(
+            mappingSet,
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetRequest.Post(
+                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                createDocumentUuid
+            ),
+            writePlan,
+            existingDocumentReadPlan: null,
+            JsonNode.Parse(
+                """{"programReference":{"educationOrganizationId":255901001},"beginDate":"2024-08-01"}"""
+            )!,
+            allowIdentityUpdates: false,
+            new TraceId("abstract-identity-conflict-reference-backed-test"),
             new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
             new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
         );
