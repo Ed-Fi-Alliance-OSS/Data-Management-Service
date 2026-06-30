@@ -107,11 +107,12 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Opts into the seed phase after the stack starts. For the published-image path, forwarded to
-    # start-published-dms.ps1. For the local-image path, the direct-SQL database-template seed path
-    # (setup-database-template.psm1 LoadSeedData) runs after stack startup: start-local-dms.ps1 is
-    # infrastructure-lifecycle-only as of DMS-1153, and the API-based load-dms-seed-data.ps1 path
-    # requires a staged bootstrap manifest that this flow's -RemoveBootstrap teardown removes.
+    # Opts into the seed phase after the stack starts. For StartEnvironment, forwarded to the
+    # bootstrap wrapper so it uses the documented API-based seed path. For the E2ETest local-image
+    # path, the direct-SQL database-template seed path (setup-database-template.psm1 LoadSeedData)
+    # runs after stack startup: start-local-dms.ps1 is infrastructure-lifecycle-only as of DMS-1153,
+    # and the API-based load-dms-seed-data.ps1 path requires a staged bootstrap manifest that the
+    # E2E startup flow's -RemoveBootstrap teardown removes.
     [switch]
     $LoadSeedData,
 
@@ -428,6 +429,37 @@ function Invoke-WithEnvironmentFileSchemaSettings {
             else {
                 [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
             }
+        }
+    }
+}
+
+function Stop-DockerEnvironment {
+    param(
+        [string]
+        $EnvironmentFilePath,
+
+        [string]
+        $IdentityProvider,
+
+        [switch]
+        $RemoveBootstrap,
+
+        [switch]
+        $UseEnvironmentFileSchemaSettings
+    )
+
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+            }
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+            }
+        }
+        finally {
+            Pop-Location
         }
     }
 }
@@ -780,21 +812,11 @@ function Start-DockerEnvironment {
         Invoke-Step { DockerBuild }
     }
 
-    # Clean up all the containers and volumes
-    Invoke-Execute {
-        try {
-            Push-Location "$PSScriptRoot/eng/docker-compose"
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            }
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            }
-        }
-        finally {
-            Pop-Location
-        }
-    }
+    Stop-DockerEnvironment `
+        -EnvironmentFilePath $environmentFilePath `
+        -IdentityProvider $IdentityProvider `
+        -RemoveBootstrap `
+        -UseEnvironmentFileSchemaSettings:$UseEnvironmentFileSchemaSettings
 
     Invoke-Execute {
         try {
@@ -848,6 +870,61 @@ function Start-DockerEnvironment {
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
                 # create it explicitly so DMS startup finds an instance in CMS.
                 ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+function Start-BootstrapDockerEnvironment {
+    param (
+        [switch]
+        $UsePublishedImage,
+
+        [switch]
+        $SkipDockerBuild,
+
+        [switch]
+        $LoadSeedData,
+
+        [string]
+        $IdentityProvider="self-contained"
+    )
+
+    $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+
+    if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
+        Invoke-Step { DockerBuild }
+    }
+
+    Stop-DockerEnvironment `
+        -EnvironmentFilePath $environmentFilePath `
+        -IdentityProvider $IdentityProvider
+
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+
+            $bootstrapArgs = @{
+                EnvironmentFile = $environmentFilePath
+                EnableConfig = $true
+                IdentityProvider = $IdentityProvider
+                AddExtensionSecurityMetadata = $true
+            }
+
+            if ($LoadSeedData) {
+                $bootstrapArgs.LoadSeedData = $true
+            }
+
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+                if ($UsePublishedImage) {
+                    ./bootstrap-published-dms.ps1 @bootstrapArgs
+                }
+                else {
+                    ./bootstrap-local-dms.ps1 @bootstrapArgs
+                }
             }
         }
         finally {
@@ -1320,7 +1397,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

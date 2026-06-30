@@ -1637,6 +1637,18 @@ exit 0
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
         }
 
+        It "build-dms.ps1 StartEnvironment uses the bootstrap phase contract" {
+            # StartEnvironment is a developer stack command, not the E2E generated-database path.
+            # It must use the bootstrap wrapper so configure-local-data-store.ps1 and
+            # provision-dms-schema.ps1 complete before the DMS-only startup phase.
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+
+            $buildScript | Should -Match "function Start-BootstrapDockerEnvironment"
+            $buildScript | Should -Match "bootstrap-local-dms\.ps1 @bootstrapArgs"
+            $buildScript | Should -Match "bootstrap-published-dms\.ps1 @bootstrapArgs"
+            $buildScript | Should -Match "StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment"
+        }
+
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {
             # Confirm that both E2E setup wrappers defensively remove .bootstrap/ before invoking
             # start-local-dms.ps1 so a stale bootstrap workspace cannot hijack the non-bootstrap run
