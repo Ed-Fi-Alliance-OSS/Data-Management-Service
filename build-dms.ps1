@@ -108,11 +108,8 @@ param(
     $SkipDockerBuild,
 
     # Opts into the seed phase after the stack starts. For StartEnvironment, forwarded to the
-    # bootstrap wrapper so it uses the documented API-based seed path. For the E2ETest local-image
-    # path, the direct-SQL database-template seed path (setup-database-template.psm1 LoadSeedData)
-    # runs after stack startup: start-local-dms.ps1 is infrastructure-lifecycle-only as of DMS-1153,
-    # and the API-based load-dms-seed-data.ps1 path requires a staged bootstrap manifest that the
-    # E2E startup flow's -RemoveBootstrap teardown removes.
+    # bootstrap wrapper so it uses the documented API-based seed path. E2ETest rejects this switch
+    # because its database is reset and provisioned by provision-e2e-database.ps1 before tests run.
     [switch]
     $LoadSeedData,
 
@@ -434,6 +431,7 @@ function Invoke-WithEnvironmentFileSchemaSettings {
 }
 
 function Stop-DockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param(
         [string]
         $EnvironmentFilePath,
@@ -768,15 +766,13 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
 }
 
 function Start-DockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param (
         [switch]
         $UsePublishedImage,
 
         [switch]
         $SkipDockerBuild,
-
-        [switch]
-        $LoadSeedData,
 
         [string]
         $IdentityProvider="self-contained",
@@ -822,15 +818,8 @@ function Start-DockerEnvironment {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             if ($UsePublishedImage) {
-                if ($LoadSeedData) {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
-                    }
-                }
-                else {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
-                    }
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                 }
             }
             else {
@@ -841,30 +830,8 @@ function Start-DockerEnvironment {
                 # -RemoveBootstrap teardown above guarantees no manifest is staged, so the
                 # claims-ready gate is skipped. The DMS container restarts until the configure
                 # step below lands the data store (restart: unless-stopped).
-                if ($LoadSeedData) {
-                    # The database template owns dms schema creation for this legacy seed path.
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                    }
-
-                    # Direct-SQL database-template seed path, relocated verbatim from the seed
-                    # block de-scoped out of start-local-dms.ps1; its removal is gated on the
-                    # bootstrap-design.md Section 6.4 verification gate closing. The
-                    # API-based load-dms-seed-data.ps1 path is not usable here: it requires a
-                    # staged bootstrap manifest, and the -RemoveBootstrap teardown above
-                    # guarantees none is present.
-                    Import-Module ./setup-database-template.psm1 -Force
-                    Write-Output "Loading initial data from the database template..."
-                    LoadSeedData -EnvironmentFile $environmentFilePath
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Failed to load initial data, with exit code $LASTEXITCODE."
-                    }
-                }
-                else {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                    }
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
@@ -879,6 +846,7 @@ function Start-DockerEnvironment {
 }
 
 function Start-BootstrapDockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param (
         [switch]
         $UsePublishedImage,
@@ -979,13 +947,16 @@ function E2ETests {
         $TestFilter
     )
 
+    if ($LoadSeedData) {
+        throw "E2ETest -LoadSeedData is not supported after legacy backend removal. E2ETest resets and provisions E2E_DATABASE_NAME with provision-e2e-database.ps1 before tests run; use StartEnvironment -LoadSeedData or add a relational/API seed path instead."
+    }
+
     $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
 
     Invoke-Step {
         Start-DockerEnvironment `
             -UsePublishedImage:$UsePublishedImage `
             -SkipDockerBuild:$SkipDockerBuild `
-            -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
             -DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName `
@@ -1039,6 +1010,7 @@ function Wait-ForConfigServiceAndClientRegistration {
 }
 
 function Restart-DmsContainer {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param(
         [string]
         $ContainerName = "ed-fi-api",

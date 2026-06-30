@@ -2883,8 +2883,7 @@ EdFi.BulkLoadClient.Console fake
             # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
             # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
             # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
-            # direct-SQL database-template path, so build-dms.ps1's smoke flow via the
-            # published image path remains operational.
+            # direct-SQL database-template path for direct published-image startup.
             $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             Test-Path -LiteralPath $startScript | Should -BeTrue
             $content = Get-Content -LiteralPath $startScript -Raw
@@ -3190,14 +3189,14 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $script:wrapperModuleContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
         }
 
-        It "build-dms.ps1 E2E -LoadSeedData local path runs the direct-SQL template seed, not start-local-dms.ps1 -LoadSeedData" {
-            # start-local-dms.ps1 is infrastructure-lifecycle-only as of DMS-1153 and no longer
-            # accepts -LoadSeedData. The E2E local-image path in build-dms.ps1 hosts the relocated
-            # direct-SQL database-template seed (setup-database-template.psm1 LoadSeedData) until
-            # the bootstrap-design.md Section 6.4 Story-04 verification gate closes.
-            $script:buildDmsContent | Should -Not -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must not forward -LoadSeedData to start-local-dms.ps1 (de-scoped in DMS-1153)"
-            $script:buildDmsContent | Should -Match 'setup-database-template\.psm1' -Because "build-dms.ps1 E2E local -LoadSeedData path must import the database-template module"
-            $script:buildDmsContent | Should -Match '(?m)^\s*LoadSeedData\s+-EnvironmentFile' -Because "build-dms.ps1 E2E local -LoadSeedData path must invoke the module's LoadSeedData"
+        It "build-dms.ps1 E2ETest rejects -LoadSeedData instead of running a direct-SQL template seed" {
+            # E2ETest resets and provisions E2E_DATABASE_NAME after stack startup. The old
+            # direct-SQL database-template seed targeted POSTGRES_DB_NAME and was not a valid
+            # signal for the provisioned E2E database.
+            $script:buildDmsContent | Should -Match 'E2ETest -LoadSeedData is not supported after legacy backend removal' -Because "E2ETest must fail fast when seed data is requested"
+            $script:buildDmsContent | Should -Not -Match 'setup-database-template\.psm1' -Because "build-dms.ps1 E2ETest must not import the legacy direct-SQL seed module"
+            $script:buildDmsContent | Should -Not -Match '(?m)^\s*LoadSeedData\s+-EnvironmentFile' -Because "build-dms.ps1 E2ETest must not invoke the legacy direct-SQL seed module"
+            $script:buildDmsContent | Should -Not -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must not forward -LoadSeedData to start-local-dms.ps1"
         }
 
         It "build-dms.ps1 E2E local path must NOT call load-dms-seed-data.ps1 (manifest is guaranteed absent)" {
@@ -3211,10 +3210,10 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $script:buildDmsContent | Should -Not -Match '\./load-dms-seed-data\.ps1' -Because "build-dms.ps1 must not route seed loading through the manifest-requiring API path while its teardown removes the manifest"
         }
 
-        It "build-dms.ps1 E2E -LoadSeedData published-image path still forwards to start-published-dms.ps1" {
-            # Published-image behavior is unchanged: start-published-dms.ps1 retains -LoadSeedData
-            # until the bootstrap-design.md Section 6.4 verification gate closes.
-            $script:buildDmsContent | Should -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward E2E -LoadSeedData to start-published-dms.ps1 (UsePublishedImage branch)"
+        It "build-dms.ps1 E2ETest published-image path does not forward -LoadSeedData" {
+            # build-dms.ps1 rejects E2ETest -LoadSeedData before choosing local vs published
+            # image startup. start-published-dms.ps1 may retain the switch for direct use.
+            $script:buildDmsContent | Should -Not -Match 'start-published-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 E2ETest must not forward -LoadSeedData to start-published-dms.ps1"
         }
 
         It "shared wrapper module normalizes -SeedDataPath against caller CWD before Push-Location" {
