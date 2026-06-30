@@ -81,10 +81,10 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
 
             // An abstract identity table carries two unique constraints: the natural-key constraint over the
             // projected identity columns, and the *_RefKey helper that appends the DocumentId primary key.
-            // Only the natural-key constraint is a user-facing identity conflict; the *_RefKey helper and any
-            // other unique constraint stay unresolved. The natural key is the unique constraint that does not
-            // include the surrogate DocumentId key column; *_RefKey always appends it. Keying off the table's
-            // own primary-key columns keeps this robust to changes in the projected identity column set.
+            // A unique constraint that includes the surrogate DocumentId key column (the *_RefKey helper) is
+            // not a user-facing identity conflict and stays unresolved; a unique constraint that does not
+            // include it is the natural key and maps to an identity conflict. Keying off the table's own
+            // primary-key columns keeps this robust to changes in the projected identity column set.
             var keyColumnNames = tableModel.Key.Columns.Select(keyColumn => keyColumn.ColumnName).ToHashSet();
 
             return match.Columns.Any(keyColumnNames.Contains)

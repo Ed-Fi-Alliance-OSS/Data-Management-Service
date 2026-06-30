@@ -300,6 +300,44 @@ public class Given_Relational_Write_Constraint_Resolver
             .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(secondTableNaturalKeyName));
     }
 
+    [Test]
+    public void It_resolves_abstract_identity_natural_key_with_reference_backed_identity_columns()
+    {
+        const string naturalKeyConstraintName = "UX_ReferenceBackedIdentity_NK";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            ReferenceBackedAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(naturalKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
+    }
+
+    [Test]
+    public void It_leaves_abstract_identity_reference_key_with_reference_backed_identity_columns_unresolved()
+    {
+        const string referenceKeyConstraintName = "UX_ReferenceBackedIdentity_RefKey";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            ReferenceBackedAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(referenceKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(referenceKeyConstraintName));
+    }
+
     private static ResolverFixture CreateFixture()
     {
         var sectionRootTable = new DbTableModel(
@@ -754,6 +792,85 @@ public class Given_Relational_Write_Constraint_Resolver
                 ),
                 new TableConstraint.ForeignKey(
                     "FK_GeneralStudentProgramAssociationIdentity_Document",
+                    [new DbColumnName("DocumentId")],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [new DbColumnName("DocumentId")],
+                    OnDelete: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+    // Models an abstract identity table whose natural key includes a reference-backed identity column named
+    // with a `_DocumentId` suffix. That suffix is the convention ReferenceBindingPass uses for document FK
+    // columns, and reference-heavy natural keys really do carry such columns: the concrete Section NK is over
+    // `School_DocumentId`, and an abstract resource like GeneralStudentProgramAssociation projects reference
+    // identity components the same way. Proves the resolver compares NK columns against the *bare* `DocumentId`
+    // key column by exact equality, so a `_DocumentId`-suffixed identity column is never mistaken for the
+    // surrogate key (which would misclassify the natural-key violation as unresolved / non-409).
+    private static DbTableModel ReferenceBackedAbstractIdentityTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "ReferenceBackedIdentity"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_ReferenceBackedIdentity",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EducationOrganization_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression(
+                        "$.educationOrganizationReference",
+                        [new JsonPathSegment.Property("educationOrganizationReference")]
+                    ),
+                    new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ProgramName"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 60),
+                    false,
+                    new JsonPathExpression("$.programName", [new JsonPathSegment.Property("programName")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 256),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            [
+                new TableConstraint.Unique(
+                    "UX_ReferenceBackedIdentity_NK",
+                    [new DbColumnName("EducationOrganization_DocumentId"), new DbColumnName("ProgramName")]
+                ),
+                new TableConstraint.Unique(
+                    "UX_ReferenceBackedIdentity_RefKey",
+                    [
+                        new DbColumnName("EducationOrganization_DocumentId"),
+                        new DbColumnName("ProgramName"),
+                        new DbColumnName("DocumentId"),
+                    ]
+                ),
+                new TableConstraint.ForeignKey(
+                    "FK_ReferenceBackedIdentity_Document",
                     [new DbColumnName("DocumentId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
                     [new DbColumnName("DocumentId")],
