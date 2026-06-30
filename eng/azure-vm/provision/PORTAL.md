@@ -124,8 +124,8 @@ opens an in-browser terminal.
 ## 6. Finish setup (in the VM shell)
 
 Run **Steps 5–10 of [`MANUAL.md`](MANUAL.md)**: clone the repo (deploy key), fill `.env`,
-get the TLS cert, `docker compose up`, then `bootstrap.ps1`. Those steps are identical
-regardless of how you provisioned.
+get the TLS cert, bring up identity/CMS, run `bootstrap.ps1`, then provision the schema and
+start the DMS services. Those steps are identical regardless of how you provisioned.
 
 ---
 

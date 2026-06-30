@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Start the full security-review environment (both stacks + Keycloak + gateway).
+# Start the security-review environment. With NO args this starts the FULL stack (both DMS+CMS
+# stacks + Keycloak + gateway) -- correct for a restart/update once bootstrap + the relational
+# schema already exist. For a FIRST-TIME stand-up the DMS services must start AFTER bootstrap +
+# schema, so use provision/setup-env.ps1 (or pass an explicit subset:
+#   ./up.sh postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
+#   ./up.sh st-dms mt-dms                                           # finally the DMS services
 # Extra args are passed through to `docker compose up` (e.g. a single service name).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -19,4 +24,4 @@ if [ ! -f ssl/server.crt ]; then
 fi
 
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d "$@"
-echo "Started. Next: run ./bootstrap/bootstrap.ps1 to provision clients, tenants, and data stores."
+echo "Started. For first-time stand-up order (bootstrap + schema before the DMS services), see provision/README.md."

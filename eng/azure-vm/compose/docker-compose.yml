@@ -27,9 +27,13 @@ name: dms-security-review
 # ---------------------------------------------------------------------------
 x-dms-common-env: &dms-common-env
   ASPNETCORE_HTTP_PORTS: "8080"
-  # Server-side OAuth proxy target (internal). Clients still authenticate through
-  # the DMS /oauth/token endpoint advertised by the Discovery API.
-  AppSettings__AuthenticationService: "http://dms-keycloak:8080/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
+  # Advertised OAuth token endpoint: DMS echoes this value verbatim into the Discovery API
+  # (urls.oauth) and the OpenAPI security scheme (tokenUrl), so it MUST be reachable by external
+  # clients -- hence the PUBLIC Keycloak URL via the gateway /auth route, not an internal hostname.
+  # It is also the /oauth/token proxy's forward target; that proxy now hairpins to the public URL
+  # (so it only works with a publicly-trusted cert) -- clients should authenticate against this
+  # Keycloak URL directly. JWT validation is unaffected (it uses JwtAuthentication__MetadataAddress).
+  AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
   NEED_DATABASE_SETUP: "false"
   AppSettings__DeployDatabaseOnStartup: "false"  # data DBs are provisioned out-of-band by dms-schema; never run the legacy DbUp installer
   AppSettings__UseRelationalBackend: "${USE_RELATIONAL_BACKEND:-true}"

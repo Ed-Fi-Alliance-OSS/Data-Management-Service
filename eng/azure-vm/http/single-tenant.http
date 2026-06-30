@@ -1,4 +1,5 @@
 @base = https://your-label.eastus.cloudapp.azure.com
+@realm = edfi
 @key = REPLACE_WITH_SINGLE_TENANT_KEY
 @secret = REPLACE_WITH_SINGLE_TENANT_SECRET
 # If a secret contains characters REST Client treats as variables ({{ }}), pre-encode the
@@ -7,9 +8,9 @@
 ### Discovery (no auth)
 GET {{base}}/st-dms
 
-### Get an access token (Basic auth = key:secret)
+### Get an access token (Basic auth = key:secret) -- shared Keycloak realm (advertised in Discovery)
 # @name token
-POST {{base}}/st-dms/oauth/token
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
 Authorization: Basic {{key}}:{{secret}}
 Content-Type: application/x-www-form-urlencoded
 

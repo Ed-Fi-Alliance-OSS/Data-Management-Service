@@ -125,9 +125,11 @@ cd ~/dms-src/eng/azure-vm/compose
 pwsh ../provision/setup-env.ps1 -PublicHost your-label.eastus.cloudapp.azure.com -LetsEncryptEmail you@org.tld
 ```
 
-`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts the stack, and
-runs bootstrap. (The Let's Encrypt HTTP-01 check reaches certbot in WSL through the networking you
-configured in step 6.) See [`../MANUAL.md`](../MANUAL.md) Steps 6–10 if you'd rather run it by hand.
+`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts identity + CMS,
+and runs bootstrap; it does **not** start the DMS services — provision the relational schema, then
+start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`). (The Let's Encrypt HTTP-01
+check reaches certbot in WSL through the networking you configured in step 6.) See
+[`../MANUAL.md`](../MANUAL.md) Steps 6–10 if you'd rather run it by hand.
 
 ## 8. Verify
 

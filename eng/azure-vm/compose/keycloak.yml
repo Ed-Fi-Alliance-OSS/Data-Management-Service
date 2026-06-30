@@ -38,7 +38,13 @@ services:
     volumes:
       - dms-sec-keycloak:/opt/keycloak/data
     command: ["start"]
-    networks: [dms-sec]
+    # Explicit alias so DMS/CMS/gateway can reach Keycloak at `dms-keycloak` regardless of
+    # Docker's hostname-registration behavior (the service name is `keycloak`; this makes the
+    # `dms-keycloak` name they reference an intentional, self-documenting network alias).
+    networks:
+      dms-sec:
+        aliases:
+          - dms-keycloak
     restart: unless-stopped
 
 networks:

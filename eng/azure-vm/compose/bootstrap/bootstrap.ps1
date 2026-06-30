@@ -102,10 +102,6 @@ if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" `
         -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET")
-
-    & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
-        -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" `
-        -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 }
 elseif ($IdentityProvider -eq "self-contained") {
     Write-Warning "Identity provider 'self-contained' selected. This scaffold provisions Keycloak only."
@@ -178,9 +174,9 @@ foreach ($t in @($tenant1, $tenant2)) {
 }
 
 # --- Summary ----------------------------------------------------------------
-Write-Host "`n== API credentials created (copy into docs/infrastructure.md) ==" -ForegroundColor Green
+Write-Host "`n== API credentials created (store in your private vault / credentials doc -- NEVER commit to this repo) ==" -ForegroundColor Green
 $created | Format-Table -AutoSize
 Write-Host "DMS endpoints:"
 Write-Host "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
 Write-Host "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
-Write-Host "Token endpoint (per env): <dms-base>/oauth/token  (Basic key:secret, grant_type=client_credentials)"
+Write-Host "Token endpoint (advertised in Discovery): $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). The <dms-base>/oauth/token proxy forwards here but needs a publicly-trusted cert."

@@ -5,13 +5,16 @@
 #   1. (optional) clone the private repo
 #   2. create .env with strong generated secrets + the public host
 #   3. obtain a TLS cert (Let's Encrypt if -LetsEncryptEmail given, else self-signed)
-#   4. start the stack (up.sh)
-#   5. wait for health and run bootstrap (clients, tenants, data stores)
+#   4. start identity + CMS (everything EXCEPT the DMS services)
+#   5. wait for identity/CMS health, then run bootstrap (clients, tenants, data stores)
+#   6. (with -StartDms, after the relational schema is provisioned) start the DMS services
 #
 # ⚠️ GAP: this does NOT provision the relational schema (dms-schema), stage
-#    .bootstrap/ApiSchema, or seed multi-tenant, and it starts the DMS before bootstrap.
-#    The deployed env was provisioned by hand — see provision/README.md "Known gaps"
-#    (#1-#4; Jira refs DMS-1159 / DMS-1093 / DMS-1109 / DMS-1230 / DMS-1231).
+#    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
+#    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
+#    provision the schema, then start them with -StartDms (or `./up.sh st-dms mt-dms`).
+#    See provision/README.md "What setup-env.ps1 does NOT do" and docs/infrastructure.md
+#    "Provisioning method".
 #
 # Run after cloud-init has finished and the repo is on the VM. Example:
 #   pwsh ~/dms-src/eng/azure-vm/provision/setup-env.ps1 -PublicHost mylabel.eastus.cloudapp.azure.com -LetsEncryptEmail you@org.tld
@@ -22,7 +25,8 @@ param(
     [string]$RepoUrl = "",                                      # if set and RepoDir missing, git clone this
     [string]$LetsEncryptEmail = "",                            # if set, obtain a Let's Encrypt cert
     [switch]$LoadGrandbend,                                     # load the Grand Bend populated template
-    [switch]$SkipBootstrap
+    [switch]$SkipBootstrap,
+    [switch]$StartDms                                           # start the DMS services (only after the relational schema is provisioned)
 )
 $ErrorActionPreference = "Stop"
 
@@ -121,34 +125,72 @@ try {
         bash ./seed/grandbend.sh
     }
 
-    # --- 5. start -----------------------------------------------------------
-    Write-Host "Starting the stack..." -ForegroundColor Cyan
-    ./up.sh
+    # --- 5. start identity + CMS (NOT the DMS services yet) -----------------
+    # The DMS eagerly loads its data stores from the CMS on boot and fail-fasts if the Keycloak
+    # realm / clients / data stores don't yet exist (docs/infrastructure.md issue 3). So bring up
+    # everything EXCEPT st-dms/mt-dms, bootstrap, and only then start the DMS services.
+    docker network inspect dms-sec *> $null
+    if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
 
-    # --- 5. wait for health + bootstrap -------------------------------------
-    Write-Host "Waiting for services to report healthy..." -ForegroundColor Cyan
+    Write-Host "Starting infrastructure (postgres, keycloak, config services, gateway)..." -ForegroundColor Cyan
+    # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
+    # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
+    docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
+        postgres keycloak st-config mt-config pgadmin gateway
+
+    Write-Host "Waiting for Keycloak + config services to report healthy..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddMinutes(8)
-    $paths = @("st-dms", "st-config", "mt-dms", "mt-config")
     do {
         Start-Sleep -Seconds 10
         $healthy = $true
-        foreach ($p in $paths) {
+        foreach ($p in @("st-config", "mt-config")) {
             $code = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
             if ($code -ne "200") { $healthy = $false }
         }
+        $kcCode = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/auth/realms/master")
+        if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
-    if ($healthy) { Write-Host "All services healthy." -ForegroundColor Green }
-    else { Write-Warning "Not all services healthy yet. Check './logs.sh' before bootstrapping." }
+    if ($healthy) { Write-Host "Identity + config services healthy." -ForegroundColor Green }
+    else { Write-Warning "Identity/config not all healthy yet. Check './logs.sh' before continuing." }
 
     if (-not $SkipBootstrap) {
         Write-Host "Running bootstrap (over loopback)..." -ForegroundColor Cyan
         & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
     }
 
+    # --- 6. relational schema (MANUAL) + start the DMS services -------------
+    # The DMS data DBs use the relational backend and are provisioned OUT OF BAND with the
+    # dms-schema tool (docs/infrastructure.md "Provisioning method", step 2). This script does
+    # NOT provision schema, so by default it does not start the DMS services -- a DMS booted
+    # against an unprovisioned data DB will not pass /health. Provision the schema, then re-run
+    # with -StartDms (or `./up.sh st-dms mt-dms`).
+    if ($StartDms) {
+        Write-Host "Starting DMS services..." -ForegroundColor Cyan
+        docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
+        Write-Host "Waiting for DMS services to report healthy (requires provisioned schema)..." -ForegroundColor Cyan
+        $deadline = (Get-Date).AddMinutes(8)
+        do {
+            Start-Sleep -Seconds 10
+            $healthy = $true
+            foreach ($p in @("st-dms", "mt-dms")) {
+                $code = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
+                if ($code -ne "200") { $healthy = $false }
+            }
+        } while (-not $healthy -and (Get-Date) -lt $deadline)
+        if ($healthy) { Write-Host "DMS services healthy." -ForegroundColor Green }
+        else { Write-Warning "DMS not healthy. Is the relational schema provisioned? See docs/infrastructure.md." }
+    }
+    else {
+        Write-Host "`nNext steps (manual):" -ForegroundColor Yellow
+        Write-Host "  1. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema; see docs/infrastructure.md)."
+        Write-Host "  2. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
+    }
+
     Write-Host "`n== Setup complete ==" -ForegroundColor Green
     Write-Host "Public URL: https://$PublicHost"
-    Write-Host "Secrets were written to compose/.env. Record the generated values and the API"
-    Write-Host "key/secret pairs above into docs/infrastructure.md (keep this repo private)."
+    Write-Host "Secrets were written to compose/.env (gitignored). Record the generated values and"
+    Write-Host "the API key/secret pairs above in your PRIVATE vault / credentials doc -- never commit"
+    Write-Host "them to this repo (docs/infrastructure.md is tracked and must stay secret-free)."
 }
 finally {
     Pop-Location
