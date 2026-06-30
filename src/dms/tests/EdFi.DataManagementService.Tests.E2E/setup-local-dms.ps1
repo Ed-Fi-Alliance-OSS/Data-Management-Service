@@ -17,10 +17,10 @@
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
     ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DataStoreDatabaseName <E2E_DATABASE_NAME>
-    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file>
-    docker restart ed-fi-api
+    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseName <E2E_DATABASE_NAME>
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -AddExtensionSecurityMetadata
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -31,35 +31,6 @@ param(
     # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") forwarded to start-local-dms.ps1.
     [string] $DataStandardVersion
 )
-
-function Wait-DmsHealthy {
-    param(
-        [string] $DmsBaseUrl,
-        [int] $TimeoutSeconds = 60
-    )
-
-    $healthUrl = "$($DmsBaseUrl.TrimEnd('/'))/health"
-    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
-
-    while ($true) {
-        try {
-            $response = Invoke-WebRequest -Uri $healthUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
-            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
-                Write-Host "DMS service is healthy." -ForegroundColor Green
-                return
-            }
-        }
-        catch {
-            $null = $_
-        }
-
-        if ([datetime]::UtcNow -ge $deadline) {
-            throw "DMS health check timed out after $TimeoutSeconds seconds. Endpoint: $healthUrl"
-        }
-
-        Start-Sleep -Seconds 2
-    }
-}
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
@@ -129,22 +100,19 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+    # Start only the infrastructure and Configuration Service first. DMS starts after the
+    # E2E data store exists and the relational schema has been provisioned.
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
+        Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 
     # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
     # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
-    # Config Service is already healthy at this point (start-local-dms.ps1 with -EnableConfig waits
-    # for CMS readiness before returning).
-    #
-    # This non-bootstrap E2E flow intentionally keeps the full start rather than the
-    # -InfraOnly/-DmsOnly split. The DMS container restarts until this step lands the data store
-    # (non-bootstrap compatibility flow).
+    # Config Service is already healthy at this point because the -InfraOnly phase waits for
+    # CMS readiness before returning.
     ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DataStoreDatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
@@ -153,25 +121,20 @@ try {
     }
 
     Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
-    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile
+    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 
-    Write-Host "`nRestarting DMS container to discard cached database state..." -ForegroundColor Cyan
-    $restartOutput = docker restart ed-fi-api 2>&1
+    Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -AddExtensionSecurityMetadata -DataStandardVersion $DataStandardVersion
+
     if ($LASTEXITCODE -ne 0) {
-        Write-Host $restartOutput -ForegroundColor Red
-        Write-Error "Failed to restart DMS container after E2E database provisioning. Exit code: $LASTEXITCODE"
+        Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
-
-    Write-Host $restartOutput -ForegroundColor Gray
-    $dmsBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
-    Write-Host "Waiting for DMS to become healthy at $dmsBaseUrl..." -ForegroundColor Yellow
-    Wait-DmsHealthy -DmsBaseUrl $dmsBaseUrl
 
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan

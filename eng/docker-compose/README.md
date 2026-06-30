@@ -65,27 +65,30 @@ By default, authentication uses the Self-Contained (OpenIddict) identity provide
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. The DMS E2E setup wrapper starts the stack, configures
-the CMS data store, provisions the E2E database, and restarts DMS:
+it can serve requests. The DMS E2E setup wrapper starts infra and CMS, configures
+the CMS data store, provisions the E2E database, then starts DMS:
 
 ```pwsh
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
 ```
 
-To reprovision the E2E database manually after the stack is already running:
+To run the late phases manually after `start-local-dms.ps1 -InfraOnly` has
+already brought up infra and CMS:
 
 ```pwsh
 ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
-docker restart ed-fi-api
+./start-local-dms.ps1 -DmsOnly -EnvironmentFile ./.env.e2e -AddExtensionSecurityMetadata
 ```
 
-This provisioning and restart sequence is also used by the `E2ETests` build target
+The same E2E provisioning requirement is handled by the `E2ETests` build target
 (`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
-affected data stores return HTTP 503 (Service Unavailable). To recover, run the
-provisioning script and restart DMS as in steps 2 and 3 above.
+affected data stores return HTTP 503 (Service Unavailable). To recover, stop or
+restart the running DMS process after provisioning so it reloads database state.
+The E2E setup wrapper avoids that state by not starting DMS until provisioning is
+complete.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 
