@@ -147,9 +147,12 @@ The behaviors above are exercised by automated tests:
 **End-to-end tests**
 
 - DMS — `EdFi.DataManagementService.Tests.E2E/Features/Security/OwaspCriticalPaths.feature`:
-  valid JWT replayed multiple times within its lifetime is accepted; expired and
+  valid JWT replayed multiple times within its lifetime is accepted;
   manipulated-signature tokens are rejected; authentication-failure responses do
-  not leak internal details.
+  not leak internal details. (The feature's "expired" scenario rewrites `exp`
+  without re-signing, so it is rejected on signature validation before expiry is
+  evaluated; true-expiry rejection via the lifetime check is covered by the DMS
+  unit test above.)
 - CMS — `EdFi.DmsConfigurationService.Tests.E2E/Features/OwaspCriticalPaths.feature`:
   a revoked self-contained token is rejected on reuse (token issued → revoked via
   `/connect/revoke` → reused → `401`).
