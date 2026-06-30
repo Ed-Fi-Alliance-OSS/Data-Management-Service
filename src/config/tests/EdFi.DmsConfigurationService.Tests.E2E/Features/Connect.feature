@@ -181,14 +181,7 @@ Feature: Connect endpoints
                   | grant_type    | client_credentials                             |
                   | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 200
-              And the response body is
-                  """
-                  {
-                    "access_token": "{access_token}",
-                    "expires_in": 1800,
-                    "token_type": "Bearer"
-                  }
-                  """
+              And the token response body is valid
 
         Scenario: 05 Verify token creation with invalid client_secret value
              When a Form URL Encoded POST request is made to "/connect/register" with
