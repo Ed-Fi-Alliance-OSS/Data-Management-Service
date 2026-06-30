@@ -214,7 +214,6 @@ internal class ApiService : IApiService
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -239,7 +238,6 @@ internal class ApiService : IApiService
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -260,7 +258,6 @@ internal class ApiService : IApiService
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -307,7 +304,6 @@ internal class ApiService : IApiService
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -331,7 +327,6 @@ internal class ApiService : IApiService
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
             new ValidateRouteSemanticsMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -384,7 +379,6 @@ internal class ApiService : IApiService
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
