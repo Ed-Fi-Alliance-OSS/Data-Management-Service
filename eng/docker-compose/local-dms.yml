@@ -5,7 +5,7 @@
 
 services:
   dms:
-    image: ed-fi-api-local
+    image: ${DMS_DOCKER_IMAGE:-ed-fi-api-local}
     container_name: ed-fi-api
     build:
       context: ../../src/dms/

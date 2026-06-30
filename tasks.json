@@ -6,6 +6,7 @@
       "The generic `On Pull Request - Dockerfile` workflow remains the single PR path for DMS and Config Dockerfile analysis.",
       "The duplicate `.github/workflows/on-dms-pullrequest-dockerfile.yml` workflow is deleted.",
       "Branch protection is checked and no required status check still depends on the removed duplicate workflow.",
+      "No changes from later CI speedup phases are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
       "A real GitHub Actions PR run completes successfully and shows the intended speedup change: `On DMS Pull Request - Dockerfile` no longer appears as a PR workflow for the branch.",
@@ -29,6 +30,7 @@
       "Heavyweight DMS PR jobs depend on the cheap-check summary job.",
       "Config integration, Config E2E, and fresh Config Docker rebuild jobs depend on the cheap-check summary job.",
       "Summary and artifact/reporting jobs still run when needed after failures.",
+      "No changes from later CI speedup phases are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
       "A real GitHub Actions PR run completes successfully and shows the intended speedup change: expensive jobs do not start until cheap checks have passed.",
@@ -46,12 +48,14 @@
   },
   {
     "category": "CI Speedup Phase 3",
-    "description": "Build DMS and Config CI Docker images once per PR SHA and reuse them in downstream E2E, instance E2E, OpenAPI, and smoke jobs.",
+    "description": "Build the CI Docker images required by each workflow once per workflow run and reuse them in downstream E2E, instance E2E, OpenAPI, and smoke jobs.",
     "acceptance-criteria": [
-      "A single CI image build job builds PR-SHA-tagged DMS and Config images and pushes them to GHCR.",
+      "The DMS PR workflow has one CI image build job that builds PR-SHA-tagged DMS and Config images and pushes them to GHCR.",
+      "The scheduled smoke workflow has one CI image build job that builds the PR-SHA-tagged image set required by its smoke jobs and pushes it to GHCR.",
       "Downstream DMS E2E, DS 6.1 E2E, Instance Management E2E, OpenAPI, and smoke jobs pull the prebuilt GHCR images instead of rebuilding them.",
       "Image tag override plumbing is implemented through workflow environment variables consumed by Docker Compose files.",
-      "A workflow input named `rebuild_downstream_images` provides the documented rollout fallback for rebuilding images in downstream jobs.",
+      "A repository variable named `REBUILD_DOWNSTREAM_IMAGES` provides the documented rollout fallback for rebuilding images in downstream jobs on PR runs.",
+      "No changes from later CI speedup phases are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
       "A real GitHub Actions PR run completes successfully and shows the intended speedup change: downstream E2E-style jobs no longer contain repeated DMS and Config Docker image build steps.",
@@ -59,13 +63,14 @@
     ],
     "steps-to-verify": [
       "Run: `git diff -- .github/workflows/on-dms-pullrequest.yml .github/workflows/on-config-pullrequest.yml .github/workflows/scheduled-smoke-test.yml eng/docker-compose`",
-      "Push the phase branch and wait for the DMS PR workflow to run.",
+      "Push the phase branch and wait for the DMS PR workflow and scheduled smoke workflow to run when their path triggers apply.",
       "Run: `gh pr view || gh pr create --fill`",
       "Run: `gh run list --branch $(git branch --show-current) --limit 10`",
       "Inspect logs for DMS E2E, DS 6.1 E2E, Instance Management E2E, OpenAPI, and smoke jobs and confirm they pull the prebuilt GHCR image tags instead of rebuilding images.",
+      "Confirm the `REBUILD_DOWNSTREAM_IMAGES` fallback is documented and evaluated in PR-triggered workflow expressions.",
       "Add a PR comment with the validation run URL and the observed downstream image setup time."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI Speedup Phase 4",
@@ -74,9 +79,10 @@
       "A build job restores and builds the Backend MSSQL, DMS API integration, Backend PostgreSQL, and SchemaTools integration test projects once in Release.",
       "Built test outputs are published as GitHub Actions artifacts for shard jobs.",
       "The published test artifacts include each test assembly, `.deps.json`, `.runtimeconfig.json`, test adapter files, and runtime dependencies required for `dotnet test <assembly.dll>`.",
-      "Backend MSSQL, DMS API integration, Backend PostgreSQL, and SchemaTools integration jobs run tests using downloaded compiled outputs with `--no-build --no-restore`.",
+      "Backend MSSQL, DMS API integration, Backend PostgreSQL, and SchemaTools integration jobs run tests from downloaded compiled assembly paths without passing a project path and without passing a solution path to `dotnet test`.",
       "NUnit adapter discovery works from the artifact location.",
       "Database container setup remains isolated inside each shard job.",
+      "No changes from later CI speedup phases are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
       "A real GitHub Actions PR run completes successfully and shows the intended speedup change: integration shard logs no longer rebuild test projects before execution.",
@@ -87,7 +93,7 @@
       "Push the phase branch and wait for Backend MSSQL, DMS API integration, Backend PostgreSQL, and SchemaTools integration jobs.",
       "Run: `gh pr view || gh pr create --fill`",
       "Run: `gh run list --branch $(git branch --show-current) --limit 10`",
-      "Inspect shard logs and confirm test execution uses compiled artifacts and preserves existing filters, TRX loggers, and database setup.",
+      "Inspect shard logs and confirm test execution uses compiled artifacts, does not invoke MSBuild restore/build for test projects, and preserves existing filters, TRX loggers, and database setup.",
       "Add a PR comment with the validation run URL and the observed restore/build time removed from integration shard jobs."
     ],
     "completed": false
@@ -97,12 +103,13 @@
     "description": "Rebalance DMS E2E and Backend MSSQL shards using timing artifacts so the slowest shard is reduced without adding more jobs.",
     "acceptance-criteria": [
       "Timing artifacts from at least five recent successful DMS PR runs are aggregated by fixture and shard category.",
-      "DMS E2E shard category assignments are adjusted so observed shard wall times are more balanced.",
+      "DMS E2E shard category assignments are adjusted so the baseline-derived projected shard totals have no shard above 120% of the projected median.",
       "Backend MSSQL fixture setup timing is added and Backend MSSQL shard category assignments are adjusted from setup-inclusive timing data.",
       "Shard filters in the workflow still select all intended tests exactly once.",
+      "No changes from later CI speedup phases are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
-      "A real GitHub Actions PR run completes successfully and shows the intended speedup change: the slowest DMS E2E shard and the slowest Backend MSSQL shard are closer to their median shard durations than the baseline.",
+      "A real GitHub Actions PR run completes successfully and shows the intended speedup change: timing artifacts include the updated DMS E2E shard distribution and setup-inclusive Backend MSSQL timing, and the PR comment compares the new run against the baseline.",
       "The validation run URL and a brief before/after check summary are recorded in a PR comment before the next phase starts."
     ],
     "steps-to-verify": [
@@ -110,7 +117,8 @@
       "Run relevant local tests for any changed category guardrails.",
       "Push the phase branch and wait for all DMS E2E and Backend MSSQL shard jobs.",
       "Run: `gh pr view || gh pr create --fill`",
-      "Compare timing summaries from the PR run against the baseline and confirm no shard category is missing or duplicated.",
+      "Compare timing summaries from the PR run against the baseline and confirm every intended shard category is present exactly once.",
+      "Confirm the baseline-derived projected shard totals are recorded in the PR comment and no projected shard exceeds 120% of the projected median.",
       "Add a PR comment with the validation run URL and the observed shard-duration comparison."
     ],
     "completed": false
@@ -121,19 +129,23 @@
     "acceptance-criteria": [
       "Broad `eng/**` triggers are split into narrower trigger paths that map to Docker compose, database template, smoke tooling, and CI helper ownership.",
       "DMS validation still runs for Config changes that affect DMS runtime behavior.",
-      "Config-only test changes and Config documentation changes do not trigger DMS validation.",
+      "Changes limited to `src/config/tests/**` do not trigger DMS validation.",
+      "Changes limited to `src/config/**/README.md` do not trigger DMS validation.",
       "The full scheduled smoke PR trigger is removed and replaced with a smaller PR smoke canary.",
+      "No changes outside PR trigger scope refinement and the smaller PR smoke canary are included in this phase.",
       "The phase changes are committed and pushed to GitHub.",
       "A PR exists for the branch; create one if it does not already exist.",
-      "A real GitHub Actions PR run completes successfully and shows the intended speedup change: workflow triggers are reduced for representative low-risk file changes while required coverage still runs for high-risk paths.",
+      "A real GitHub Actions PR run completes successfully and shows the intended speedup change: workflow triggers are reduced for the exact low-risk validation paths while required coverage still runs for high-risk paths.",
       "The validation run URL and a brief before/after check summary are recorded in a PR comment before the next phase starts."
     ],
     "steps-to-verify": [
       "Run: `git diff -- .github/workflows/on-dms-pullrequest.yml .github/workflows/on-config-pullrequest.yml .github/workflows/scheduled-smoke-test.yml`",
-      "Create or update test commits that touch representative path groups, then push and observe which workflows trigger.",
+      "Push a validation commit that touches only `src/config/tests/**` and observe which workflows trigger.",
+      "Push a validation commit that touches only `src/config/**/README.md` and observe which workflows trigger.",
+      "Push a validation commit that touches `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/**` and observe which workflows trigger.",
       "Run: `gh pr view || gh pr create --fill`",
       "Run: `gh run list --branch $(git branch --show-current) --limit 20`",
-      "Confirm low-risk path changes start fewer workflows and high-risk paths still trigger required validation.",
+      "Confirm the two low-risk validation commits do not trigger DMS validation and the high-risk Claims commit does trigger DMS validation.",
       "Add a PR comment with the validation run URL and the observed workflow trigger list."
     ],
     "completed": false

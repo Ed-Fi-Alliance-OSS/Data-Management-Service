@@ -11,3 +11,10 @@ Key decisions: added cheap-check-summary gates to DMS and Config PR workflows; c
 Files changed: .github/workflows/on-dms-pullrequest.yml, .github/workflows/on-config-pullrequest.yml, tasks.json, progress.txt
 Verification: yq parsed both workflows; actionlint passed for both edited workflows; git diff --check passed for edited workflows; pwsh smoke checked summary script shape.
 Blockers/next: GitHub push/PR run/comment still need remote branch reconciliation because speed-up-build is ahead 3 and behind 1 before this task commit.
+
+2026-06-30 18:54 CDT
+Task completed: CI Speedup Phase 3 for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: added one DMS PR image job and one scheduled smoke image job that publish PR-head-SHA GHCR tags; downstream E2E/OpenAPI/smoke jobs pull those tags through compose image env overrides; REBUILD_DOWNSTREAM_IMAGES or fork PRs keep old local rebuild path.
+Files changed: .github/workflows/on-dms-pullrequest.yml, .github/workflows/scheduled-smoke-test.yml, eng/docker-compose/local-dms.yml, eng/docker-compose/local-config.yml, tasks.json, progress.txt
+Verification: yq parsed edited workflows; actionlint passed edited workflows; docker compose config confirmed DMS_DOCKER_IMAGE/DMS_CONFIG_DOCKER_IMAGE override and default image behavior; git diff --check passed.
+Blockers/next: branch still ahead/behind origin; real push/PR GitHub Actions validation and PR comment remain after remote reconciliation.

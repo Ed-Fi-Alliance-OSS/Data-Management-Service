@@ -5,7 +5,7 @@
 
 services:
   config:
-    image: ed-fi-api-config-local
+    image: ${DMS_CONFIG_DOCKER_IMAGE:-ed-fi-api-config-local}
     build:
       context: ../../src/config
       additional_contexts:

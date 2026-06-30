@@ -277,6 +277,106 @@ jobs:
 
           Write-Host "All cheap validation jobs passed."
 
+  build-ci-docker-images:
+    name: Build CI Docker Images
+    needs: cheap-check-summary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      use_prebuilt_images: ${{ steps.prepare-images.outputs.use_prebuilt_images }}
+      dms_image: ${{ steps.prepare-images.outputs.dms_image }}
+      config_image: ${{ steps.prepare-images.outputs.config_image }}
+      dms_compose_image: ${{ steps.prepare-images.outputs.dms_compose_image }}
+      config_compose_image: ${{ steps.prepare-images.outputs.config_compose_image }}
+    env:
+      # Set repository variable REBUILD_DOWNSTREAM_IMAGES=true to keep downstream
+      # E2E/OpenAPI jobs rebuilding local images while rolling this change back or forward.
+      REBUILD_DOWNSTREAM_IMAGES: ${{ vars.REBUILD_DOWNSTREAM_IMAGES }}
+      IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Prepare CI image tags
+        id: prepare-images
+        shell: bash
+        run: |
+          rebuild_downstream_images="${REBUILD_DOWNSTREAM_IMAGES:-false}"
+          rebuild_downstream_images="${rebuild_downstream_images,,}"
+          use_prebuilt_images="true"
+
+          case "$rebuild_downstream_images" in
+            1|true|yes|y|on)
+              use_prebuilt_images="false"
+              ;;
+          esac
+
+          if [[ "$IS_FORK_PULL_REQUEST" == "true" ]]; then
+            use_prebuilt_images="false"
+          fi
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_sha="${PULL_REQUEST_HEAD_SHA:-$GITHUB_SHA}"
+          dms_image="ghcr.io/${owner}/data-management-service-ed-fi-api-ci:${image_sha}"
+          config_image="ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:${image_sha}"
+
+          dms_compose_image=""
+          config_compose_image=""
+          if [[ "$use_prebuilt_images" == "true" ]]; then
+            dms_compose_image="$dms_image"
+            config_compose_image="$config_image"
+          fi
+
+          {
+            echo "use_prebuilt_images=$use_prebuilt_images"
+            echo "dms_image=$dms_image"
+            echo "config_image=$config_image"
+            echo "dms_compose_image=$dms_compose_image"
+            echo "config_compose_image=$config_compose_image"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the Repo
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Login to GitHub Container Registry
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push DMS CI Docker image
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: true
+          tags: ${{ steps.prepare-images.outputs.dms_image }}
+          cache-from: type=gha,scope=dms-pr-dms-image
+          cache-to: type=gha,mode=max,scope=dms-pr-dms-image
+
+      - name: Build and push Config CI Docker image
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: true
+          tags: ${{ steps.prepare-images.outputs.config_image }}
+          cache-from: type=gha,scope=dms-pr-config-image
+          cache-to: type=gha,mode=max,scope=dms-pr-config-image
+
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
     needs: cheap-check-summary
@@ -877,7 +977,7 @@ jobs:
 
   run-e2e-tests:
     name: Run PostgreSQL DMS E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-ci-docker-images]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -886,17 +986,37 @@ jobs:
         shard: [1, 2, 3, 4]
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+
       - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: /tmp/.buildx-cache
@@ -905,6 +1025,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -918,6 +1039,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1026,21 +1148,41 @@ jobs:
   # filter has no shard, so RunE2E writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-ds61:
     name: Run PostgreSQL DMS E2E (DS 6.1, version-coupled)
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-ci-docker-images]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+
       - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: /tmp/.buildx-cache
@@ -1049,6 +1191,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1062,6 +1205,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1189,7 +1333,7 @@ jobs:
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-ci-docker-images]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1197,17 +1341,37 @@ jobs:
         shard: [1, 2]
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+
       - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: /tmp/.buildx-cache
@@ -1216,6 +1380,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1229,6 +1394,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1342,14 +1508,34 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-ci-docker-images]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
 
       - name: Cache Nuget packages
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
@@ -1360,9 +1546,11 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: /tmp/.buildx-cache
@@ -1371,6 +1559,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -1384,6 +1573,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
