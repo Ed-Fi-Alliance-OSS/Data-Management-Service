@@ -28,7 +28,8 @@ From the repository root:
   `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './eng/docker-compose/.env.e2e'`
 
 The setup wrapper is still useful when you only need a prepared local Docker
-stack for debugging:
+stack for debugging; it starts infra and CMS, configures the E2E data store,
+provisions the E2E database, then starts DMS:
 `pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`
 
 ### Testing locally with API in debug mode

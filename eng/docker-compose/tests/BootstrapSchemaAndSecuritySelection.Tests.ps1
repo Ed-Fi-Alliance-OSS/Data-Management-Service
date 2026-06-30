@@ -1578,16 +1578,21 @@ exit 0
             $imSetup | Should -Not -Match "start-local-dms\.ps1[^`n]*-NoDataStore"
         }
 
-        It "DataManagementService E2E setup calls configure-local-data-store.ps1 to create the default data store" {
+        It "DataManagementService E2E setup uses the infra/configure/provision/DMS phase flow" {
             # start-local-dms.ps1 no longer creates a data store automatically after DMS-1153.
             # The DataManagementService E2E setup must call configure-local-data-store.ps1 explicitly
             # so a default route-unqualified data store points at the provisioned E2E database.
             $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+            $phaseFlowPattern = '(?ms)^\s*\./start-local-dms\.ps1[^\r\n]*-InfraOnly[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile.*^\s*\./configure-local-data-store\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile[^\r\n]*-DataStoreDatabaseName\s+\$e2eDatabaseName.*^\s*\./provision-e2e-database\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile[^\r\n]*-DatabaseName\s+\$e2eDatabaseName.*^\s*\./start-local-dms\.ps1[^\r\n]*-DmsOnly[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
+            $dmsSetup | Should -Match $phaseFlowPattern
+            $dmsSetup | Should -Match "start-local-dms\.ps1[^\r\n]*-InfraOnly"
             $dmsSetup | Should -Match "configure-local-data-store\.ps1"
             $dmsSetup | Should -Match "E2E_DATABASE_NAME"
             $dmsSetup | Should -Match '-DataStoreDatabaseName\s+\$e2eDatabaseName'
             $dmsSetup | Should -Match "provision-e2e-database\.ps1"
-            $dmsSetup | Should -Match "docker restart ed-fi-api"
+            $dmsSetup | Should -Match '-DatabaseName\s+\$e2eDatabaseName'
+            $dmsSetup | Should -Match "start-local-dms\.ps1[^\r\n]*-DmsOnly"
+            $dmsSetup | Should -Not -Match "docker restart ed-fi-api"
         }
 
         It "start-published-dms.ps1 can create E2E data stores against an explicit database name" {
