@@ -707,7 +707,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             )
             $infraBlock = $startScript.Substring($infraStart, $infraComplete - $infraStart)
 
-            $infraBlock | Should -Match 'else\s*\{[\s\S]*?Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run\." -InformationAction Continue'
+            $infraBlock | Should -Match 'else\s*\{[\s\S]*?Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run\." -InformationAction Continue'
         }
     }
 }
