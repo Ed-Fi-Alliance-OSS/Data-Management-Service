@@ -68,13 +68,13 @@ jobs:
 
       - name: Build ${{ matrix.dockerfile.name }} image
         run: |
-          path=${{ matrix.dockerfile.path }}
+          path="${{ matrix.dockerfile.path }}"
           folder=${path%/*}
-          cd $folder
-          dockerfile=$(echo ${{ matrix.dockerfile.path }} | awk -F"/" '{print $NF}')
+          cd "$folder"
+          dockerfile="${path##*/}"
 
           docker buildx build \
-            -f $dockerfile \
+            -f "$dockerfile" \
             -t ${{ matrix.dockerfile.name }}:pr-test \
             --build-context parentdir=../ \
             --load \

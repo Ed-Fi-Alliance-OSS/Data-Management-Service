@@ -1,0 +1,6 @@
+2026-06-30 17:56 CDT
+Task completed: CI Speedup Phase 1 for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: removed both specialized Dockerfile PR workflows because generic On Pull Request - Dockerfile already covers DMS and Config; fixed generic build-step quoting after actionlint surfaced shellcheck warnings.
+Files changed: .github/workflows/on-dms-pullrequest-dockerfile.yml, .github/workflows/on-config-pullrequest-dockerfile.yml, .github/workflows/on-pullrequest-dockerfile.yml, tasks.json, progress.txt
+Verification: rg found no remaining removed workflow names; generic workflow still includes DMS and Config Dockerfile paths; gh rulesets showed no required_status_checks rules on active branch rulesets; actionlint .github/workflows/on-pullrequest-dockerfile.yml passed; git diff --check passed.
+Blockers/next: branch speed-up-build is ahead 2 and behind 1 against origin before this commit; push/PR validation may require reconciling divergent task commits.
