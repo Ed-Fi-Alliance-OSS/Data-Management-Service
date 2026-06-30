@@ -46,6 +46,7 @@ services:
         aliases:
           - dms-keycloak
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
 
 networks:
   dms-sec:

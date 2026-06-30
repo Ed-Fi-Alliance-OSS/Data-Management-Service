@@ -145,9 +145,8 @@ part of the public Data-Management-Service repo).
 
 ```bash
 sudo certbot certonly --standalone --non-interactive --agree-tos -m you@org.tld -d "$FQDN"
-sudo cp /etc/letsencrypt/live/$FQDN/fullchain.pem ssl/server.crt
-sudo cp /etc/letsencrypt/live/$FQDN/privkey.pem   ssl/server.key
-sudo chown "$USER" ssl/server.crt ssl/server.key
+sudo install -m 644 -o "$USER" /etc/letsencrypt/live/$FQDN/fullchain.pem ssl/server.crt
+sudo install -m 600 -o "$USER" /etc/letsencrypt/live/$FQDN/privkey.pem   ssl/server.key
 ```
 
 Or **self-signed** (testing): `./ssl/generate-certificate.sh "$FQDN"`

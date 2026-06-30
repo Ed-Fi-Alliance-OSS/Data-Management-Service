@@ -22,4 +22,5 @@ openssl req \
   -subj "/CN=${CN}" \
   -addext "subjectAltName=DNS:${CN},DNS:localhost"
 
+chmod 600 "${DIR}/server.key"
 echo "Self-signed certificate written to ${DIR}/server.crt (CN=${CN})."

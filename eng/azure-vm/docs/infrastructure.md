@@ -124,6 +124,11 @@ of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
   both config services) and the gateway returns 403 for `/{st,mt}-config/connect/register`. The
   bootstrap admin client is provisioned directly in Keycloak, so there is no unauthenticated path
   to mint an admin-scoped CMS client.
+- **Database access uses the PostgreSQL superuser (accepted limitation for this review host).**
+  Every DMS/CMS connection authenticates as the `postgres` superuser with a single shared password;
+  there are no per-database least-privilege roles, so the physical tenant-database separation is not
+  reinforced at the role level. A production deployment MUST use per-database non-superuser roles
+  (revoke `CONNECT` from `PUBLIC`; grant CRUD-only to the DMS runtime, DDL only where required).
 
 ## Provisioning method (as deployed)
 
