@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
@@ -1058,10 +1057,6 @@ public class PostgresqlRuntimeMappingInitializationTests
             _services
                 .Should()
                 .NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository));
-
-            _services
-                .Should()
-                .NotContain(descriptor => descriptor.ServiceType == typeof(IAuthorizationRepository));
 
             _services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueryHandler));
         }
