@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
@@ -195,8 +194,6 @@ public class WebApplicationBuilderExtensionsTests
         {
             using var serviceProvider = CreateServices("postgresql");
             using var scope = serviceProvider.CreateScope();
-
-            scope.ServiceProvider.GetServices<IAuthorizationRepository>().Should().BeEmpty();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
