@@ -435,7 +435,7 @@ else {
 
         # Claims-ready gate: prove CMS has applied the expected claims content before
         # instance configuration begins. Runs only on bootstrap-manifest runs; skipped
-        # with an informational message on legacy no-manifest invocations.
+        # with an informational message on no-bootstrap invocations.
         if ($bootstrapManifestPresent) {
             Write-Output "Running claims-ready gate..."
             Test-CmsClaimsReady `
@@ -443,7 +443,7 @@ else {
                 -IdentityProvider $IdentityProvider
         }
         else {
-            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run." -InformationAction Continue
+            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run." -InformationAction Continue
         }
 
         if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
