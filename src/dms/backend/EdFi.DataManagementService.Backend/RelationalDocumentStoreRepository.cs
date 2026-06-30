@@ -93,16 +93,15 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
-        var relationalUpsertRequest = upsertRequest;
-        var mappingSet = relationalUpsertRequest.MappingSet;
+        var mappingSet = upsertRequest.MappingSet;
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",
-            relationalUpsertRequest.TraceId.Value
+            upsertRequest.TraceId.Value
         );
 
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
-        var writePrecondition = NormalizeWritePrecondition(relationalUpsertRequest.WritePrecondition);
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(upsertRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(upsertRequest.WritePrecondition);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -111,12 +110,12 @@ public sealed class RelationalDocumentStoreRepository(
                     new DescriptorWriteRequest(
                         mappingSet,
                         resource,
-                        relationalUpsertRequest.EdfiDoc,
-                        relationalUpsertRequest.DocumentUuid,
-                        relationalUpsertRequest.DocumentInfo.ReferentialId,
-                        relationalUpsertRequest.TraceId,
-                        relationalUpsertRequest.AuthorizationStrategyEvaluators,
-                        relationalUpsertRequest.AuthorizationContext
+                        upsertRequest.EdfiDoc,
+                        upsertRequest.DocumentUuid,
+                        upsertRequest.DocumentInfo.ReferentialId,
+                        upsertRequest.TraceId,
+                        upsertRequest.AuthorizationStrategyEvaluators,
+                        upsertRequest.AuthorizationContext
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -125,9 +124,8 @@ public sealed class RelationalDocumentStoreRepository(
                 .ConfigureAwait(false);
         }
 
-        var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
-        var selectedBody =
-            profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
+        var profileWriteContext = upsertRequest.BackendProfileWriteContext;
+        var selectedBody = profileWriteContext?.Request.WritableRequestBody ?? upsertRequest.EdfiDoc;
 
         // References and descriptors are extracted from the raw submitted body, but a
         // writable profile may hide submitted members that the shaper strips from selectedBody.
@@ -138,25 +136,25 @@ public sealed class RelationalDocumentStoreRepository(
         // submitted security fields are not resolved, written, or authorized.
         var documentReferences = ResolveProfileShapedReferences(
             profileWriteContext,
-            relationalUpsertRequest.DocumentInfo.DocumentReferences,
+            upsertRequest.DocumentInfo.DocumentReferences,
             selectedBody
         );
         var descriptorReferences = ResolveProfileShapedDescriptors(
             profileWriteContext,
-            relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+            upsertRequest.DocumentInfo.DescriptorReferences,
             selectedBody
         );
 
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
-                traceId: relationalUpsertRequest.TraceId,
+                traceId: upsertRequest.TraceId,
                 mappingSet,
-                relationalUpsertRequest.ResourceInfo,
+                upsertRequest.ResourceInfo,
                 RelationalWriteOperationKind.Post,
                 new RelationalWriteTargetRequest.Post(
-                    relationalUpsertRequest.DocumentInfo.ReferentialId,
-                    relationalUpsertRequest.DocumentUuid
+                    upsertRequest.DocumentInfo.ReferentialId,
+                    upsertRequest.DocumentUuid
                 ),
                 documentReferences,
                 descriptorReferences,
@@ -174,12 +172,7 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePostRelationshipIfRequired(
-                        relationalUpsertRequest,
-                        mappingSet,
-                        resource,
-                        writePlan
-                    )
+                    AuthorizePostRelationshipIfRequired(upsertRequest, mappingSet, resource, writePlan)
             )
             .ConfigureAwait(false);
 
@@ -189,13 +182,12 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         ArgumentNullException.ThrowIfNull(getRequest);
-        var relationalGetRequest = getRequest;
-        var mappingSet = relationalGetRequest.MappingSet;
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
+        var mappingSet = getRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(getRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.GetDocumentById - {TraceId}",
-            relationalGetRequest.TraceId.Value
+            getRequest.TraceId.Value
         );
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -204,12 +196,12 @@ public sealed class RelationalDocumentStoreRepository(
                 new DescriptorGetByIdRequest(
                     mappingSet,
                     resource,
-                    relationalGetRequest.DocumentUuid,
-                    relationalGetRequest.ReadMode,
-                    relationalGetRequest.AuthorizationStrategyEvaluators,
-                    relationalGetRequest.ReadableProfileProjectionContext,
-                    relationalGetRequest.TraceId,
-                    relationalGetRequest.AuthorizationContext
+                    getRequest.DocumentUuid,
+                    getRequest.ReadMode,
+                    getRequest.AuthorizationStrategyEvaluators,
+                    getRequest.ReadableProfileProjectionContext,
+                    getRequest.TraceId,
+                    getRequest.AuthorizationContext
                 )
             );
         }
@@ -229,23 +221,21 @@ public sealed class RelationalDocumentStoreRepository(
             return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
         }
 
-        return GetDocumentByIdAsync(relationalGetRequest, mappingSet, resource, readPlan);
+        return GetDocumentByIdAsync(getRequest, mappingSet, resource, readPlan);
     }
 
     public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         ArgumentNullException.ThrowIfNull(updateRequest);
-        var relationalUpdateRequest = updateRequest;
-        var mappingSet = relationalUpdateRequest.MappingSet;
-        ArgumentNullException.ThrowIfNull(mappingSet);
+        var mappingSet = updateRequest.MappingSet;
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpdateDocumentById - {TraceId}",
-            relationalUpdateRequest.TraceId.Value
+            updateRequest.TraceId.Value
         );
 
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
-        var writePrecondition = NormalizeWritePrecondition(relationalUpdateRequest.WritePrecondition);
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(updateRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(updateRequest.WritePrecondition);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
@@ -254,12 +244,12 @@ public sealed class RelationalDocumentStoreRepository(
                     new DescriptorWriteRequest(
                         mappingSet,
                         resource,
-                        relationalUpdateRequest.EdfiDoc,
-                        relationalUpdateRequest.DocumentUuid,
+                        updateRequest.EdfiDoc,
+                        updateRequest.DocumentUuid,
                         referentialId: null,
-                        relationalUpdateRequest.TraceId,
-                        relationalUpdateRequest.AuthorizationStrategyEvaluators,
-                        relationalUpdateRequest.AuthorizationContext
+                        updateRequest.TraceId,
+                        updateRequest.AuthorizationStrategyEvaluators,
+                        updateRequest.AuthorizationContext
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -268,32 +258,31 @@ public sealed class RelationalDocumentStoreRepository(
                 .ConfigureAwait(false);
         }
 
-        var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
-        var selectedBody =
-            profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
+        var profileWriteContext = updateRequest.BackendProfileWriteContext;
+        var selectedBody = profileWriteContext?.Request.WritableRequestBody ?? updateRequest.EdfiDoc;
 
         // Restrict reference/descriptor resolution to those still present in the
         // profile-shaped body (see the POST path for the full rationale). Hidden submitted
         // references/descriptors are accepted and ignored; preserved identity references remain.
         var documentReferences = ResolveProfileShapedReferences(
             profileWriteContext,
-            relationalUpdateRequest.DocumentInfo.DocumentReferences,
+            updateRequest.DocumentInfo.DocumentReferences,
             selectedBody
         );
         var descriptorReferences = ResolveProfileShapedDescriptors(
             profileWriteContext,
-            relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+            updateRequest.DocumentInfo.DescriptorReferences,
             selectedBody
         );
 
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
-                traceId: relationalUpdateRequest.TraceId,
+                traceId: updateRequest.TraceId,
                 mappingSet,
-                relationalUpdateRequest.ResourceInfo,
+                updateRequest.ResourceInfo,
                 RelationalWriteOperationKind.Put,
-                new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
+                new RelationalWriteTargetRequest.Put(updateRequest.DocumentUuid),
                 documentReferences,
                 descriptorReferences,
                 static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
@@ -310,12 +299,7 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePutRelationshipIfRequired(
-                        relationalUpdateRequest,
-                        mappingSet,
-                        resource,
-                        writePlan
-                    )
+                    AuthorizePutRelationshipIfRequired(updateRequest, mappingSet, resource, writePlan)
             )
             .ConfigureAwait(false);
 
@@ -325,29 +309,27 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         ArgumentNullException.ThrowIfNull(deleteRequest);
-        var relationalDeleteRequest = deleteRequest;
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
+            LoggingSanitizer.SanitizeForLogging(deleteRequest.TraceId.Value)
         );
 
-        var mappingSet = relationalDeleteRequest.MappingSet;
-        ArgumentNullException.ThrowIfNull(mappingSet);
+        var mappingSet = deleteRequest.MappingSet;
 
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
-        var writePrecondition = NormalizeWritePrecondition(relationalDeleteRequest.WritePrecondition);
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(deleteRequest.ResourceInfo);
+        var writePrecondition = NormalizeWritePrecondition(deleteRequest.WritePrecondition);
 
-        if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
+        if (deleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
                 new DescriptorDeleteRequest(
                     mappingSet,
                     resource,
-                    relationalDeleteRequest.DocumentUuid,
-                    relationalDeleteRequest.TraceId,
-                    relationalDeleteRequest.AuthorizationStrategyEvaluators,
-                    relationalDeleteRequest.AuthorizationContext
+                    deleteRequest.DocumentUuid,
+                    deleteRequest.TraceId,
+                    deleteRequest.AuthorizationStrategyEvaluators,
+                    deleteRequest.AuthorizationContext
                 )
                 {
                     WritePrecondition = writePrecondition,
@@ -360,13 +342,13 @@ public sealed class RelationalDocumentStoreRepository(
         // those denials issue no DB roundtrip and never lock the target. Target-dependent namespace
         // and relationship checks still run inside the delete session against the locked target (see
         // AuthorizeDeleteIfRequiredAsync).
-        var authorizationPreflight = AuthorizeDeletePreflight(relationalDeleteRequest, mappingSet, resource);
+        var authorizationPreflight = AuthorizeDeletePreflight(deleteRequest, mappingSet, resource);
 
         return authorizationPreflight switch
         {
             DeleteAuthorizationPreflightResult.Stop stop => Task.FromResult(stop.Result),
             DeleteAuthorizationPreflightResult.Proceed proceed => DeleteDocumentByIdAsync(
-                relationalDeleteRequest,
+                deleteRequest,
                 mappingSet,
                 resource,
                 writePrecondition,
@@ -1022,13 +1004,12 @@ public sealed class RelationalDocumentStoreRepository(
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
-        var relationalQueryRequest = queryRequest;
-        var mappingSet = relationalQueryRequest.MappingSet;
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalQueryRequest.ResourceInfo);
+        var mappingSet = queryRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.QueryDocuments - {TraceId}",
-            relationalQueryRequest.TraceId.Value
+            queryRequest.TraceId.Value
         );
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -1038,13 +1019,13 @@ public sealed class RelationalDocumentStoreRepository(
                     new DescriptorQueryRequest(
                         mappingSet,
                         resource,
-                        relationalQueryRequest.QueryElements,
-                        relationalQueryRequest.PaginationParameters,
-                        relationalQueryRequest.AuthorizationStrategyEvaluators,
-                        relationalQueryRequest.ReadableProfileProjectionContext,
-                        relationalQueryRequest.TraceId,
-                        relationalQueryRequest.AuthorizationContext,
-                        relationalQueryRequest.ChangeVersionRange
+                        queryRequest.QueryElements,
+                        queryRequest.PaginationParameters,
+                        queryRequest.AuthorizationStrategyEvaluators,
+                        queryRequest.ReadableProfileProjectionContext,
+                        queryRequest.TraceId,
+                        queryRequest.AuthorizationContext,
+                        queryRequest.ChangeVersionRange
                     )
                 )
                 .ConfigureAwait(false);
@@ -1054,7 +1035,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            queryCapability = relationalQueryRequest.MappingSet.GetQueryCapabilityOrThrow(resource);
+            queryCapability = queryRequest.MappingSet.GetQueryCapabilityOrThrow(resource);
         }
         catch (NotSupportedException ex)
         {
@@ -1074,14 +1055,14 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            relationalQueryRequest.AuthorizationStrategyEvaluators
+            queryRequest.AuthorizationStrategyEvaluators
         );
         var authorizationResolution = ResolveQueryAuthorization(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
-            relationalQueryRequest.AuthorizationContext,
-            relationalQueryRequest.PaginationParameters.TotalCount
+            queryRequest.AuthorizationContext,
+            queryRequest.PaginationParameters.TotalCount
         );
 
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
@@ -1109,7 +1090,7 @@ public sealed class RelationalDocumentStoreRepository(
                 .PreprocessAsync(
                     mappingSet,
                     resource,
-                    relationalQueryRequest.QueryElements,
+                    queryRequest.QueryElements,
                     queryCapability,
                     _referenceResolver
                 )
@@ -1122,10 +1103,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
-            return new QueryResult.QuerySuccess(
-                [],
-                relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-            );
+            return new QueryResult.QuerySuccess([], queryRequest.PaginationParameters.TotalCount ? 0 : null);
         }
 
         ResourceReadPlan readPlan;
@@ -1157,17 +1135,17 @@ public sealed class RelationalDocumentStoreRepository(
                 !planner.TryPlan(
                     readPlan.Model.Root,
                     preprocessingResult,
-                    relationalQueryRequest.PaginationParameters,
+                    queryRequest.PaginationParameters,
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,
-                    changeVersionRange: relationalQueryRequest.ChangeVersionRange
+                    changeVersionRange: queryRequest.ChangeVersionRange
                 ) || plannedQuery is null
             )
             {
                 return new QueryResult.QuerySuccess(
                     [],
-                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                    queryRequest.PaginationParameters.TotalCount ? 0 : null
                 );
             }
         }
@@ -1215,7 +1193,7 @@ public sealed class RelationalDocumentStoreRepository(
             .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
             .ConfigureAwait(false);
 
-        return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
+        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
     }
 
     private QueryAuthorizationResolution ResolveQueryAuthorization(
