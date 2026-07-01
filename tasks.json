@@ -203,7 +203,7 @@
       "Download the successful PR run timing artifacts and compare direct provisioning timing before and after the database creation and concurrency changes.",
       "Open the successful PR run and record the remaining direct provisioning timing comparison in a PR comment before starting Phase 6."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 6",
