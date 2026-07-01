@@ -439,8 +439,8 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
             "Discriminator",
-            "Old_Namespace",
-            "Old_CodeValue",
+            "OldNamespace",
+            "OldCodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -504,10 +504,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 (
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_CodeValue" varchar(50) NOT NULL,
-    "New_CodeValue" varchar(50) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldCodeValue" varchar(50) NOT NULL,
+    "NewCodeValue" varchar(50) NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
@@ -517,8 +517,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProfileRootOnlyMergeItem"
 (
-    "Old_ProfileRootOnlyMergeItemId" integer NOT NULL,
-    "New_ProfileRootOnlyMergeItemId" integer NULL,
+    "OldProfileRootOnlyMergeItemId" integer NOT NULL,
+    "NewProfileRootOnlyMergeItemId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -527,8 +527,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProfileRootOnlyMergeItem"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 (
-    "Old_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentUniqueId" varchar(32) NULL,
+    "OldStudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -643,7 +643,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProfileRootOnlyMergeItem" (
-            "Old_ProfileRootOnlyMergeItemId",
+            "OldProfileRootOnlyMergeItemId",
             "Id",
             "ChangeVersion"
         )
@@ -678,8 +678,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProfileRootOnlyMergeItem" (
-            "Old_ProfileRootOnlyMergeItemId",
-            "New_ProfileRootOnlyMergeItemId",
+            "OldProfileRootOnlyMergeItemId",
+            "NewProfileRootOnlyMergeItemId",
             "Id",
             "ChangeVersion"
         )
@@ -731,7 +731,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
+            "OldStudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -766,8 +766,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
-            "New_StudentUniqueId",
+            "OldStudentUniqueId",
+            "NewStudentUniqueId",
             "Id",
             "ChangeVersion"
         )

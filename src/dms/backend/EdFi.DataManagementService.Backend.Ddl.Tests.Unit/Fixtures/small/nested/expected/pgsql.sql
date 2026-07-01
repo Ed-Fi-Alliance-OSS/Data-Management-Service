@@ -439,8 +439,8 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
             "Discriminator",
-            "Old_Namespace",
-            "Old_CodeValue",
+            "OldNamespace",
+            "OldCodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -501,10 +501,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPhoneNumber"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 (
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_CodeValue" varchar(50) NOT NULL,
-    "New_CodeValue" varchar(50) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldCodeValue" varchar(50) NOT NULL,
+    "NewCodeValue" varchar(50) NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
@@ -514,8 +514,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 (
-    "Old_SchoolId" integer NOT NULL,
-    "New_SchoolId" integer NULL,
+    "OldSchoolId" integer NOT NULL,
+    "NewSchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -609,7 +609,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
+            "OldSchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -644,8 +644,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
-            "New_SchoolId",
+            "OldSchoolId",
+            "NewSchoolId",
             "Id",
             "ChangeVersion"
         )

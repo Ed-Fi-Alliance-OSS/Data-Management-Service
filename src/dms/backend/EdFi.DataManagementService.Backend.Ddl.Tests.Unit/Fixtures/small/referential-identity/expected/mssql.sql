@@ -607,8 +607,8 @@ CREATE TABLE [auth].[EducationOrganizationIdToEducationOrganizationId]
 IF OBJECT_ID(N'tracked_changes_edfi.DateTimeKeyResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[DateTimeKeyResource]
 (
-    [Old_EventTimestamp] datetime2(7) NOT NULL,
-    [New_EventTimestamp] datetime2(7) NULL,
+    [OldEventTimestamp] datetime2(7) NOT NULL,
+    [NewEventTimestamp] datetime2(7) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DateTimeKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -618,8 +618,8 @@ CREATE TABLE [tracked_changes_edfi].[DateTimeKeyResource]
 IF OBJECT_ID(N'tracked_changes_edfi.DecimalKeyResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
 (
-    [Old_DecimalKey] decimal(9,2) NOT NULL,
-    [New_DecimalKey] decimal(9,2) NULL,
+    [OldDecimalKey] decimal(9,2) NOT NULL,
+    [NewDecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -629,10 +629,10 @@ CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
 IF OBJECT_ID(N'tracked_changes_edfi.DecimalRefResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
 (
-    [Old_RefResourceId] nvarchar(64) NOT NULL,
-    [New_RefResourceId] nvarchar(64) NULL,
-    [Old_DecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
-    [New_DecimalKeyReference_DecimalKey] decimal(9,2) NULL,
+    [OldRefResourceId] nvarchar(64) NOT NULL,
+    [NewRefResourceId] nvarchar(64) NULL,
+    [OldDecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
+    [NewDecimalKeyReference_DecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalRefResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -642,12 +642,12 @@ CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
 IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentChildResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
 (
-    [Old_EdOrgDependentChildResourceId] nvarchar(64) NOT NULL,
-    [New_EdOrgDependentChildResourceId] nvarchar(64) NULL,
-    [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
-    [New_EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NULL,
-    [Old_EdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
-    [New_EdOrgDependentResourceReference_EducationOrganizationId] int NULL,
+    [OldEdOrgDependentChildResourceId] nvarchar(64) NOT NULL,
+    [NewEdOrgDependentChildResourceId] nvarchar(64) NULL,
+    [OldEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [NewEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NULL,
+    [OldEdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
+    [NewEdOrgDependentResourceReference_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentChildResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -657,10 +657,10 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
 IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
 (
-    [Old_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
-    [New_EdOrgDependentResourceId] nvarchar(64) NULL,
-    [Old_EducationOrganization_EducationOrganizationId] int NOT NULL,
-    [New_EducationOrganization_EducationOrganizationId] int NULL,
+    [OldEdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [NewEdOrgDependentResourceId] nvarchar(64) NULL,
+    [OldEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [NewEducationOrganization_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -670,14 +670,14 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
 IF OBJECT_ID(N'tracked_changes_edfi.KeyUnifiedResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
 (
-    [Old_KeyUnifiedResourceId] nvarchar(64) NOT NULL,
-    [New_KeyUnifiedResourceId] nvarchar(64) NULL,
-    [Old_ResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
-    [New_ResourceAReference_ResourceAId] nvarchar(64) NULL,
-    [Old_StudentUniqueId_Unified] nvarchar(32) NOT NULL,
-    [New_StudentUniqueId_Unified] nvarchar(32) NULL,
-    [Old_ResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
-    [New_ResourceBReference_ResourceBId] nvarchar(64) NULL,
+    [OldKeyUnifiedResourceId] nvarchar(64) NOT NULL,
+    [NewKeyUnifiedResourceId] nvarchar(64) NULL,
+    [OldResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
+    [NewResourceAReference_ResourceAId] nvarchar(64) NULL,
+    [OldStudentUniqueId_Unified] nvarchar(32) NOT NULL,
+    [NewStudentUniqueId_Unified] nvarchar(32) NULL,
+    [OldResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
+    [NewResourceBReference_ResourceBId] nvarchar(64) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_KeyUnifiedResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -687,10 +687,10 @@ CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
 IF OBJECT_ID(N'tracked_changes_edfi.ResourceA', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ResourceA]
 (
-    [Old_ResourceAId] nvarchar(64) NOT NULL,
-    [New_ResourceAId] nvarchar(64) NULL,
-    [Old_StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [OldResourceAId] nvarchar(64) NOT NULL,
+    [NewResourceAId] nvarchar(64) NULL,
+    [OldStudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceA_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -700,10 +700,10 @@ CREATE TABLE [tracked_changes_edfi].[ResourceA]
 IF OBJECT_ID(N'tracked_changes_edfi.ResourceB', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ResourceB]
 (
-    [Old_ResourceBId] nvarchar(64) NOT NULL,
-    [New_ResourceBId] nvarchar(64) NULL,
-    [Old_StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [OldResourceBId] nvarchar(64) NOT NULL,
+    [NewResourceBId] nvarchar(64) NULL,
+    [OldStudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceB_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -713,8 +713,8 @@ CREATE TABLE [tracked_changes_edfi].[ResourceB]
 IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[School]
 (
-    [Old_SchoolId] int NOT NULL,
-    [New_SchoolId] int NULL,
+    [OldSchoolId] int NOT NULL,
+    [NewSchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -724,8 +724,8 @@ CREATE TABLE [tracked_changes_edfi].[School]
 IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Student]
 (
-    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
-    [New_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -735,10 +735,10 @@ CREATE TABLE [tracked_changes_edfi].[Student]
 IF OBJECT_ID(N'tracked_changes_edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
 (
-    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
-    [New_StudentUniqueId] nvarchar(32) NULL,
-    [Old_SchoolReference_SchoolId] int NOT NULL,
-    [New_SchoolReference_SchoolId] int NULL,
+    [OldStudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) NULL,
+    [OldSchoolReference_SchoolId] int NOT NULL,
+    [NewSchoolReference_SchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -1217,7 +1217,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[DateTimeKeyResource] (
-            [Old_EventTimestamp],
+            [OldEventTimestamp],
             [Id],
             [ChangeVersion]
         )
@@ -1239,8 +1239,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[EventTimestamp] <> del.[EventTimestamp] OR (i.[EventTimestamp] IS NULL AND del.[EventTimestamp] IS NOT NULL) OR (i.[EventTimestamp] IS NOT NULL AND del.[EventTimestamp] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DateTimeKeyResource] (
-            [Old_EventTimestamp],
-            [New_EventTimestamp],
+            [OldEventTimestamp],
+            [NewEventTimestamp],
             [Id],
             [ChangeVersion]
         )
@@ -1331,7 +1331,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[DecimalKeyResource] (
-            [Old_DecimalKey],
+            [OldDecimalKey],
             [Id],
             [ChangeVersion]
         )
@@ -1353,8 +1353,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[DecimalKey] <> del.[DecimalKey] OR (i.[DecimalKey] IS NULL AND del.[DecimalKey] IS NOT NULL) OR (i.[DecimalKey] IS NOT NULL AND del.[DecimalKey] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DecimalKeyResource] (
-            [Old_DecimalKey],
-            [New_DecimalKey],
+            [OldDecimalKey],
+            [NewDecimalKey],
             [Id],
             [ChangeVersion]
         )
@@ -1445,8 +1445,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[DecimalRefResource] (
-            [Old_RefResourceId],
-            [Old_DecimalKeyReference_DecimalKey],
+            [OldRefResourceId],
+            [OldDecimalKeyReference_DecimalKey],
             [Id],
             [ChangeVersion]
         )
@@ -1469,10 +1469,10 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[RefResourceId] AS varbinary(max)) <> CAST(del.[RefResourceId] AS varbinary(max)) OR (i.[RefResourceId] IS NULL AND del.[RefResourceId] IS NOT NULL) OR (i.[RefResourceId] IS NOT NULL AND del.[RefResourceId] IS NULL)) OR (i.[DecimalKeyReference_DecimalKey] <> del.[DecimalKeyReference_DecimalKey] OR (i.[DecimalKeyReference_DecimalKey] IS NULL AND del.[DecimalKeyReference_DecimalKey] IS NOT NULL) OR (i.[DecimalKeyReference_DecimalKey] IS NOT NULL AND del.[DecimalKeyReference_DecimalKey] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DecimalRefResource] (
-            [Old_RefResourceId],
-            [Old_DecimalKeyReference_DecimalKey],
-            [New_RefResourceId],
-            [New_DecimalKeyReference_DecimalKey],
+            [OldRefResourceId],
+            [OldDecimalKeyReference_DecimalKey],
+            [NewRefResourceId],
+            [NewDecimalKeyReference_DecimalKey],
             [Id],
             [ChangeVersion]
         )
@@ -1565,9 +1565,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[EdOrgDependentChildResource] (
-            [Old_EdOrgDependentChildResourceId],
-            [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId],
-            [Old_EdOrgDependentResourceReference_EducationOrganizationId],
+            [OldEdOrgDependentChildResourceId],
+            [OldEdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [OldEdOrgDependentResourceReference_EducationOrganizationId],
             [Id],
             [ChangeVersion]
         )
@@ -1591,12 +1591,12 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[EdOrgDependentChildResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentChildResourceId] AS varbinary(max)) OR (i.[EdOrgDependentChildResourceId] IS NULL AND del.[EdOrgDependentChildResourceId] IS NOT NULL) OR (i.[EdOrgDependentChildResourceId] IS NOT NULL AND del.[EdOrgDependentChildResourceId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL)) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] <> del.[EdOrgDependentResourceReference_EducationOrganizationId] OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EdOrgDependentChildResource] (
-            [Old_EdOrgDependentChildResourceId],
-            [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId],
-            [Old_EdOrgDependentResourceReference_EducationOrganizationId],
-            [New_EdOrgDependentChildResourceId],
-            [New_EdOrgDependentResourceReference_EdOrgDependentResourceId],
-            [New_EdOrgDependentResourceReference_EducationOrganizationId],
+            [OldEdOrgDependentChildResourceId],
+            [OldEdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [OldEdOrgDependentResourceReference_EducationOrganizationId],
+            [NewEdOrgDependentChildResourceId],
+            [NewEdOrgDependentResourceReference_EdOrgDependentResourceId],
+            [NewEdOrgDependentResourceReference_EducationOrganizationId],
             [Id],
             [ChangeVersion]
         )
@@ -1715,8 +1715,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[EdOrgDependentResource] (
-            [Old_EdOrgDependentResourceId],
-            [Old_EducationOrganization_EducationOrganizationId],
+            [OldEdOrgDependentResourceId],
+            [OldEducationOrganization_EducationOrganizationId],
             [Id],
             [ChangeVersion]
         )
@@ -1739,10 +1739,10 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EdOrgDependentResource] (
-            [Old_EdOrgDependentResourceId],
-            [Old_EducationOrganization_EducationOrganizationId],
-            [New_EdOrgDependentResourceId],
-            [New_EducationOrganization_EducationOrganizationId],
+            [OldEdOrgDependentResourceId],
+            [OldEducationOrganization_EducationOrganizationId],
+            [NewEdOrgDependentResourceId],
+            [NewEducationOrganization_EducationOrganizationId],
             [Id],
             [ChangeVersion]
         )
@@ -1859,10 +1859,10 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[KeyUnifiedResource] (
-            [Old_KeyUnifiedResourceId],
-            [Old_ResourceAReference_ResourceAId],
-            [Old_StudentUniqueId_Unified],
-            [Old_ResourceBReference_ResourceBId],
+            [OldKeyUnifiedResourceId],
+            [OldResourceAReference_ResourceAId],
+            [OldStudentUniqueId_Unified],
+            [OldResourceBReference_ResourceBId],
             [Id],
             [ChangeVersion]
         )
@@ -1887,14 +1887,14 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[KeyUnifiedResource] (
-            [Old_KeyUnifiedResourceId],
-            [Old_ResourceAReference_ResourceAId],
-            [Old_StudentUniqueId_Unified],
-            [Old_ResourceBReference_ResourceBId],
-            [New_KeyUnifiedResourceId],
-            [New_ResourceAReference_ResourceAId],
-            [New_StudentUniqueId_Unified],
-            [New_ResourceBReference_ResourceBId],
+            [OldKeyUnifiedResourceId],
+            [OldResourceAReference_ResourceAId],
+            [OldStudentUniqueId_Unified],
+            [OldResourceBReference_ResourceBId],
+            [NewKeyUnifiedResourceId],
+            [NewResourceAReference_ResourceAId],
+            [NewStudentUniqueId_Unified],
+            [NewResourceBReference_ResourceBId],
             [Id],
             [ChangeVersion]
         )
@@ -2015,8 +2015,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[ResourceA] (
-            [Old_ResourceAId],
-            [Old_StudentReference_StudentUniqueId],
+            [OldResourceAId],
+            [OldStudentReference_StudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2039,10 +2039,10 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ResourceA] (
-            [Old_ResourceAId],
-            [Old_StudentReference_StudentUniqueId],
-            [New_ResourceAId],
-            [New_StudentReference_StudentUniqueId],
+            [OldResourceAId],
+            [OldStudentReference_StudentUniqueId],
+            [NewResourceAId],
+            [NewStudentReference_StudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2159,8 +2159,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[ResourceB] (
-            [Old_ResourceBId],
-            [Old_StudentReference_StudentUniqueId],
+            [OldResourceBId],
+            [OldStudentReference_StudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2183,10 +2183,10 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ResourceB] (
-            [Old_ResourceBId],
-            [Old_StudentReference_StudentUniqueId],
-            [New_ResourceBId],
-            [New_StudentReference_StudentUniqueId],
+            [OldResourceBId],
+            [OldStudentReference_StudentUniqueId],
+            [NewResourceBId],
+            [NewStudentReference_StudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2377,7 +2377,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[School] (
-            [Old_SchoolId],
+            [OldSchoolId],
             [Id],
             [ChangeVersion]
         )
@@ -2506,7 +2506,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Student] (
-            [Old_StudentUniqueId],
+            [OldStudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2528,8 +2528,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Student] (
-            [Old_StudentUniqueId],
-            [New_StudentUniqueId],
+            [OldStudentUniqueId],
+            [NewStudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -2620,8 +2620,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation] (
-            [Old_StudentUniqueId],
-            [Old_SchoolReference_SchoolId],
+            [OldStudentUniqueId],
+            [OldSchoolReference_SchoolId],
             [Id],
             [ChangeVersion]
         )
@@ -2644,10 +2644,10 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation] (
-            [Old_StudentUniqueId],
-            [Old_SchoolReference_SchoolId],
-            [New_StudentUniqueId],
-            [New_SchoolReference_SchoolId],
+            [OldStudentUniqueId],
+            [OldSchoolReference_SchoolId],
+            [NewStudentUniqueId],
+            [NewSchoolReference_SchoolId],
             [Id],
             [ChangeVersion]
         )

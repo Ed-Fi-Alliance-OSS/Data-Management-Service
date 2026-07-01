@@ -235,7 +235,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits <c>CREATE TABLE</c> statements for each derived tracked-change table
-    /// (<c>tracked_changes_*</c>). Renders the value columns (each as an <c>Old_*</c> / <c>New_*</c>
+    /// (<c>tracked_changes_*</c>). Renders the value columns (each as an <c>Old*</c> / <c>New*</c>
     /// pair) in table order, then the fixed-by-role system columns, then the primary key. The inventory
     /// is already shortened and canonicalized, so rendering is purely mechanical (DMS-1177).
     /// </summary>

@@ -455,21 +455,21 @@ public sealed record TrackedChangeSystemColumnInfo(
 
 /// <summary>
 /// A tracked old/new value column pair on a tracked-change table. Each tracked value contributes one
-/// entry that materializes as an <c>Old_*</c> column and a <c>New_*</c> column; tombstones populate only
+/// entry that materializes as an <c>Old*</c> column and a <c>New*</c> column; tombstones populate only
 /// the old values while key-change rows populate the new values when present.
 /// </summary>
-/// <param name="OldColumnName">The <c>Old_*</c> column name.</param>
-/// <param name="NewColumnName">The <c>New_*</c> column name.</param>
+/// <param name="OldColumnName">The <c>Old*</c> column name.</param>
+/// <param name="NewColumnName">The <c>New*</c> column name.</param>
 /// <param name="SourceJsonPath">The canonical JSONPath of the tracked source value.</param>
 /// <param name="CanonicalStorageColumn">
 /// The canonical storage column when the source participates in key unification; null otherwise.
 /// </param>
 /// <param name="IsOldColumnNullable">
-/// Nullability of the <c>Old_*</c> column, following the tracked source value's nullability.
+/// Nullability of the <c>Old*</c> column, following the tracked source value's nullability.
 /// </param>
 /// <param name="IsNewColumnNullable">
-/// Nullability of the <c>New_*</c> column. Normally <c>true</c> because delete tombstones leave
-/// <c>New_*</c> columns null; key-change rows populate them when present.
+/// Nullability of the <c>New*</c> column. Normally <c>true</c> because delete tombstones leave
+/// <c>New*</c> columns null; key-change rows populate them when present.
 /// </param>
 /// <param name="ScalarType">The scalar type metadata shared by the old and new columns.</param>
 /// <param name="Role">The materialization shape of the column (scalar, descriptor part, or person id).</param>

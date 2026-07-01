@@ -292,8 +292,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_Namespace",
-          "new_column": "New_Namespace",
+          "old_column": "OldNamespace",
+          "new_column": "NewNamespace",
           "source_json_path": "$.namespace",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -305,8 +305,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_CodeValue",
-          "new_column": "New_CodeValue",
+          "old_column": "OldCodeValue",
+          "new_column": "NewCodeValue",
           "source_json_path": "$.codeValue",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -373,8 +373,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_ProfileRootOnlyMergeItemId",
-          "new_column": "New_ProfileRootOnlyMergeItemId",
+          "old_column": "OldProfileRootOnlyMergeItemId",
+          "new_column": "NewProfileRootOnlyMergeItemId",
           "source_json_path": "$.profileRootOnlyMergeItemId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -430,8 +430,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_StudentUniqueId",
-          "new_column": "New_StudentUniqueId",
+          "old_column": "OldStudentUniqueId",
+          "new_column": "NewStudentUniqueId",
           "source_json_path": "$.studentUniqueId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

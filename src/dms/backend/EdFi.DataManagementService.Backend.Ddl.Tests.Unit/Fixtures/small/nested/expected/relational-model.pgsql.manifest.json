@@ -273,8 +273,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_Namespace",
-          "new_column": "New_Namespace",
+          "old_column": "OldNamespace",
+          "new_column": "NewNamespace",
           "source_json_path": "$.namespace",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -286,8 +286,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_CodeValue",
-          "new_column": "New_CodeValue",
+          "old_column": "OldCodeValue",
+          "new_column": "NewCodeValue",
           "source_json_path": "$.codeValue",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -354,8 +354,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SchoolId",
-          "new_column": "New_SchoolId",
+          "old_column": "OldSchoolId",
+          "new_column": "NewSchoolId",
           "source_json_path": "$.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

@@ -155,7 +155,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~CoreDdlEmitterTests|FullyQualifiedName~DdlManifestEmitterTests\"",
       "rg -n 'Old_|New_' src/dms/backend/EdFi.DataManagementService.Backend.Ddl src/dms/backend/EdFi.DataManagementService.Backend.External src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

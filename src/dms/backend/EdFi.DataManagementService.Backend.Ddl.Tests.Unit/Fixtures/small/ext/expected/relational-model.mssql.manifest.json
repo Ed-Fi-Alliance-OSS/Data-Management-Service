@@ -270,8 +270,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SchoolId",
-          "new_column": "New_SchoolId",
+          "old_column": "OldSchoolId",
+          "new_column": "NewSchoolId",
           "source_json_path": "$.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

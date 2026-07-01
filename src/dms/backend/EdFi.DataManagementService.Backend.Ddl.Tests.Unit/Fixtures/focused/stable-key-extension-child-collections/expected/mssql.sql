@@ -549,8 +549,8 @@ CREATE TABLE [edfi].[SchoolAddressPeriod]
 IF OBJECT_ID(N'tracked_changes_edfi.Program', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Program]
 (
-    [Old_ProgramName] nvarchar(20) NOT NULL,
-    [New_ProgramName] nvarchar(20) NULL,
+    [OldProgramName] nvarchar(20) NOT NULL,
+    [NewProgramName] nvarchar(20) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Program_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -560,8 +560,8 @@ CREATE TABLE [tracked_changes_edfi].[Program]
 IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[School]
 (
-    [Old_SchoolId] int NOT NULL,
-    [New_SchoolId] int NULL,
+    [OldSchoolId] int NOT NULL,
+    [NewSchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -801,7 +801,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Program] (
-            [Old_ProgramName],
+            [OldProgramName],
             [Id],
             [ChangeVersion]
         )
@@ -823,8 +823,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(del.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND del.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND del.[ProgramName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Program] (
-            [Old_ProgramName],
-            [New_ProgramName],
+            [OldProgramName],
+            [NewProgramName],
             [Id],
             [ChangeVersion]
         )
@@ -915,7 +915,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[School] (
-            [Old_SchoolId],
+            [OldSchoolId],
             [Id],
             [ChangeVersion]
         )
@@ -937,8 +937,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[School] (
-            [Old_SchoolId],
-            [New_SchoolId],
+            [OldSchoolId],
+            [NewSchoolId],
             [Id],
             [ChangeVersion]
         )

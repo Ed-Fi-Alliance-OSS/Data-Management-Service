@@ -9,3 +9,9 @@ DMS-1244 - completed tracked-change value-column derivation prefix task.
 - Files changed: DeriveTrackedChangeInventoryPass.cs, RelationalModelSetBuilderContext.cs, DeriveTrackedChangeInventoryPassTests.cs, IdentifierShorteningScopeTests.cs, relational-model expected manifests, tasks.json, progress.txt.
 - Verification: dotnet test RelationalModel.Tests.Unit passed 865/865; task filter command was attempted first but matched no tests; guard searches show remaining Old_ references in static read-changes auth views and downstream DDL/integration fixtures for later tasks.
 - Notes: static AuthObjectDefinitions/read-changes SQL still uses Old_ names by design for a later query/auth task; backend DDL and integration fixture artifacts still need refresh in later fixture task.
+
+DMS-1244 - completed DMS DDL emitters/read-change auth tracked-column task.
+- Key decisions: keep DDL emitters model-driven; update static ReadChanges auth view definitions to synthesize OldX names with preserved internal underscores; refresh DDL/integration expected artifacts because task guard requires no executable Old_/New_ DDL snapshots.
+- Files changed: AuthObjectDefinitions.cs, DDL emitter/contract comments, DDL unit assertions, generated DDL/relational-model expected artifacts, tasks.json, progress.txt.
+- Verification: dotnet test Ddl.Tests.Unit passed 970/971 with 1 known skipped guard test; task broad DDL filter passed 177/178 with same skip; CoreDdl/DdlManifest effective filter passed 216/216; Old_/New_ guard returned no matches.
+- Notes: task command for CoreDdlEmitterTests|DdlManifestEmitterTests matches no NUnit tests by file name, so used Given_CoreDdlEmitter|Given_DdlManifestEmitter after recording the mismatch.

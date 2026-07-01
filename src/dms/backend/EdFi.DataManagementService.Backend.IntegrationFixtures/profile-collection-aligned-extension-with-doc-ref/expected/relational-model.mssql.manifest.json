@@ -370,8 +370,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_ParentResourceId",
-          "new_column": "New_ParentResourceId",
+          "old_column": "OldParentResourceId",
+          "new_column": "NewParentResourceId",
           "source_json_path": "$.parentResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -427,8 +427,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SponsorName",
-          "new_column": "New_SponsorName",
+          "old_column": "OldSponsorName",
+          "new_column": "NewSponsorName",
           "source_json_path": "$.sponsorName",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

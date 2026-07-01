@@ -469,8 +469,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."NamingStressItem"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."NamingStressItem"
 (
-    "Old_NamingStressItemId" integer NOT NULL,
-    "New_NamingStressItemId" integer NULL,
+    "OldNamingStressItemId" integer NOT NULL,
+    "NewNamingStressItemId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -526,7 +526,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."NamingStressItem" (
-            "Old_NamingStressItemId",
+            "OldNamingStressItemId",
             "Id",
             "ChangeVersion"
         )
@@ -561,8 +561,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."NamingStressItem" (
-            "Old_NamingStressItemId",
-            "New_NamingStressItemId",
+            "OldNamingStressItemId",
+            "NewNamingStressItemId",
             "Id",
             "ChangeVersion"
         )

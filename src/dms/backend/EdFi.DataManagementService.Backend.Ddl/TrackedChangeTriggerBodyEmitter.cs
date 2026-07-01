@@ -344,7 +344,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <summary>
     /// Emits a PostgreSQL <c>INSERT INTO … SELECT</c> statement that writes a tombstone row into the
     /// tracked-change table when a document is deleted. Values come from the <c>OLD</c> row image and
-    /// a joined <c>dms.Document</c> row; <c>New_*</c> columns are omitted (they default to NULL).
+    /// a joined <c>dms.Document</c> row; <c>New*</c> columns are omitted (they default to NULL).
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
@@ -397,7 +397,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <summary>
     /// Emits a SQL Server <c>INSERT INTO … SELECT</c> statement that writes a tombstone row into the
     /// tracked-change table when a document is deleted. Old values come from the <c>deleted</c>
-    /// pseudo-table (alias <c>del</c>); <c>New_*</c> columns are omitted (they default to NULL);
+    /// pseudo-table (alias <c>del</c>); <c>New*</c> columns are omitted (they default to NULL);
     /// <c>ContentVersion</c> is read from the joined <c>dms.Document</c> row (already bumped by the
     /// earlier stamp statement in the same trigger fire).
     /// </summary>
@@ -623,7 +623,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// Emits the column list and SELECT list sections shared by all INSERT renderers.
     /// Called directly after the <c>INSERT INTO … (</c> header line; manages its own
     /// indentation scopes for the column list and SELECT list.
-    /// Emits: indented Old_* columns, optional New_* columns, Id column, ChangeVersion column;
+    /// Emits: indented Old* columns, optional New* columns, Id column, ChangeVersion column;
     /// then closing paren, SELECT keyword, and indented old-image expressions, optional new-image
     /// expressions, doc.DocumentUuid, and the ChangeVersion expression.
     /// </summary>
@@ -646,13 +646,13 @@ internal static class TrackedChangeTriggerBodyEmitter
 
         using (writer.Indent())
         {
-            // Old_* columns
+            // Old value columns
             foreach (var value in plan.Values)
             {
                 writer.AppendLine($"{dialect.QuoteIdentifier(value.Column.OldColumnName.Value)},");
             }
 
-            // New_* columns (key-change only — tombstones leave them NULL by default)
+            // New value columns (key-change only; tombstones leave them NULL by default)
             if (newImage is not null)
             {
                 foreach (var value in plan.Values)
@@ -827,7 +827,7 @@ internal static class TrackedChangeTriggerBodyEmitter
             // Discriminator first
             writer.AppendLine($"{dialect.QuoteIdentifier(discriminatorColumn.Value)},");
 
-            // Old_* value columns in table order — New_* omitted (tombstone)
+            // Old value columns in table order; new values are omitted for tombstones.
             foreach (var column in tableInfo.ValueColumnsInTableOrder)
             {
                 writer.AppendLine($"{dialect.QuoteIdentifier(column.OldColumnName.Value)},");
