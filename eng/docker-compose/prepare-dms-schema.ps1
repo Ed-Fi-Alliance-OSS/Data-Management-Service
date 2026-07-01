@@ -14,11 +14,17 @@
     (start-local-dms.ps1, bootstrap-local-dms.ps1) reads from that workspace;
     this script is the sole writer.
 
-    Standard mode (default, package-backed, core-only):
-        Omit -ApiSchemaPath. The script resolves the DS-qualified asset-only core ApiSchema NuGet
-        package (EdFi.DataStandard52.ApiSchema) from the Ed-Fi package feed at the pinned version
-        and stages it into the workspace. Standard mode stages the core package only; there is no
-        -Extensions parameter.
+    Standard mode (default, package-backed):
+        Omit -ApiSchemaPath. When -EnvironmentFile is supplied and its SCHEMA_PACKAGES value lists
+        one or more packages, the script resolves and stages the FULL SCHEMA_PACKAGES set (the same
+        package ids, versions, and feed URLs the DMS container entrypoint downloads at startup), so
+        the staged workspace's effective schema hash matches the runtime's. Exactly one entry must be
+        the core package (EdFi.DataStandard52.ApiSchema); every other entry is staged as an extension.
+        When -EnvironmentFile is omitted, the script falls back to resolving the DS-qualified
+        asset-only core ApiSchema NuGet package from the Ed-Fi package feed at the catalog-pinned
+        version and stages the core package only (backward-compatible direct-invocation behavior).
+        There is no -Extensions parameter; the extension set (if any) always comes from
+        SCHEMA_PACKAGES, never from a caller-supplied list.
 
     Expert mode (filesystem):
         Supply -ApiSchemaPath pointing to a directory that contains one or more ApiSchema*.json
@@ -41,10 +47,23 @@
         dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
             -c Release -p:UseAppHost=true -o .bootstrap/tools/dms-schema
 
+.PARAMETER EnvironmentFile
+    Standard mode only. Path to a docker-compose env file whose SCHEMA_PACKAGES value drives the
+    staged package set. When supplied and SCHEMA_PACKAGES lists packages, standard-mode staging
+    resolves and stages that full set instead of the catalog-pinned core-only default, so the staged
+    workspace's effective schema hash matches what the DMS container entrypoint (run.sh) computes
+    from the same SCHEMA_PACKAGES value at startup. Ignored in expert (-ApiSchemaPath) mode.
+
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
     Standard mode, core only. Resolves EdFi.DataStandard52.ApiSchema from the Ed-Fi package feed
     and stages it into the bootstrap workspace.
+
+.EXAMPLE
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.mssql.relational -SchemaToolPath $schemaToolExe
+    Standard mode, driven by SCHEMA_PACKAGES. Resolves and stages every package listed in the env
+    file's SCHEMA_PACKAGES value (core plus any extensions) so the staged workspace matches the
+    package set the DMS container entrypoint downloads for that same env file.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
@@ -66,7 +85,14 @@ param(
     # Internal test seam: overrides the pinned default package feed so offline tests can point at a
     # local-folder feed. Not intended for normal operator use; production runs omit this.
     [string]
-    $PackageFeedUrl
+    $PackageFeedUrl,
+
+    # Standard mode only. Path to a docker-compose env file whose SCHEMA_PACKAGES value drives the
+    # staged package set (core plus any extensions), keeping the staged workspace's effective schema
+    # hash in sync with what the DMS container entrypoint resolves from the same env file at startup.
+    # When omitted, standard mode falls back to the catalog-pinned core-only default.
+    [string]
+    $EnvironmentFile
 )
 
 Set-StrictMode -Version Latest
@@ -908,6 +934,99 @@ function Invoke-StandardModeSchemaStaging {
     }
 }
 
+function Invoke-SchemaPackagesModeSchemaStaging {
+    <#
+    .SYNOPSIS
+    Standard mode driven by an env file's SCHEMA_PACKAGES value: resolves and stages the FULL
+    package set (core plus any extensions) so the staged workspace's effective schema hash matches
+    what the DMS container entrypoint (run.sh) computes from the same SCHEMA_PACKAGES value at
+    container startup.
+
+    .DESCRIPTION
+    Parses SCHEMA_PACKAGES from the supplied env file. Exactly one entry must resolve to the
+    catalog-known core package id; every other entry is validated and staged as an extension. Each
+    entry's own version and feedUrl drive resolution - not the catalog-pinned default - so a
+    SCHEMA_PACKAGES set pinned to a newer (or different) version than the catalog default still
+    stages a workspace that matches the runtime.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFilePath
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-package-resolver.psm1") -Force -Global
+    Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force -Global
+
+    $schemaPackages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath)
+
+    $corePackage = Get-StandardCorePackage
+    $defaultFeedUrl = Get-StandardSchemaFeed
+
+    $bootstrapRoot = Get-BootstrapRoot
+    $extractionRoot = Join-Path (Join-Path $bootstrapRoot ".tmp") "pkg-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $extractionRoot -Force | Out-Null
+
+    try {
+        $schemaSourceFiles = [System.Collections.Generic.List[string]]::new()
+        $expectedIdentities = @{}
+        $coreEntryCount = 0
+
+        foreach ($schemaPackage in $schemaPackages) {
+            $packageId = [string]$schemaPackage.name
+            $packageVersion = [string]$schemaPackage.version
+            $packageFeedUrl = [string]$schemaPackage.feedUrl
+            $resolvedFeedUrl = if ([string]::IsNullOrWhiteSpace($packageFeedUrl)) {
+                $defaultFeedUrl
+            } else {
+                $packageFeedUrl
+            }
+
+            $isCoreEntry = $packageId.Equals($corePackage.Id, [System.StringComparison]::OrdinalIgnoreCase)
+
+            $resolved = Resolve-StandardSchemaPackage `
+                -FeedUrl $resolvedFeedUrl `
+                -PackageId $packageId `
+                -Version $packageVersion `
+                -DestinationRoot $extractionRoot
+
+            $validated = Assert-AssetOnlyPackageContract `
+                -ApiSchemaDirectory $resolved.ApiSchemaDirectory `
+                -PackageRoot $resolved.PackageRoot `
+                -ExpectedPackageId $packageId `
+                -ExpectedIsExtension (-not $isCoreEntry)
+
+            if ($isCoreEntry) {
+                $coreEntryCount++
+                Assert-RequestedPackageIdentity `
+                    -Validated $validated `
+                    -ExpectedProjectName $corePackage.ProjectToken `
+                    -ExpectedEndpointName $corePackage.EndpointToken `
+                    -RequestedName "core"
+            }
+
+            $schemaSourceFiles.Add($validated.SchemaPath)
+            $expectedIdentities[[System.IO.Path]::GetFullPath($validated.SchemaPath)] = $validated
+        }
+
+        if ($coreEntryCount -ne 1) {
+            throw "SCHEMA_PACKAGES in '$(Format-LogSafeText $EnvironmentFilePath)' must list exactly one core package ('$(Format-LogSafeText $corePackage.Id)'). Found $coreEntryCount."
+        }
+
+        # Stage the collected (core + extensions) schema files using the shared staging function.
+        # Each entry's own version drove resolution above, so the effective schema hash computed here
+        # matches the same SCHEMA_PACKAGES set the DMS container entrypoint resolves at startup.
+        Invoke-SchemaWorkspaceStaging `
+            -SchemaSourceFiles $schemaSourceFiles.ToArray() `
+            -SelectionMode "Standard" `
+            -ExpectedIdentities $expectedIdentities
+    } finally {
+        if (Test-Path -LiteralPath $extractionRoot) {
+            Remove-Item -LiteralPath $extractionRoot -Recurse -Force
+        }
+    }
+}
+
 # --- Mode determination ---
 if ($hasApiSchemaPath) {
     # Expert mode: use the shared staging function with ApiSchemaPath selection mode.
@@ -915,7 +1034,29 @@ if ($hasApiSchemaPath) {
         -SchemaSourceFiles (Find-ApiSchemaFile -Path $ApiSchemaPath) `
         -SelectionMode "ApiSchemaPath"
 } else {
-    # Standard mode: resolve and stage the core package only.
-    Invoke-StandardModeSchemaStaging `
-        -FeedUrl $PackageFeedUrl
+    # Standard mode. When -EnvironmentFile is supplied and its SCHEMA_PACKAGES value lists one or
+    # more packages, drive staging from that full set (core plus any extensions) so the staged
+    # workspace matches what the DMS container entrypoint resolves from the same env file at
+    # startup. Otherwise fall back to the catalog-pinned core-only default (backward-compatible
+    # direct-invocation behavior, e.g. no env file available).
+    $schemaPackagesEnvironmentFile = $null
+    if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+        Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force -Global
+        $environmentFileFullPath = [System.IO.Path]::GetFullPath($EnvironmentFile)
+        if (-not (Test-Path -LiteralPath $environmentFileFullPath -PathType Leaf)) {
+            throw "-EnvironmentFile was supplied but the file was not found: $(Format-LogSafeText $environmentFileFullPath)"
+        }
+
+        $environmentFileContent = Get-Content -LiteralPath $environmentFileFullPath -Raw
+        if ($environmentFileContent -match "(?ms)^[ \t]*SCHEMA_PACKAGES=") {
+            $schemaPackagesEnvironmentFile = $environmentFileFullPath
+        }
+    }
+
+    if ($null -ne $schemaPackagesEnvironmentFile) {
+        Invoke-SchemaPackagesModeSchemaStaging -EnvironmentFilePath $schemaPackagesEnvironmentFile
+    } else {
+        Invoke-StandardModeSchemaStaging `
+            -FeedUrl $PackageFeedUrl
+    }
 }
