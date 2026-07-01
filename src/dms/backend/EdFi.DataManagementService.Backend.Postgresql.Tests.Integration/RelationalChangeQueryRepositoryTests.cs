@@ -899,7 +899,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                 MAX("ChangeVersion") AS "LatestChangeVersion"
             FROM "tracked_changes_edfi"."AcademicWeek"
             WHERE "Id" = @documentUuid
-              AND "New_WeekIdentifier" IS NOT NULL;
+              AND "NewWeekIdentifier" IS NOT NULL;
             """,
             new NpgsqlParameter("documentUuid", AcademicWeekDocumentUuid.Value)
         );
@@ -1033,7 +1033,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     //
     // These tests exercise RelationalChangeQueryRepository's authorization path: the repository runs
     // ReadChangesAuthorizationPlanner against the resource's configured ReadChanges strategies, emits
-    // SQL predicates over the tracked-change Old_* columns + auth views, and filters rows BEFORE
+    // SQL predicates over the tracked-change OldX columns + auth views, and filters rows BEFORE
     // paging/totalCount. Rows and auth-view backing data are seeded directly (the tracked-change and
     // auth tables accept direct inserts) so each scenario controls exactly which rows are authorized.
     //
@@ -1157,7 +1157,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     [Test]
     public async Task ReadChanges_authorizes_inverted_edorg_using_the_swapped_hierarchy_direction()
     {
-        // Inverted matches the tracked Old_ EdOrg column against SourceEducationOrganizationId and the
+        // Inverted matches the tracked OldX EdOrg column against SourceEducationOrganizationId and the
         // claim against TargetEducationOrganizationId — the reverse of the normal direction. Seed an
         // asymmetric tuple so the two directions disagree.
         await InsertAuthEdOrgTupleAsync(source: AuthClaimEdOrgId, target: AuthOtherEdOrgId);
@@ -1172,7 +1172,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
         );
 
-        // Inverted: row.Old_School_SchoolId (AuthClaimEdOrgId) == Source, claim (AuthOtherEdOrgId) == Target → match.
+        // Inverted: row.OldSchool_SchoolId (AuthClaimEdOrgId) == Source, claim (AuthOtherEdOrgId) == Target → match.
         inverted.Items.Should().ContainSingle();
         // Normal with the same claim would require Target == AuthClaimEdOrgId for claim AuthOtherEdOrgId → no match.
         normal.Items.Should().BeEmpty();
@@ -1204,7 +1204,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         const long unauthorizedStudentDocId = 920002L;
 
         // Authorize one student via the tracked-SSA arm of the IncludingDeletes view. Both StudentHealth
-        // rows carry the same Old_EducationOrganization id (EdOrg-authorized for the claim), but the
+        // rows carry the same OldEducationOrganization id (EdOrg-authorized for the claim), but the
         // strategy AND-composes its subjects, so a row must clear BOTH the EdOrg and the person check.
         // Only the row for the authorized student satisfies both; the other is hidden.
         await InsertAuthEdOrgTupleAsync(AuthClaimEdOrgId, AuthClaimEdOrgId);
@@ -1779,7 +1779,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."AcademicWeek"
-                ("Old_School_SchoolId", "New_School_SchoolId", "Old_WeekIdentifier", "New_WeekIdentifier",
+                ("OldSchool_SchoolId", "NewSchool_SchoolId", "OldWeekIdentifier", "NewWeekIdentifier",
                  "Id", "ChangeVersion")
             VALUES (@oldSchoolId, NULL, @weekIdentifier, NULL, @id, @changeVersion);
             """,
@@ -1799,7 +1799,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."AcademicWeek"
-                ("Old_School_SchoolId", "New_School_SchoolId", "Old_WeekIdentifier", "New_WeekIdentifier",
+                ("OldSchool_SchoolId", "NewSchool_SchoolId", "OldWeekIdentifier", "NewWeekIdentifier",
                  "Id", "ChangeVersion")
             VALUES (@oldSchoolId, @newSchoolId, @oldWeekIdentifier, @newWeekIdentifier, @id, @changeVersion);
             """,
@@ -1817,7 +1817,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."Survey"
-                ("Old_Namespace", "New_Namespace", "Old_SurveyIdentifier", "New_SurveyIdentifier",
+                ("OldNamespace", "NewNamespace", "OldSurveyIdentifier", "NewSurveyIdentifier",
                  "Id", "ChangeVersion")
             VALUES (@oldNamespace, NULL, @surveyIdentifier, NULL, @id, @changeVersion);
             """,
@@ -1837,7 +1837,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."Descriptor"
-                ("Old_Namespace", "New_Namespace", "Old_CodeValue", "New_CodeValue", "Discriminator",
+                ("OldNamespace", "NewNamespace", "OldCodeValue", "NewCodeValue", "Discriminator",
                  "Id", "ChangeVersion")
             VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @discriminator, @id, @changeVersion);
             """,
@@ -1854,9 +1854,9 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation"
-                ("Old_EntryDate", "New_EntryDate", "Old_SchoolId_Unified", "New_SchoolId_Unified",
-                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
-                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+                ("OldEntryDate", "NewEntryDate", "OldSchoolId_Unified", "NewSchoolId_Unified",
+                 "OldStudent_StudentUniqueId", "NewStudent_StudentUniqueId",
+                 "OldStudent_DocumentId", "NewStudent_DocumentId", "Id", "ChangeVersion")
             VALUES (@entryDate, NULL, @oldSchoolId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL,
                     @id, @changeVersion);
             """,
@@ -1877,12 +1877,12 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation"
-                ("Old_BeginDate", "New_BeginDate",
-                 "Old_EducationOrganization_EducationOrganizationId", "New_EducationOrganization_EducationOrganizationId",
-                 "Old_ResponsibilityDescriptor_Namespace", "New_ResponsibilityDescriptor_Namespace",
-                 "Old_ResponsibilityDescriptor_CodeValue", "New_ResponsibilityDescriptor_CodeValue",
-                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
-                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+                ("OldBeginDate", "NewBeginDate",
+                 "OldEducationOrganization_EducationOrganizationId", "NewEducationOrganization_EducationOrganizationId",
+                 "OldResponsibilityDescriptor_Namespace", "NewResponsibilityDescriptor_Namespace",
+                 "OldResponsibilityDescriptor_CodeValue", "NewResponsibilityDescriptor_CodeValue",
+                 "OldStudent_StudentUniqueId", "NewStudent_StudentUniqueId",
+                 "OldStudent_DocumentId", "NewStudent_DocumentId", "Id", "ChangeVersion")
             VALUES (@beginDate, NULL, @oldEdOrgId, NULL, @respNamespace, NULL, @respCodeValue, NULL,
                     @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
             """,
@@ -1904,9 +1904,9 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."StudentHealth"
-                ("Old_EducationOrganization_EducationOrganizationId", "New_EducationOrganization_EducationOrganizationId",
-                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
-                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+                ("OldEducationOrganization_EducationOrganizationId", "NewEducationOrganization_EducationOrganizationId",
+                 "OldStudent_StudentUniqueId", "NewStudent_StudentUniqueId",
+                 "OldStudent_DocumentId", "NewStudent_DocumentId", "Id", "ChangeVersion")
             VALUES (@oldEdOrgId, NULL, @studentUniqueId, NULL, @oldStudentDocId, NULL, @id, @changeVersion);
             """,
             new NpgsqlParameter("oldEdOrgId", oldEdOrgId),
@@ -1925,11 +1925,11 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "tracked_changes_edfi"."DisciplineAction"
-                ("Old_DisciplineActionIdentifier", "New_DisciplineActionIdentifier",
-                 "Old_DisciplineDate", "New_DisciplineDate",
-                 "Old_Student_StudentUniqueId", "New_Student_StudentUniqueId",
-                 "Old_ResponsibilitySchool_SchoolId", "New_ResponsibilitySchool_SchoolId",
-                 "Old_Student_DocumentId", "New_Student_DocumentId", "Id", "ChangeVersion")
+                ("OldDisciplineActionIdentifier", "NewDisciplineActionIdentifier",
+                 "OldDisciplineDate", "NewDisciplineDate",
+                 "OldStudent_StudentUniqueId", "NewStudent_StudentUniqueId",
+                 "OldResponsibilitySchool_SchoolId", "NewResponsibilitySchool_SchoolId",
+                 "OldStudent_DocumentId", "NewStudent_DocumentId", "Id", "ChangeVersion")
             VALUES (@identifier, NULL, @disciplineDate, NULL, @studentUniqueId, NULL, @schoolId, NULL,
                     @oldStudentDocId, NULL, @id, @changeVersion);
             """,

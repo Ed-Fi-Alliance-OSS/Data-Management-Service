@@ -258,7 +258,7 @@ public static class ReadChangesAuthorizationPlanner
         {
             if (subjectKind is ReadChangesSubjectKind.EdOrg)
             {
-                // EdOrg subjects: every EdOrg securable element resolves to a tracked Old_ column,
+                // EdOrg subjects: every EdOrg securable element resolves to a tracked OldX column,
                 // probed against the EdOrg hierarchy view (direction selects which column is matched).
                 foreach (var edOrgSecurable in resource.SecurableElements.EducationOrganization)
                 {
@@ -287,7 +287,7 @@ public static class ReadChangesAuthorizationPlanner
             }
             else
             {
-                // Person subjects: use the denormalized Old_*_DocumentId column + the IncludingDeletes view.
+                // Person subjects: use the denormalized OldX_DocumentId column + the IncludingDeletes view.
                 ReadChangesAuthViewKind viewKind = subjectKind switch
                 {
                     ReadChangesSubjectKind.Student => ReadChangesAuthViewKind.Student,
@@ -471,7 +471,7 @@ public static class ReadChangesAuthorizationPlanner
             .SingleOrDefault();
 
     /// <summary>
-    /// Maps a securable-element JSON path to its tracked-change Old_ column by matching the live root
+    /// Maps a securable-element JSON path to its tracked-change OldX column by matching the live root
     /// column the securable resolves to against each tracked column's canonical/source identity.
     /// </summary>
     private static DbColumnName? ResolveTrackedColumnForSecurable(
