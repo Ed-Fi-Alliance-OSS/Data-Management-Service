@@ -68,7 +68,7 @@ built-in stampede protection
 **Multi-Tenancy Support:** No - one cache entry per API client, not per tenant.
 Each client's `DataStoreIds` determine which data they can access.
 
-**TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
+**TTL:** 10 minutes (configurable via `CacheSettings:ApplicationContextCacheExpirationSeconds`)
 
 **Cache Operations:**
 
@@ -115,13 +115,13 @@ built-in stampede protection
 
 ```json
 {
-  "ConfigurationServiceSettings": {
-    "CacheExpirationMinutes": 10
+  "CacheSettings": {
+    "ClaimSetsCacheExpirationSeconds": 600
   }
 }
 ```
 
-**TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
+**TTL:** 10 minutes (configurable via `CacheSettings:ClaimSetsCacheExpirationSeconds`)
 
 **Multi-Tenancy Support:** Yes - one cache entry per tenant
 
@@ -416,14 +416,20 @@ webAppBuilder.Services.AddHybridCache();
 
 Per-cache TTL is configured via `CacheSettings`:
 
-```csharp
-new CacheSettings(
-    ClaimSetsCacheExpirationMinutes: configServiceSettings.CacheExpirationMinutes,
-    ApplicationContextCacheExpirationMinutes: configServiceSettings.CacheExpirationMinutes
-)
+```json
+{
+  "CacheSettings": {
+    "ClaimSetsCacheExpirationSeconds": 600,
+    "ApplicationContextCacheExpirationSeconds": 600,
+    "TokenCacheExpirationSeconds": 1500,
+    "ProfileCacheExpirationSeconds": 1800,
+    "DataStoreCacheRefreshEnabled": true,
+    "DataStoreCacheExpirationSeconds": 600
+  }
+}
 ```
 
-Default values: ClaimSets and AppContext = 10 min, Token = 25 min.
+Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
 
 ---
 
@@ -525,8 +531,13 @@ schemas on-demand only when first requested.
 
 ```json
 {
-  "ConfigurationServiceSettings": {
-    "CacheExpirationMinutes": 10
+  "CacheSettings": {
+    "ClaimSetsCacheExpirationSeconds": 600,
+    "ApplicationContextCacheExpirationSeconds": 600,
+    "TokenCacheExpirationSeconds": 1500,
+    "ProfileCacheExpirationSeconds": 1800,
+    "DataStoreCacheRefreshEnabled": true,
+    "DataStoreCacheExpirationSeconds": 600
   },
   "JwtAuthentication": {
     "RefreshIntervalMinutes": 60,

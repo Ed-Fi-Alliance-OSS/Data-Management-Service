@@ -42,8 +42,7 @@
 #        "ClientId": "DmsConfigurationService",
 #        "ClientSecret": "ValidClientSecret1234567890!Abcd",
 #        "EncryptionKey": "YourSecureEncryptionKey32Characters",
-#        "Scope": "edfi_admin_api/full_access",
-#        "CacheExpirationMinutes": 10
+#        "Scope": "edfi_admin_api/full_access"
 #    },
 #    "JwtAuthentication": {
 #        "ClientRole": "dms-client",
