@@ -130,30 +130,6 @@ function Find-EffectiveSchemaHashInValue {
         return $null
     }
 
-    if ($Value -is [psobject]) {
-        $messageTemplate = $Value.MessageTemplate
-        $renderedMessage = $Value.RenderedMessage
-
-        $isEffectiveSchemaEvent = $false
-        if ($messageTemplate -is [string] -and $messageTemplate -match '(?i)Effective schema hash') {
-            $isEffectiveSchemaEvent = $true
-        }
-        elseif ($renderedMessage -is [string] -and $renderedMessage -match '(?i)Effective schema hash') {
-            $isEffectiveSchemaEvent = $true
-        }
-
-        if ($isEffectiveSchemaEvent) {
-            $hash = Get-EffectiveSchemaHashFromEventProperty -EventPayload $Value
-            if (-not [string]::IsNullOrWhiteSpace($hash)) {
-                return $hash
-            }
-
-            if ($renderedMessage -is [string] -and $renderedMessage -match '(?i)\b([a-f0-9]{64})\b') {
-                return $Matches[1].ToLowerInvariant()
-            }
-        }
-    }
-
     return $null
 }
 

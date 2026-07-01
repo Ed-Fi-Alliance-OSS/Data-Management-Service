@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
 {
     private const string ApplicationName = "EdFi.DataManagementService";
+    private const string RequestLayer = "Core";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -30,6 +31,7 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
         var scopeValues = new Dictionary<string, object>
         {
             ["Application"] = ApplicationName,
+            ["RequestLayer"] = RequestLayer,
             ["TraceId"] = sanitizedTraceId,
             ["Method"] = method,
             ["Path"] = path,
@@ -72,6 +74,23 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
                 }
 
                 var statusCode = requestInfo.FrontendResponse?.StatusCode ?? 0;
+
+                if (statusCode >= 500)
+                {
+                    _logger.Log(
+                        LogLevel.Error,
+                        RequestLoggingEventIds.HttpRequestFailed,
+                        "{EventName}: DMS core request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        RequestLoggingEventIds.HttpRequestFailed.Name,
+                        method,
+                        path,
+                        statusCode,
+                        stopwatch.ElapsedMilliseconds,
+                        sanitizedTraceId
+                    );
+
+                    return;
+                }
 
                 if (_logger.IsEnabled(LogLevel.Information))
                 {

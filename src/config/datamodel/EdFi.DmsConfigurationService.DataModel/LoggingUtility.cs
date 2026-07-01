@@ -25,6 +25,9 @@ public static class LoggingUtility
         {
             return string.Empty;
         }
+
+        input = input.ReplaceLineEndings(string.Empty);
+
         // Whitelist approach: only allow alphanumeric characters and specific safe symbols
         // Explicitly reject control characters for defense in depth
         return new string(

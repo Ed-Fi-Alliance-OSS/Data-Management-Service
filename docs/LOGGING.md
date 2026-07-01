@@ -40,6 +40,9 @@ request logging layer:
   `EdFi.DataManagementService`.
 * `EventName`: `HttpRequestCompleted` or `HttpRequestFailed`.
 * `SourceContext`: logger category emitted by Serilog/Microsoft logging.
+* `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
+  separate externally visible HTTP request events from core pipeline request
+  events when aggregating DMS request volume or failure rates.
 * `TraceId`: the application-visible trace or correlation ID. CMS uses
   `HttpContext.TraceIdentifier`; DMS uses the configured correlation header
   when present and falls back to `HttpContext.TraceIdentifier`.
@@ -61,7 +64,9 @@ DMS core request events normally run inside the DMS frontend request scope, so
 they may inherit `ActivityTraceId`, `SpanId`, and `PathBase` through Serilog log
 context enrichment. Collectors must tolerate those optional ASP.NET-specific
 properties being absent from DMS core events when the core pipeline is invoked
-outside the ASP.NET frontend.
+outside the ASP.NET frontend. For DMS request-count dashboards, collectors
+should filter to `RequestLayer = "Frontend"` so the frontend and core request
+events are not counted as separate external HTTP requests.
 
 ### Example Request Log Output
 

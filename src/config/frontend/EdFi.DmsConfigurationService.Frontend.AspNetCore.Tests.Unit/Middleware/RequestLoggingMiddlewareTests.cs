@@ -27,7 +27,13 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 
 internal class TestLogger<T> : ILogger<T>
 {
-    public record LogEntry(LogLevel Level, EventId EventId, object? State, Exception? Exception);
+    public record LogEntry(
+        LogLevel Level,
+        EventId EventId,
+        object? State,
+        Exception? Exception,
+        object?[] ActiveScopes
+    );
 
     public readonly List<LogEntry> Entries = new();
     private readonly Func<LogLevel, bool> _isEnabled;
@@ -63,7 +69,7 @@ internal class TestLogger<T> : ILogger<T>
         Func<TState, Exception?, string> formatter
     )
     {
-        Entries.Add(new LogEntry(logLevel, eventId, state!, exception));
+        Entries.Add(new LogEntry(logLevel, eventId, state!, exception, _scopes.ToArray()));
     }
 
     private sealed class Scope : IDisposable
@@ -181,7 +187,7 @@ internal class Given_RequestLoggingMiddleware
     }
 
     [Test]
-    public async Task It_skips_well_known_completion_logging_when_debug_is_disabled()
+    public async Task It_skips_well_known_completion_logging_when_debug_is_disabled_but_keeps_request_scope()
     {
         var nextCallCount = 0;
         var httpContext = new DefaultHttpContext();
@@ -197,7 +203,11 @@ internal class Given_RequestLoggingMiddleware
 
         nextCallCount.Should().Be(1);
         logger.Entries.Should().BeEmpty();
-        logger.Scopes.Should().BeEmpty();
+        logger
+            .Scopes.Should()
+            .ContainSingle(scope =>
+                scope.HasStructuredProperty("Application", "EdFi.DmsConfigurationService")
+            );
     }
 
     [Test]
@@ -368,6 +378,42 @@ internal class Given_RequestLoggingMiddleware
         entry.State.ContainStructuredProperty("TraceId", expectedTraceId);
         var scope = logger.Scopes.Single();
         scope.ContainStructuredProperty("TraceId", expectedTraceId);
+    }
+
+    [Test]
+    public async Task It_applies_request_scope_to_downstream_logs()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.TraceIdentifier = "cms-trace-id";
+        httpContext.Request.Method = "POST";
+        httpContext.Request.PathBase = "/management";
+        httpContext.Request.Path = "/api/v1/test";
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(_ =>
+        {
+            logger.LogInformation("Downstream handler log");
+            return Task.CompletedTask;
+        });
+
+        await middleware.Invoke(httpContext, logger);
+
+        var downstreamEntry = logger.Entries.Single(e =>
+            e.EventId.Id == 0
+            && e.State.GetStructuredProperty("{OriginalFormat}")?.ToString() == "Downstream handler log"
+        );
+        downstreamEntry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("Application", "EdFi.DmsConfigurationService"));
+        downstreamEntry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "cms-trace-id"));
+        downstreamEntry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("Method", "POST"));
+        downstreamEntry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("Path", "/api/v1/test"));
+        downstreamEntry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("PathBase", "/management"));
     }
 
     [Test]

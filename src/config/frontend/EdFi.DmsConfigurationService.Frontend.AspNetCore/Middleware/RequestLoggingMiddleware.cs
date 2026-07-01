@@ -21,27 +21,27 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         var logLevel = context.Request.Path.StartsWithSegments(new PathString("/.well-known"))
             ? LogLevel.Debug
             : LogLevel.Information;
+        var scopeValues = BuildScopeValues(context);
 
-        try
+        using (logger.BeginScope(scopeValues))
         {
-            await _next(context);
-            sw.Stop();
-
-            var statusCode = context.Response?.StatusCode ?? 0;
-            var statusCodeLogLevel =
-                statusCode >= StatusCodes.Status500InternalServerError ? LogLevel.Error : logLevel;
-
-            if (!logger.IsEnabled(statusCodeLogLevel))
+            try
             {
-                return;
-            }
+                await _next(context);
+                sw.Stop();
 
-            var scopeValues = BuildScopeValues(context);
-            scopeValues["StatusCode"] = statusCode;
-            scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+                var statusCode = context.Response?.StatusCode ?? 0;
+                var statusCodeLogLevel =
+                    statusCode >= StatusCodes.Status500InternalServerError ? LogLevel.Error : logLevel;
 
-            using (logger.BeginScope(scopeValues))
-            {
+                if (!logger.IsEnabled(statusCodeLogLevel))
+                {
+                    return;
+                }
+
+                scopeValues["StatusCode"] = statusCode;
+                scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+
                 if (statusCode >= StatusCodes.Status500InternalServerError)
                 {
                     var handledException = context.Features.Get<IExceptionHandlerFeature>()?.Error;
@@ -88,11 +88,11 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     );
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            LogFailure(context, logger, sw, ex);
-            throw;
+            catch (Exception ex)
+            {
+                LogFailure(context, logger, sw, ex, scopeValues);
+                throw;
+            }
         }
     }
 
@@ -100,7 +100,8 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         HttpContext context,
         ILogger<RequestLoggingMiddleware> logger,
         Stopwatch sw,
-        Exception ex
+        Exception ex,
+        Dictionary<string, object> scopeValues
     )
     {
         try
@@ -110,24 +111,20 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                 sw.Stop();
             }
 
-            var scopeValues = BuildScopeValues(context);
             scopeValues["StatusCode"] = GetFailureStatusCode(context);
             scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
 
-            using (logger.BeginScope(scopeValues))
-            {
-                logger.LogError(
-                    RequestLoggingEventIds.HttpRequestFailed,
-                    ex,
-                    "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                    RequestLoggingEventIds.HttpRequestFailed.Name,
-                    (string)scopeValues["Method"],
-                    (string)scopeValues["Path"],
-                    scopeValues["StatusCode"],
-                    scopeValues["DurationMs"],
-                    (string)scopeValues["TraceId"]
-                );
-            }
+            logger.LogError(
+                RequestLoggingEventIds.HttpRequestFailed,
+                ex,
+                "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                RequestLoggingEventIds.HttpRequestFailed.Name,
+                (string)scopeValues["Method"],
+                (string)scopeValues["Path"],
+                scopeValues["StatusCode"],
+                scopeValues["DurationMs"],
+                (string)scopeValues["TraceId"]
+            );
         }
         catch (Exception)
         {
@@ -140,18 +137,10 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         var scopeValues = new Dictionary<string, object>
         {
             ["Application"] = ApplicationName,
-            ["TraceId"] = LoggingUtility
-                .SanitizeForLog(context.TraceIdentifier)
-                .ReplaceLineEndings(string.Empty),
-            ["Method"] = LoggingUtility
-                .SanitizeForLog(context.Request.Method)
-                .ReplaceLineEndings(string.Empty),
-            ["Path"] = LoggingUtility
-                .SanitizeForLog(context.Request.Path.Value)
-                .ReplaceLineEndings(string.Empty),
-            ["PathBase"] = LoggingUtility
-                .SanitizeForLog(context.Request.PathBase.Value)
-                .ReplaceLineEndings(string.Empty),
+            ["TraceId"] = LoggingUtility.SanitizeForLog(context.TraceIdentifier),
+            ["Method"] = LoggingUtility.SanitizeForLog(context.Request.Method),
+            ["Path"] = LoggingUtility.SanitizeForLog(context.Request.Path.Value),
+            ["PathBase"] = LoggingUtility.SanitizeForLog(context.Request.PathBase.Value),
         };
 
         var activity = Activity.Current;

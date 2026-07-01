@@ -19,26 +19,20 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
     private readonly IOptions<AppSettings> _appSettings =
         appSettings ?? throw new ArgumentNullException(nameof(appSettings));
     private const string ApplicationName = "EdFi.DataManagementService";
+    private const string RequestLayer = "Frontend";
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
-        var sanitizedMethod = LoggingSanitizer
-            .SanitizeForLogging(context.Request.Method)
-            .ReplaceLineEndings(string.Empty);
-        var sanitizedPath = LoggingSanitizer
-            .SanitizeForLogging(context.Request.Path.Value)
-            .ReplaceLineEndings(string.Empty);
-        var pathBase = LoggingSanitizer
-            .SanitizeForLogging(context.Request.PathBase.Value)
-            .ReplaceLineEndings(string.Empty);
-        var traceId = LoggingSanitizer
-            .SanitizeForLogging(ExtractTraceId(context))
-            .ReplaceLineEndings(string.Empty);
+        var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
+        var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
+        var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
+        var traceId = LoggingSanitizer.SanitizeForLogging(ExtractTraceId(context));
 
         var scopeValues = new Dictionary<string, object>
         {
             ["Application"] = ApplicationName,
+            ["RequestLayer"] = RequestLayer,
             ["TraceId"] = traceId,
             ["Method"] = sanitizedMethod,
             ["Path"] = sanitizedPath,
@@ -64,6 +58,24 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                 await _next(context);
 
                 stopwatch.Stop();
+                var statusCode = context.Response?.StatusCode ?? 0;
+                if (statusCode >= StatusCodes.Status500InternalServerError)
+                {
+                    logger.Log(
+                        LogLevel.Error,
+                        RequestLoggingEventIds.HttpRequestFailed,
+                        "{EventName}: DMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        RequestLoggingEventIds.HttpRequestFailed.Name,
+                        sanitizedMethod,
+                        sanitizedPath,
+                        statusCode,
+                        stopwatch.ElapsedMilliseconds,
+                        traceId
+                    );
+
+                    return;
+                }
+
                 if (logger.IsEnabled(LogLevel.Information))
                 {
                     logger.Log(
@@ -73,7 +85,7 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                         RequestLoggingEventIds.HttpRequestCompleted.Name,
                         sanitizedMethod,
                         sanitizedPath,
-                        context.Response?.StatusCode ?? 0,
+                        statusCode,
                         stopwatch.ElapsedMilliseconds,
                         traceId
                     );

@@ -119,6 +119,7 @@ public class Given_LoggingMiddleware
         entry
             .ActiveScopes.Should()
             .Contain(scope => scope.HasStructuredProperty("TraceId", "operator-trace-id"));
+        entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("RequestLayer", "Frontend"));
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("Method", "GET"));
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("Path", "/ed-fi/students"));
         entry.State.ContainStructuredProperty("StatusCode", 200);
@@ -171,6 +172,7 @@ public class Given_LoggingMiddleware
         entry
             .ActiveScopes.Should()
             .Contain(scope => scope.HasStructuredProperty("Application", "EdFi.DataManagementService"));
+        entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("RequestLayer", "Frontend"));
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("Method", "GET"));
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("Path", "/ed-fi/students"));
         entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("PathBase", string.Empty));
@@ -267,7 +269,7 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
-    public async Task It_logs_downstream_500_response_as_completion_not_failure()
+    public async Task It_logs_downstream_500_response_as_failure()
     {
         var httpContext = new DefaultHttpContext();
         var logger = new TestLogger<LoggingMiddleware>();
@@ -282,11 +284,13 @@ public class Given_LoggingMiddleware
 
         await middleware.Invoke(httpContext, logger);
 
-        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
-        entry.Level.Should().Be(LogLevel.Information);
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
+        entry.Level.Should().Be(LogLevel.Error);
+        entry.Exception.Should().BeNull();
+        entry.State.ContainStructuredProperty("EventName", "HttpRequestFailed");
         entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
         entry.State.ContainKey("DurationMs");
-        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestCompleted");
     }
 
     [Test]
@@ -333,6 +337,7 @@ public class Given_LoggingMiddleware
             {
                 ["Application"] = "EdFi.DataManagementService",
                 ["TraceId"] = "json-trace-id",
+                ["RequestLayer"] = "Frontend",
                 ["Method"] = "GET",
                 ["Path"] = "/ed-fi/students",
                 ["PathBase"] = "",
@@ -359,6 +364,7 @@ public class Given_LoggingMiddleware
         properties?["Application"]?.GetValue<string>().Should().Be("EdFi.DataManagementService");
         properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
         properties?["TraceId"]?.GetValue<string>().Should().Be("json-trace-id");
+        properties?["RequestLayer"]?.GetValue<string>().Should().Be("Frontend");
         properties?["Method"]?.GetValue<string>().Should().Be("GET");
         properties?["Path"]?.GetValue<string>().Should().Be("/ed-fi/students");
         properties?["StatusCode"]?.GetValue<int>().Should().Be(200);

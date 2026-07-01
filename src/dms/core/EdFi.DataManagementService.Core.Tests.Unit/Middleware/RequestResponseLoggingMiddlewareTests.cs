@@ -55,6 +55,7 @@ public class Given_RequestResponseLoggingMiddleware
         record.ActiveScopes.Should().ContainSingle();
         var scope = record.ActiveScopes.Single();
         scope.Should().Contain("Application", "EdFi.DataManagementService");
+        scope.Should().Contain("RequestLayer", "Core");
         scope.Should().Contain("TraceId", "core-trace-id");
         scope.Should().Contain("Method", "GET");
         scope.Should().Contain("Path", "/ed-fi/students");
@@ -108,10 +109,32 @@ public class Given_RequestResponseLoggingMiddleware
         record.ActiveScopes.Should().ContainSingle();
         var scope = record.ActiveScopes.Single();
         scope.Should().Contain("Application", "EdFi.DataManagementService");
+        scope.Should().Contain("RequestLayer", "Core");
         scope.Should().Contain("TraceId", "core-trace-id");
         scope.Should().Contain("Method", "GET");
         scope.Should().Contain("Path", "/ed-fi/students");
         scope.Should().NotContainKey("PathBase");
+    }
+
+    [Test]
+    public async Task It_logs_5xx_responses_as_request_failures()
+    {
+        var requestInfo = No.RequestInfo("core-trace-id");
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = "/ed-fi/students" };
+        requestInfo.FrontendResponse = new FrontendResponse(503, Body: null, Headers: []);
+
+        await _middleware.Execute(requestInfo, TestHelper.NullNext);
+
+        var record = _logger.Records.Single(log => log.EventId.Name == "HttpRequestFailed");
+        record.Level.Should().Be(LogLevel.Error);
+        record.Exception.Should().BeNull();
+        record.Properties.Should().Contain("EventName", "HttpRequestFailed");
+        record.Properties.Should().Contain("Method", "GET");
+        record.Properties.Should().Contain("Path", "/ed-fi/students");
+        record.Properties.Should().Contain("StatusCode", 503);
+        record.Properties.Should().Contain("TraceId", "core-trace-id");
+        record.Properties.Should().ContainKey("DurationMs");
+        _logger.Records.Should().NotContain(log => log.EventId.Name == "HttpRequestCompleted");
     }
 
     [Test]
@@ -169,6 +192,7 @@ public class Given_RequestResponseLoggingMiddleware
         record.ActiveScopes.Should().ContainSingle();
         var scope = record.ActiveScopes.Single();
         scope.Should().Contain("Application", "EdFi.DataManagementService");
+        scope.Should().Contain("RequestLayer", "Core");
         scope.Should().Contain("TraceId", "traceidwithunsafe");
         scope.Should().Contain("Method", "GET");
         scope.Should().Contain("Path", "/ed-fi/students/id");
@@ -190,6 +214,7 @@ public class Given_RequestResponseLoggingMiddleware
             {
                 ["Application"] = "EdFi.DataManagementService",
                 ["TraceId"] = "json-trace-id",
+                ["RequestLayer"] = "Core",
                 ["Method"] = "GET",
                 ["Path"] = "/ed-fi/students",
                 ["PathBase"] = "",
@@ -216,6 +241,7 @@ public class Given_RequestResponseLoggingMiddleware
         properties?["Application"]?.GetValue<string>().Should().Be("EdFi.DataManagementService");
         properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
         properties?["TraceId"]?.GetValue<string>().Should().Be("json-trace-id");
+        properties?["RequestLayer"]?.GetValue<string>().Should().Be("Core");
         properties?["Method"]?.GetValue<string>().Should().Be("GET");
         properties?["Path"]?.GetValue<string>().Should().Be("/ed-fi/students");
         properties?["StatusCode"]?.GetValue<int>().Should().Be(200);
