@@ -347,8 +347,7 @@ Feature: OWASP critical attack path protections
 
         # DMS validates bearer tokens statelessly and does not maintain a replay cache,
         # so the same valid token is accepted on every request within its lifetime.
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 21 Valid JWT replayed multiple times within its lifetime is accepted
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools"
@@ -360,8 +359,7 @@ Feature: OWASP critical attack path protections
 
         # Authentication failures return a generic 401 without disclosing which check
         # failed or any framework/stack-trace internals.
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 22 Authentication failure response does not leak internal details
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the token signature is manipulated
