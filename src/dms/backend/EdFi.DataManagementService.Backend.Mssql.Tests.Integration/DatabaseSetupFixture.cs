@@ -71,8 +71,10 @@ public class DatabaseSetupFixture
     }
 
     [OneTimeTearDown]
-    public void OneTimeTearDown()
+    public async Task OneTimeTearDown()
     {
+        await MssqlBackendBaselineCache.DisposeAllAsync();
+
         if (_databaseName is not null)
         {
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
