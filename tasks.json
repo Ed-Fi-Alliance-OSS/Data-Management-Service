@@ -52,7 +52,7 @@
       "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1",
       "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
