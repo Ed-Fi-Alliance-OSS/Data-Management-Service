@@ -140,10 +140,18 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         var scopeValues = new Dictionary<string, object>
         {
             ["Application"] = ApplicationName,
-            ["TraceId"] = LoggingUtility.SanitizeForLog(context.TraceIdentifier),
-            ["Method"] = LoggingUtility.SanitizeForLog(context.Request.Method),
-            ["Path"] = LoggingUtility.SanitizeForLog(context.Request.Path.Value),
-            ["PathBase"] = LoggingUtility.SanitizeForLog(context.Request.PathBase.Value),
+            ["TraceId"] = LoggingUtility
+                .SanitizeForLog(context.TraceIdentifier)
+                .ReplaceLineEndings(string.Empty),
+            ["Method"] = LoggingUtility
+                .SanitizeForLog(context.Request.Method)
+                .ReplaceLineEndings(string.Empty),
+            ["Path"] = LoggingUtility
+                .SanitizeForLog(context.Request.Path.Value)
+                .ReplaceLineEndings(string.Empty),
+            ["PathBase"] = LoggingUtility
+                .SanitizeForLog(context.Request.PathBase.Value)
+                .ReplaceLineEndings(string.Empty),
         };
 
         var activity = Activity.Current;

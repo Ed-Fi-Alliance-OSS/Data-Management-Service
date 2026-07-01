@@ -23,10 +23,18 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
-        var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
-        var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
-        var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
-        var traceId = ExtractTraceIdForLogging(context);
+        var sanitizedMethod = LoggingSanitizer
+            .SanitizeForLogging(context.Request.Method)
+            .ReplaceLineEndings(string.Empty);
+        var sanitizedPath = LoggingSanitizer
+            .SanitizeForLogging(context.Request.Path.Value)
+            .ReplaceLineEndings(string.Empty);
+        var pathBase = LoggingSanitizer
+            .SanitizeForLogging(context.Request.PathBase.Value)
+            .ReplaceLineEndings(string.Empty);
+        var traceId = LoggingSanitizer
+            .SanitizeForLogging(ExtractTraceId(context))
+            .ReplaceLineEndings(string.Empty);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -122,17 +130,15 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         }
     }
 
-    private string ExtractTraceIdForLogging(HttpContext context)
+    private string? ExtractTraceId(HttpContext context)
     {
         try
         {
-            return LoggingSanitizer.SanitizeForLogging(
-                AspNetCoreFrontend.ExtractTraceIdFrom(context.Request, _appSettings).Value
-            );
+            return AspNetCoreFrontend.ExtractTraceIdFrom(context.Request, _appSettings).Value;
         }
         catch (OptionsValidationException)
         {
-            return LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier);
+            return context.TraceIdentifier;
         }
     }
 
