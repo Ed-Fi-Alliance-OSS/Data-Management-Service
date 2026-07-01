@@ -274,7 +274,7 @@ public class Given_DocumentStamping_Trigger_With_Shortened_Mirror_Stamp_Target_T
 
 /// <summary>
 /// Verifies that identifier shortening rewrites a tracked-change table's own name and its
-/// <c>Old_</c>/<c>New_</c> value-column names.
+/// <c>Old</c>/<c>New</c> value-column names.
 /// </summary>
 [TestFixture]
 public class Given_Tracked_Change_Table_And_Columns_Shortening
@@ -297,8 +297,8 @@ public class Given_Tracked_Change_Table_And_Columns_Shortening
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["LongTrackedTable"] = "ShortTable",
-                ["Old_LongValueColumn"] = "Old_Short",
-                ["New_LongValueColumn"] = "New_Short",
+                ["OldLongValueColumn"] = "OldShort",
+                ["NewLongValueColumn"] = "NewShort",
             }
         );
 
@@ -319,15 +319,15 @@ public class Given_Tracked_Change_Table_And_Columns_Shortening
     }
 
     /// <summary>
-    /// It should shorten the Old_ and New_ value-column names.
+    /// It should shorten the Old and New value-column names.
     /// </summary>
     [Test]
     public void It_should_shorten_the_old_and_new_value_column_names()
     {
         var column = _result.TrackedChangeTablesInNameOrder.Single().ValueColumnsInTableOrder.Single();
 
-        column.OldColumnName.Value.Should().Be("Old_Short");
-        column.NewColumnName.Value.Should().Be("New_Short");
+        column.OldColumnName.Value.Should().Be("OldShort");
+        column.NewColumnName.Value.Should().Be("NewShort");
     }
 }
 
@@ -404,8 +404,8 @@ public class Given_Tracked_Change_Column_Shortening_Collision_Within_Table
             SqlDialect.Pgsql,
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["Old_AlphaLong"] = "Old_Dup",
-                ["Old_BetaLong"] = "Old_Dup",
+                ["OldAlphaLong"] = "OldDup",
+                ["OldBetaLong"] = "OldDup",
             }
         );
 
@@ -580,7 +580,7 @@ file sealed class TrackedChangeShorteningFixturePass : IRelationalModelSetPass
         context.TrackedChangeInventory.Add(
             TrackedChangeShorteningFixtures.Table(
                 "LongTrackedTable",
-                [TrackedChangeShorteningFixtures.ValueColumn("Old_LongValueColumn", "New_LongValueColumn")]
+                [TrackedChangeShorteningFixtures.ValueColumn("OldLongValueColumn", "NewLongValueColumn")]
             )
         );
     }
@@ -599,7 +599,7 @@ file sealed class TrackedChangeAttachmentShorteningFixturePass : IRelationalMode
         context.TrackedChangeInventory.Add(
             TrackedChangeShorteningFixtures.Table(
                 "LongTrackedTable",
-                [TrackedChangeShorteningFixtures.ValueColumn("Old_Value", "New_Value")]
+                [TrackedChangeShorteningFixtures.ValueColumn("OldValue", "NewValue")]
             )
         );
 
@@ -627,8 +627,8 @@ file sealed class TrackedChangeColumnCollisionFixturePass : IRelationalModelSetP
             TrackedChangeShorteningFixtures.Table(
                 "TrackedTable",
                 [
-                    TrackedChangeShorteningFixtures.ValueColumn("Old_AlphaLong", "New_AlphaLong"),
-                    TrackedChangeShorteningFixtures.ValueColumn("Old_BetaLong", "New_BetaLong"),
+                    TrackedChangeShorteningFixtures.ValueColumn("OldAlphaLong", "NewAlphaLong"),
+                    TrackedChangeShorteningFixtures.ValueColumn("OldBetaLong", "NewBetaLong"),
                 ]
             )
         );

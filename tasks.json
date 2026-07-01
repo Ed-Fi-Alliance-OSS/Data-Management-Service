@@ -138,7 +138,7 @@
       "rg -n \"OldPrefix|NewPrefix|Old_|New_\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit",
       "rg -n '\"Old_|\"New_|\\[Old_|\\[New_' src/dms/backend/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
