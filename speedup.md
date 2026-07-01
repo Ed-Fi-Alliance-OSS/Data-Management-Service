@@ -1,265 +1,656 @@
-# GitHub Actions Speedup Implementation Plan
+# MSSQL Integration Setup Speedup Plan
 
-This plan targets the PR build queue pressure caused by high job fan-out, repeated setup work, and duplicated validation. It covers these changes:
+## Goal
 
-- Build CI Docker images once, then reuse them.
-- Prebuild .NET test assemblies once for integration shards.
-- Rebalance shards using timing artifacts.
-- Gate expensive jobs behind cheap jobs.
-- Remove duplicate Dockerfile analysis.
-- Add `max-parallel` to expensive matrices.
+Bring GitHub Actions MSSQL integration setup time much closer to PostgreSQL integration setup time by avoiding repeated generated-DDL provisioning and replacing it with cheaper database lease operations.
 
-## Current Bottlenecks
+The primary target is the setup portion of these jobs:
 
-The current DMS PR workflow fans out many heavyweight jobs in parallel:
+- Backend MSSQL integration shards in `.github/workflows/on-dms-pullrequest.yml`
+- DMS API MSSQL integration tests
+- SchemaTools MSSQL integration tests, if they use similar generated-DDL provisioning paths
 
-- Four Backend MSSQL integration shards.
-- DMS API MSSQL integration.
-- Backend PostgreSQL integration.
-- DMS API PostgreSQL integration.
-- Three CLI integration legs plus SchemaTools database legs.
-- Four DMS E2E shards.
-- DS 6.1 DMS E2E.
-- Two Instance Management E2E shards.
-- OpenAPI validation stack.
-- Fresh Docker rebuild checks.
+The current evidence points to SQL Server database setup as the dominant cost, especially:
 
-The latest observed run showed:
+- Applying generated DDL batch-by-batch in `MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(...)`
+- Creating snapshot-backed baseline slots in `MssqlGeneratedDdlBaselineDatabase`
+- Reusing snapshot slots through `SINGLE_USER`, `RESTORE DATABASE ... FROM DATABASE_SNAPSHOT`, and `MULTI_USER`
+- Clearing SQL client connection pools around database reset/drop/restore operations
+- Running multiple generated-DDL provisions concurrently on hosted runners
 
-- DMS PR workflow elapsed time: about 32 minutes.
-- Slowest DMS E2E shard: about 21 minutes.
-- Slowest Backend MSSQL shard: about 20 minutes.
-- DMS E2E shards each rebuilt DMS and Config Docker images and ran a build before tests.
-- Backend MSSQL shard 3 spent about 19 minutes in `dotnet test`, but only about 2 minutes were attributed to individual test durations in the TRX summary.
-- Adding more shards now risks increasing queue wait instead of reducing total time.
+PostgreSQL is faster because its test harness can provision one baseline and cheaply clone it with `CREATE DATABASE new_db TEMPLATE baseline_db`. SQL Server needs an equivalent "DDL once, lease many" mechanism.
 
-## Phase 1: Remove Duplicate Dockerfile Analysis
+## Non-Goals
 
-Goal: stop analyzing the DMS Dockerfile twice on PRs.
+- Do not weaken database isolation for tests that depend on clean per-test state.
+- Do not remove MSSQL coverage just to reduce time.
+- Do not make local test setup depend on GitHub Actions-specific behavior.
+- Do not introduce a SQL Server feature unavailable in the existing Developer container image.
 
-Files:
+## Success Criteria
 
-- `.github/workflows/on-dms-pullrequest-dockerfile.yml`
-- `.github/workflows/on-pullrequest-dockerfile.yml`
+Use GitHub Actions timing artifacts to compare before and after.
 
-Implementation:
+Minimum acceptable improvement:
 
-1. Keep the generic `On Pull Request - Dockerfile` workflow as the single Dockerfile PR analysis path because it already covers both DMS and Config Dockerfiles.
-2. Delete `.github/workflows/on-dms-pullrequest-dockerfile.yml`, or change its trigger to `workflow_dispatch` only if a short-term rollback path is desired.
-3. Confirm branch protection does not require checks from the deleted workflow. If it does, update required checks before merging.
-4. Verify that a DMS Dockerfile-only PR still runs one Dockerfile analysis job for `src/dms/Dockerfile`.
+- Backend MSSQL shard setup time reduced by at least 35 percent.
+- Slowest backend MSSQL shard `dotnet test` step reduced meaningfully, with shard 3 no longer dominated by fixture provisioning.
+- No increase in MSSQL test flakiness over at least three PR runs.
 
-Expected impact:
+Preferred outcome:
 
-- Removes one redundant workflow run and one Docker build/scout pass when `src/dms/Dockerfile` changes.
+- Generated-DDL application happens once per unique fixture per shard process.
+- Most test database leases are backup restores, snapshot restores, or simple data resets.
+- Full generated-DDL provisioning becomes rare and visible in timing artifacts.
 
-## Phase 2: Gate Expensive Jobs Behind Cheap Jobs
+## Current Code Paths
 
-Goal: fail fast before starting Docker-heavy and database-heavy jobs.
+PostgreSQL baseline flow:
 
-Files:
+- `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/PostgresqlGeneratedDdlBaselineDatabase.cs`
+- Creates one provisioned database, detaches it, and leases isolated databases with `CREATE DATABASE ... TEMPLATE`.
+
+MSSQL baseline flow:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlBaselineDatabase.cs`
+- Creates a provisioned database, creates a database snapshot, and restores the same database from the snapshot when a slot is reused.
+- If no idle slot exists, the harness creates another fully provisioned database and snapshot.
+
+MSSQL direct provisioning flow:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlTestDatabase.cs`
+- Creates a fresh database and applies every generated-DDL `GO` batch inside a transaction.
+- Many backend MSSQL tests call `CreateProvisionedAsync(...)` directly.
+
+API MSSQL cache:
+
+- `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Mssql/MssqlBaselineCache.cs`
+- Caches baseline databases per fixture for API-level tests.
+- This pattern should be extended to backend MSSQL integration tests.
+
+CI container setup:
+
+- `.github/actions/start-mssql-test-container/action.yml`
+- Already uses tmpfs for `/var/opt/mssql` and sets SQL Server memory limits, so the next major wins should be in the test harness rather than the container.
+
+## Phase 0: Improve Measurement Before Changing Behavior
+
+### Objective
+
+Make the setup cost visible enough that each implementation step can be evaluated independently.
+
+### Tasks
+
+1. Extend `MssqlProvisioningTimingRecorder` to record named setup phases, not only total `CreateProvisionedAsync(...)` time.
+
+   Suggested phases:
+
+   - `create-empty-database`
+   - `apply-generated-ddl`
+   - `create-snapshot`
+   - `restore-snapshot`
+   - `backup-baseline`
+   - `restore-backup`
+   - `reset-database`
+   - `drop-database`
+
+2. Add these fields to timing records:
+
+   - `FixtureSignature`
+   - `GeneratedDdlHash`
+   - `Phase`
+   - `LeaseStrategy`
+   - `Shard`
+   - `TestWorkerId`, if available from NUnit context
+   - Caller file/member/line, preserving the current caller fields
+
+3. Keep `MSSQL_FIXTURE_TIMINGS_PATH` as the controlling environment variable.
+
+4. Update `eng/ci/summarize-test-timings.ps1`, or add a companion summarizer, to group MSSQL setup time by:
+
+   - Shard
+   - Fixture signature
+   - Caller file
+   - Phase
+
+### Validation
+
+Run one PR build before behavior changes and upload the timing artifact. This is the baseline for later phases.
+
+## Phase 1: Add Backend MSSQL Baseline Cache
+
+### Objective
+
+Stop backend MSSQL tests from repeatedly applying the same generated DDL when multiple fixtures use the same schema material.
+
+### Design
+
+Add an assembly-level cache in the backend MSSQL integration test project, similar to the DMS API `MssqlBaselineCache`.
+
+Suggested file:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlBackendBaselineCache.cs`
+
+Suggested public surface inside the test assembly:
+
+```csharp
+internal static class MssqlBackendBaselineCache
+{
+    public static Task<MssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(
+        string fixtureSignature,
+        string generatedDdl,
+        int commandTimeoutSeconds = 300
+    );
+
+    public static Task DisposeAllAsync();
+}
+```
+
+Cache key:
+
+- Fixture directory descriptor cache key when available
+- Strict mode
+- Generated DDL hash
+
+The cache must reject a key reuse if the generated DDL hash changes.
+
+### Implementation Steps
+
+1. Add `MssqlBackendBaselineCache`.
+2. Add a backend MSSQL `[SetUpFixture]` cleanup hook, or extend the existing `DatabaseSetupFixture`, to call `MssqlBackendBaselineCache.DisposeAllAsync()`.
+3. Convert the highest-cost backend fixtures from direct `CreateProvisionedAsync(...)` to cached baseline leasing.
+4. Start with fixtures that reuse common authoritative schemas:
+
+   - `src/dms/backend/Fixtures/authoritative/sample`
+   - `src/dms/backend/Fixtures/authoritative/ds-5.2`
+   - `src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm`
+   - Profile fixtures used repeatedly by `MssqlProfile*` tests
+
+### Test Conversion Rules
+
+Use one of these patterns per test class.
+
+Pattern A: one database per test class plus reset
+
+- Use when the class only changes data.
+- Acquire a database once in `OneTimeSetUp`.
+- Continue calling `ResetAsync()` in `SetUp`.
+- Release the lease in `OneTimeTearDown`.
+
+Pattern B: one database per test
+
+- Use when a test mutates schema, connection state, metadata, or hard-to-reset data.
+- Acquire the lease in `SetUp`.
+- Release in `TearDown`.
+
+Pattern C: direct provisioning remains
+
+- Use only for tests whose purpose is to validate direct generated-DDL provisioning behavior.
+- Examples include harness tests for `MssqlGeneratedDdlTestDatabase` itself.
+
+### Validation
+
+Run each MSSQL shard and compare:
+
+- Number of `apply-generated-ddl` phases
+- Total setup seconds
+- Number of fixture cache hits
+- Test failures caused by shared state
+
+## Phase 2: Add SQL Server Backup-Restore Baseline Leasing
+
+### Objective
+
+Provide SQL Server with a cheaper clone primitive closer to PostgreSQL `CREATE DATABASE ... TEMPLATE`.
+
+Snapshot restore resets one existing database. It does not cheaply create independent databases for parallel leases. A full database backup can be restored repeatedly into unique databases, which should avoid reapplying generated DDL for every active slot.
+
+### Proposed Common Test Harness Types
+
+Add these to:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/`
+
+Suggested files:
+
+- `MssqlGeneratedDdlBackupBaselineDatabase.cs`
+- `MssqlGeneratedDdlBackupBaselineLease.cs`
+- `MssqlDatabaseFileMetadata.cs`
+
+Suggested API:
+
+```csharp
+public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
+{
+    public static Task<MssqlGeneratedDdlBackupBaselineDatabase> CreateAsync(
+        string fixtureSignature,
+        string generatedDdl,
+        int commandTimeoutSeconds = 300
+    );
+
+    public Task<MssqlGeneratedDdlBackupBaselineLease> AcquireRestoredDatabaseAsync(
+        int commandTimeoutSeconds = 300
+    );
+}
+
+public sealed class MssqlGeneratedDdlBackupBaselineLease : IAsyncDisposable
+{
+    public MssqlGeneratedDdlTestDatabase Database { get; }
+}
+```
+
+Required change to `MssqlGeneratedDdlTestDatabase`:
+
+- Add an internal factory for an existing database name and connection string.
+
+Example:
+
+```csharp
+internal static MssqlGeneratedDdlTestDatabase AttachExisting(string databaseName)
+{
+    return new(databaseName, MssqlTestDatabaseHelper.BuildConnectionString(databaseName));
+}
+```
+
+Use `InternalsVisibleTo` only if this factory must remain hidden from other assemblies.
+
+### Backup Creation Flow
+
+1. Create one provisioned baseline database using the existing `CreateProvisionedAsync(...)`.
+2. Set CI-friendly database options:
+
+   - `ALTER DATABASE ... SET RECOVERY SIMPLE`
+   - Consider `ALTER DATABASE ... SET AUTO_UPDATE_STATISTICS_ASYNC OFF`
+   - Consider setting compatibility options only if existing tests require them
+
+3. Run `CHECKPOINT`.
+4. Build a backup file path in the same SQL Server data directory as the database files.
+5. Execute:
+
+```sql
+BACKUP DATABASE [baseline_db]
+TO DISK = N'<backup path>'
+WITH INIT, COPY_ONLY, CHECKSUM, COMPRESSION;
+```
+
+6. Drop the provisioned baseline database after the backup is created if no longer needed.
+
+Notes:
+
+- SQL Server sees paths inside the SQL Server container, not the GitHub runner filesystem.
+- In CI, `/var/opt/mssql` is tmpfs and is removed with the container.
+- Local backup files may remain until the developer tears down the SQL Server container. Document this.
+
+### Lease Flow
+
+1. Generate a unique database name.
+2. Read backup logical file names with `RESTORE FILELISTONLY`.
+3. Build data/log target paths in the SQL Server data directory.
+4. Execute:
+
+```sql
+RESTORE DATABASE [lease_db]
+FROM DISK = N'<backup path>'
+WITH
+    MOVE N'<logical data file>' TO N'<lease data file path>',
+    MOVE N'<logical log file>' TO N'<lease log file path>',
+    RECOVERY,
+    CHECKSUM,
+    REPLACE;
+```
+
+5. Return `MssqlGeneratedDdlTestDatabase.AttachExisting(leaseDatabaseName)`.
+6. Dispose by clearing relevant connection pools and dropping the leased database.
+
+### Concurrency
+
+Use the existing shared-baseline dictionary pattern:
+
+- One backup per fixture signature and generated-DDL hash.
+- Many concurrent leases can restore from the same backup.
+- Guard backup creation with `Lazy<Task<...>>`.
+
+Do not serialize all backup restores initially. Measure first. If hosted runners degrade under parallel restores, add a small semaphore controlled by an environment variable:
+
+- `MSSQL_BACKUP_RESTORE_MAX_CONCURRENCY`
+
+Default:
+
+- `0` or unset means no additional throttling.
+- CI can set `2` if restore storms are slower than limited concurrency.
+
+### Cleanup
+
+Leased databases should always be dropped on lease disposal.
+
+Backup files are harder to delete portably from inside SQL Server without enabling unsafe features. Preferred cleanup:
+
+- CI: rely on container removal.
+- Local: document teardown or provide an optional developer cleanup script that runs `docker exec` when the local container name is known.
+
+Do not enable `xp_cmdshell` for cleanup.
+
+### Validation
+
+Add integration tests for the new backup baseline class:
+
+- Creates two independent leases from one generated-DDL backup.
+- Data inserted in lease A does not appear in lease B.
+- Disposing a lease drops its database.
+- Reusing the same fixture signature with different generated DDL throws.
+- Concurrent leases do not collide on file names.
+
+## Phase 3: Add Strategy Selection and Roll Out Safely
+
+### Objective
+
+Allow A/B testing between the current snapshot-slot strategy and the new backup-restore strategy.
+
+### Strategy Switch
+
+Add an environment variable:
+
+- `MSSQL_GENERATED_DDL_LEASE_STRATEGY`
+
+Values:
+
+- `snapshot-slot`
+- `backup-restore`
+
+Initial default:
+
+- `snapshot-slot` for the first PR that introduces the new implementation.
+
+CI rollout:
+
+1. Introduce implementation with default `snapshot-slot`.
+2. Add one experimental workflow run or branch run with `backup-restore`.
+3. If stable and faster, set backend MSSQL shards to `backup-restore`.
+4. If still stable, set DMS API MSSQL integration to `backup-restore`.
+5. Remove or lower reliance on snapshot-slot only after multiple green runs.
+
+### Where to Apply the Switch
+
+Create a small facade in the common test project:
+
+```csharp
+public static class MssqlGeneratedDdlLeaseStrategy
+{
+    public static Task<IMssqlGeneratedDdlBaseline> CreateAsync(
+        string fixtureSignature,
+        string generatedDdl,
+        int commandTimeoutSeconds = 300
+    );
+}
+```
+
+If an interface causes too much churn, keep the switch in backend/API cache classes and return a common lease wrapper.
+
+The goal is not architectural purity. The goal is to avoid spreading environment-variable checks across many tests.
+
+## Phase 4: Convert Backend MSSQL Tests by Setup Cost
+
+### Objective
+
+Convert the most expensive test classes first and avoid broad risky churn.
+
+### Conversion Order
+
+Use timing artifacts from Phase 0. If those are unavailable, start with repeated authoritative/profile generated-DDL callers.
+
+Likely high-impact groups:
+
+1. Profile merge/routing tests
+
+   - `MssqlProfileRootTableOnlyMergeTests.cs`
+   - `MssqlProfileRootTableOnlyMergeFixtureTests.cs`
+   - `MssqlProfileSeparateTableMergeFixtureTests.cs`
+   - `MssqlProfileCollectionAlignedExtensionMergeTests.cs`
+   - `MssqlProfileNestedCollectionMergeTests.cs`
+   - `MssqlProfileTopLevelCollectionMergeTests.cs`
+   - `MssqlProfileTopLevelCollectionReferenceBackedMergeTests.cs`
+   - `MssqlProfileExecutorRoutingTests.cs`
+   - `MssqlProfileIfMatchEtagTests.cs`
+
+2. Authoritative sample and DS 5.2 smoke tests
+
+   - `MssqlGeneratedDdlAuthoritativeSmokeTests.cs`
+   - `MssqlGeneratedDdlAuthoritativeDs52TpdmSmokeTests.cs`
+   - `MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs`
+   - `MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs`
+   - `MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs`
+
+3. Link/reference/descriptor integration tests using authoritative fixtures
+
+   - `MssqlAuthorizationLinkInjectionIntegrationTests.cs`
+   - `MssqlLinkInjectionIntegrationTests.cs`
+   - `MssqlNestedCollectionReferenceLinkInjectionIntegrationTests.cs`
+   - `MssqlExtensionChildCollectionReferenceLinkInjectionIntegrationTests.cs`
+   - `MssqlCollectionAlignedExtensionReferenceLinkInjectionIntegrationTests.cs`
+   - `MssqlDescriptorReadGetTests.cs`
+   - `MssqlDescriptorReadQueryFilterTests.cs`
+   - `MssqlDescriptorReadTestSupportTests.cs`
+
+4. Remaining direct `CreateProvisionedAsync(...)` callers, excluding harness tests.
+
+### Per-Class Decision Checklist
+
+For each class:
+
+1. Does the class mutate schema?
+
+   - Yes: use per-test backup-restore lease or leave direct provisioning if the test validates provisioning.
+   - No: continue.
+
+2. Does `ResetAsync()` already keep tests independent?
+
+   - Yes: use one class-level lease and keep `ResetAsync()`.
+   - No: use per-test lease.
+
+3. Does the class run in parallel with other fixtures?
+
+   - If class-level DB is used, ensure no static mutable state or shared database connection leaks.
+
+4. Does the test rely on database name, file path, snapshot name, or drop behavior?
+
+   - If yes, review manually before conversion.
+
+### Validation After Each Batch
+
+Run:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "Category=MssqlCiShard<N>"
+```
+
+On CI, verify:
+
+- No new failures.
+- Fewer full `apply-generated-ddl` phases.
+- Setup time shifts from `apply-generated-ddl` to `restore-backup`.
+- Total setup time decreases.
+
+## Phase 5: Optimize Remaining Direct Provisioning
+
+### Objective
+
+Reduce cost for tests that still require full database creation and generated-DDL application.
+
+### Database Creation Options
+
+Update `MssqlTestDatabaseHelper.CreateDatabase(...)` or add a specialized creation method for generated-DDL tests.
+
+Consider:
+
+```sql
+CREATE DATABASE [name]
+ON PRIMARY
+(
+    NAME = N'<name>',
+    FILENAME = N'<data path>',
+    SIZE = 256MB,
+    FILEGROWTH = 256MB
+)
+LOG ON
+(
+    NAME = N'<name>_log',
+    FILENAME = N'<log path>',
+    SIZE = 128MB,
+    FILEGROWTH = 128MB
+);
+
+ALTER DATABASE [name] SET RECOVERY SIMPLE;
+```
+
+Measure before keeping these values. The goal is to avoid repeated autogrowth while applying generated DDL.
+
+### DDL Application
+
+Keep `GO` batch splitting for correctness. Do not attempt to concatenate SQL Server batches that require separate compilation units.
+
+Possible low-risk improvements:
+
+- Record per-batch durations to identify pathological generated SQL.
+- Avoid `SqlConnection.ClearPool(connection)` unless a measured failure mode requires it after DDL application.
+- Ensure command timeout is high enough to avoid false failures on slow hosted runners.
+
+### Concurrency Guard
+
+If timing shows hosted runners get slower when multiple full provisions happen at once, add an optional semaphore around the full generated-DDL provisioning path.
+
+Environment variable:
+
+- `MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY`
+
+Suggested CI value:
+
+- `1` or `2`
+
+This can reduce resource thrashing even if it serializes a subset of setup work.
+
+## Phase 6: Optimize Reset for Class-Level Leases
+
+### Objective
+
+Make `ResetAsync()` cheap enough that class-level leased databases remain attractive.
+
+### Current Behavior
+
+`MssqlDatabaseResetSql.Build(...)` discovers tables and sequences at reset time, disables triggers/constraints, deletes rows, reseeds identities, restarts sequences, and reenables constraints/triggers.
+
+### Improvements
+
+1. Precompute reset SQL after DDL provisioning.
+
+   - Generated DDL fixes the table list for a database.
+   - Avoid repeated metadata queries in every reset.
+
+2. Add a truncate fast path.
+
+   - Use `TRUNCATE TABLE` for tables that are not blocked by foreign keys.
+   - Fall back to delete for the remaining tables.
+   - Validate carefully because SQL Server truncation has stricter FK rules than PostgreSQL.
+
+3. Measure whether `WITH CHECK CHECK CONSTRAINT ALL` dominates reset.
+
+   - If so, consider whether tests need trusted constraints after every reset.
+   - Be conservative. Query plan and FK behavior may depend on trusted constraints.
+
+### Validation
+
+Add focused tests for reset behavior:
+
+- Rows are removed from all generated resource tables.
+- Baseline tables are preserved.
+- Identity values and sequences restart as expected.
+- Foreign keys and triggers are enabled after reset.
+
+## Phase 7: Update GitHub Actions Configuration
+
+### Objective
+
+Use the new harness behavior in CI and rebalance shards based on real setup cost.
+
+### Workflow Changes
+
+File:
 
 - `.github/workflows/on-dms-pullrequest.yml`
-- `.github/workflows/on-config-pullrequest.yml`
 
-Cheap gate jobs:
+Add environment variables to backend MSSQL shard jobs:
 
-- Detect Fresh Build Changes.
-- BIDI/action scan.
-- Lock-file verification.
-- Bootstrap/lock-file Pester tests.
-- Unit tests.
+```yaml
+env:
+  MSSQL_GENERATED_DDL_LEASE_STRATEGY: backup-restore
+  MSSQL_FIXTURE_TIMINGS_PATH: ${{ github.workspace }}/TestResults/test-timings/mssql-shard-${{ matrix.shard }}/mssql-fixture-setup-timings.csv
+```
 
-Expensive jobs to gate:
+Optional after measurement:
 
-- Backend MSSQL integration shards.
-- DMS API MSSQL integration.
-- Backend PostgreSQL integration.
-- DMS API PostgreSQL integration.
-- SchemaTools database integration jobs.
-- DMS E2E shards.
-- DS 6.1 DMS E2E.
-- Instance Management E2E shards.
-- OpenAPI stack build/download job.
-- Fresh Docker rebuild jobs.
+```yaml
+  MSSQL_BACKUP_RESTORE_MAX_CONCURRENCY: "2"
+  MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY: "1"
+```
 
-Implementation:
+Review tmpfs sizing:
 
-1. Add a lightweight aggregate gate job, for example `cheap-checks-summary`, that depends on the cheap jobs and fails if any cheap check fails.
-2. Add `needs: cheap-checks-summary` to heavyweight jobs.
-3. Preserve `if: always()` only on summary/reporting jobs that must run after failures.
-4. Keep timing artifact upload steps inside heavyweight jobs unchanged.
-5. Apply the same pattern in Config PR workflow for integration/E2E/fresh Docker rebuild jobs.
+- Backup-restore needs room for the baseline backup and multiple concurrently restored databases.
+- Current `MSSQL_TMPFS_SIZE` is `4g`.
+- If restore failures indicate insufficient space, increase to `6g` or reduce restore concurrency.
 
-Expected impact:
+### Shard Rebalancing
 
-- Prevents wasting expensive runner time when a cheap validation fails.
-- Reduces concurrent job bursts at the start of every PR run.
+After conversion, rebalance MSSQL shards using timing artifacts, not test counts.
 
-## Phase 3: Build CI Docker Images Once And Reuse Them
+Process:
 
-Goal: remove repeated DMS and Config image builds from E2E, instance E2E, OpenAPI, and smoke jobs.
+1. Export per-test and per-fixture setup times.
+2. Sum total runtime by category.
+3. Move categories so each shard has similar total setup plus test-body time.
+4. Re-run at least one PR build to confirm the slowest shard moved down.
 
-Files:
+## Risks and Mitigations
 
-- `.github/workflows/on-dms-pullrequest.yml`
-- `.github/workflows/on-config-pullrequest.yml`
-- `.github/workflows/scheduled-smoke-test.yml`
-- Potentially `eng/docker-compose/start-local-dms.ps1` and related compose files if image tag injection is needed.
+### Backup files may remain in local SQL Server containers
 
-Preferred design:
+Mitigation:
 
-1. Add a `build-ci-docker-images` job after cheap gates.
-2. Build `ed-fi-api-local:${{ github.sha }}` and `ed-fi-api-config-local:${{ github.sha }}` once.
-3. Push the images to GHCR with PR-scoped tags, or upload compressed `docker save` artifacts if registry use is not acceptable.
-4. Update downstream jobs to pull/load those images.
-5. Make compose/start scripts accept an image tag override, or set environment variables consumed by compose files.
-6. Remove repeated `Build DMS Docker image` and `Build Config Docker image` steps from:
-   - DMS E2E matrix.
-   - DS 6.1 DMS E2E.
-   - Instance Management E2E.
-   - Build and Start DMS, Download OpenAPI Specs.
-   - Smoke-test legs.
+- Rely on CI container teardown.
+- Document local cleanup through existing MSSQL teardown guidance.
+- Do not enable `xp_cmdshell`.
 
-Registry option:
+### Backup restore may not beat snapshot restore for every case
 
-- Pros: faster startup for downstream jobs, avoids large artifact transfer, works across workflows.
-- Cons: requires package permissions and cleanup policy.
+Mitigation:
 
-Artifact option:
+- Keep `snapshot-slot` as a strategy.
+- Use timing data to select strategy per suite if necessary.
 
-- Pros: avoids registry setup and permissions.
-- Cons: Docker image artifacts may be large and slow to upload/download.
+### Parallel restores may overload hosted runners
 
-Recommended first implementation:
+Mitigation:
 
-1. Use GHCR for PR images.
-2. Tag images with `pr-${{ github.event.pull_request.number }}-${{ github.sha }}` and `sha-${{ github.sha }}`.
-3. Add retention cleanup using GHCR retention policy or a scheduled cleanup workflow.
-4. Keep existing per-job builds behind a temporary fallback input/environment variable during rollout.
+- Add `MSSQL_BACKUP_RESTORE_MAX_CONCURRENCY`.
+- Keep NUnit fixture parallelism unchanged initially, then tune only if measurements justify it.
 
-Expected impact:
+### Some tests may rely on class-level database state
 
-- Removes several minutes of repeated setup from each E2E-style job.
-- Reduces Docker layer cache contention from many jobs writing the same cache key.
+Mitigation:
 
-## Phase 4: Prebuild .NET Test Assemblies For Integration Shards
+- Convert in batches.
+- Prefer one class-level lease plus existing `ResetAsync()` for tests already written that way.
+- Use per-test leases for tests with unclear isolation requirements.
 
-Goal: avoid rebuilding test projects inside every integration shard.
+### Schema-mutating tests may break shared baseline assumptions
 
-Files:
+Mitigation:
 
-- `.github/workflows/on-dms-pullrequest.yml`
-- `build-dms.ps1` if helper commands are needed.
+- Keep schema-mutating tests on per-test leases.
+- Keep harness tests on direct provisioning when they validate provisioning behavior itself.
 
-Implementation:
+### SQL Server file path handling differs between Linux containers and local Windows SQL Server
 
-1. Add a `build-dms-test-assemblies` job after cheap gates.
-2. Restore and build these projects once in Release:
-   - `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`
-   - `src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj`
-   - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`
-   - `src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj`
-3. Upload the built `bin/Release/net10.0` and needed `obj` outputs as artifacts, or use `dotnet publish` for test projects if it produces a cleaner runnable directory.
-4. In shard jobs, download the artifact and run `dotnet test <test-assembly.dll> --no-build --no-restore` with the existing filters and loggers.
-5. Keep database container startup inside each shard job.
-6. Verify NUnit adapter discovery works from the artifact directory.
+Mitigation:
 
-Important follow-up:
-
-- Backend MSSQL shard 3 currently reports much more VSTest time than summed test-method duration. After prebuilding, add fixture-level timing around database setup/teardown to find the hidden cost.
-
-Expected impact:
-
-- Reduces redundant restore/build work.
-- Makes integration shard timings easier to interpret.
-
-## Phase 5: Rebalance Expensive Shards Using Timing Artifacts
-
-Goal: reduce the slowest shard without increasing total runner demand.
-
-Files:
-
-- Test category attributes in DMS E2E and Backend MSSQL integration tests.
-- `on-dms-pullrequest.yml` shard category filters.
-- Existing timing artifacts generated by `eng/ci/summarize-test-timings.ps1`.
-
-Implementation:
-
-1. Download timing artifacts from at least 5 recent successful DMS PR runs.
-2. Aggregate by fixture and category.
-3. For DMS E2E, move the slowest shard 3 fixtures across shards:
-   - Change query authorization fixtures.
-   - Relationship-based authorization fixtures.
-   - Profile-heavy fixtures.
-4. For Backend MSSQL integration, inspect fixture setup time because TRX method duration does not explain the shard runtime.
-5. Reassign categories so each shard has comparable observed wall time, not merely comparable test count.
-6. Add a short shard-balancing note to the timing summary output so future regressions are visible in PR summaries.
-
-Expected impact:
-
-- Reduces critical-path shard time without adding more jobs.
-- Avoids worsening queue pressure.
-
-## Phase 6: Refine PR Trigger Scope
-
-Goal: avoid lighting up DMS, Config, and smoke workflows for changes that do not require all of them.
-
-Files:
-
-- `.github/workflows/on-dms-pullrequest.yml`
-- `.github/workflows/on-config-pullrequest.yml`
-- `.github/workflows/scheduled-smoke-test.yml`
-
-Implementation:
-
-1. Split broad `eng/**` triggers into narrower areas:
-   - Docker compose changes.
-   - Database template changes.
-   - Smoke tooling changes.
-   - CI helper changes.
-2. Keep full DMS validation for config changes that affect DMS runtime behavior, but avoid triggering it for config-only tests/docs when possible.
-3. Move full `Scheduled Smoke Test` PR trigger to one of:
-   - Label-triggered workflow.
-   - Manual `workflow_dispatch`.
-   - Merge queue or post-merge validation.
-   - Narrower paths only for SDK/template/smoke source changes.
-4. Add a smaller PR smoke canary if full smoke moves out of the standard PR path.
-
-Expected impact:
-
-- Reduces the number of workflows started for mixed but low-risk changes.
-- Keeps full coverage available without making every PR pay for it.
-
-## Rollout Order
-
-1. Remove duplicate Dockerfile analysis.
-2. Add cheap-check summary gates and make heavyweight jobs depend on them.
-3. Build and reuse CI Docker images.
-4. Prebuild .NET test assemblies for integration shards.
-5. Rebalance DMS E2E and Backend MSSQL shards.
-6. Refine broad PR path triggers and move full smoke to a narrower path.
-
-This order starts with low-risk workflow cleanup, then controls queue pressure, then removes repeated work.
-
-Each phase must be implemented, pushed, and verified with a real GitHub Actions run before starting the next phase. Do not batch multiple phases into one push unless a phase is blocked by an unavoidable dependency on the next phase. For each phase, capture the workflow run URL, note whether all expected checks ran, and compare the relevant timing/queue metrics against the previous baseline before proceeding.
-
-## Verification
-
-For each phase-specific validation run, record:
-
-- Total workflow elapsed time.
-- Queued time per heavyweight job.
-- Number of jobs created per workflow.
-- Slowest DMS E2E shard duration.
-- Slowest Backend MSSQL shard duration.
-- Total runner-minutes consumed.
-- Failure detection time when cheap checks fail.
-
-Success criteria:
-
-- Fewer jobs start immediately at PR creation.
-- Heavyweight jobs spend less time queued when multiple PRs are active.
-- DMS E2E shard durations are closer together.
-- Repeated Docker build time is removed from downstream E2E-style jobs.
-- Required PR checks still provide equivalent coverage.
+- Derive data/log/backup paths from `sys.master_files`.
+- Preserve both `/` and `\` separator handling, following the existing snapshot path helper.
