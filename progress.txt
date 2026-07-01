@@ -1,0 +1,5 @@
+DMS-1244 - completed dmscs identifier/naming inventory task.
+- Key decisions: use DMS PK/FK/UX/IX/CK naming; tenant-owned logical UX includes TenantId for Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim; nullable TenantId needs PostgreSQL NULLS NOT DISTINCT to preserve non-multitenant uniqueness.
+- Files changed: dmscs-identifier-and-naming-inventory.md, tasks.json, progress.txt.
+- Verification: ran deploy-script identifier/constraint search, repository duplicate/tenant/order search, reviewed ConstraintNaming.cs.
+- Notes: later tasks must update ON CONFLICT ClaimSetName/ClaimName to new tenant-aware UX constraints; progress.txt was missing and created in this iteration.
