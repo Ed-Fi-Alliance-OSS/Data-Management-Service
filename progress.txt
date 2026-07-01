@@ -38,3 +38,9 @@ Follow-up for CI Speedup Phase 5 PR validation.
 Key decisions: changed MSSQL_FIXTURE_TIMINGS_PATH from a relative workflow path to a github.workspace-rooted path so prebuilt test-assembly execution writes mssql-fixture-setup-timings.csv into the repo-root TestResults tree that the existing artifact upload step collects.
 Verification: PR run 28487953563 passed, but its MSSQL timing artifacts contained only TRX/test-timings files; local targeted MSSQL repro with MSSQL_FIXTURE_TIMINGS_PATH set created mssql-fixture-setup-timings.csv; next PR run should prove the artifact upload path.
 Blockers/next: push this follow-up to speed-up-build-phase5 and re-run PR validation before posting the timing comment.
+
+2026-06-30 22:10 CDT
+Follow-up for CI Speedup Phase 5 setup-inclusive MSSQL rebalance.
+Key decisions: used validation run 28489353628 setup CSVs to identify MSSQL shard 3 as the setup-inclusive slowest shard; moved the three descriptor-read MSSQL fixtures from shard 3 to shard 4. Observed setup rows moved about 225s from shard 3 to the shard with the most wall-clock headroom; projected wall times from that run are MSSQL 953/651/934/676s, with the max under 120% projected median.
+Verification: run 28489353628 passed before this adjustment and confirmed mssql-fixture-setup-timings.csv uploaded for all MSSQL shards; next PR run should validate the final setup-inclusive distribution.
+Blockers/next: push the descriptor-read shard move and re-run PR validation before posting the timing comment.
