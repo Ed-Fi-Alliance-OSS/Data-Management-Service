@@ -49,8 +49,8 @@ Bootstrap must not invent a second schema fingerprint or a second schema-resolut
 In this story, the selected schema set drives the DDL target, the hash-validation path, and the exact
 physical schema footprint for the run. A direct filesystem input containing only the core schema yields only
 core tables. Core plus a known mapped extension such as Sample yields the tables required by that combined
-schema set. Unmapped extension schemas, including TPDM when supplied through direct filesystem input, are not
-silently substituted by Sample, Homograph, or any default mapping. A database provisioned for a different
+schema set. Unmapped extension schemas (a custom extension outside the built-in map) are not
+silently substituted by Sample, Homograph, TPDM, or any default mapping. A database provisioned for a different
 extension selection is incompatible existing state for this story's bootstrap run.
 
 Within the composable bootstrap design, schema selection and asset-container staging are owned exclusively by the
@@ -189,16 +189,13 @@ schema contract and claims-staging contract rather than introducing a second pat
   unmapped: `-ClaimsDirectoryPath` is required and the caller-supplied fragments are the only security
   inputs for those projects. The lookup is a v1 implementation detail of the claims phase, not a separate
   catalog artifact in the repo.
-- TPDM is not part of the Story 00 v1 mapped security-fragment surface. If TPDM appears in a direct
-  filesystem ApiSchema input, bootstrap treats it as unmapped and requires caller-supplied security fragments
-  through `-ClaimsDirectoryPath`; it is not silently replaced by `sample`, `homograph`, or any default.
-  > **Update (DMS-1247):** TPDM is now bootstrap-mapped for Data Standard 5.2. Because the embedded DS 5.2
-  > `Claims.json` already carries the full TPDM claims hierarchy and its `EdFiSandbox` grants, the claims
-  > phase recognizes TPDM without staging a fragment (Embedded mode) and no longer requires
-  > `-ClaimsDirectoryPath`. It records leaf readiness checks so the claims-ready gate confirms CMS composed
-  > TPDM, and records TPDM's descriptor seed namespace (`uri://tpdm.ed-fi.org`) so the `SeedLoader` credential
-  > can load TPDM descriptor seed data. `-ClaimsDirectoryPath` remains required only for extensions still
-  > outside the bootstrap map.
+- TPDM is bootstrap-mapped for Data Standard 5.2 (added by DMS-1247). The embedded DS 5.2 `Claims.json`
+  already carries the full TPDM claims hierarchy and its `EdFiSandbox` grants, so the claims phase recognizes
+  TPDM without staging a fragment (Embedded mode) and does not require `-ClaimsDirectoryPath`. It records leaf
+  readiness checks so the claims-ready gate confirms CMS composed TPDM, and records TPDM's descriptor seed
+  namespace (`uri://tpdm.ed-fi.org`) so the `SeedLoader` credential can load TPDM descriptor seed data. Any
+  other direct filesystem extension outside the built-in map is treated as unmapped: it requires
+  caller-supplied `-ClaimsDirectoryPath` fragments and is never silently replaced by a built-in mapping.
 
 ## Tasks
 
@@ -213,10 +210,9 @@ schema contract and claims-staging contract rather than introducing a second pat
    uses schema identity fields from the direct filesystem input, and `prepare-dms-claims.ps1` uses
    security-fragment fields. `load-dms-seed-data.ps1` owns the separate seed catalog lookup when seed delivery
    runs. `EdFiSandbox` coverage is required for every bootstrap-managed extension fragment and `SeedLoader`
-   coverage is required only where a built-in seed package is advertised. Story 00's v1 mapped security
-   lookup covers Sample and Homograph only; any other direct filesystem extension not in the lookup
-   is treated as unmapped and requires `-ClaimsDirectoryPath` (TPDM later became bootstrap-mapped via the
-   embedded DS 5.2 claims - see the DMS-1247 update note above).
+   coverage is required only where a built-in seed package is advertised. The v1 mapped security lookup
+   covered Sample and Homograph; DMS-1247 additionally maps TPDM via the embedded DS 5.2 claims. Any other
+   direct filesystem extension not in the lookup is treated as unmapped and requires `-ClaimsDirectoryPath`.
 3. Implement direct filesystem schema-materialization logic in `prepare-dms-schema.ps1`: normalize
    `-ApiSchemaPath` inputs into the staged workspace, normalize one core schema plus zero or more extension
    schemas into the staged ApiSchema asset workspace, copy optional schema-adjacent static content into
