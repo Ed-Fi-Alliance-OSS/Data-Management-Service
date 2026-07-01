@@ -487,4 +487,60 @@ public class JwtValidationServiceTests
             _clientAuthorizations!.TokenId.Should().Be("not-a-valid-guid-###");
         }
     }
+
+    /// <summary>
+    /// DMS does not require a jti claim. When it is absent the token is still accepted
+    /// and TokenId falls back to a derived value (a hash of the raw token) so that
+    /// log correlation still has a non-empty identifier to key on.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Token_Without_Jti : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            var claims = new[] { new Claim("scope", "edfi-admin") };
+
+            var token = CreateTestToken(
+                claims,
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            // Act
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_a_valid_principal()
+        {
+            _principal.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_falls_back_to_a_derived_non_empty_token_id()
+        {
+            _clientAuthorizations!.TokenId.Should().NotBeNullOrEmpty();
+        }
+    }
 }
