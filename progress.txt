@@ -32,3 +32,9 @@ Key decisions: aggregated five recent successful DMS PR timing artifacts; moved 
 Files changed: .github/workflows/on-dms-pullrequest.yml, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlTestDatabase.cs, MSSQL shard-category test files, E2E feature shard tags, tasks.json, progress.txt
 Verification: downloaded timing artifacts from runs 28486290395, 28483689772, 28481788790, 28481742971, 28481268693; dotnet test --list-tests passed for MSSQL shard categories and E2E shard categories; targeted MSSQL shard guardrail passed 2 tests against temporary SQL Server; yq/actionlint passed workflow; git diff --check passed.
 Blockers/next: branch speed-up-build still ahead/behind origin; push/PR GitHub Actions run and PR timing comment still need remote branch reconciliation or a pushed phase branch.
+
+2026-06-30 21:35 CDT
+Follow-up for CI Speedup Phase 5 PR validation.
+Key decisions: changed MSSQL_FIXTURE_TIMINGS_PATH from a relative workflow path to a github.workspace-rooted path so prebuilt test-assembly execution writes mssql-fixture-setup-timings.csv into the repo-root TestResults tree that the existing artifact upload step collects.
+Verification: PR run 28487953563 passed, but its MSSQL timing artifacts contained only TRX/test-timings files; local targeted MSSQL repro with MSSQL_FIXTURE_TIMINGS_PATH set created mssql-fixture-setup-timings.csv; next PR run should prove the artifact upload path.
+Blockers/next: push this follow-up to speed-up-build-phase5 and re-run PR validation before posting the timing comment.
