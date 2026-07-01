@@ -105,3 +105,10 @@ Key decisions: shard 4 workflow run 28509822240 failed because a snapshot-slot d
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlTestDatabase.cs, MssqlGeneratedDdlBaselineDatabase.cs, EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj, src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlGeneratedDdlBaselineDatabaseTests.cs, progress.txt
 Verification: dotnet csharpier format passed on edited C#; dotnet build common harness, Backend.Mssql.Tests.Integration, and DMS Tests.Integration Release --no-restore passed; git diff --check passed; jq empty tasks.json passed. No local dotnet test, SQL Server, E2E, or MSSQL shard run per phase rule.
 Blockers/next: push follow-up commit and rerun the DMS PR workflow on speed-up-build-phase6; verify shard 4 no longer fails and collect timing artifacts.
+
+2026-07-01 05:47 CDT
+Validation completed for MSSQL Setup Speedup Phase 6
+Key decisions: pushed follow-up commit f63d5b6cf; workflow_dispatch run 28510874906 on speed-up-build-phase6 passed all jobs, including Backend MSSQL shard 4. The earlier stale precomputed reset plan failure from run 28509822240 did not recur.
+Timing evidence: compared Phase 6 default run 28510874906 with Phase 5 default run 28506789286. Aggregate MSSQL fixture setup duration moved from 3870.528s to 3755.910s; reset-database total was effectively flat, 497.770s/280 rows to 495.247s/281 rows, with per-fixture noise. Phase 5 throttle run 28508101626 remains faster overall at 3492.036s. Phase 6 timing artifacts downloaded under /tmp/dms-phase6-run-28510874906.
+Verification: GitHub Actions On DMS Pull Request run 28510874906 succeeded; backend MSSQL shards 1-4, DMS API MSSQL, SchemaTools MSSQL, PostgreSQL integration, unit, OpenAPI, Instance Management E2E, and DMS E2E jobs all passed.
+Blockers/next: post PR timing comment and proceed to Phase 7 when ready.
