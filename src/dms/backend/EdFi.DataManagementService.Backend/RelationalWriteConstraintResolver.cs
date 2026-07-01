@@ -35,16 +35,64 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     {
         var uniqueMatch = FindUniqueConstraint(request.WritePlan.Model, violation.ConstraintName);
 
-        if (uniqueMatch is null || !uniqueMatch.Table.Table.Equals(request.WritePlan.Model.Root.Table))
+        if (uniqueMatch is not null)
         {
-            return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
+            if (!uniqueMatch.Table.Table.Equals(request.WritePlan.Model.Root.Table))
+            {
+                return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
+            }
+
+            var rootNaturalKeyColumns = GetRootNaturalKeyColumnsOrThrow(request);
+
+            return uniqueMatch.Constraint.Columns.SequenceEqual(rootNaturalKeyColumns)
+                ? new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName)
+                : new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
         }
 
-        var rootNaturalKeyColumns = GetRootNaturalKeyColumnsOrThrow(request);
+        // The constraint is not part of the concrete resource model. A unique violation can still be a
+        // user-facing identity conflict when it originates from the abstract identity table that a concrete
+        // EducationOrganization subclass projects into (e.g. UX_EducationOrganizationIdentity_NK). Resolve
+        // those natural-key constraints to the same identity-conflict result used for concrete roots; the
+        // mapper reports the concrete request body's identity values.
+        return ResolveAbstractIdentityUniqueConstraint(request, violation);
+    }
 
-        return uniqueMatch.Constraint.Columns.SequenceEqual(rootNaturalKeyColumns)
-            ? new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName)
-            : new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
+    private static RelationalWriteConstraintResolution ResolveAbstractIdentityUniqueConstraint(
+        RelationalWriteConstraintResolutionRequest request,
+        RelationalWriteExceptionClassification.UniqueConstraintViolation violation
+    )
+    {
+        foreach (
+            var tableModel in request.ReferenceResolutionRequest.MappingSet.Model.AbstractIdentityTablesInNameOrder.Select(
+                abstractIdentityTable => abstractIdentityTable.TableModel
+            )
+        )
+        {
+            var match = tableModel
+                .Constraints.OfType<TableConstraint.Unique>()
+                .SingleOrDefault(constraint =>
+                    string.Equals(constraint.Name, violation.ConstraintName, StringComparison.Ordinal)
+                );
+
+            if (match is null)
+            {
+                continue;
+            }
+
+            // An abstract identity table carries two unique constraints: the natural-key constraint over the
+            // projected identity columns, and the *_RefKey helper that appends the DocumentId primary key.
+            // A unique constraint that includes the surrogate DocumentId key column (the *_RefKey helper) is
+            // not a user-facing identity conflict and stays unresolved; a unique constraint that does not
+            // include it is the natural key and maps to an identity conflict. Keying off the table's own
+            // primary-key columns keeps this robust to changes in the projected identity column set.
+            var keyColumnNames = tableModel.Key.Columns.Select(keyColumn => keyColumn.ColumnName).ToHashSet();
+
+            return match.Columns.Any(keyColumnNames.Contains)
+                ? new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName)
+                : new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName);
+        }
+
+        return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);
     }
 
     private static RelationalWriteConstraintResolution ResolveForeignKeyConstraint(

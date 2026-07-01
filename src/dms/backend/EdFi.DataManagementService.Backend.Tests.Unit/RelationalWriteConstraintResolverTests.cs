@@ -160,6 +160,187 @@ public class Given_Relational_Write_Constraint_Resolver
             );
     }
 
+    [Test]
+    public void It_resolves_abstract_identity_table_natural_key_unique_constraints_to_identity_conflicts()
+    {
+        var fixture = CreateSchoolAbstractIdentityFixture();
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest,
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                fixture.NaturalKeyConstraintName
+            )
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(
+                new RelationalWriteConstraintResolution.RootNaturalKeyUnique(fixture.NaturalKeyConstraintName)
+            );
+    }
+
+    [Test]
+    public void It_leaves_abstract_identity_table_reference_key_unique_constraints_unresolved()
+    {
+        var fixture = CreateSchoolAbstractIdentityFixture();
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest,
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                fixture.ReferenceKeyConstraintName
+            )
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.Unresolved(fixture.ReferenceKeyConstraintName));
+    }
+
+    [Test]
+    public void It_leaves_unique_constraints_absent_from_concrete_and_abstract_models_unresolved()
+    {
+        var fixture = CreateSchoolAbstractIdentityFixture();
+        const string absentConstraintName = "UX_EducationOrganizationIdentity_Absent";
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest,
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(absentConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(absentConstraintName));
+    }
+
+    [Test]
+    public void It_resolves_composite_abstract_identity_natural_key_unique_constraints_to_identity_conflicts()
+    {
+        const string naturalKeyConstraintName = "UX_CompositeIdentity_NK";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            CompositeAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(naturalKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
+    }
+
+    [Test]
+    public void It_leaves_composite_abstract_identity_reference_key_unique_constraints_unresolved()
+    {
+        const string referenceKeyConstraintName = "UX_CompositeIdentity_RefKey";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            CompositeAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(referenceKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(referenceKeyConstraintName));
+    }
+
+    [Test]
+    public void It_resolves_abstract_identity_natural_key_when_the_violated_table_is_not_first_in_name_order()
+    {
+        var violatedConstraintName =
+            AbstractIdentitySchoolTestData.GeneralStudentProgramAssociationNaturalKeyConstraintName;
+
+        // A StudentProgramAssociation write genuinely maintains the GeneralStudentProgramAssociation identity
+        // table. Prepend the unrelated EducationOrganization identity table, which sorts first by name, so the
+        // resolver must skip a non-matching table before matching the violated one — while still resolving a
+        // constraint the written resource actually owns.
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildReferenceBackedSubclassWriteModel();
+
+        var mappingSetWithTwoAbstractTables = mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                AbstractIdentityTablesInNameOrder =
+                [
+                    new AbstractIdentityTableInfo(
+                        new ResourceKeyEntry(
+                            3,
+                            AbstractIdentitySchoolTestData.EducationOrganizationResource,
+                            "1.0.0",
+                            true
+                        ),
+                        AbstractIdentitySchoolTestData.EducationOrganizationIdentityTable()
+                    ),
+                    .. mappingSet.Model.AbstractIdentityTablesInNameOrder,
+                ],
+            },
+        };
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(
+                mappingSetWithTwoAbstractTables,
+                AbstractIdentitySchoolTestData.StudentProgramAssociationResource,
+                [],
+                []
+            ),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(violatedConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violatedConstraintName));
+    }
+
+    [Test]
+    public void It_resolves_abstract_identity_natural_key_with_reference_backed_identity_columns()
+    {
+        const string naturalKeyConstraintName = "UX_ReferenceBackedIdentity_NK";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            ReferenceBackedAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(naturalKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result
+            .Should()
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
+    }
+
+    [Test]
+    public void It_leaves_abstract_identity_reference_key_with_reference_backed_identity_columns_unresolved()
+    {
+        const string referenceKeyConstraintName = "UX_ReferenceBackedIdentity_RefKey";
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel(
+            ReferenceBackedAbstractIdentityTable()
+        );
+        var request = new RelationalWriteConstraintResolutionRequest(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(referenceKeyConstraintName)
+        );
+
+        var result = _sut.Resolve(request);
+
+        result.Should().Be(new RelationalWriteConstraintResolution.Unresolved(referenceKeyConstraintName));
+    }
+
     private static ResolverFixture CreateFixture()
     {
         var sectionRootTable = new DbTableModel(
@@ -480,6 +661,170 @@ public class Given_Relational_Write_Constraint_Resolver
         );
     }
 
+    private static AbstractIdentityResolverFixture CreateSchoolAbstractIdentityFixture()
+    {
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
+
+        return new AbstractIdentityResolverFixture(
+            writePlan,
+            new ReferenceResolverRequest(mappingSet, AbstractIdentitySchoolTestData.SchoolResource, [], []),
+            NaturalKeyConstraintName: AbstractIdentitySchoolTestData.NaturalKeyConstraintName,
+            ReferenceKeyConstraintName: AbstractIdentitySchoolTestData.ReferenceKeyConstraintName
+        );
+    }
+
+    // Models an abstract identity table for a resource whose identity spans two columns, the way
+    // AbstractIdentityTableAndUnionViewDerivationPass builds it: DocumentId primary key, the _NK natural-key
+    // unique over both projected identity columns, the _RefKey helper that also appends DocumentId, and the
+    // document FK. Proves the resolver matches multi-column natural keys, not just single-column ones.
+    private static DbTableModel CompositeAbstractIdentityTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "CompositeIdentity"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_CompositeIdentity",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PartOneId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.partOneId", [new JsonPathSegment.Property("partOneId")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PartTwoId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.partTwoId", [new JsonPathSegment.Property("partTwoId")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 256),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            [
+                new TableConstraint.Unique(
+                    "UX_CompositeIdentity_NK",
+                    [new DbColumnName("PartOneId"), new DbColumnName("PartTwoId")]
+                ),
+                new TableConstraint.Unique(
+                    "UX_CompositeIdentity_RefKey",
+                    [
+                        new DbColumnName("PartOneId"),
+                        new DbColumnName("PartTwoId"),
+                        new DbColumnName("DocumentId"),
+                    ]
+                ),
+                new TableConstraint.ForeignKey(
+                    "FK_CompositeIdentity_Document",
+                    [new DbColumnName("DocumentId")],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [new DbColumnName("DocumentId")],
+                    OnDelete: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+    // Models an abstract identity table whose natural key includes a reference-backed identity column named
+    // with a `_DocumentId` suffix. That suffix is the convention ReferenceBindingPass uses for document FK
+    // columns, and reference-heavy natural keys really do carry such columns: the concrete Section NK is over
+    // `School_DocumentId`, and an abstract resource like GeneralStudentProgramAssociation projects reference
+    // identity components the same way. Proves the resolver compares NK columns against the *bare* `DocumentId`
+    // key column by exact equality, so a `_DocumentId`-suffixed identity column is never mistaken for the
+    // surrogate key (which would misclassify the natural-key violation as unresolved / non-409).
+    private static DbTableModel ReferenceBackedAbstractIdentityTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "ReferenceBackedIdentity"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_ReferenceBackedIdentity",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EducationOrganization_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression(
+                        "$.educationOrganizationReference",
+                        [new JsonPathSegment.Property("educationOrganizationReference")]
+                    ),
+                    new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ProgramName"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 60),
+                    false,
+                    new JsonPathExpression("$.programName", [new JsonPathSegment.Property("programName")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 256),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            [
+                new TableConstraint.Unique(
+                    "UX_ReferenceBackedIdentity_NK",
+                    [new DbColumnName("EducationOrganization_DocumentId"), new DbColumnName("ProgramName")]
+                ),
+                new TableConstraint.Unique(
+                    "UX_ReferenceBackedIdentity_RefKey",
+                    [
+                        new DbColumnName("EducationOrganization_DocumentId"),
+                        new DbColumnName("ProgramName"),
+                        new DbColumnName("DocumentId"),
+                    ]
+                ),
+                new TableConstraint.ForeignKey(
+                    "FK_ReferenceBackedIdentity_Document",
+                    [new DbColumnName("DocumentId")],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [new DbColumnName("DocumentId")],
+                    OnDelete: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
     private sealed record ResolverFixture(
         ResourceWritePlan WritePlan,
         ReferenceResolverRequest ReferenceResolverRequest,
@@ -488,5 +833,12 @@ public class Given_Relational_Write_Constraint_Resolver
         string DescriptorReferenceConstraintName,
         string StructuralForeignKeyConstraintName,
         string CollectionUniqueConstraintName
+    );
+
+    private sealed record AbstractIdentityResolverFixture(
+        ResourceWritePlan WritePlan,
+        ReferenceResolverRequest ReferenceResolverRequest,
+        string NaturalKeyConstraintName,
+        string ReferenceKeyConstraintName
     );
 }

@@ -1656,6 +1656,38 @@ public class Given_Abstract_Identity_Column_Naming_With_Composite_Reference
             .And.NotContain("ProgramReferenceProgramTypeDescriptor");
     }
 
+    /// <summary>
+    /// Pins the table-shape contract that
+    /// <c>RelationalWriteConstraintResolver.ResolveAbstractIdentityUniqueConstraint</c> depends on, exercised
+    /// here for a reference-backed abstract resource: the primary key is exactly the surrogate
+    /// <c>DocumentId</c>, the <c>_NK</c> natural-key unique excludes <c>DocumentId</c>, and the <c>_RefKey</c>
+    /// unique is the natural key plus <c>DocumentId</c>. The resolver classifies a unique violation as a 409
+    /// identity conflict precisely when the violated constraint does not contain a primary-key column; if the
+    /// derivation ever changes this shape (PK structure, constraint membership, or an extra unique), that
+    /// heuristic would silently misclassify and this test fails first.
+    /// </summary>
+    [Test]
+    public void It_keys_the_identity_table_on_document_id_with_natural_and_reference_key_uniques()
+    {
+        var table = _abstractTable.TableModel;
+
+        table.Key.Columns.Select(column => column.ColumnName.Value).Should().Equal("DocumentId");
+
+        var uniques = table.Constraints.OfType<TableConstraint.Unique>().ToArray();
+        var naturalKey = uniques.Single(constraint =>
+            constraint.Name.EndsWith("_NK", StringComparison.Ordinal)
+        );
+        var referenceKey = uniques.Single(constraint =>
+            constraint.Name.EndsWith("_RefKey", StringComparison.Ordinal)
+        );
+
+        naturalKey.Columns.Select(column => column.Value).Should().NotContain("DocumentId");
+        referenceKey
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal(naturalKey.Columns.Select(column => column.Value).Append("DocumentId"));
+    }
+
     private static JsonObject BuildProjectSchema() => ProgramCarrierTestSchema.BuildProjectSchema();
 }
 
