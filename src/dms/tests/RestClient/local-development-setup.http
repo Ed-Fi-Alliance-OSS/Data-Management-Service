@@ -37,6 +37,14 @@
 #        "AllowIdentityUpdateOverrides": "",
 #        "MaskRequestBodyInLogs": "true"
 #    },
+#    "CacheSettings": {
+#        "ClaimSetsCacheExpirationSeconds": 600,
+#        "ApplicationContextCacheExpirationSeconds": 600,
+#        "TokenCacheExpirationSeconds": 1500,
+#        "ProfileCacheExpirationSeconds": 1800,
+#        "DataStoreCacheRefreshEnabled": true,
+#        "DataStoreCacheExpirationSeconds": 600
+#    },
 #    "ConfigurationServiceSettings": {
 #        "BaseUrl": "http://localhost:5126",
 #        "ClientId": "DmsConfigurationService",

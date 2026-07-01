@@ -83,7 +83,7 @@ or can be cleared per-client. For emergency clearing, restart the service.
 
 **Invalidation Strategy:**
 
-- TTL-based expiration after configured minutes
+- TTL-based expiration after the configured duration
 - Manual invalidation via `ReloadApplicationByClientIdAsync()`
 - Follows cache-aside pattern with fallback to Configuration Service
 
@@ -137,7 +137,7 @@ built-in stampede protection
 
 **Invalidation Strategy:**
 
-- TTL-based expiration after configured minutes
+- TTL-based expiration after the configured duration
 - Manual invalidation via `/claimsets/reload` management endpoint
 - Requires `AppSettings:EnableClaimsetReload: true` to enable manual reload
 
