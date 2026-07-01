@@ -44,7 +44,6 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             return ValidateOptionsResult.Fail("Missing required AppSettings value: IdentityProvider");
         }
 
-        // We only support keycloak for now
         if (
             !(
                 new[] { "keycloak", "self-contained" }.Contains(
