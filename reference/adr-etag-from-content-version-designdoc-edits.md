@@ -2,8 +2,8 @@
 
 **Status:** DRAFT — pending acceptance of `adr-etag-from-content-version.md`. Do
 not apply until the ADR is accepted. This file does **not** modify any design
-doc; it stages paste-ready replacement wording.
-**Date:** 2026-06-30
+doc; it stages paste-ready replacement wording. \
+**Date:** 2026-07-01 \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
 > **AI-use disclosure.** Drafted with substantial AI assistance. Line numbers
@@ -59,10 +59,11 @@ Each block below gives the **target location**, the **current** text, and the
 >    resource-state representation changes. `_etag` MUST change whenever the served byte-representation
 >    changes — i.e. on resource-state change **and** on any change to the representation selectors
 >    (format, readable profile, `link` mode).
-> 1a. **RFC 7232 strong validator**: `_etag` MUST be a strong validator (served unquoted in the
->    `_etag` body field, quoted in the `ETag` header, never `W/`-prefixed). `If-Match` uses the strong
->    comparison function (RFC 7232 §3.1); weak validators would fail every `If-Match` and are not
->    permitted.
+> 2. **RFC 7232 strong validator**: `_etag` is served as a strong validator (unquoted in the
+>    `_etag` body field, quoted in the `ETag` header, never `W/`-prefixed). `If-Match` uses strong
+>    comparison over the tag's **state-significant projection** — `ContentVersion`, `schemaEpoch`, and
+>    `profileCode`; the `format` and `linkFlag` components are excluded (see "Optimistic concurrency").
+>    Weak validators would fail every `If-Match` and are not permitted.
 
 ### 1c. API `_etag` derivation (current line 63)
 
@@ -152,7 +153,9 @@ Each block below gives the **target location**, the **current** text, and the
 >
 > The server MUST recompute the full `_etag` deterministically from request context (negotiated
 > format, profile in effect, `link` mode) plus the loaded schema at read response, write response,
-> and `If-Match` evaluation, with no database dependency.
+> and `If-Match` evaluation, with no database dependency. At `If-Match` evaluation the server compares
+> only the **state-significant projection** of the tag (`ContentVersion`, `schemaEpoch`, `profileCode`;
+> `format` and `linkFlag` excluded) — see "Optimistic concurrency".
 
 ### 1f. Optimistic concurrency (current lines 184–187)
 
@@ -167,12 +170,17 @@ Each block below gives the **target location**, the **current** text, and the
 
 > - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
 >   (see "Serving API metadata"). It is a strong validator.
-> - PUT/DELETE validates `If-Match` with the RFC 7232 **strong** comparison function: the backend
->   reconstructs the expected tag `"{currentContentVersion}-{requestVariantKey}"` from the current
->   `ContentVersion` for that `DocumentId` and the inbound request's representation context, and
->   compares it character-for-character to the client's `If-Match`. A mismatch returns
->   `412 Precondition Failed`. A client therefore presents the `_etag` it obtained for the
->   representation it is acting on.
+> - PUT/DELETE validates `If-Match` using strong comparison over the tag's **state-significant
+>   projection**. The backend reads the current `ContentVersion` and composes the expected tag from
+>   the request's `variantKey`, then compares it to the client's `If-Match` while **ignoring the
+>   `format` and `linkFlag` components** — these encode only how the representation is rendered, never
+>   resource state, and never change on a write. The compared components are `ContentVersion`,
+>   `schemaEpoch`, and `profileCode`. `profileCode` **is** significant: a readable profile changes
+>   which fields the client saw, so a cross-profile `If-Match` returns `412 Precondition Failed` even
+>   when `ContentVersion` is unchanged. A mismatch on any compared component returns `412`. (The served
+>   `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
+>   conditional-GET / `If-None-Match` caching stays byte-correct.) A client presents the `_etag` it
+>   obtained for the representation it is acting on.
 
 ## 2. `transactions-and-concurrency.md` — reduce to references + rules
 
@@ -196,6 +204,7 @@ Each block below gives the **target location**, the **current** text, and the
 **Current:**
 
 > With stored representation stamps:
+>
 > - GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical full resource-state JSON representation, before readable profile projection and excluding response decorations such as `link`.
 > - PUT/DELETE `If-Match` validation is row-local:
 >   - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
@@ -204,13 +213,17 @@ Each block below gives the **target location**, the **current** text, and the
 **Proposed:**
 
 > With stored representation stamps:
+>
 > - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the served representation (see
 >   `update-tracking.md`). It is an RFC 7232 strong validator: quoted in `ETag`, never `W/`.
-> - PUT/DELETE `If-Match` validation is row-local and uses RFC 7232 strong comparison:
->   - reconstruct the expected tag `"{currentContentVersion}-{requestVariantKey}"` for that
->     `DocumentId` from the inbound request's representation context;
->   - compare it character-for-character to the request `_etag`;
->   - if mismatched, return `412 Precondition Failed`.
+> - PUT/DELETE `If-Match` validation is row-local and uses strong comparison over the tag's
+>   **state-significant projection**:
+>   - read the current `ContentVersion` for that `DocumentId` and compose the expected tag from the
+>     inbound request's representation context;
+>   - compare it to the request `_etag`, **excluding** the `format` and `linkFlag` components
+>     (representation-encoding only) and **retaining** `ContentVersion`, `schemaEpoch`, and
+>     `profileCode` (profile is significant — a cross-profile `If-Match` yields `412`);
+>   - if mismatched on any retained component, return `412 Precondition Failed`.
 
 ### 2c. Profile ETag-surface statement (current line 357)
 
@@ -221,9 +234,10 @@ Each block below gives the **target location**, the **current** text, and the
 **Proposed:**
 
 > - Correctness for accepted profile writes relies on the `If-Match` / `ContentVersion` guard
->   described above. Profile is one input to `variantKey`, so different readable profiles yield
->   different `_etag` values (RFC 7232 strong validators) while sharing the same underlying
->   `ContentVersion` guard; no new API surface is required.
+>   described above. Profile is a **significant** input to that guard: different readable profiles
+>   yield different `_etag` values, and a cross-profile `If-Match` returns `412` even when
+>   `ContentVersion` is unchanged. (`format` and `linkFlag`, by contrast, are excluded from the
+>   `If-Match` comparison.) No new API surface is required.
 
 ### 2d. `dms.DocumentCache` freshness mentions (current lines ~490 and ~501)
 
@@ -233,14 +247,14 @@ Each block below gives the **target location**, the **current** text, and the
 
 **Current (line ~501):**
 
-> 3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, the applied `ContentVersion` plus the derived materialized `_etag`) to enforce the freshness contract above.
+> 1. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, the applied `ContentVersion` plus the derived materialized `_etag`) to enforce the freshness contract above.
 
 **Proposed (both):** drop the "materialized `_etag`" from the freshness stamp; `_etag` is
 representation-specific and composed at serve time.
 
 > - compare the cached `ContentVersion` to the current `dms.Document.ContentVersion`,
 >
-> 3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
+> 1. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
 >    contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
 >    stored in the cache.
 
