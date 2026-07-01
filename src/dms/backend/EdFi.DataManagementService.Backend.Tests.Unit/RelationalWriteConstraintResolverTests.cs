@@ -257,28 +257,31 @@ public class Given_Relational_Write_Constraint_Resolver
     [Test]
     public void It_resolves_abstract_identity_natural_key_when_the_violated_table_is_not_first_in_name_order()
     {
-        const string secondTableNaturalKeyName = "UX_GeneralStudentProgramAssociationIdentity_NK";
-        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
+        var violatedConstraintName =
+            AbstractIdentitySchoolTestData.GeneralStudentProgramAssociationNaturalKeyConstraintName;
 
-        // Production carries more than one abstract identity table (e.g. EducationOrganization and
-        // GeneralStudentProgramAssociation). Append a second so the resolver must skip the non-matching first
-        // table before matching the violated one.
+        // A StudentProgramAssociation write genuinely maintains the GeneralStudentProgramAssociation identity
+        // table. Prepend the unrelated EducationOrganization identity table, which sorts first by name, so the
+        // resolver must skip a non-matching table before matching the violated one — while still resolving a
+        // constraint the written resource actually owns.
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildReferenceBackedSubclassWriteModel();
+
         var mappingSetWithTwoAbstractTables = mappingSet with
         {
             Model = mappingSet.Model with
             {
                 AbstractIdentityTablesInNameOrder =
                 [
-                    .. mappingSet.Model.AbstractIdentityTablesInNameOrder,
                     new AbstractIdentityTableInfo(
                         new ResourceKeyEntry(
                             3,
-                            new QualifiedResourceName("Ed-Fi", "GeneralStudentProgramAssociation"),
+                            AbstractIdentitySchoolTestData.EducationOrganizationResource,
                             "1.0.0",
                             true
                         ),
-                        SecondAbstractIdentityTable(secondTableNaturalKeyName)
+                        AbstractIdentitySchoolTestData.EducationOrganizationIdentityTable()
                     ),
+                    .. mappingSet.Model.AbstractIdentityTablesInNameOrder,
                 ],
             },
         };
@@ -286,18 +289,18 @@ public class Given_Relational_Write_Constraint_Resolver
             writePlan,
             new ReferenceResolverRequest(
                 mappingSetWithTwoAbstractTables,
-                AbstractIdentitySchoolTestData.SchoolResource,
+                AbstractIdentitySchoolTestData.StudentProgramAssociationResource,
                 [],
                 []
             ),
-            new RelationalWriteExceptionClassification.UniqueConstraintViolation(secondTableNaturalKeyName)
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(violatedConstraintName)
         );
 
         var result = _sut.Resolve(request);
 
         result
             .Should()
-            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(secondTableNaturalKeyName));
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violatedConstraintName));
     }
 
     [Test]
@@ -735,63 +738,6 @@ public class Given_Relational_Write_Constraint_Resolver
                 ),
                 new TableConstraint.ForeignKey(
                     "FK_CompositeIdentity_Document",
-                    [new DbColumnName("DocumentId")],
-                    new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
-                    OnDelete: ReferentialAction.Cascade
-                ),
-            ]
-        );
-
-    // Builds a second, differently named abstract identity table so the resolver's scan across
-    // AbstractIdentityTablesInNameOrder must continue past a non-matching table before matching the violated
-    // one. Shaped like the derivation output: DocumentId primary key, the natural-key unique over the projected
-    // identity column, the _RefKey helper that also appends DocumentId, and the document FK.
-    private static DbTableModel SecondAbstractIdentityTable(string naturalKeyConstraintName) =>
-        new(
-            new DbTableName(new DbSchemaName("edfi"), "GeneralStudentProgramAssociationIdentity"),
-            new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_GeneralStudentProgramAssociationIdentity",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("ProgramName"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, 60),
-                    false,
-                    new JsonPathExpression("$.programName", [new JsonPathSegment.Property("programName")]),
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-                new DbColumnModel(
-                    new DbColumnName("Discriminator"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, 256),
-                    false,
-                    null,
-                    null,
-                    new ColumnStorage.Stored()
-                ),
-            ],
-            [
-                new TableConstraint.Unique(naturalKeyConstraintName, [new DbColumnName("ProgramName")]),
-                new TableConstraint.Unique(
-                    "UX_GeneralStudentProgramAssociationIdentity_RefKey",
-                    [new DbColumnName("ProgramName"), new DbColumnName("DocumentId")]
-                ),
-                new TableConstraint.ForeignKey(
-                    "FK_GeneralStudentProgramAssociationIdentity_Document",
                     [new DbColumnName("DocumentId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
                     [new DbColumnName("DocumentId")],
