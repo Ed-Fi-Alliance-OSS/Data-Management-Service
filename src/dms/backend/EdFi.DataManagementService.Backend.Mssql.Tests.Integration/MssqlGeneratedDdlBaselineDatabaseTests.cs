@@ -127,6 +127,39 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     }
 
     [Test]
+    public async Task It_refreshes_the_reset_plan_after_restoring_a_returned_slot()
+    {
+        await using var baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+            CreateFixtureSignature("refresh-reset-plan-after-restore"),
+            _fixture.GeneratedDdl
+        );
+
+        await using (var firstLease = await baselineDatabase.AcquireRestoredDatabaseAsync())
+        {
+            await firstLease.Database.ExecuteNonQueryAsync(
+                """
+                IF SCHEMA_ID(N'dms_test') IS NULL EXEC(N'CREATE SCHEMA [dms_test];');
+
+                CREATE TABLE [dms_test].[ResetPlanScratch]
+                (
+                    [Id] int IDENTITY(1, 1) NOT NULL
+                );
+                """
+            );
+            await firstLease.Database.RefreshResetPlanAsync();
+
+            firstLease.Database.ResetPlan.Sql.Should().Contain("[dms_test].[ResetPlanScratch]");
+        }
+
+        await using var secondLease = await baselineDatabase.AcquireRestoredDatabaseAsync();
+
+        (await TableExistsAsync(secondLease.Database, "dms_test", "ResetPlanScratch")).Should().BeFalse();
+        secondLease.Database.ResetPlan.Sql.Should().NotContain("[dms_test].[ResetPlanScratch]");
+
+        await secondLease.Database.ResetAsync();
+    }
+
+    [Test]
     public async Task It_provides_isolated_slots_to_overlapping_consumers_sharing_a_fixture_signature()
     {
         var fixtureSignature = CreateFixtureSignature("isolated-overlapping-consumers");
@@ -260,6 +293,32 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     )
     {
         return database.ExecuteScalarAsync<long>($"""SELECT COUNT(*) FROM {qualifiedTableName};""");
+    }
+
+    private static Task<bool> TableExistsAsync(
+        MssqlGeneratedDdlTestDatabase database,
+        string schema,
+        string tableName
+    )
+    {
+        return database.ExecuteScalarAsync<bool>(
+            """
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.tables tables
+                    INNER JOIN sys.schemas schemas
+                        ON schemas.[schema_id] = tables.[schema_id]
+                    WHERE schemas.[name] = @schema
+                      AND tables.[name] = @tableName
+                )
+                THEN CAST(1 AS bit)
+                ELSE CAST(0 AS bit)
+            END;
+            """,
+            new SqlParameter("@schema", schema),
+            new SqlParameter("@tableName", tableName)
+        );
     }
 
     private static async Task<MssqlGeneratedDdlDocumentState> InsertSchoolDocumentAsync(

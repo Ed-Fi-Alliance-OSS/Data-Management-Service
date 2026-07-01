@@ -128,6 +128,7 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
                     leasedSlot.SnapshotName,
                     resolvedCommandTimeoutSeconds
                 );
+                await leasedSlot.Database.RefreshResetPlanAsync(resolvedCommandTimeoutSeconds);
             }
 
             var acquiredSlot = leasedSlot;

@@ -342,11 +342,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 throw;
             }
 
-            ResetPlan = await MssqlDatabaseResetSql.BuildPrecomputedAsync(
-                ConnectionString,
-                commandTimeoutSeconds,
-                _generatedDdlBaselineTables
-            );
+            await RefreshResetPlanAsync(commandTimeoutSeconds);
         }
         catch
         {
@@ -413,6 +409,15 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 callerLineNumber
             );
         }
+    }
+
+    internal async Task RefreshResetPlanAsync(int commandTimeoutSeconds = DefaultCommandTimeoutSeconds)
+    {
+        ResetPlan = await MssqlDatabaseResetSql.BuildPrecomputedAsync(
+            ConnectionString,
+            commandTimeoutSeconds,
+            _generatedDdlBaselineTables
+        );
     }
 
     public async Task<bool> SequenceExistsAsync(string schema, string sequenceName)
