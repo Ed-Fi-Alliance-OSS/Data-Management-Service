@@ -237,7 +237,7 @@
       "Download the successful PR run timing artifacts and compare reset-database phase duration against the previous phase under the same lease strategy.",
       "Open the successful PR run and record the reset timing and isolation validation in a PR comment before starting Phase 7."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 7",

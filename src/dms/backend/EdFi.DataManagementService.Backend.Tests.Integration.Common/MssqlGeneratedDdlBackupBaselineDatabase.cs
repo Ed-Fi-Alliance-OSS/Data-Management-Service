@@ -120,7 +120,8 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
                 databaseName,
                 FixtureSignature,
                 _sharedBackupEntry.GeneratedDdlHash,
-                MssqlGeneratedDdlLeaseStrategy.BackupRestore
+                MssqlGeneratedDdlLeaseStrategy.BackupRestore,
+                backupState.ResetPlan
             );
 
             return new(restoredDatabase, () => ReturnLeaseAsync(restoredDatabase));
@@ -372,7 +373,7 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
                     LeaseCommandTimeoutSeconds
                 );
 
-                backupBaselineState = new(backupPath, backupFiles);
+                backupBaselineState = new(backupPath, backupFiles, baselineDatabase.ResetPlan);
             }
             catch
             {
@@ -489,7 +490,8 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
 
     private sealed record MssqlBackupBaselineState(
         string BackupPath,
-        IReadOnlyList<MssqlDatabaseFileMetadata> Files
+        IReadOnlyList<MssqlDatabaseFileMetadata> Files,
+        MssqlDatabaseResetPlan ResetPlan
     );
 }
 

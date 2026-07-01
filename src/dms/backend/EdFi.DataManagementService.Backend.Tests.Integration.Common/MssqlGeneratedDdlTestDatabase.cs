@@ -44,7 +44,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         ("dms", "ResourceKey"),
         ("dms", "SchemaComponent"),
     ];
-    private static readonly string _resetSql = MssqlDatabaseResetSql.Build(_generatedDdlBaselineTables);
+    private static readonly MssqlDatabaseResetPlan _dynamicResetPlan = MssqlDatabaseResetPlan.Dynamic(
+        _generatedDdlBaselineTables
+    );
     private static readonly Lazy<SemaphoreSlim?> _generatedDdlProvisionSemaphore = new(
         CreateGeneratedDdlProvisionSemaphore
     );
@@ -54,7 +56,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         string connectionString,
         string fixtureSignature = "",
         string generatedDdlHash = "",
-        string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy
+        string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy,
+        MssqlDatabaseResetPlan? resetPlan = null
     )
     {
         DatabaseName = databaseName;
@@ -62,6 +65,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         FixtureSignature = fixtureSignature;
         GeneratedDdlHash = generatedDdlHash;
         LeaseStrategy = leaseStrategy;
+        ResetPlan = resetPlan ?? _dynamicResetPlan;
     }
 
     public string DatabaseName { get; }
@@ -73,6 +77,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private string GeneratedDdlHash { get; }
 
     private string LeaseStrategy { get; }
+
+    internal MssqlDatabaseResetPlan ResetPlan { get; private set; }
 
     public static Task<MssqlGeneratedDdlTestDatabase> CreateEmptyAsync(
         string fixtureSignature = "",
@@ -99,7 +105,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         string databaseName,
         string fixtureSignature = "",
         string generatedDdlHash = "",
-        string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy
+        string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy,
+        MssqlDatabaseResetPlan? resetPlan = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
@@ -116,7 +123,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             MssqlTestDatabaseHelper.BuildConnectionString(databaseName),
             fixtureSignature,
             generatedDdlHash,
-            leaseStrategy
+            leaseStrategy,
+            resetPlan
         );
     }
 
@@ -333,6 +341,12 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 await transaction.RollbackAsync();
                 throw;
             }
+
+            ResetPlan = await MssqlDatabaseResetSql.BuildPrecomputedAsync(
+                ConnectionString,
+                commandTimeoutSeconds,
+                _generatedDdlBaselineTables
+            );
         }
         catch
         {
@@ -373,7 +387,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             await using SqlConnection connection = new(ConnectionString);
             await connection.OpenAsync();
             await using SqlCommand command = connection.CreateCommand();
-            command.CommandText = _resetSql;
+            command.CommandText = ResetPlan.Sql;
             command.CommandTimeout = commandTimeoutSeconds;
             await command.ExecuteNonQueryAsync();
         }
