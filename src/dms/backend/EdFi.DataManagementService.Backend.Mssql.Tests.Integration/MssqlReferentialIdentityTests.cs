@@ -23,6 +23,7 @@ public class MssqlReferentialIdentityTests
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
 
     [OneTimeSetUp]
@@ -36,7 +37,12 @@ public class MssqlReferentialIdentityTests
         }
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
     }
 
     [SetUp]
@@ -48,9 +54,9 @@ public class MssqlReferentialIdentityTests
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
             _database = null!;
         }
     }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -27,7 +28,10 @@ internal static class MssqlBackendBaselineCache
     public static async Task<IMssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(
         string fixtureSignature,
         string generatedDdl,
-        int commandTimeoutSeconds = 300
+        int commandTimeoutSeconds = 300,
+        [CallerMemberName] string callerMemberName = "",
+        [CallerFilePath] string callerFilePath = "",
+        [CallerLineNumber] int callerLineNumber = 0
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fixtureSignature);
@@ -42,7 +46,10 @@ internal static class MssqlBackendBaselineCache
                     MssqlGeneratedDdlBaselineDatabaseFactory.CreateAsync(
                         fixtureSignature,
                         generatedDdl,
-                        commandTimeoutSeconds
+                        commandTimeoutSeconds,
+                        callerMemberName,
+                        callerFilePath,
+                        callerLineNumber
                     ),
                 LazyThreadSafetyMode.ExecutionAndPublication
             )
@@ -65,6 +72,28 @@ internal static class MssqlBackendBaselineCache
             _cache.TryRemove(new(fixtureSignature, entry));
             throw;
         }
+    }
+
+    public static async Task<IMssqlGeneratedDdlBaselineLease> AcquireLeaseAsync(
+        string fixtureRelativePath,
+        bool strict,
+        string generatedDdl,
+        int commandTimeoutSeconds = 300,
+        [CallerMemberName] string callerMemberName = "",
+        [CallerFilePath] string callerFilePath = "",
+        [CallerLineNumber] int callerLineNumber = 0
+    )
+    {
+        IMssqlGeneratedDdlBaselineDatabase baseline = await CreateOrGetAsync(
+            BuildFixtureSignature(fixtureRelativePath, strict),
+            generatedDdl,
+            commandTimeoutSeconds,
+            callerMemberName,
+            callerFilePath,
+            callerLineNumber
+        );
+
+        return await baseline.AcquireRestoredDatabaseAsync(commandTimeoutSeconds);
     }
 
     public static string BuildFixtureSignature(string fixtureRelativePath, bool strict) =>

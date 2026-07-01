@@ -174,6 +174,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
     );
 
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
 
@@ -191,7 +192,12 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
             MssqlIfMatchCascadeReferentialIdentityTestSupport.FixtureRelativePath
         );
         _mappingSet = fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            MssqlIfMatchCascadeReferentialIdentityTestSupport.FixtureRelativePath,
+            strict: false,
+            fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
     }
 
     [SetUp]
@@ -214,9 +220,9 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
             _database = null!;
         }
     }

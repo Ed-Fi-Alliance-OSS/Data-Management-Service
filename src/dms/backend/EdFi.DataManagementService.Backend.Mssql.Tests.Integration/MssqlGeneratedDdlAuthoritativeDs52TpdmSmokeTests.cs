@@ -28,6 +28,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_Ds
     ];
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private IReadOnlyDictionary<string, bool> _surveyResponseColumnNullability = null!;
     private IReadOnlyList<string> _surveyResponseCheckConstraintNames = null!;
@@ -51,7 +52,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_Ds
             FixtureRelativePath,
             strict: true
         );
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
 
         await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
 
@@ -93,9 +99,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_Ds
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

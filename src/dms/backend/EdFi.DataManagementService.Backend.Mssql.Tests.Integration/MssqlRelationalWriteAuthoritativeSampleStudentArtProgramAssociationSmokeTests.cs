@@ -308,6 +308,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
@@ -332,7 +333,12 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             strict: true
         );
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            MssqlStudentArtProgramAssociationIntegrationTestSupport.FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateServiceProvider();
 
         var (projectSchema, resourceSchema) =
@@ -383,9 +389,9 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 
