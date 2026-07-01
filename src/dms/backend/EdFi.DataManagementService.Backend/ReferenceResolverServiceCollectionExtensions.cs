@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -64,6 +65,8 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, TDocumentHydrator>());
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteFlattener, RelationalWriteFlattener>());
         services.TryAdd(ServiceDescriptor.Scoped<ISessionDocumentHydrator, TSessionDocumentHydrator>());
+        // Stateless composer for the ContentVersion-based _etag; singleton so it is reused.
+        services.TryAdd(ServiceDescriptor.Singleton<IEtagComposer, EtagComposer>());
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalReadMaterializer, RelationalReadMaterializer>());
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
