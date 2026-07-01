@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_Ds52_Tpdm_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm";
