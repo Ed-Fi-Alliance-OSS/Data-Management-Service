@@ -1,4 +1,10 @@
 <Project>
+    <PropertyGroup>
+        <_DmsNetCoreSdkRoot Condition="'$(NETCoreSdkBundledVersionsProps)' != ''">$([System.IO.Path]::GetFullPath('$(NETCoreSdkBundledVersionsProps)/..'))</_DmsNetCoreSdkRoot>
+        <_DmsNetCoreSdkRoot Condition="'$(_DmsNetCoreSdkRoot)' == '' and '$(MSBuildRuntimeType)' == 'Core'">$(MSBuildToolsPath)</_DmsNetCoreSdkRoot>
+        <_DmsNewtonsoftJsonPath>$(_DmsNetCoreSdkRoot)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll</_DmsNewtonsoftJsonPath>
+    </PropertyGroup>
+
     <UsingTask
         TaskName="MaterializeBundledApiSchemaBootstrapManifestTask"
         TaskFactory="RoslynCodeTaskFactory"
@@ -9,7 +15,7 @@
             <ManifestPath ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
-            <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
+            <Reference Include="$(_DmsNewtonsoftJsonPath)" />
             <Using Namespace="System" />
             <Using Namespace="System.Collections.Generic" />
             <Using Namespace="System.IO" />
