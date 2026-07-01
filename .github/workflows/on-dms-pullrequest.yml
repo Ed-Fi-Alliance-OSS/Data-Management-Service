@@ -1940,8 +1940,8 @@ jobs:
 
   fresh-rebuild-docker-images:
     name: Fresh Rebuild DMS and Config Docker Images
-    needs: detect-fresh-build-changes
-    if: needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true'
+    needs: [detect-fresh-build-changes, build-and-start-dms]
+    if: always() && needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true' && needs.build-and-start-dms.result == 'success'
     runs-on: ubuntu-latest
     defaults:
       run:
