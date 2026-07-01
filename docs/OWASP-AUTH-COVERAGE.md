@@ -56,8 +56,11 @@ same valid token may be presented any number of times and each request succeeds.
 **Decision:** DMS keeps standard stateless bearer semantics. A distributed
 replay-prevention cache or per-request introspection is **explicitly out of scope**
 — it would add coordination cost and latency without a corresponding threat in the
-DMS deployment model. Replay exposure is bounded by the compensating controls
-below (short token TTL, TLS, IdP-side revocation).
+DMS deployment model. Because DMS self-inspects and never calls the IdP per request,
+a token revoked at the IdP is still accepted by DMS until it expires — IdP-side
+revocation is **not** enforced for already-issued bearer tokens on this path. Replay
+exposure is therefore bounded by the *measurable* compensating controls below (short
+token TTL and signing-key rotation, plus TLS in transit), not by IdP revocation.
 
 ### CMS self-contained provider — per-request revocation-on-demand
 
@@ -79,9 +82,11 @@ provider scheme.
 
 When tokens are issued by Keycloak or another external IdP, DMS and CMS validate
 the signature and claims against the IdP's published keys but **cannot locally
-verify revocation**. Revocation, session management, and any `jti`/introspection
-semantics are owned by the IdP. This is an **IdP-dependent gap** addressed by the
-compensating controls below.
+verify revocation**, and neither app path calls the IdP per request. Revocation,
+session management, and any `jti`/introspection semantics are owned by the IdP. The
+practical constraint: an externally-issued token revoked at the IdP is still
+**accepted by these paths until it expires**. This is an **IdP-dependent gap**
+bounded (not closed) by the compensating controls below.
 
 ## `jti` handling matrix
 
@@ -118,9 +123,17 @@ externally-issued tokens), the following compensating controls bound the risk:
   capture in transit. Bearer tokens must never traverse plaintext channels.
 - **Bounded clock skew.** Lifetime validation allows only a small, fixed clock-skew
   tolerance, limiting acceptance of marginally-expired tokens.
-- **IdP-side revocation and session management.** For externally-issued tokens,
-  revocation is enforced at the IdP; operators should configure IdP revocation /
-  short-lived tokens and rotate signing keys per IdP guidance.
+- **Signing-key rotation (measurable app-side control).** Retiring a signing key
+  makes every token issued under it fail signature validation, which cuts short the
+  acceptance window for tokens already in circulation. Combined with the short TTL
+  above, this is the measurable control on the stateless paths; rotate per IdP
+  guidance.
+- **IdP-side revocation (constraint, not an app-side control).** Revoking a token at
+  the IdP does **not** retroactively reject it on the stateless app paths (DMS for
+  all tokens; CMS for externally-issued tokens) — a revoked externally-issued token
+  is accepted until it expires. IdP revocation and session management still prevent
+  *new* tokens from being issued to a compromised client, but do not invalidate
+  tokens already in circulation on these paths.
 - **Server-side revocation (CMS self-contained only).** The per-request `jti`
   status check plus `/connect/revoke` provide immediate revocation for
   self-contained tokens.
