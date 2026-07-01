@@ -277,6 +277,149 @@ jobs:
 
           Write-Host "All cheap validation jobs passed."
 
+  build-integration-test-assemblies:
+    name: Build Integration Test Assemblies
+    needs: cheap-check-summary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore and Build Integration Test Projects
+        run: |
+          $configuration = "${{ env.CONFIGURATION }}"
+          $projects = @(
+            @{
+              Name = "backend-mssql"
+              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
+              Assembly = "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll"
+            },
+            @{
+              Name = "dms-api"
+              Project = "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj"
+              Assembly = "EdFi.DataManagementService.Tests.Integration.dll"
+            },
+            @{
+              Name = "backend-postgresql"
+              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+              Assembly = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll"
+            },
+            @{
+              Name = "schematools"
+              Project = "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
+              Assembly = "EdFi.DataManagementService.SchemaTools.Tests.Integration.dll"
+            }
+          )
+
+          foreach ($project in $projects) {
+            dotnet restore $project.Project --verbosity:normal
+            dotnet build $project.Project `
+              -c $configuration `
+              --no-restore `
+              -v normal `
+              --nologo
+          }
+
+      - name: Stage Integration Test Assemblies
+        run: |
+          $configuration = "${{ env.CONFIGURATION }}"
+          $artifactRoot = "./TestArtifacts/integration-test-assemblies"
+          $projects = @(
+            @{
+              Name = "backend-mssql"
+              OutputDirectory = "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/bin/$configuration/net10.0"
+              Assembly = "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll"
+            },
+            @{
+              Name = "dms-api"
+              OutputDirectory = "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/bin/$configuration/net10.0"
+              Assembly = "EdFi.DataManagementService.Tests.Integration.dll"
+            },
+            @{
+              Name = "backend-postgresql"
+              OutputDirectory = "./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/bin/$configuration/net10.0"
+              Assembly = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll"
+            },
+            @{
+              Name = "schematools"
+              OutputDirectory = "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/$configuration/net10.0"
+              Assembly = "EdFi.DataManagementService.SchemaTools.Tests.Integration.dll"
+            }
+          )
+
+          if (Test-Path $artifactRoot) {
+            Remove-Item -LiteralPath $artifactRoot -Recurse -Force
+          }
+
+          function Copy-OutputDirectory {
+            param(
+              [string] $SourceDirectory,
+              [string] $DestinationDirectory
+            )
+
+            New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
+            Get-ChildItem -LiteralPath $SourceDirectory -Force | ForEach-Object {
+              Copy-Item -LiteralPath $_.FullName -Destination $DestinationDirectory -Recurse -Force
+            }
+          }
+
+          foreach ($project in $projects) {
+            $destinationDirectory = Join-Path $artifactRoot $project.Name
+            Copy-OutputDirectory -SourceDirectory $project.OutputDirectory -DestinationDirectory $destinationDirectory
+
+            $depsJson = $project.Assembly -replace '\.dll$', '.deps.json'
+            $runtimeConfig = $project.Assembly -replace '\.dll$', '.runtimeconfig.json'
+            $requiredFiles = @(
+              $project.Assembly,
+              $depsJson,
+              $runtimeConfig,
+              "NUnit3.TestAdapter.dll",
+              "testhost.dll"
+            )
+
+            foreach ($requiredFile in $requiredFiles) {
+              $path = Join-Path $destinationDirectory $requiredFile
+              if (-not (Test-Path $path)) {
+                throw "Required integration test artifact is missing: $path"
+              }
+            }
+          }
+
+          $schemaToolsTestOutput = "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/$configuration/net10.0"
+          $schemaToolsCliOutput = "./src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/$configuration/net10.0"
+          Copy-OutputDirectory `
+            -SourceDirectory $schemaToolsTestOutput `
+            -DestinationDirectory (Join-Path $artifactRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/$configuration/net10.0")
+          Copy-OutputDirectory `
+            -SourceDirectory $schemaToolsCliOutput `
+            -DestinationDirectory (Join-Path $artifactRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/$configuration/net10.0")
+
+      - name: Upload Integration Test Assemblies
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
+          if-no-files-found: error
+          retention-days: 1
+
   build-ci-docker-images:
     name: Build CI Docker Images
     needs: cheap-check-summary
@@ -379,10 +522,12 @@ jobs:
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/backend-mssql/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll
     strategy:
       fail-fast: false
       matrix:
@@ -406,18 +551,16 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
 
       - name: Start MSSQL Container
         uses: ./.github/actions/start-mssql-test-container
@@ -428,17 +571,12 @@ jobs:
           tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
           image: ${{ env.MSSQL_IMAGE }}
 
-      - name: Restore Backend MSSQL Integration Tests
-        run: |
-          dotnet restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --verbosity:normal
-
       - name: Run Backend MSSQL Integration Tests
         if: success()
         run: |
-          dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/TestResults" `
             --filter "Category=${{ matrix.shard-category }}" `
             --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Shard${{ matrix.shard }}.trx" `
             --logger "console" `
@@ -488,10 +626,12 @@ jobs:
 
   run-dms-api-mssql-integration-tests:
     name: Run DMS API MSSQL Integration Tests
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
     defaults:
       run:
         shell: pwsh
@@ -499,18 +639,16 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
 
       - name: Start MSSQL Container
         uses: ./.github/actions/start-mssql-test-container
@@ -521,17 +659,12 @@ jobs:
           tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
           image: ${{ env.MSSQL_IMAGE }}
 
-      - name: Restore DMS API MSSQL Integration Tests
-        run: |
-          dotnet restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --verbosity:normal
-
       - name: Run DMS API MSSQL Integration Tests
         if: success()
         run: |
-          dotnet test ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults" `
             --filter "Category=ApiIntegration&Category=MssqlIntegration" `
             --logger "trx;LogFileName=EdFi.DataManagementService.Tests.Integration.Mssql.trx" `
             --logger "console" `
@@ -561,10 +694,12 @@ jobs:
 
   run-backend-postgresql-integration-tests:
     name: Run Backend PostgreSQL Integration Tests
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/backend-postgresql/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll
     defaults:
       run:
         shell: pwsh
@@ -572,18 +707,16 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
 
       - name: Start PostgreSQL Container
         uses: ./.github/actions/start-postgresql-test-container
@@ -593,17 +726,12 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
-      - name: Restore Backend PostgreSQL Integration Tests
-        run: |
-          dotnet restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --verbosity:normal
-
       - name: Run Backend PostgreSQL Integration Tests
         if: success()
         run: |
-          dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/TestResults" `
             --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.trx" `
             --logger "console" `
             --nologo
@@ -632,7 +760,7 @@ jobs:
 
   run-dms-api-postgresql-integration-tests:
     name: Run DMS API PostgreSQL Integration Tests
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -641,22 +769,21 @@ jobs:
         shell: pwsh
     env:
       ConnectionStrings__DatabaseConnection: "Host=localhost;Port=5432;Username=postgres;Database=edfi_dms_backend_integration;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
 
       - name: Start PostgreSQL Container
         uses: ./.github/actions/start-postgresql-test-container
@@ -666,17 +793,12 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
-      - name: Restore DMS API PostgreSQL Integration Tests
-        run: |
-          dotnet restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --verbosity:normal
-
       - name: Run DMS API PostgreSQL Integration Tests
         if: success()
         run: |
-          dotnet test ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults" `
             --filter "Category=ApiIntegration&Category=PostgresqlIntegration" `
             --logger "trx;LogFileName=EdFi.DataManagementService.Tests.Integration.Postgresql.trx" `
             --logger "console" `
@@ -722,10 +844,6 @@ jobs:
             project: ./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj
             trx: EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.trx
             test-filter: ""
-          - cli: SchemaTools
-            project: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
-            trx: EdFi.DataManagementService.SchemaTools.Tests.Integration.NoDatabase.trx
-            test-filter: "Category!=DatabaseIntegration"
     defaults:
       run:
         shell: pwsh
@@ -794,9 +912,9 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
-  run-schematools-postgresql-integration-tests:
-    name: Run SchemaTools PostgreSQL Integration Tests
-    needs: cheap-check-summary
+  run-schematools-cli-integration-tests:
+    name: Run CLI Integration Tests (SchemaTools)
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -804,7 +922,54 @@ jobs:
       run:
         shell: pwsh
     env:
-      SCHEMATOOLS_PROJECT: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
+      SCHEMATOOLS_TEST_ASSEMBLY: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/Release/net10.0/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: .
+
+      - name: Run CLI Integration Tests
+        run: |
+          dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
+            -v normal `
+            --results-directory "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/TestResults" `
+            --filter "Category!=DatabaseIntegration" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.SchemaTools.Tests.Integration.NoDatabase.trx" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload CLI Integration Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: CLI Integration Tests (SchemaTools)
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+  run-schematools-postgresql-integration-tests:
+    name: Run SchemaTools PostgreSQL Integration Tests
+    needs: [cheap-check-summary, build-integration-test-assemblies]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SCHEMATOOLS_TEST_ASSEMBLY: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/Release/net10.0/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -816,18 +981,16 @@ jobs:
             sudo apt-get install -y postgresql-client
           }
 
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: .
 
       - name: Start PostgreSQL Container
         uses: ./.github/actions/start-postgresql-test-container
@@ -837,26 +1000,12 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
-      - name: Restore SchemaTools PostgreSQL Integration Tests
-        run: |
-          dotnet restore ${{ env.SCHEMATOOLS_PROJECT }} --verbosity:normal
-
-      - name: Build SchemaTools PostgreSQL Integration Test Project
-        run: |
-          dotnet build ${{ env.SCHEMATOOLS_PROJECT }} `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
-            -v normal `
-            --nologo
-
       - name: Run SchemaTools PostgreSQL Integration Tests
         if: success()
         run: |
-          dotnet test ${{ env.SCHEMATOOLS_PROJECT }} `
-            -c ${{ env.CONFIGURATION }} `
-            --no-build `
-            --no-restore `
+          dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/TestResults" `
             --filter "Category=PostgresqlIntegration" `
             --logger "trx;LogFileName=EdFi.DataManagementService.SchemaTools.Tests.Integration.Postgresql.trx" `
             --logger "console" `
@@ -886,7 +1035,7 @@ jobs:
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
-    needs: cheap-check-summary
+    needs: [cheap-check-summary, build-integration-test-assemblies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -894,7 +1043,7 @@ jobs:
       run:
         shell: pwsh
     env:
-      SCHEMATOOLS_PROJECT: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
+      SCHEMATOOLS_TEST_ASSEMBLY: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/bin/Release/net10.0/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -906,18 +1055,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y sqlcmd
 
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Setup dotnet
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: .
 
       - name: Start MSSQL Container
         uses: ./.github/actions/start-mssql-test-container
@@ -928,26 +1075,12 @@ jobs:
           tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
           image: ${{ env.MSSQL_IMAGE }}
 
-      - name: Restore SchemaTools MSSQL Integration Tests
-        run: |
-          dotnet restore ${{ env.SCHEMATOOLS_PROJECT }} --verbosity:normal
-
-      - name: Build SchemaTools MSSQL Integration Test Project
-        run: |
-          dotnet build ${{ env.SCHEMATOOLS_PROJECT }} `
-            -c ${{ env.CONFIGURATION }} `
-            --no-restore `
-            -v normal `
-            --nologo
-
       - name: Run SchemaTools MSSQL Integration Tests
         if: success()
         run: |
-          dotnet test ${{ env.SCHEMATOOLS_PROJECT }} `
-            -c ${{ env.CONFIGURATION }} `
-            --no-build `
-            --no-restore `
+          dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
             -v normal `
+            --results-directory "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/TestResults" `
             --filter "Category=MssqlIntegration" `
             --logger "trx;LogFileName=EdFi.DataManagementService.SchemaTools.Tests.Integration.Mssql.trx" `
             --logger "console" `
@@ -1894,6 +2027,7 @@ jobs:
         run-dms-api-postgresql-integration-tests,
         run-dms-api-mssql-integration-tests,
         run-cli-integration-tests,
+        run-schematools-cli-integration-tests,
         run-schematools-postgresql-integration-tests,
         run-schematools-mssql-integration-tests,
         validate-resources-spec,

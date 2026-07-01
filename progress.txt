@@ -18,3 +18,10 @@ Key decisions: added one DMS PR image job and one scheduled smoke image job that
 Files changed: .github/workflows/on-dms-pullrequest.yml, .github/workflows/scheduled-smoke-test.yml, eng/docker-compose/local-dms.yml, eng/docker-compose/local-config.yml, tasks.json, progress.txt
 Verification: yq parsed edited workflows; actionlint passed edited workflows; docker compose config confirmed DMS_DOCKER_IMAGE/DMS_CONFIG_DOCKER_IMAGE override and default image behavior; git diff --check passed.
 Blockers/next: branch still ahead/behind origin; real push/PR GitHub Actions validation and PR comment remain after remote reconciliation.
+
+2026-06-30 19:44 CDT
+Task completed: CI Speedup Phase 4 for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: added one Release integration assembly build artifact for Backend MSSQL, DMS API, Backend PostgreSQL, and SchemaTools; shard jobs download DLL outputs and keep DB setup local; split SchemaTools no-db CLI slice so all SchemaTools integration runs use artifact.
+Files changed: .github/workflows/on-dms-pullrequest.yml, tasks.json, progress.txt
+Verification: yq parsed workflow; actionlint passed; git diff --check passed; restored/built four integration projects Release; staged artifacts verified dll/deps/runtimeconfig/NUnit adapter/testhost; dotnet test --list-tests worked from staged DLL paths.
+Blockers/next: push/PR run/comment still need remote branch reconciliation; inspect CI logs to confirm no project restore/build in shard jobs.

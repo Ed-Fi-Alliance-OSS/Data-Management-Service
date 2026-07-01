@@ -96,7 +96,7 @@
       "Inspect shard logs and confirm test execution uses compiled artifacts, does not invoke MSBuild restore/build for test projects, and preserves existing filters, TRX loggers, and database setup.",
       "Add a PR comment with the validation run URL and the observed restore/build time removed from integration shard jobs."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI Speedup Phase 5",
