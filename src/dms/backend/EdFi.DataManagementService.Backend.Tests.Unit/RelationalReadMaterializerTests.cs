@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -236,7 +237,8 @@ public class Given_RelationalReadMaterializer
     private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions? linksOptions = null) =>
         new(
             new NoLinkSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions())
+            Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions()),
+            new EtagComposer()
         );
 
     /// <summary>
@@ -669,7 +671,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     {
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
+            new EtagComposer()
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -734,7 +737,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     {
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
+            new EtagComposer()
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -898,7 +902,11 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     }
 
     private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions linksOptions) =>
-        new(new StubSlugResolver(_schoolSlug), Microsoft.Extensions.Options.Options.Create(linksOptions));
+        new(
+            new StubSlugResolver(_schoolSlug),
+            Microsoft.Extensions.Options.Options.Create(linksOptions),
+            new EtagComposer()
+        );
 
     /// <summary>
     /// Drives <see cref="IRelationalReadMaterializer.MaterializePage"/> directly with a
@@ -949,6 +957,53 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
 
         materialized.Should().ContainSingle();
         return materialized[0].Document;
+    }
+
+    [Test]
+    public void It_composes_external_response_etag_from_content_version_and_variant_key()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 7L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(readPlan.Model.Root, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
+        );
+
+        materialized.Should().ContainSingle();
+        // ContentVersion 7; schemaEpoch = first 8 hex of BuildMappingSet()'s EffectiveSchemaHash
+        // ("01234567"); format j (JSON); no profile ("_"); links enabled ("l").
+        materialized[0].Document["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be("7-01234567.j._.l");
     }
 
     private static ResourceReadPlan BuildReadPlanWithDocumentReferenceBinding()

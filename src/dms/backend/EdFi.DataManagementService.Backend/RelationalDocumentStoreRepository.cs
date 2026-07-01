@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -2504,6 +2505,11 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
+            var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
+            var readProfileName = appliesReadableProfileProjection
+                ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
+                : null;
+
             var edfiDoc = _readMaterializer.Materialize(
                 new RelationalReadMaterializationRequest(
                     readPlan,
@@ -2515,10 +2521,11 @@ public sealed class RelationalDocumentStoreRepository(
                 {
                     MappingSet = mappingSet,
                     DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                    EtagVariant = new EtagVariantInputs(readProfileName, ResponseFormat.Json),
                 }
             );
 
-            if (ShouldApplyReadableProfileProjection(relationalGetRequest))
+            if (appliesReadableProfileProjection)
             {
                 var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
                 edfiDoc = _readableProfileProjector.Project(
@@ -3899,6 +3906,7 @@ public sealed class RelationalDocumentStoreRepository(
             )
             {
                 MappingSet = relationalQueryRequest.MappingSet,
+                EtagVariant = new EtagVariantInputs(projectionContext?.ProfileName, ResponseFormat.Json),
             }
         );
 

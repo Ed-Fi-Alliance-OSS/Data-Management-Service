@@ -31,10 +31,22 @@ public enum RelationalGetRequestReadMode
 /// <param name="IdentityPropertyNames">
 /// The precomputed top-level identity-property names that must always survive projection.
 /// </param>
+/// <param name="ProfileName">
+/// The name of the readable profile in effect. Used as the stable input to the served
+/// <c>_etag</c>'s profile discriminator so representations under different profiles carry
+/// distinct etags (RFC 7232 strong validators).
+/// </param>
 public sealed record ReadableProfileProjectionContext(
     ContentTypeDefinition ContentTypeDefinition,
     IReadOnlySet<string> IdentityPropertyNames
-);
+)
+{
+    /// <summary>
+    /// The name of the readable profile in effect, used as the stable input to the served
+    /// <c>_etag</c>'s profile discriminator. Empty when unspecified by the caller.
+    /// </summary>
+    public string ProfileName { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// Relational GET request.
