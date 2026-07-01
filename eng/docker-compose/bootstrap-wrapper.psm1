@@ -301,7 +301,18 @@ function Invoke-BootstrapWrapper {
         # configure phase always, and to the start phases only for start-local-dms.ps1 (mssql.yml
         # is a local-only tier; start-published-dms.ps1 has no -DatabaseEngine parameter).
         [ValidateSet("postgresql", "mssql")]
-        [string]$DatabaseEngine = "postgresql"
+        [string]$DatabaseEngine = "postgresql",
+
+        # Data standard version for the local-bootstrap package surface. The
+        # .env.bootstrap.<token> overlay is always composed onto the base env file (DS 5.2,
+        # the default: core + TPDM; DS 6.1: core only) before any phase reads it. The default
+        # is declared here as well as on the entry scripts because PowerShell defaults are not
+        # part of $PSBoundParameters and would otherwise not reach this function. Deliberately
+        # NOT forwarded to the start scripts: their -DataStandardVersion composes the shared
+        # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
+        # would override this surface.
+        [ValidateSet("5.2", "6.1")]
+        [string]$DataStandardVersion = "5.2"
     )
 
     $ErrorActionPreference = "Stop"
@@ -410,6 +421,27 @@ function Invoke-BootstrapWrapper {
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
+
+        # Data-standard selection: ALWAYS compose the LOCAL-BOOTSTRAP overlay
+        # (.env.bootstrap.<token>, default DS 5.2) onto the base env before anything reads it,
+        # so identity resolution, prepare, configure, provision, and the start phases all see
+        # the composed SCHEMA_PACKAGES / data-standard settings from one canonical path. These
+        # bootstrap-scoped overlays carry the minimal local surfaces (DS 5.2: core + TPDM;
+        # DS 6.1: core only) and are deliberately distinct from the shared .env.ds<NN> overlays,
+        # whose E2E/SDK surfaces include the Sample/Homograph test extensions required by CI.
+        # For the same reason -DataStandardVersion is NOT forwarded to the start scripts below:
+        # they would re-compose the shared overlay over this derived file and silently restore
+        # the E2E-shaped SCHEMA_PACKAGES. The start phases receive the derived file through
+        # -EnvironmentFile instead. env-utility is imported here because the wrapper's other
+        # imports live inside helper functions that run after this block.
+        Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+        $overlayToken = Get-DataStandardOverlayToken -DataStandardVersion $DataStandardVersion
+        $bootstrapOverlayPath = Join-Path $PSScriptRoot ".env.bootstrap.$overlayToken"
+        $derivedBaseName = [System.IO.Path]::GetFileName($baseEnvFile)
+        $baseEnvFile = New-DataStandardDerivedEnvFile `
+            -BaseEnvironmentFile $baseEnvFile `
+            -OverlayEnvironmentFile $bootstrapOverlayPath `
+            -TargetPath (Join-Path $PSScriptRoot ".derived/$derivedBaseName.bootstrap.$overlayToken")
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
         # derived-env materialization so an unsupported env-file value fails without writing .env.derived.

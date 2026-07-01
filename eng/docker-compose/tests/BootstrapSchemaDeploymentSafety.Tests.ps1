@@ -44,7 +44,11 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "provision-dms-schema.ps1",
                 "provision-e2e-database.ps1",
                 "bootstrap-wrapper.psm1",
-                "bootstrap-local-dms.ps1"
+                "bootstrap-local-dms.ps1",
+                # The wrapper always composes the local-bootstrap data-standard overlay
+                # (default 5.2) onto the base env, so wrapper invocations need the overlays.
+                ".env.bootstrap.ds52",
+                ".env.bootstrap.ds61"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
