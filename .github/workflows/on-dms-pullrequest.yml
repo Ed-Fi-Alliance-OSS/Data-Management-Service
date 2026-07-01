@@ -493,6 +493,7 @@ jobs:
     env:
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/backend-mssql/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll
       MSSQL_FIXTURE_TIMINGS_PATH: ${{ github.workspace }}/TestResults/test-timings/mssql-shard-${{ matrix.shard }}/mssql-fixture-setup-timings.csv
+      MSSQL_TEST_SHARD: ${{ matrix.shard }}
     strategy:
       fail-fast: false
       matrix:
@@ -597,6 +598,8 @@ jobs:
       contents: read
     env:
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+      MSSQL_FIXTURE_TIMINGS_PATH: ${{ github.workspace }}/TestResults/test-timings/mssql-api/mssql-fixture-setup-timings.csv
+      MSSQL_TEST_SHARD: api
     defaults:
       run:
         shell: pwsh
@@ -645,6 +648,26 @@ jobs:
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
+
+      - name: Summarize DMS API MSSQL Integration Test Timings
+        if: always()
+        run: |
+          ./eng/ci/summarize-test-timings.ps1 `
+            -Path "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults" `
+            -OutputDirectory "./TestResults/test-timings/mssql-api" `
+            -SuiteName "DMS API MSSQL Integration Tests" `
+            -AppendToGitHubStepSummary
+
+      - name: Upload DMS API MSSQL Timing Artifacts
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        if: always()
+        with:
+          name: test-timings-mssql-api
+          path: |
+            src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults/**/*.trx
+            TestResults/test-timings/mssql-api/**
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Export MSSQL Logs
         if: failure()
@@ -1936,6 +1959,7 @@ jobs:
         run-e2e-tests,
         run-instance-management-e2e-tests,
         run-backend-mssql-integration-tests,
+        run-dms-api-mssql-integration-tests,
       ]
     if: always()
     permissions:

@@ -31,7 +31,7 @@
       "Download the successful PR run timing artifacts, including backend and DMS API MSSQL artifacts, and confirm phase-level grouping with CI-generated summary output.",
       "Record the baseline timing summary and successful run URL in a PR comment before starting Phase 1."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 1",

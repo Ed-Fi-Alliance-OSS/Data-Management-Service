@@ -49,3 +49,10 @@ Blockers/next: push the descriptor-read shard move and re-run PR validation befo
 Follow-up for CI Speedup Phase 2 rollback.
 Key decisions: reverted the cheap-check-summary gate behavior from the DMS and Config PR workflows because it did not achieve its goal; preserved later CI speedup dependencies such as build-integration-test-assemblies and build-ci-docker-images.
 Verification: actionlint passed for the edited PR workflows; yq parsed both workflows; rg found no remaining cheap-check-summary references; git diff --check passed.
+
+2026-07-01 00:30 CDT
+Task completed: MSSQL Setup Speedup Phase 0 for speedup.md
+Key decisions: added phase-level MSSQL fixture timings with fixture signature, generated DDL hash, lease strategy, shard, worker id, and caller fields; kept direct/snapshot behavior unchanged; DMS API MSSQL now writes/upload timing artifacts; summarizer searches input and output artifact dirs, normalizes old total-only rows, and groups by shard/fixture/caller/phase.
+Files changed: .github/workflows/on-dms-pullrequest.yml, eng/ci/summarize-test-timings.ps1, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlTestDatabase.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlBaselineDatabase.cs, tasks.json, progress.txt
+Verification: dotnet build common harness passed; synthetic mssql fixture timing CSV summarized to normalized/summary outputs; actionlint and yq passed on DMS PR workflow; git diff --check passed; SchemaTools rg showed CLI ddl provision path/test helpers, not generated-DDL harness, so no Phase 0 harness timing change there.
+Blockers/next: push speed-up-build-phase0, create/reuse PR, wait for GitHub Actions PR validation, download timing artifacts, and post baseline timing summary before Phase 1.
