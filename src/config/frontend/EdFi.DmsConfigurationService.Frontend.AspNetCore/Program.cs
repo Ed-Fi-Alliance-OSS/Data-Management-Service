@@ -9,7 +9,6 @@ using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,20 +32,15 @@ builder.Services.AddCors(options =>
     );
 });
 
-var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+var reverseProxySettings =
+    builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
+    ?? new ReverseProxySettings();
+var useReverseProxyHeaders = reverseProxySettings.UseForwardedHeaders;
 if (useReverseProxyHeaders)
 {
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
-    {
-        options.ForwardedHeaders =
-            ForwardedHeaders.XForwardedFor
-            | ForwardedHeaders.XForwardedHost
-            | ForwardedHeaders.XForwardedProto;
-
-        // Accept forwarded headers from any network and proxy
-        options.KnownIPNetworks.Clear();
-        options.KnownProxies.Clear();
-    });
+        ForwardedHeadersConfigurator.Configure(options, reverseProxySettings)
+    );
 }
 
 var app = builder.Build();
@@ -93,6 +87,7 @@ bool ReportInvalidConfiguration(WebApplication app)
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {

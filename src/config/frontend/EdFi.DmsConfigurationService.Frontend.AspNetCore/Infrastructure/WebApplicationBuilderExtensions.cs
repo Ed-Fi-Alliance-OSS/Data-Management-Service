@@ -65,6 +65,10 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
+            .Configure<ReverseProxySettings>(
+                webApplicationBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
+            )
+            .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClientSecretValidationOptions>(

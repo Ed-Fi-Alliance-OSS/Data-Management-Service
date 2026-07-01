@@ -55,6 +55,9 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("AppSettings")
             )
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<ReverseProxySettings>(
+                webAppBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
+            )
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
@@ -72,6 +75,7 @@ public static class WebApplicationBuilderExtensions
                 IValidateOptions<ConfigurationServiceSettings>,
                 ConfigurationServiceSettingsValidator
             >()
+            .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
             .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
