@@ -249,6 +249,20 @@ function ConvertTo-MssqlTimingDurationSeconds {
     0.0
 }
 
+function ConvertTo-MssqlTimingBoolean {
+    param(
+        [string]
+        $Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    $normalizedValue = $Value.Trim()
+    return $normalizedValue -in @("1", "true", "True", "TRUE", "yes", "Yes", "YES")
+}
+
 function Resolve-MssqlTimingShard {
     param(
         [System.IO.FileInfo]
@@ -301,6 +315,11 @@ function ConvertFrom-MssqlFixtureTimingFile {
             CallerMemberName = Get-CsvValue -Record $_ -Name "CallerMemberName"
             CallerFilePath = Get-CsvValue -Record $_ -Name "CallerFilePath"
             CallerLineNumber = Get-CsvValue -Record $_ -Name "CallerLineNumber"
+            IsDiagnostic = ConvertTo-MssqlTimingBoolean -Value (Get-CsvValue -Record $_ -Name "IsDiagnostic")
+            Detail = Get-CsvValue -Record $_ -Name "Detail"
+            BatchOrdinal = Get-CsvValue -Record $_ -Name "BatchOrdinal"
+            BatchCount = Get-CsvValue -Record $_ -Name "BatchCount"
+            BatchHash = Get-CsvValue -Record $_ -Name "BatchHash"
         }
     }
 }
@@ -315,23 +334,28 @@ function Format-MssqlFixtureTimingMarkdown {
     )
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $totalSeconds = ($Results | Measure-Object -Property DurationSeconds -Sum).Sum
+    $primaryResults = @($Results | Where-Object { -not $_.IsDiagnostic })
+    $diagnosticResults = @($Results | Where-Object { $_.IsDiagnostic })
+    $totalSeconds = ($primaryResults | Measure-Object -Property DurationSeconds -Sum).Sum
     if ($null -eq $totalSeconds) {
         $totalSeconds = 0
     }
 
-    $failedCount = @($Results | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+    $failedCount = @($primaryResults | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+    $diagnosticFailedCount = @($diagnosticResults | Where-Object { $_.Outcome -ne "Succeeded" }).Count
 
     $lines.Add("## MSSQL Fixture Setup Timings")
     $lines.Add("")
     $lines.Add("| Metric | Value |")
     $lines.Add("| --- | ---: |")
     $lines.Add("| Timing rows | $($Results.Count) |")
+    $lines.Add("| Diagnostic rows | $($diagnosticResults.Count) |")
     $lines.Add("| Failed rows | $failedCount |")
+    $lines.Add("| Failed diagnostic rows | $diagnosticFailedCount |")
     $lines.Add("| Total recorded duration | $(Format-Duration -Seconds $totalSeconds) |")
     $lines.Add("")
 
-    $phaseTotals = $Results |
+    $phaseTotals = $primaryResults |
         Group-Object -Property Shard, Phase |
         ForEach-Object {
             $first = $_.Group | Select-Object -First 1
@@ -366,7 +390,7 @@ function Format-MssqlFixtureTimingMarkdown {
     $lines.Add("| Total | Rows | Failures | Shard | Phase | Fixture Signature | Caller File |")
     $lines.Add("| ---: | ---: | ---: | --- | --- | --- | --- |")
 
-    $slowGroups = $Results |
+    $slowGroups = $primaryResults |
         Group-Object -Property Shard, FixtureSignature, CallerFilePath, Phase |
         ForEach-Object {
             $first = $_.Group | Select-Object -First 1
@@ -392,6 +416,23 @@ function Format-MssqlFixtureTimingMarkdown {
 
     if (@($slowGroups).Count -eq 0) {
         $lines.Add("| 0:00.000 | 0 | 0 | | | No MSSQL fixture timing data found | |")
+    }
+
+    if ($diagnosticResults.Count -ne 0) {
+        $lines.Add("")
+        $lines.Add("### Slowest Diagnostic Rows")
+        $lines.Add("")
+        $lines.Add("| Duration | Outcome | Shard | Phase | Batch | Batch Hash | Fixture Signature | Caller File |")
+        $lines.Add("| ---: | --- | --- | --- | ---: | --- | --- | --- |")
+
+        $slowDiagnosticRows = $diagnosticResults |
+            Sort-Object -Property DurationSeconds -Descending |
+            Select-Object -First $MaxSlowGroups
+
+        foreach ($row in $slowDiagnosticRows) {
+            $batch = if ([string]::IsNullOrWhiteSpace($row.BatchOrdinal)) { "" } else { "$($row.BatchOrdinal)/$($row.BatchCount)" }
+            $lines.Add("| $(Format-Duration -Seconds $row.DurationSeconds) | $(Format-MarkdownText -Value $row.Outcome) | $(Format-MarkdownText -Value $row.Shard) | $(Format-MarkdownText -Value $row.Phase) | $(Format-MarkdownText -Value $batch) | $(Format-MarkdownText -Value $row.BatchHash) | $(Format-MarkdownText -Value $row.FixtureSignature) | $(Format-MarkdownText -Value $row.CallerFilePath) |")
+        }
     }
 
     $lines -join [Environment]::NewLine
@@ -425,8 +466,9 @@ function Write-MssqlFixtureTimingSummary {
     $sortedResults |
         Export-Csv -LiteralPath $normalizedPath -NoTypeInformation -Encoding utf8
 
+    $summaryResults = @($Results | Where-Object { -not $_.IsDiagnostic })
     $summary = @(
-        $Results |
+        $summaryResults |
             Group-Object -Property Shard, FixtureSignature, CallerFilePath, Phase |
             ForEach-Object {
                 $first = $_.Group | Select-Object -First 1

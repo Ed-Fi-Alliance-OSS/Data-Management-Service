@@ -38,6 +38,11 @@ on:
       - "src/config/**"
 
   workflow_dispatch:
+    inputs:
+      mssql_generated_ddl_provision_max_concurrency:
+        description: "Optional MSSQL generated-DDL full provisioning concurrency limit. Leave blank for no limit."
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -49,6 +54,7 @@ env:
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
   MSSQL_TMPFS_SIZE: "4g"
+  MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY: ${{ github.event.inputs.mssql_generated_ddl_provision_max_concurrency || '' }}
   POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
   POSTGRES_CONTAINER_MEMORY: "10g"
   POSTGRES_TMPFS_SIZE: "4g"

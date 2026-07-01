@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -36,6 +37,7 @@ internal sealed record MssqlProvisioningTimingContext(
 public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private const string ProvisionMaxConcurrencyVariable = "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY";
     private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =
     [
         ("dms", "EffectiveSchema"),
@@ -43,6 +45,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         ("dms", "SchemaComponent"),
     ];
     private static readonly string _resetSql = MssqlDatabaseResetSql.Build(_generatedDdlBaselineTables);
+    private static readonly Lazy<SemaphoreSlim?> _generatedDdlProvisionSemaphore = new(
+        CreateGeneratedDdlProvisionSemaphore
+    );
 
     private MssqlGeneratedDdlTestDatabase(
         string databaseName,
@@ -135,7 +140,10 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
             var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(databaseName);
 
-            MssqlTestDatabaseHelper.CreateDatabase(databaseName);
+            MssqlTestDatabaseHelper.CreateGeneratedDdlDatabase(
+                databaseName,
+                useExplicitFileSizing: IsDirectLeaseStrategy(context.LeaseStrategy)
+            );
 
             return Task.FromResult(
                 new MssqlGeneratedDdlTestDatabase(
@@ -150,6 +158,11 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         catch
         {
             outcome = "Failed";
+            if (!string.IsNullOrWhiteSpace(databaseName))
+            {
+                MssqlTestDatabaseHelper.DropDatabaseIfExists(databaseName);
+            }
+
             throw;
         }
         finally
@@ -214,6 +227,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
         try
         {
+            await using var provisionSlot = await AcquireGeneratedDdlProvisionSlotAsync();
+
             database = await CreateEmptyAsync(context);
             databaseName = database.DatabaseName;
             await database.ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
@@ -294,16 +309,21 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             await using SqlConnection connection = new(ConnectionString);
             await connection.OpenAsync();
             await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+            var batches = SplitOnGoBatchSeparator(generatedDdl).ToArray();
 
             try
             {
-                foreach (var batch in SplitOnGoBatchSeparator(generatedDdl))
+                for (var batchIndex = 0; batchIndex < batches.Length; batchIndex++)
                 {
-                    await using SqlCommand command = connection.CreateCommand();
-                    command.Transaction = transaction;
-                    command.CommandText = batch;
-                    command.CommandTimeout = commandTimeoutSeconds;
-                    await command.ExecuteNonQueryAsync();
+                    await ExecuteGeneratedDdlBatchAsync(
+                        connection,
+                        transaction,
+                        batches[batchIndex],
+                        batchIndex + 1,
+                        batches.Length,
+                        commandTimeoutSeconds,
+                        context
+                    );
                 }
 
                 await transaction.CommitAsync();
@@ -312,10 +332,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             {
                 await transaction.RollbackAsync();
                 throw;
-            }
-            finally
-            {
-                SqlConnection.ClearPool(connection);
             }
         }
         catch
@@ -632,6 +648,92 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static IEnumerable<string> SplitOnGoBatchSeparator(string sql) =>
         GoBatchSeparatorPattern().Split(sql).Select(batch => batch.Trim()).Where(batch => batch.Length > 0);
 
+    private async Task ExecuteGeneratedDdlBatchAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string batch,
+        int batchOrdinal,
+        int batchCount,
+        int commandTimeoutSeconds,
+        MssqlProvisioningTimingContext context
+    )
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var outcome = "Succeeded";
+
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = batch;
+            command.CommandTimeout = commandTimeoutSeconds;
+            await command.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            outcome = "Failed";
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            MssqlProvisioningTimingRecorder.Record(
+                outcome,
+                stopwatch.Elapsed,
+                DatabaseName,
+                commandTimeoutSeconds,
+                context.FixtureSignature,
+                context.GeneratedDdlHash,
+                "apply-generated-ddl-batch",
+                context.LeaseStrategy,
+                context.CallerMemberName,
+                context.CallerFilePath,
+                context.CallerLineNumber,
+                isDiagnostic: true,
+                detail: "generated-ddl-batch",
+                batchOrdinal: batchOrdinal,
+                batchCount: batchCount,
+                batchHash: MssqlProvisioningTimingRecorder.ComputeGeneratedDdlHash(batch)
+            );
+        }
+    }
+
+    private static bool IsDirectLeaseStrategy(string leaseStrategy) =>
+        leaseStrategy.Equals(MssqlProvisioningTimingRecorder.DirectLeaseStrategy, StringComparison.Ordinal);
+
+    private static async ValueTask<GeneratedDdlProvisionSemaphoreLease> AcquireGeneratedDdlProvisionSlotAsync()
+    {
+        var semaphore = _generatedDdlProvisionSemaphore.Value;
+        if (semaphore is null)
+        {
+            return new(null);
+        }
+
+        await semaphore.WaitAsync();
+        return new(semaphore);
+    }
+
+    private static SemaphoreSlim? CreateGeneratedDdlProvisionSemaphore()
+    {
+        var value = Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (
+            !int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var maxConcurrency)
+            || maxConcurrency < 1
+        )
+        {
+            throw new InvalidOperationException(
+                $"{ProvisionMaxConcurrencyVariable} must be a positive integer when set."
+            );
+        }
+
+        return new(maxConcurrency, maxConcurrency);
+    }
+
     private static string NormalizeReferentialAction(string value)
     {
         return value.Replace('_', ' ');
@@ -665,6 +767,15 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             );
         }
     }
+
+    private readonly struct GeneratedDdlProvisionSemaphoreLease(SemaphoreSlim? semaphore) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            semaphore?.Release();
+            return ValueTask.CompletedTask;
+        }
+    }
 }
 
 internal static class MssqlProvisioningTimingRecorder
@@ -693,7 +804,12 @@ internal static class MssqlProvisioningTimingRecorder
         string leaseStrategy,
         string callerMemberName,
         string callerFilePath,
-        int callerLineNumber
+        int callerLineNumber,
+        bool isDiagnostic = false,
+        string detail = "",
+        int? batchOrdinal = null,
+        int? batchCount = null,
+        string batchHash = ""
     )
     {
         var timingsPath = Environment.GetEnvironmentVariable(TimingsPathVariable);
@@ -725,6 +841,11 @@ internal static class MssqlProvisioningTimingRecorder
             callerMemberName,
             callerFilePath,
             callerLineNumber.ToString(CultureInfo.InvariantCulture),
+            isDiagnostic ? "true" : "false",
+            detail,
+            batchOrdinal?.ToString(CultureInfo.InvariantCulture) ?? "",
+            batchCount?.ToString(CultureInfo.InvariantCulture) ?? "",
+            batchHash,
         ];
 
         lock (_lock)
@@ -734,7 +855,7 @@ internal static class MssqlProvisioningTimingRecorder
             if (writeHeader)
             {
                 writer.WriteLine(
-                    "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber"
+                    "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber,IsDiagnostic,Detail,BatchOrdinal,BatchCount,BatchHash"
                 );
             }
 
