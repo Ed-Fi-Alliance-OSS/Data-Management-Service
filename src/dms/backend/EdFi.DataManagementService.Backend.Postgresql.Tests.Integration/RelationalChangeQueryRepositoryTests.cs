@@ -27,7 +27,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// Verifies RelationalChangeQueryRepository.GetNewestChangeVersion() reads dms.GetMaxChangeVersion()
+/// Verifies RelationalChangeQueryRepository.GetNewestChangeVersion() reads "dms"."GetMaxChangeVersion"()
 /// through the real PostgreSQL command executor and reader, tracking dms.ChangeVersionSequence.
 /// Sequence helpers are shared with GetMaxChangeVersionTestBase.
 /// </summary>

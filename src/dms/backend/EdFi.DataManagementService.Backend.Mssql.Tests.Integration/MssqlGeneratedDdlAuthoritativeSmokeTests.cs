@@ -3695,7 +3695,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task<long> ReadMaxChangeVersionAsync()
     {
-        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+        return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
     }
 
     private async Task<long> CountDocumentRowsAsync(long documentId)

@@ -236,9 +236,9 @@ public interface ISqlDialect
     /// <c>/changeQueries/v1/availableChangeVersions</c> endpoint.
     /// </summary>
     /// <remarks>
-    /// PostgreSQL emits the function name unquoted (case-folded to <c>getmaxchangeversion</c>)
-    /// so a call <c>SELECT dms.GetMaxChangeVersion()</c> resolves; the body references the
-    /// case-preserved sequence as <c>"dms"."ChangeVersionSequence"</c>. SQL Server emits
+    /// PostgreSQL emits the function name quoted as <c>"dms"."GetMaxChangeVersion"</c> and the
+    /// body references the case-preserved sequence as <c>"dms"."ChangeVersionSequence"</c>.
+    /// SQL Server emits
     /// <c>[dms].[GetMaxChangeVersion]</c> with a body that reads <c>sys.sequences.current_value</c>.
     /// SQL Server callers are responsible for surrounding <c>GO</c> batch separators.
     /// </remarks>

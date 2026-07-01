@@ -289,14 +289,11 @@ public sealed class PgsqlDialect : SqlDialectBase
     /// <inheritdoc />
     public override string CreateGetMaxChangeVersionFunction(DbSchemaName schema)
     {
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("GetMaxChangeVersion")}";
         var quotedSequence = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("ChangeVersionSequence")}";
 
-        // Function name is intentionally unquoted: PostgreSQL case-folds it to
-        // 'getmaxchangeversion' so an unquoted call SELECT dms.GetMaxChangeVersion()
-        // resolves. The sequence reference is quoted because the sequence is created
-        // with PascalCase preserved via QuoteIdentifier.
         return $"""
-            CREATE OR REPLACE FUNCTION {QuoteIdentifier(schema.Value)}.GetMaxChangeVersion() RETURNS bigint AS
+            CREATE OR REPLACE FUNCTION {qualifiedName}() RETURNS bigint AS
             $GetMaxChangeVersion$
             DECLARE
                 result bigint;

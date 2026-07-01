@@ -866,7 +866,7 @@ public class Given_DdlManifestEmitter_CountStatements_With_GetMaxChangeVersion_P
     public void Setup()
     {
         var sql = """
-            CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+            CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
             $GetMaxChangeVersion$
             DECLARE
                 result bigint;
