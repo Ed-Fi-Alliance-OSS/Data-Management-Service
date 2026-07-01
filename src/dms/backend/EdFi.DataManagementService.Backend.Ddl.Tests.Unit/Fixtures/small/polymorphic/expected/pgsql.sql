@@ -484,8 +484,8 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
 (
-    "Old_LocalEducationAgencyId" integer NOT NULL,
-    "New_LocalEducationAgencyId" integer NULL,
+    "OldLocalEducationAgencyId" integer NOT NULL,
+    "NewLocalEducationAgencyId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -494,8 +494,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 (
-    "Old_SchoolId" integer NOT NULL,
-    "New_SchoolId" integer NULL,
+    "OldSchoolId" integer NOT NULL,
+    "NewSchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -660,7 +660,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalEducationAgency" (
-            "Old_LocalEducationAgencyId",
+            "OldLocalEducationAgencyId",
             "Id",
             "ChangeVersion"
         )
@@ -788,7 +788,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
+            "OldSchoolId",
             "Id",
             "ChangeVersion"
         )

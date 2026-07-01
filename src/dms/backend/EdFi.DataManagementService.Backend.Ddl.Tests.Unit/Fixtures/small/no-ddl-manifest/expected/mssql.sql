@@ -450,8 +450,8 @@ CREATE TABLE [edfi].[Person]
 IF OBJECT_ID(N'tracked_changes_edfi.Person', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Person]
 (
-    [Old_PersonId] int NOT NULL,
-    [New_PersonId] int NULL,
+    [OldPersonId] int NOT NULL,
+    [NewPersonId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Person_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -552,7 +552,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Person] (
-            [Old_PersonId],
+            [OldPersonId],
             [Id],
             [ChangeVersion]
         )
@@ -574,8 +574,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[PersonId] <> del.[PersonId] OR (i.[PersonId] IS NULL AND del.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND del.[PersonId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Person] (
-            [Old_PersonId],
-            [New_PersonId],
+            [OldPersonId],
+            [NewPersonId],
             [Id],
             [ChangeVersion]
         )

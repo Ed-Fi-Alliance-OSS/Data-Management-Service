@@ -140,8 +140,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_NamingStressItemId",
-          "new_column": "New_NamingStressItemId",
+          "old_column": "OldNamingStressItemId",
+          "new_column": "NewNamingStressItemId",
           "source_json_path": "$.namingStressItemId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

@@ -1423,8 +1423,8 @@ internal static class SharedDescriptorTrackedChangeFixture
             DmsTableNames.Descriptor,
             [
                 new TrackedChangeColumnInfo(
-                    new DbColumnName("Old_Namespace"),
-                    new DbColumnName("New_Namespace"),
+                    new DbColumnName("OldNamespace"),
+                    new DbColumnName("NewNamespace"),
                     "$.namespace",
                     null,
                     IsOldColumnNullable: false,
@@ -1434,8 +1434,8 @@ internal static class SharedDescriptorTrackedChangeFixture
                     TrackedChangeColumnOrigin.Identity
                 ),
                 new TrackedChangeColumnInfo(
-                    new DbColumnName("Old_CodeValue"),
-                    new DbColumnName("New_CodeValue"),
+                    new DbColumnName("OldCodeValue"),
+                    new DbColumnName("NewCodeValue"),
                     "$.codeValue",
                     null,
                     IsOldColumnNullable: false,

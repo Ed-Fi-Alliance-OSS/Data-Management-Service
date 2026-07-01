@@ -194,8 +194,8 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
     public void It_should_render_the_tombstone_with_old_columns_only()
     {
         _tombstone.Should().Contain("INSERT INTO \"tracked_changes_edfi\".\"Grade\"");
-        _tombstone.Should().Contain("\"Old_BeginDate\"");
-        _tombstone.Should().NotContain("\"New_BeginDate\"");
+        _tombstone.Should().Contain("\"OldBeginDate\"");
+        _tombstone.Should().NotContain("\"NewBeginDate\"");
         _tombstone.Should().Contain("\"Id\"");
         _tombstone.Should().Contain("\"ChangeVersion\"");
     }
@@ -236,8 +236,8 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
     [Test]
     public void It_should_render_the_key_change_with_old_and_new_images()
     {
-        _keyChange.Should().Contain("\"Old_BeginDate\"");
-        _keyChange.Should().Contain("\"New_BeginDate\"");
+        _keyChange.Should().Contain("\"OldBeginDate\"");
+        _keyChange.Should().Contain("\"NewBeginDate\"");
         _keyChange.Should().Contain("OLD.\"BeginDate\"");
         _keyChange.Should().Contain("NEW.\"BeginDate\"");
         _keyChange.Should().Contain("newDj0.\"Namespace\"");
@@ -312,8 +312,8 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
     public void It_should_render_the_tombstone_from_the_deleted_set()
     {
         _tombstone.Should().Contain("INSERT INTO [tracked_changes_edfi].[Grade]");
-        _tombstone.Should().Contain("[Old_BeginDate]");
-        _tombstone.Should().NotContain("[New_BeginDate]");
+        _tombstone.Should().Contain("[OldBeginDate]");
+        _tombstone.Should().NotContain("[NewBeginDate]");
         _tombstone.Should().Contain("FROM deleted del");
         _tombstone.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]");
         _tombstone
@@ -342,8 +342,8 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
     [Test]
     public void It_should_render_the_key_change_from_the_identity_changed_workset()
     {
-        _keyChange.Should().Contain("[Old_BeginDate]");
-        _keyChange.Should().Contain("[New_BeginDate]");
+        _keyChange.Should().Contain("[OldBeginDate]");
+        _keyChange.Should().Contain("[NewBeginDate]");
         _keyChange.Should().Contain("FROM @identityChangedDocs idc");
         _keyChange.Should().Contain("INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]");
         _keyChange.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
@@ -555,15 +555,15 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Scalar_Only_Table
     {
         // PG tombstone has INSERT INTO and scalar columns, no descriptor/person joins
         _pgsqlTombstone.Should().Contain("INSERT INTO \"tracked_changes_edfi\".\"Grade\"");
-        _pgsqlTombstone.Should().Contain("\"Old_BeginDate\"");
-        _pgsqlTombstone.Should().Contain("\"Old_SchoolId\"");
+        _pgsqlTombstone.Should().Contain("\"OldBeginDate\"");
+        _pgsqlTombstone.Should().Contain("\"OldSchoolId\"");
         _pgsqlTombstone.Should().NotContain("INNER JOIN \"dms\".\"Descriptor\"");
         _pgsqlTombstone.Should().NotContain("Pj0");
 
         // MSSQL tombstone has INSERT INTO and scalar columns, no descriptor/person joins
         _mssqlTombstone.Should().Contain("INSERT INTO [tracked_changes_edfi].[Grade]");
-        _mssqlTombstone.Should().Contain("[Old_BeginDate]");
-        _mssqlTombstone.Should().Contain("[Old_SchoolId]");
+        _mssqlTombstone.Should().Contain("[OldBeginDate]");
+        _mssqlTombstone.Should().Contain("[OldSchoolId]");
         _mssqlTombstone.Should().NotContain("INNER JOIN [dms].[Descriptor]");
         _mssqlTombstone.Should().NotContain("Pj0");
     }
@@ -633,7 +633,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_With_Self_Person_DocumentId
     public void It_should_resolve_self_person_document_id_columns_to_the_source_document_id_column()
     {
         var value = _plan.Values.Single(value =>
-            value.Column.OldColumnName == new DbColumnName("Old_Student_DocumentId")
+            value.Column.OldColumnName == new DbColumnName("OldStudent_DocumentId")
         );
 
         value.Kind.Should().Be(TrackedChangeValueSourceKind.DirectColumn);
@@ -808,8 +808,8 @@ internal static class TrackedChangeEmitterFixture
         var valueColumns = new List<TrackedChangeColumnInfo>
         {
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_Student_DocumentId"),
-                NewColumnName: new DbColumnName("New_Student_DocumentId"),
+                OldColumnName: new DbColumnName("OldStudent_DocumentId"),
+                NewColumnName: new DbColumnName("NewStudent_DocumentId"),
                 SourceJsonPath: "$.studentUniqueId",
                 CanonicalStorageColumn: new DbColumnName("DocumentId"),
                 IsOldColumnNullable: false,
@@ -872,7 +872,7 @@ internal static class TrackedChangeEmitterFixture
     /// When true, builds a person join whose path steps have null TargetTable/TargetColumnName.
     /// </param>
     /// <param name="overrideCanonicalStorageColumn">
-    /// Overrides the Old_SchoolId column's canonical storage column; pass a column name absent
+    /// Overrides the OldSchoolId column's canonical storage column; pass a column name absent
     /// from the source table to exercise the missing-canonical-column validation.
     /// </param>
     internal static TrackedChangeTableInfo BuildTrackedTable(
@@ -892,8 +892,8 @@ internal static class TrackedChangeEmitterFixture
         {
             // [0] BeginDate — plain Scalar, no canonical storage column
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_BeginDate"),
-                NewColumnName: new DbColumnName("New_BeginDate"),
+                OldColumnName: new DbColumnName("OldBeginDate"),
+                NewColumnName: new DbColumnName("NewBeginDate"),
                 SourceJsonPath: beginDatePath,
                 CanonicalStorageColumn: null,
                 IsOldColumnNullable: false,
@@ -904,8 +904,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             // [1] SchoolId — Scalar with CanonicalStorageColumn set (key unification)
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_SchoolId"),
-                NewColumnName: new DbColumnName("New_SchoolId"),
+                OldColumnName: new DbColumnName("OldSchoolId"),
+                NewColumnName: new DbColumnName("NewSchoolId"),
                 SourceJsonPath: "$.schoolReference.schoolId",
                 CanonicalStorageColumn: overrideCanonicalStorageColumn
                     ?? new DbColumnName("SchoolId_Unified"),
@@ -917,8 +917,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             // [2] GradeTypeDescriptor Namespace
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_GradeTypeDescriptor_Namespace"),
-                NewColumnName: new DbColumnName("New_GradeTypeDescriptor_Namespace"),
+                OldColumnName: new DbColumnName("OldGradeTypeDescriptor_Namespace"),
+                NewColumnName: new DbColumnName("NewGradeTypeDescriptor_Namespace"),
                 SourceJsonPath: "$.gradeTypeDescriptor",
                 CanonicalStorageColumn: null,
                 IsOldColumnNullable: nullableDescriptorJoin,
@@ -930,8 +930,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             // [3] GradeTypeDescriptor CodeValue
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_GradeTypeDescriptor_CodeValue"),
-                NewColumnName: new DbColumnName("New_GradeTypeDescriptor_CodeValue"),
+                OldColumnName: new DbColumnName("OldGradeTypeDescriptor_CodeValue"),
+                NewColumnName: new DbColumnName("NewGradeTypeDescriptor_CodeValue"),
                 SourceJsonPath: "$.gradeTypeDescriptor",
                 CanonicalStorageColumn: null,
                 IsOldColumnNullable: nullableDescriptorJoin,
@@ -943,8 +943,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             // [4] Student DocumentId — PersonDocumentId
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_StudentSectionAssociation_Student_DocumentId"),
-                NewColumnName: new DbColumnName("New_StudentSectionAssociation_Student_DocumentId"),
+                OldColumnName: new DbColumnName("OldStudentSectionAssociation_Student_DocumentId"),
+                NewColumnName: new DbColumnName("NewStudentSectionAssociation_Student_DocumentId"),
                 SourceJsonPath: "$.studentSectionAssociationReference.studentReference.studentUniqueId",
                 CanonicalStorageColumn: null,
                 IsOldColumnNullable: nullablePersonJoin,
@@ -1094,8 +1094,8 @@ internal static class TrackedChangeEmitterFixture
         {
             // [0] BeginDate — plain Scalar
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_BeginDate"),
-                NewColumnName: new DbColumnName("New_BeginDate"),
+                OldColumnName: new DbColumnName("OldBeginDate"),
+                NewColumnName: new DbColumnName("NewBeginDate"),
                 SourceJsonPath: "$.gradingPeriodReference.beginDate",
                 CanonicalStorageColumn: null,
                 IsOldColumnNullable: false,
@@ -1106,8 +1106,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             // [1] SchoolId — Scalar with CanonicalStorageColumn (key unification)
             new TrackedChangeColumnInfo(
-                OldColumnName: new DbColumnName("Old_SchoolId"),
-                NewColumnName: new DbColumnName("New_SchoolId"),
+                OldColumnName: new DbColumnName("OldSchoolId"),
+                NewColumnName: new DbColumnName("NewSchoolId"),
                 SourceJsonPath: "$.schoolReference.schoolId",
                 CanonicalStorageColumn: new DbColumnName("SchoolId_Unified"),
                 IsOldColumnNullable: false,
