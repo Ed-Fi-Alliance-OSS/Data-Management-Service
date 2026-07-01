@@ -424,6 +424,7 @@ $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
 $fragments = [System.Collections.ArrayList]::new()
 $namespacePrefixes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $unmappedExtensionNames = [System.Collections.ArrayList]::new()
+$knownExtensionVerificationChecks = [System.Collections.ArrayList]::new()
 
 foreach ($extensionProject in $extensionProjects) {
     $projectName = Get-ValueOrNull -Hashtable $extensionProject -Key "projectName"
@@ -444,6 +445,16 @@ foreach ($extensionProject in $extensionProjects) {
 
         if ($knownExtension.ContainsKey("NamespacePrefix")) {
             $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
+        }
+
+        # Extensions whose claims are already covered by the embedded Claims.json (e.g. TPDM in
+        # DS 5.2) stage no fragment; their catalog-declared VerificationChecks are collected here
+        # and added to the readiness checks below so the claims-ready gate still confirms CMS
+        # composed those extension claims from the embedded base.
+        if ($knownExtension.ContainsKey("VerificationChecks")) {
+            foreach ($verificationCheck in @($knownExtension["VerificationChecks"])) {
+                $null = $knownExtensionVerificationChecks.Add($verificationCheck)
+            }
         }
     } else {
         $null = $unmappedExtensionNames.Add($projectName)
@@ -474,6 +485,18 @@ Add-ExpectedVerificationCheck `
     -ClaimSetName "EdFiSandbox" `
     -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
     -Action "Read"
+
+# Add readiness checks for known extensions covered by the embedded claims (no staged fragment).
+# These target leaf resource claims, so they are asserted directly against /authorizationMetadata
+# rather than deferred like parent-derived checks.
+foreach ($verificationCheck in $knownExtensionVerificationChecks) {
+    Add-ExpectedVerificationCheck `
+        -Seen $seenChecks `
+        -Checks $expectedVerificationChecks `
+        -ClaimSetName $verificationCheck["ClaimSetName"] `
+        -ResourceClaim $verificationCheck["ResourceClaim"] `
+        -Action $verificationCheck["Action"]
+}
 
 foreach ($fragment in $fragments) {
     Assert-FragmentValidAndExtractCheck `

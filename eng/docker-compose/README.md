@@ -173,10 +173,13 @@ infrastructure → configure → provision → DMS over the staged workspace), n
 the stack unconfigured.
 
 To bootstrap an **extension-containing** schema set, use Expert mode (`-ApiSchemaPath`) below; it
-stages core plus any extensions present in the supplied directory. `prepare-dms-claims.ps1`
-auto-stages bootstrap-managed claim fragments (Sample, Homograph) for extensions present in that
-schema set; extensions that require caller-supplied claim fragments (e.g. TPDM) need an additional
-`-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
+stages core plus any extensions present in the supplied directory. Extension security metadata is
+bootstrap-managed for the built-in extensions: `prepare-dms-claims.ps1` auto-stages the Sample and
+Homograph claim fragments, and recognizes TPDM as already covered by the embedded DS 5.2 claims
+(no fragment is staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom
+extension you supply) require an additional `-ClaimsDirectoryPath` argument to
+`prepare-dms-claims.ps1`. TPDM is a Data Standard 5.2 extension, so it is bootstrapped through
+Expert `-ApiSchemaPath`, not package-backed standard mode (which is core-only).
 
 **Wrapper shorthand:** `bootstrap-local-dms.ps1` stages core-only standard mode in-line (when no
 workspace is staged) and then starts the stack. It auto-discovers the `dms-schema` executable
@@ -200,9 +203,11 @@ Expert mode stages ApiSchema files directly from a local directory. Use this pat
 or in-repo schema directories that are not published as NuGet packages.
 
 ```pwsh
-# Stage schema and claims, then start DMS
+# Stage schema and claims, then start DMS.
+# -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension; core plus the
+# built-in extensions (Sample, Homograph, TPDM) stage claims without it.
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
-./prepare-dms-claims.ps1 -ClaimsDirectoryPath <directory-with-tpdm-claimset-fragment>
+./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
 ./bootstrap-local-dms.ps1
 ```
 
@@ -228,11 +233,14 @@ the DMS container via `bootstrap-dms.yml`; staged claims are activated per
 `claims.mode` in the manifest. The staged workspace is runtime-authoritative in
 bootstrap mode.
 
-The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM. Story
-00 automatically maps only Sample and Homograph extension claim fragments, so
-the full in-repo schema requires `-ClaimsDirectoryPath` with a TPDM
-`*-claimset.json` fragment. For a schema set containing only core, Sample, and
-Homograph, the claims command can be run without `-ClaimsDirectoryPath`.
+The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM.
+Bootstrap maps the built-in Sample, Homograph, and TPDM extensions: Sample and
+Homograph stage claim fragments, while TPDM's security metadata is already
+carried by the embedded DS 5.2 claims, so no TPDM fragment is staged. The full
+in-repo DS 5.2 schema (core plus Sample, Homograph, and TPDM) therefore
+bootstraps without `-ClaimsDirectoryPath`; that argument is only needed for a
+custom extension outside the bootstrap map. Note this applies to Data Standard
+5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
 CDC/Kafka support is pending a separate implementation, so bootstrap startup

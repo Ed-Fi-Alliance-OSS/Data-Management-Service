@@ -192,6 +192,11 @@ schema contract and claims-staging contract rather than introducing a second pat
 - TPDM is not part of the Story 00 v1 mapped security-fragment surface. If TPDM appears in a direct
   filesystem ApiSchema input, bootstrap treats it as unmapped and requires caller-supplied security fragments
   through `-ClaimsDirectoryPath`; it is not silently replaced by `sample`, `homograph`, or any default.
+  > **Update (DMS-1247):** TPDM is now bootstrap-mapped for Data Standard 5.2. Because the embedded DS 5.2
+  > `Claims.json` already carries the full TPDM claims hierarchy and its `EdFiSandbox` grants, the claims
+  > phase recognizes TPDM without staging a fragment (Embedded mode) and no longer requires
+  > `-ClaimsDirectoryPath`. It records leaf readiness checks so the claims-ready gate confirms CMS composed
+  > TPDM. `-ClaimsDirectoryPath` remains required only for extensions still outside the bootstrap map.
 
 ## Tasks
 

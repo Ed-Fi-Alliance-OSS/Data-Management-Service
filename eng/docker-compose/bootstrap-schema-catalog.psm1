@@ -77,6 +77,34 @@ $script:KnownExtensionClaimsMetadata = @{
         # namespace no Homograph resource uses and would violate the "must not infer prefixes" rule.
         FragmentFileName = "005-homograph-extension-claimset.json"
     }
+    "TPDM" = @{
+        # No FragmentFileName and no NamespacePrefix by design. The DS 5.2 embedded Claims.json
+        # (Claims/Standards/ds52/Claims.json) already carries the complete TPDM claims hierarchy
+        # and its EdFiSandbox CRUD grants (domains/tpdm directly, TPDM descriptors via
+        # domains/systemDescriptors, tpdm/candidate via domains/people), so Embedded mode covers
+        # TPDM with no staged fragment - authoring one would only duplicate embedded claims and add
+        # nothing. TPDM resources use the core uri://ed-fi.org namespace (like Homograph), so no
+        # distinct seed namespace prefix is recorded. DS 6.1 folds TPDM into core and ships no TPDM
+        # extension package, so this entry is only ever reached by a DS 5.2 bootstrap.
+        #
+        # VerificationChecks make the claims-ready gate confirm CMS actually composed TPDM claims
+        # into EdFiSandbox from the embedded claims. Both target leaf resource claims (never
+        # parents), so the gate asserts them directly against /authorizationMetadata: one TPDM
+        # descriptor leaf (reachable via domains/systemDescriptors) and one TPDM resource leaf
+        # (reachable via domains/tpdm).
+        VerificationChecks = @(
+            @{
+                ClaimSetName  = "EdFiSandbox"
+                ResourceClaim = "http://ed-fi.org/identity/claims/tpdm/credentialStatusDescriptor"
+                Action        = "Read"
+            },
+            @{
+                ClaimSetName  = "EdFiSandbox"
+                ResourceClaim = "http://ed-fi.org/identity/claims/tpdm/evaluation"
+                Action        = "Read"
+            }
+        )
+    }
 }
 
 function Get-StandardSchemaFeed {
@@ -110,9 +138,12 @@ function Get-StandardKnownExtensionInfo {
     extensions that don't have known metadata.
 
     .DESCRIPTION
-    Used by prepare-dms-claims.ps1 to auto-stage claim fragments for extensions present in a staged
+    Used by prepare-dms-claims.ps1 to resolve claims handling for extensions present in a staged
     schema set (notably expert -ApiSchemaPath schema sets that contain extensions). Known extensions
-    (Sample, Homograph) return a hashtable with FragmentFileName and optionally NamespacePrefix.
+    return a hashtable describing how bootstrap handles their claims: a FragmentFileName to stage
+    (Sample, Homograph), an optional NamespacePrefix (Sample), and/or optional VerificationChecks.
+    TPDM records no FragmentFileName and no NamespacePrefix - the DS 5.2 embedded Claims.json already
+    covers TPDM - only VerificationChecks so the claims-ready gate confirms CMS composed TPDM claims.
     Extensions absent from the known map return $null - this is by design and does not indicate an
     error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. Note that
     standard mode is package-backed core-only and does not select extensions; this lookup serves the
