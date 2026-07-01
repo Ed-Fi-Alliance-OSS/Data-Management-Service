@@ -159,8 +159,7 @@ A few things are specific to the MSSQL path:
   continue to run on PostgreSQL, so `-DatabaseEngine mssql` composes **both** `mssql.yml`
   (DMS) and `postgresql.yml` (CMS + identity). `DMS_CONFIG_DATASTORE` stays `postgresql`.
 * **Relational backend only.** MSSQL is supported through the relational backend
-  (`USE_RELATIONAL_BACKEND=true`, `DMS_DATASTORE=mssql`); the legacy document-store deploy
-  path is not implemented for MSSQL. Schema is provisioned by `provision-dms-schema.ps1`,
+  (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
   `dms-schema ddl provision --dialect mssql --create-database`.
 * **No Debezium CDC.** The relational backend serves both writes and queries directly from
@@ -173,6 +172,35 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 ```pwsh
 ../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Selecting a Data Standard version (bootstrap)
+
+`bootstrap-local-dms.ps1` (and `bootstrap-published-dms.ps1`) accept `-DataStandardVersion` to
+select the Data Standard without hand-editing environment files. The wrapper composes a
+local-bootstrap overlay (`.env.bootstrap.ds52` / `.env.bootstrap.ds61`) onto `-EnvironmentFile`
+(derived file written to the gitignored `.derived/`), and every phase — schema staging, claims,
+provisioning, and the DMS container itself — runs from the composed result:
+
+```pwsh
+# DS 5.2 (core + TPDM) on MSSQL
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 5.2 -EnableSwaggerUI
+
+# DS 6.1 (core only; TPDM is folded into core in 6.1) on MSSQL
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 6.1 -EnableSwaggerUI
+```
+
+Notes:
+
+* **Surfaces are minimal by design**: DS 5.2 stages core + TPDM; DS 6.1 stages core only. These
+  local-bootstrap overlays are deliberately distinct from the shared `.env.ds52` / `.env.ds61`
+  overlays used by the *start scripts'* `-DataStandardVersion`, which carry the E2E/SDK surfaces
+  (including the Sample/Homograph test extensions required by CI).
+* `-DataStandardVersion` defaults to `5.2` and the overlay is **always** composed — every
+  bootstrap run goes through the same canonical surface regardless of the base env file's own
+  `SCHEMA_PACKAGES` value.
+* **Always tear down (`-d -v -RemoveBootstrap`) before switching Data Standard versions** — the
+  provisioned database and staged workspace are version-specific, and DMS refuses to start
+  against a database whose effective schema hash does not match.
 
 ## Schema Selection
 
