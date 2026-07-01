@@ -594,11 +594,25 @@ exit $ExitCode
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
         }
 
-        It "requires caller-supplied claims for unmapped extensions such as TPDM" {
+        It "treats TPDM as a known embedded-claims extension requiring no fragment or caller claims" {
+            # TPDM's claims hierarchy ships embedded in the CMS base claims (ds52 Claims.json),
+            # so unlike Sample/Homograph the catalog maps it with NO FragmentFileName: the claims
+            # phase must succeed without a caller-supplied ClaimsDirectoryPath and stage nothing.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
 
+            Invoke-PrepareClaim
+            $manifest = Get-RootManifest
+
+            $manifest.claims.mode | Should -Be "Embedded"
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Count |
+                Should -Be 0
+        }
+
+        It "requires caller-supplied claims for unmapped custom extensions" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Contoso"))
+
             { Invoke-PrepareClaim } |
-                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*TPDM*"
+                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Contoso*"
         }
 
         It "stages caller fragments and records expected verification checks with the fragment's raw resource name" {

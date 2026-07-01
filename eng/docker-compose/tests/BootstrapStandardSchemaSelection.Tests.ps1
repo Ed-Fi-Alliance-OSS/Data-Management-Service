@@ -465,6 +465,66 @@ exit $ExitCode
             }
         }
 
+        It "It_detects_the_core_package_for_any_data_standard_version_DS61" {
+            # Core detection must be data-standard-agnostic: the DS 6.1 core package id is
+            # EdFi.DataStandard61.ApiSchema (not the catalog-pinned DS 5.2 id), and DS 6.1
+            # extension ids carry an extra project segment. A DS 6.1 SCHEMA_PACKAGES set must
+            # stage with the 61 core recognized as core, or -DataStandardVersion 6.1 bootstraps
+            # would fail with "must list exactly one core package".
+            $ds61FeedFolder = script:New-TempDirectory
+            try {
+                script:New-FixtureNupkg `
+                    -FeedFolder $ds61FeedFolder `
+                    -PackageId "EdFi.DataStandard61.ApiSchema" `
+                    -Version "1.0.332" `
+                    -ProjectName "Ed-Fi" `
+                    -ProjectEndpointName "ed-fi" `
+                    -IsExtensionProject $false | Out-Null
+
+                script:New-FixtureNupkg `
+                    -FeedFolder $ds61FeedFolder `
+                    -PackageId "EdFi.DataStandard61.Sample.ApiSchema" `
+                    -Version "1.0.332" `
+                    -ProjectName "Sample" `
+                    -ProjectEndpointName "sample" `
+                    -IsExtensionProject $true | Out-Null
+
+                $environmentFilePath = script:New-SchemaPackagesEnvironmentFile `
+                    -Directory $script:repo.RepoRoot `
+                    -Packages @(
+                        [pscustomobject]@{
+                            name    = "EdFi.DataStandard61.ApiSchema"
+                            version = "1.0.332"
+                            feedUrl = $ds61FeedFolder
+                        },
+                        [pscustomobject]@{
+                            name    = "EdFi.DataStandard61.Sample.ApiSchema"
+                            version = "1.0.332"
+                            feedUrl = $ds61FeedFolder
+                        }
+                    )
+
+                $tool = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+                & $script:repo.PrepareSchemaScript `
+                    -EnvironmentFile $environmentFilePath `
+                    -SchemaToolPath $tool | Out-Null
+
+                $manifest = script:Get-RootManifest
+                $manifest.schema.selectionMode | Should -Be "Standard"
+                @($manifest.schema.selectedExtensions) | Should -Contain "sample"
+
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
+                    Should -BeTrue
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Sample/ApiSchema.json") |
+                    Should -BeTrue
+            }
+            finally {
+                if (Test-Path -LiteralPath $ds61FeedFolder) {
+                    Remove-Item -LiteralPath $ds61FeedFolder -Recurse -Force
+                }
+            }
+        }
+
         It "It_fails_fast_when_SCHEMA_PACKAGES_lists_no_core_package" {
             # Guard rail: SCHEMA_PACKAGES must carry exactly one core package entry so the staged
             # workspace always has a core project. A set containing only extensions must fail fast

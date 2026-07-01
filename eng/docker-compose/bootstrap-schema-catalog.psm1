@@ -77,6 +77,14 @@ $script:KnownExtensionClaimsMetadata = @{
         # namespace no Homograph resource uses and would violate the "must not infer prefixes" rule.
         FragmentFileName = "005-homograph-extension-claimset.json"
     }
+    "TPDM" = @{
+        # No FragmentFileName by design: unlike the Sample/Homograph test extensions, the TPDM
+        # claims hierarchy (domains/tpdm and its resource claims) ships EMBEDDED in the CMS base
+        # claims (Claims/Standards/ds52/Claims.json), so there is no bootstrap-staged fragment.
+        # No NamespacePrefix: TPDM resources use the core uri://ed-fi.org namespace. TPDM is a
+        # DS 5.2 extension only; in DS 6.1 the TPDM model is folded into core and no separate
+        # extension package exists.
+    }
 }
 
 function Get-StandardSchemaFeed {
@@ -111,12 +119,12 @@ function Get-StandardKnownExtensionInfo {
 
     .DESCRIPTION
     Used by prepare-dms-claims.ps1 to auto-stage claim fragments for extensions present in a staged
-    schema set (notably expert -ApiSchemaPath schema sets that contain extensions). Known extensions
-    (Sample, Homograph) return a hashtable with FragmentFileName and optionally NamespacePrefix.
+    schema set. Known extensions return a hashtable with an optional FragmentFileName (absent for
+    TPDM, whose claims ship embedded in the CMS base claims) and an optional NamespacePrefix.
     Extensions absent from the known map return $null - this is by design and does not indicate an
-    error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. Note that
-    standard mode is package-backed core-only and does not select extensions; this lookup serves the
-    claims phase regardless of how the schema set was staged.
+    error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. This lookup
+    serves the claims phase regardless of how the schema set was staged (expert -ApiSchemaPath or
+    standard-mode SCHEMA_PACKAGES staging).
 
     .PARAMETER ProjectName
     The projectName as recorded in the ApiSchema manifest (e.g. "Sample", "Homograph", "TPDM").
