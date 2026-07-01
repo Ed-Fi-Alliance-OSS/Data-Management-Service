@@ -190,7 +190,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private MssqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
-    private MssqlGeneratedDdlBaselineLease _databaseLease = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
 
     public MappingSet MappingSet => _fixture.MappingSet;
 
@@ -213,7 +213,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     )
     {
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(fixtureRelativePath, strict);
-        MssqlGeneratedDdlBaselineDatabase baseline = await MssqlBackendBaselineCache.CreateOrGetAsync(
+        IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBackendBaselineCache.CreateOrGetAsync(
             MssqlBackendBaselineCache.BuildFixtureSignature(fixtureRelativePath, strict),
             _fixture.GeneratedDdl
         );

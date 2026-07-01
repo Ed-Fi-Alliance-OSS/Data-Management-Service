@@ -13,7 +13,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
-    private const string BackupRestoreLeaseStrategy = "backup-restore";
     private static readonly object _sync = new();
     private static readonly Dictionary<string, SharedBackupEntry> _sharedBackups = new(
         StringComparer.Ordinal
@@ -49,7 +48,7 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
         var timingContext = new MssqlProvisioningTimingContext(
             fixtureSignature,
             generatedDdlHash,
-            BackupRestoreLeaseStrategy,
+            MssqlGeneratedDdlLeaseStrategy.BackupRestore,
             callerMemberName,
             callerFilePath,
             callerLineNumber
@@ -121,7 +120,7 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
                 databaseName,
                 FixtureSignature,
                 _sharedBackupEntry.GeneratedDdlHash,
-                BackupRestoreLeaseStrategy
+                MssqlGeneratedDdlLeaseStrategy.BackupRestore
             );
 
             return new(restoredDatabase, () => ReturnLeaseAsync(restoredDatabase));

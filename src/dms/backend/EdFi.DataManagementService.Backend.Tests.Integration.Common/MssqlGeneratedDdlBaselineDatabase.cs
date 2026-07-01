@@ -48,7 +48,7 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         var timingContext = new MssqlProvisioningTimingContext(
             fixtureSignature,
             generatedDdlHash,
-            "snapshot-slot",
+            MssqlGeneratedDdlLeaseStrategy.SnapshotSlot,
             callerMemberName,
             callerFilePath,
             callerLineNumber

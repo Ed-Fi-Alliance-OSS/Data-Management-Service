@@ -12,11 +12,11 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 internal sealed record MssqlBackendBaselineCacheEntry(
     string GeneratedDdlHash,
-    Lazy<Task<MssqlGeneratedDdlBaselineDatabase>> Baseline
+    Lazy<Task<IMssqlGeneratedDdlBaselineDatabase>> Baseline
 );
 
 /// <summary>
-/// Keeps one snapshot-backed generated-DDL baseline per backend fixture signature in a test process.
+/// Keeps one strategy-selected generated-DDL baseline per backend fixture signature in a test process.
 /// </summary>
 internal static class MssqlBackendBaselineCache
 {
@@ -24,7 +24,7 @@ internal static class MssqlBackendBaselineCache
         StringComparer.Ordinal
     );
 
-    public static async Task<MssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(
+    public static async Task<IMssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(
         string fixtureSignature,
         string generatedDdl,
         int commandTimeoutSeconds = 300
@@ -39,7 +39,7 @@ internal static class MssqlBackendBaselineCache
             generatedDdlHash,
             new(
                 () =>
-                    MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+                    MssqlGeneratedDdlBaselineDatabaseFactory.CreateAsync(
                         fixtureSignature,
                         generatedDdl,
                         commandTimeoutSeconds
@@ -86,7 +86,7 @@ internal static class MssqlBackendBaselineCache
 
             try
             {
-                MssqlGeneratedDdlBaselineDatabase baseline = await entry.Value.Baseline.Value;
+                IMssqlGeneratedDdlBaselineDatabase baseline = await entry.Value.Baseline.Value;
                 await baseline.DisposeAsync();
             }
             catch

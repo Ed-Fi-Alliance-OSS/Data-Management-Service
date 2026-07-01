@@ -135,7 +135,7 @@
       "Download the successful default and backup-restore PR run timing artifacts and confirm timing records include `LeaseStrategy` values for snapshot-slot and backup-restore runs.",
       "Open the successful PR run and record the default-strategy result plus backup-restore A/B timing comparison in a PR comment before starting Phase 4."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 4",

@@ -13,18 +13,18 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 namespace EdFi.DataManagementService.Tests.Integration.Mssql;
 
 /// <summary>
-/// Wraps <see cref="MssqlGeneratedDdlBaselineDatabase"/> per fixture so the same
-/// snapshot-backed baseline is reused across tests within a process. Per-fixture
+/// Wraps <see cref="IMssqlGeneratedDdlBaselineDatabase"/> per fixture so the same
+/// strategy-selected baseline is reused across tests within a process. Per-fixture
 /// provisioning (loading the effective schema set, running the production DDL
 /// pipeline, and applying the resulting DDL) happens once; per-test leases are
 /// then acquired by callers via
-/// <see cref="MssqlGeneratedDdlBaselineDatabase.AcquireRestoredDatabaseAsync(int?)"/>.
+/// <see cref="IMssqlGeneratedDdlBaselineDatabase.AcquireRestoredDatabaseAsync(int?)"/>.
 /// </summary>
 internal static class MssqlBaselineCache
 {
     private static readonly ConcurrentDictionary<
         FixtureKey,
-        Lazy<Task<MssqlGeneratedDdlBaselineDatabase>>
+        Lazy<Task<IMssqlGeneratedDdlBaselineDatabase>>
     > _cache = new();
 
     /// <summary>
@@ -35,11 +35,11 @@ internal static class MssqlBaselineCache
     /// host loads through the bootstrap manifest so the effective schema hash
     /// matches at request time.
     /// </summary>
-    public static async Task<MssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(FixtureContext fixture)
+    public static async Task<IMssqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(FixtureContext fixture)
     {
         ArgumentNullException.ThrowIfNull(fixture);
 
-        Lazy<Task<MssqlGeneratedDdlBaselineDatabase>> lazy = _cache.GetOrAdd(
+        Lazy<Task<IMssqlGeneratedDdlBaselineDatabase>> lazy = _cache.GetOrAdd(
             fixture.Key,
             _ => new(() => BuildBaselineAsync(fixture), LazyThreadSafetyMode.ExecutionAndPublication)
         );
@@ -55,7 +55,7 @@ internal static class MssqlBaselineCache
         }
     }
 
-    private static async Task<MssqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(FixtureContext fixture)
+    private static async Task<IMssqlGeneratedDdlBaselineDatabase> BuildBaselineAsync(FixtureContext fixture)
     {
         EffectiveSchemaSet effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
             fixture.ApiSchemaDirectory
@@ -66,7 +66,10 @@ internal static class MssqlBaselineCache
             strict: true
         );
 
-        return await MssqlGeneratedDdlBaselineDatabase.CreateAsync(fixture.Key.ToString(), generatedDdl);
+        return await MssqlGeneratedDdlBaselineDatabaseFactory.CreateAsync(
+            fixture.Key.ToString(),
+            generatedDdl
+        );
     }
 
     /// <summary>
@@ -78,7 +81,7 @@ internal static class MssqlBaselineCache
     public static async Task DisposeAllAsync()
     {
         foreach (
-            KeyValuePair<FixtureKey, Lazy<Task<MssqlGeneratedDdlBaselineDatabase>>> entry in _cache.ToArray()
+            KeyValuePair<FixtureKey, Lazy<Task<IMssqlGeneratedDdlBaselineDatabase>>> entry in _cache.ToArray()
         )
         {
             if (!_cache.TryRemove(entry))
@@ -91,7 +94,7 @@ internal static class MssqlBaselineCache
             }
             try
             {
-                MssqlGeneratedDdlBaselineDatabase baseline = await entry.Value.Value;
+                IMssqlGeneratedDdlBaselineDatabase baseline = await entry.Value.Value;
                 await baseline.DisposeAsync();
             }
             catch
