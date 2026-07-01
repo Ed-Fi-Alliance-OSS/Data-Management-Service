@@ -34,7 +34,7 @@
       "rg -n \"CONSTRAINT\\s+(pk_|fk_|uq_|idx_|ix_|ck_)\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
