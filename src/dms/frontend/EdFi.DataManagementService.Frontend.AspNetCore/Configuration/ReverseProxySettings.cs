@@ -10,11 +10,17 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 
 /// <summary>
 /// Trusted reverse-proxy sources used to populate ASP.NET Core ForwardedHeadersOptions
-/// when UseReverseProxyHeaders is enabled. Forwarded headers are only honored when the
-/// immediate peer matches one of these proxies or networks.
+/// when Enabled is true. Forwarded headers are only honored when the immediate peer matches
+/// one of these proxies or networks.
 /// </summary>
 public class ReverseProxySettings
 {
+    /// <summary>
+    /// When true, X-Forwarded-* headers are honored from the trusted sources below.
+    /// When false (default), forwarded headers are ignored entirely.
+    /// </summary>
+    public bool Enabled { get; set; }
+
     /// <summary>
     /// Comma-separated list of exact trusted proxy IP addresses (IPv4 or IPv6).
     /// Example: "10.0.0.5,10.0.0.6,::1".
@@ -22,8 +28,8 @@ public class ReverseProxySettings
     public string KnownProxies { get; set; } = string.Empty;
 
     /// <summary>
-    /// Comma-separated list of trusted proxy networks in CIDR notation, using a canonical
-    /// network base address. Example: "10.0.0.0/8,172.16.0.0/12".
+    /// Comma-separated list of trusted proxy networks in CIDR notation.
+    /// Example: "10.0.0.0/8,172.16.0.0/12".
     /// </summary>
     public string KnownNetworks { get; set; } = string.Empty;
 

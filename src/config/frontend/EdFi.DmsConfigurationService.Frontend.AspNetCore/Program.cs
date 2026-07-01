@@ -32,13 +32,12 @@ builder.Services.AddCors(options =>
     );
 });
 
-var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+var reverseProxySettings =
+    builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
+    ?? new ReverseProxySettings();
+var useReverseProxyHeaders = reverseProxySettings.Enabled;
 if (useReverseProxyHeaders)
 {
-    var reverseProxySettings =
-        builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
-        ?? new ReverseProxySettings();
-
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeadersConfigurator.Configure(options, reverseProxySettings)
     );

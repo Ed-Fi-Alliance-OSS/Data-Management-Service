@@ -82,14 +82,13 @@ RunBootstrapPhase(
             options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
         });
 
-        useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+        var reverseProxySettings =
+            builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
+            ?? new ReverseProxySettings();
+        useReverseProxyHeaders = reverseProxySettings.Enabled;
 
         if (useReverseProxyHeaders)
         {
-            var reverseProxySettings =
-                builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
-                ?? new ReverseProxySettings();
-
             builder.Services.Configure<ForwardedHeadersOptions>(options =>
                 ForwardedHeadersConfigurator.Configure(options, reverseProxySettings)
             );
