@@ -33,3 +33,9 @@ DMS-1244 - completed core CMS PostgreSQL create-table quoted identifier task.
 - Files changed: core CMS deploy scripts 0000-0007, 0021, 0022 ApiClientDataStore/DataStoreContext, 0023, 0024, 0026, 0027; tasks.json; progress.txt.
 - Verification: touched core-script unquoted/lowercase constraint guards clean; psql temp db applied core scripts twice on localhost:5435 and produced 16 PascalCase tables/34 PK/FK/UX constraints; git diff --check clean; broad all-script guards still match seed/tenant-alter/OpenIddict future tasks; full script probe fails first at 0008 unquoted AuthorizationStrategy; dotnet TenantTests deploy rolls back and Respawn reports no tables for same downstream script gap.
 - Notes: next seed/tenant task should quote 0008/0009/0025, change ON CONFLICT to new UX constraint names, and add tenant FKs/indexes with quoted identifiers.
+
+DMS-1244 - completed CMS PostgreSQL seed and tenant-alter quoted identifier task.
+- Key decisions: seed 0008/0009 uses quoted identifiers plus OVERRIDING SYSTEM VALUE and identity restart; 0025 adds TenantId columns separately from guarded FK_Table_Tenant constraints so fresh quoted tables still get tenant FKs; tenant lookup indexes use IX_Table_TenantId.
+- Files changed: 0008_Insert_AuthorizationStrategy.sql, 0009_Insert_ResourceClaim.sql, 0025_Add_TenantId_To_Tables.sql, tasks.json, progress.txt.
+- Verification: task guard for lowercase table/column checks and old pk/fk/uq/idx names clean; psql throwaway db applied all deploy scripts twice and found five FK_*_Tenant constraints/five IX_*_TenantId indexes; setup-local-cms teardown/setup/setup commands completed after clearing dms-local container-name conflict; git diff --check clean.
+- Notes: config service container restarts after setup because ClaimsTableValidator still queries dmscs.claimset unquoted; that is repository SQL task, not seed/tenant script work.
