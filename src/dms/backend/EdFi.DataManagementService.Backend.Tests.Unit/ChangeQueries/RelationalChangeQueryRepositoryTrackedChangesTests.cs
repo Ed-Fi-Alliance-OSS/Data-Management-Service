@@ -31,6 +31,32 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         "ProgramTypeDescriptor"
     );
 
+    [TestCase(SqlDialect.Pgsql, "SELECT \"dms\".\"GetMaxChangeVersion\"() AS \"NewestChangeVersion\"")]
+    [TestCase(SqlDialect.Mssql, "SELECT [dms].[GetMaxChangeVersion]() AS [NewestChangeVersion]")]
+    public async Task It_executes_dialect_specific_newest_change_version_sql(
+        SqlDialect dialect,
+        string expectedCommandText
+    )
+    {
+        var executor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(("NewestChangeVersion", 99L))
+                    ),
+                ]),
+            ],
+            dialect
+        );
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
+
+        var result = await sut.GetNewestChangeVersion();
+
+        result.Should().Be(99L);
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].CommandText.Should().Be(expectedCommandText);
+    }
+
     [Test]
     public async Task It_returns_empty_keychanges_without_sql_for_descriptors()
     {

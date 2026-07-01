@@ -3472,7 +3472,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task<long> ReadMaxChangeVersionAsync()
     {
-        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+        return await _database.ExecuteScalarAsync<long>("""SELECT "dms"."GetMaxChangeVersion"();""");
     }
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)

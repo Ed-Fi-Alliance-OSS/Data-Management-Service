@@ -1149,9 +1149,9 @@ public class Given_PgsqlDialect_Emitting_GetMaxChangeVersion_Function
     }
 
     [Test]
-    public void It_should_emit_create_or_replace_function_with_unquoted_name()
+    public void It_should_emit_create_or_replace_function_with_quoted_name()
     {
-        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".GetMaxChangeVersion()");
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"GetMaxChangeVersion\"()");
     }
 
     [Test]

@@ -191,7 +191,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~RelationalChangeQueryRepositoryTests\"",
       "rg -n '\"dms\"\\.GetMaxChangeVersion|SELECT dms\\.GetMaxChangeVersion\\(\\)' src/dms/backend src/dms/core src/dms/tests"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "fixtures",
