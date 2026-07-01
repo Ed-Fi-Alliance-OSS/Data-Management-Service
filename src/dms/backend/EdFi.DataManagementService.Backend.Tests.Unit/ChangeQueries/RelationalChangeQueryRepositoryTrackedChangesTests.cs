@@ -518,8 +518,8 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         ScalarKind scalarKind = ScalarKind.Int32
     ) =>
         new(
-            OldColumnName: new DbColumnName($"Old_{columnName}"),
-            NewColumnName: new DbColumnName($"New_{columnName}"),
+            OldColumnName: new DbColumnName($"Old{columnName}"),
+            NewColumnName: new DbColumnName($"New{columnName}"),
             SourceJsonPath: sourceJsonPath,
             CanonicalStorageColumn: canonicalStorageColumn,
             IsOldColumnNullable: false,

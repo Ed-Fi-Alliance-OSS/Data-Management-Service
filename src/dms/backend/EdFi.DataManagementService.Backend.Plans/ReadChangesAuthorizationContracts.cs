@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>One securable-subject predicate within a ReadChanges relationship strategy.</summary>
 public sealed record ReadChangesAuthorizationSubject(
-    DbColumnName TrackedOldColumn, // c.Old_* column the predicate filters
+    DbColumnName TrackedOldColumn, // c.OldX column the predicate filters
     DbTableName AuthView, // auth view to probe
     DbColumnName AuthViewSubjectColumn, // selected output column (Target EdOrg id, or *_DocumentId)
     DbColumnName AuthViewClaimColumn // WHERE column for claim EdOrg ids (SourceEducationOrganizationId)
