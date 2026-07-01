@@ -174,15 +174,17 @@ schema contract and claims-staging contract rather than introducing a second pat
 - CMS claims mode is driven from the staged inputs:
   - Embedded mode for core-only bootstrap,
   - Hybrid mode when one or more staged fragments exist.
-- Automatic extension-fragment selection in `prepare-dms-claims.ps1` is deterministic and explicit. The
-  command holds a short in-script lookup keyed by extension project identity from the staged schema set
-  (`projectName` from each non-core `ApiSchema*.json`) that maps to the exact shipped fragment filename
-  under `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` (for v1:
-  `Sample` → `004-sample-extension-claimset.json`, `Homograph` → `005-homograph-extension-claimset.json`).
-  The same lookup records any built-in extension seed namespace prefix known to the DMS-916 bootstrap
-  contract; v1 records `Sample` → `uri://sample.ed-fi.org`. Entries without a known built-in seed namespace
-  prefix write no prefix to the root bootstrap manifest, and bootstrap must not infer prefixes from arbitrary
-  direct filesystem schema content.
+- Automatic extension security-metadata selection in `prepare-dms-claims.ps1` is deterministic and explicit.
+  The command holds a short in-script lookup keyed by extension project identity from the staged schema set
+  (`projectName` from each non-core `ApiSchema*.json`) that records, per built-in extension, how bootstrap
+  handles its security metadata: an optional shipped fragment filename under
+  `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`, an optional seed
+  namespace prefix, and optional leaf readiness checks. For v1: `Sample` stages
+  `004-sample-extension-claimset.json` and records `uri://sample.ed-fi.org`; `Homograph` stages
+  `005-homograph-extension-claimset.json` (no distinct namespace); and `TPDM` stages no fragment (its claims
+  ship in the embedded DS 5.2 `Claims.json`), records `uri://tpdm.ed-fi.org`, and contributes leaf readiness
+  checks. Entries without a known built-in seed namespace prefix write no prefix to the root bootstrap
+  manifest, and bootstrap must not infer prefixes from arbitrary direct filesystem schema content.
   Core-baseline fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
   `003-edorgsonly-claimset.json`) remain part of embedded `Claims.json` loading and are never staged into
   the additive workspace. Staged extensions whose `projectName` is not in the lookup are treated as
@@ -279,7 +281,7 @@ schema contract and claims-staging contract rather than introducing a second pat
    resources ahead of runtime.
 12. Add focused tests for the Story 00 staging contracts: schema workspace normalization and collision
     detection, schema and claims rerun fingerprint mismatch handling, selected-extension manifest identity,
-    automatic extension-fragment filtering, known namespace-prefix handoff, Story 00 deferral of the staged
+    automatic extension security-metadata mapping, known namespace-prefix handoff, Story 00 deferral of the staged
     Config Service claims mount source to Story 04, and structural claim-fragment validation failures.
 
 ## Out of Scope

@@ -143,6 +143,31 @@ exit $ExitCode
         return $schemaDir
     }
 
+    function script:Add-KnownExtensionCatalogEntry {
+        <#
+        .SYNOPSIS
+        Injects an extra entry into the isolated repo's copy of KnownExtensionClaimsMetadata so tests can
+        exercise the catalog-validation branches in prepare-dms-claims.ps1 without touching the real (source)
+        catalog. Call after BeforeEach has staged $script:repo; the isolated repo is discarded in AfterEach.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $EntryDefinition
+        )
+
+        $catalogPath = Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-catalog.psm1"
+        $content = Get-Content -LiteralPath $catalogPath -Raw
+        $anchor = '$script:KnownExtensionClaimsMetadata = @{'
+        $index = $content.IndexOf($anchor)
+        if ($index -lt 0) {
+            throw "Could not find KnownExtensionClaimsMetadata anchor in $catalogPath"
+        }
+        $insertAt = $index + $anchor.Length
+        $content = $content.Insert($insertAt, "`n    $EntryDefinition")
+        Set-Content -LiteralPath $catalogPath -Value $content -Encoding utf8
+    }
+
     function script:Invoke-PrepareSchema {
         param(
             [Parameter(Mandatory)]
@@ -599,6 +624,27 @@ exit $ExitCode
 
             { Invoke-PrepareClaim } |
                 Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Acme*"
+        }
+
+        It "throws when a known-extension catalog entry has no recognized keys" {
+            # A catalog entry whose only key is unrecognized (e.g. a misspelled 'FragmentFileName') must fail
+            # fast rather than be silently treated as fully mapped - which would stage nothing, contribute no
+            # checks, and suppress the unmapped-extension guard, yielding runtime 403s the gate can't detect.
+            Add-KnownExtensionCatalogEntry -EntryDefinition '"AcmeTypo" = @{ FragmnetFileName = "x.json" }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeTypo"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*AcmeTypo*no recognized keys*"
+        }
+
+        It "throws when a known-extension catalog VerificationChecks entry is malformed" {
+            # A VerificationChecks entry missing a field would be silently dropped by
+            # Add-ExpectedVerificationCheck's whitespace guard; the catalog loop must reject it up front.
+            Add-KnownExtensionCatalogEntry -EntryDefinition '"AcmeBadCheck" = @{ VerificationChecks = @(@{ ClaimSetName = "EdFiSandbox"; ResourceClaim = ""; Action = "Read" }) }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeBadCheck"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*AcmeBadCheck*malformed VerificationChecks*"
         }
 
         It "stages core + TPDM in Embedded claims mode from embedded claims without a caller fragment" {
