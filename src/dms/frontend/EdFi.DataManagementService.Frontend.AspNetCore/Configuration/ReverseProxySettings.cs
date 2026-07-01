@@ -10,8 +10,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 
 /// <summary>
 /// Trusted reverse-proxy sources used to populate ASP.NET Core ForwardedHeadersOptions
-/// when Enabled is true. Forwarded headers are only honored when the immediate peer matches
-/// one of these proxies or networks.
+/// when UseForwardedHeaders is true. Forwarded headers are only honored when the immediate peer
+/// matches one of these proxies or networks.
 /// </summary>
 public class ReverseProxySettings
 {
@@ -19,7 +19,7 @@ public class ReverseProxySettings
     /// When true, X-Forwarded-* headers are honored from the trusted sources below.
     /// When false (default), forwarded headers are ignored entirely.
     /// </summary>
-    public bool Enabled { get; set; }
+    public bool UseForwardedHeaders { get; set; }
 
     /// <summary>
     /// Comma-separated list of exact trusted proxy IP addresses (IPv4 or IPv6).

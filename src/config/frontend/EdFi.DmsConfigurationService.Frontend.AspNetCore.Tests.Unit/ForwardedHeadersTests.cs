@@ -20,7 +20,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 /// scheme/host. A test-only startup filter sets the connection remote IP (TestServer leaves it
 /// null) so trusted vs untrusted peers can be simulated deterministically.
 ///
-/// The ReverseProxy:Enabled flag and the trusted sources are read from configuration before the
+/// The ReverseProxy:UseForwardedHeaders flag and the trusted sources are read from configuration before the
 /// host is built, so they are supplied via environment variables (visible to CreateBuilder) rather
 /// than ConfigureAppConfiguration (applied later, at build time).
 /// </summary>
@@ -29,14 +29,14 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 public class Given_A_Reverse_Proxy_Configuration
 {
     private const string ForwardedHost = "proxied.example.com";
-    private const string ReverseProxyEnabledEnv = "AppSettings__ReverseProxy__Enabled";
+    private const string UseForwardedHeadersEnv = "AppSettings__ReverseProxy__UseForwardedHeaders";
     private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
     private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
 
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, null);
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
         Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
         Environment.SetEnvironmentVariable(KnownNetworksEnv, null);
     }
@@ -71,7 +71,7 @@ public class Given_A_Reverse_Proxy_Configuration
     [Test]
     public async Task It_ignores_forwarded_headers_when_reverse_proxy_is_disabled()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "false");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "false");
 
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -84,7 +84,7 @@ public class Given_A_Reverse_Proxy_Configuration
     [Test]
     public async Task It_ignores_forwarded_headers_from_an_untrusted_source()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "true");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
 
         await using var factory = CreateFactory();
@@ -98,7 +98,7 @@ public class Given_A_Reverse_Proxy_Configuration
     [Test]
     public async Task It_honors_forwarded_headers_from_a_trusted_proxy_ip()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "true");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
 
         await using var factory = CreateFactory();
@@ -112,7 +112,7 @@ public class Given_A_Reverse_Proxy_Configuration
     [Test]
     public async Task It_honors_forwarded_headers_from_a_trusted_network()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "true");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownNetworksEnv, "10.10.0.0/16");
 
         await using var factory = CreateFactory();
@@ -129,7 +129,7 @@ public class Given_A_Reverse_Proxy_Configuration
         // Drives the real application startup: the host forces IOptions<ReverseProxySettings>
         // validation, which fails and short-circuits every request via the invalid-configuration
         // middleware (HTTP 500) rather than serving the endpoint.
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "true");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownProxiesEnv, "not-an-ip");
 
         await using var factory = CreateFactory();
@@ -143,7 +143,7 @@ public class Given_A_Reverse_Proxy_Configuration
     [Test]
     public async Task It_fails_startup_when_a_trusted_network_cidr_is_malformed()
     {
-        Environment.SetEnvironmentVariable(ReverseProxyEnabledEnv, "true");
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
         Environment.SetEnvironmentVariable(KnownNetworksEnv, "10.0.0.0/99");
 
         await using var factory = CreateFactory();

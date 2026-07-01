@@ -35,7 +35,7 @@ builder.Services.AddCors(options =>
 var reverseProxySettings =
     builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
     ?? new ReverseProxySettings();
-var useReverseProxyHeaders = reverseProxySettings.Enabled;
+var useReverseProxyHeaders = reverseProxySettings.UseForwardedHeaders;
 if (useReverseProxyHeaders)
 {
     builder.Services.Configure<ForwardedHeadersOptions>(options =>

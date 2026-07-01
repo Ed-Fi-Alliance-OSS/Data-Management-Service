@@ -24,9 +24,9 @@ file.
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
-| ReverseProxy:Enabled             | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
-| ReverseProxy:KnownProxies        | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:Enabled` is `true`. Example: `10.0.0.5,10.0.0.6` |
-| ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:Enabled` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
+| ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
+| ReverseProxy:KnownProxies        | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6` |
+| ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
 ## MappingPacks
@@ -61,9 +61,9 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 | MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
 | PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
 | TokenRequestTimeoutSeconds   | Timeout in seconds for token requests. Default: `30`                                                                                                                                                      |
-| ReverseProxy:Enabled         | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
-| ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:Enabled` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
-| ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:Enabled` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
+| ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
+| ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
+| ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
 
 ## Reverse Proxy and Forwarded Headers
 
@@ -73,7 +73,7 @@ details in the `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto` he
 These are used to generate correct absolute URLs (for example, the Discovery API `urls`
 and the Configuration Service information endpoint).
 
-Set `AppSettings:ReverseProxy:Enabled` to `true` to process these headers. To prevent
+Set `AppSettings:ReverseProxy:UseForwardedHeaders` to `true` to process these headers. To prevent
 spoofing, forwarded headers are honored **only** when the immediate client (the proxy) is
 a trusted source. Configure trusted sources with:
 
@@ -82,11 +82,11 @@ a trusted source. Configure trusted sources with:
 
 Behavior:
 
-- `ReverseProxy:Enabled=false` (default): forwarded headers are ignored entirely.
-- `ReverseProxy:Enabled=true` with no trusted sources configured: only loopback addresses
+- `ReverseProxy:UseForwardedHeaders=false` (default): forwarded headers are ignored entirely.
+- `ReverseProxy:UseForwardedHeaders=true` with no trusted sources configured: only loopback addresses
   are trusted (the ASP.NET Core default). This is safe, but a proxy container running on
   another host is not trusted unless you configure its address explicitly.
-- `ReverseProxy:Enabled=true` with trusted sources: forwarded headers are honored only
+- `ReverseProxy:UseForwardedHeaders=true` with trusted sources: forwarded headers are honored only
   when the connecting proxy matches `KnownProxies` or `KnownNetworks`; otherwise they are
   ignored.
 

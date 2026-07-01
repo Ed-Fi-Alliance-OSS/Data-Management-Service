@@ -85,7 +85,7 @@ RunBootstrapPhase(
         var reverseProxySettings =
             builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
             ?? new ReverseProxySettings();
-        useReverseProxyHeaders = reverseProxySettings.Enabled;
+        useReverseProxyHeaders = reverseProxySettings.UseForwardedHeaders;
 
         if (useReverseProxyHeaders)
         {
