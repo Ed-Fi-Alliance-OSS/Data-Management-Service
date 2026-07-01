@@ -170,7 +170,7 @@
       "If any restore-backup performance claim is made, push and monitor a separate backup-restore GitHub Actions validation run before recording the claim.",
       "Open the successful PR run and record the backend MSSQL shard timing comparison in a PR comment before starting Phase 5."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 5",
