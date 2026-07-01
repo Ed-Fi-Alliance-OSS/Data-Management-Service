@@ -3,7 +3,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
 
     Rule: Query scenarios use relationship authorization
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: Inverted strategy allows school claims to query parent local education agencies
             # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
@@ -40,7 +40,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   ]
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: Normal and inverted strategies are ORed for GET-many authorization
             # Use broader setup access only to seed two independent state/LEA/school hierarchies.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101, 3, 301, 30101"
@@ -96,7 +96,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   ]
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: Empty education organization claims return an empty page with total count zero
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -119,7 +119,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   []
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: Paging and total count are applied after relational authorization filtering
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
               And the system has these "schools"
@@ -156,7 +156,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   ]
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: Known unsupported mixed strategies return not implemented for GET-many
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -177,7 +177,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
 
     Rule: POST create-new scenarios use proposed-value relationship authorization
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST create-new succeeds when the caller has a relationship to the proposed school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -210,7 +210,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST create-new succeeds through the inverted strategy lane
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -244,7 +244,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST create-new returns forbidden when the caller lacks a relationship to the proposed school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
               And the system has these "schools"
@@ -302,7 +302,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency        |
                   | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST LocalEducationAgency succeeds when the proposed LEA id is directly claimed
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -333,7 +333,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST LocalEducationAgency returns forbidden when the proposed LEA id is not claimed
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "999999"
              When a POST request is made to "/ed-fi/localEducationAgencies" with
@@ -378,7 +378,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   []
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST LocalEducationAgency returns forbidden when the caller has no EdOrg claims
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds ""
              When a POST request is made to "/ed-fi/localEducationAgencies" with
@@ -425,7 +425,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
 
     Rule: Proposed-value relationship ProblemDetails formatting
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         @ResetClaimsetsAfterScenario
         Scenario: POST OrganizationDepartment returns proposed element-required ProblemDetails when parent education organization is missing
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -470,7 +470,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
 
     Rule: Existing-target updates use stored and proposed relationship authorization
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: PUT succeeds when the caller is authorized for the existing academic week school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -519,7 +519,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: PUT succeeds through the inverted strategy when a school claim updates its parent local education agency
             # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
@@ -590,7 +590,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: PUT returns forbidden and leaves the academic week unchanged when stored authorization fails
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -642,7 +642,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         @ResetClaimsetsAfterScenario
         Scenario: PUT returns forbidden and leaves the organization department unchanged when proposed authorization fails
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901, 255902"
@@ -710,7 +710,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST-as-update succeeds when the caller is authorized for the existing academic week school
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -759,7 +759,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST-as-update succeeds through the inverted strategy when a school claim updates its parent local education agency
             # Use broader setup access only to seed the state/LEA/school hierarchy for this scenario.
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 202, 20201"
@@ -830,7 +830,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: POST-as-update returns forbidden and leaves the academic week unchanged when stored authorization fails
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -883,7 +883,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
 
     Rule: Single-record scenarios use stored-value relationship authorization
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: GET by id returns forbidden for an academic week outside the caller education organization claims
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -927,7 +927,7 @@ Feature: RelationshipsWithEdOrgsOnly query authorization
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-2
         Scenario: DELETE returns forbidden and leaves an academic week outside the caller education organization claims
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"

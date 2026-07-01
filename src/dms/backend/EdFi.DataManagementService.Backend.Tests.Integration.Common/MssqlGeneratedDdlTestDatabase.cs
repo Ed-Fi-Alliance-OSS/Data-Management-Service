@@ -3,7 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 
@@ -59,20 +62,46 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
     public static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
         string generatedDdl,
-        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds,
+        [CallerMemberName] string callerMemberName = "",
+        [CallerFilePath] string callerFilePath = "",
+        [CallerLineNumber] int callerLineNumber = 0
     )
     {
-        var database = await CreateEmptyAsync();
+        var stopwatch = Stopwatch.StartNew();
+        MssqlGeneratedDdlTestDatabase? database = null;
+        var databaseName = "";
+        var outcome = "Succeeded";
 
         try
         {
+            database = await CreateEmptyAsync();
+            databaseName = database.DatabaseName;
             await database.ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds);
             return database;
         }
         catch
         {
-            await database.DisposeAsync();
+            outcome = "Failed";
+            if (database is not null)
+            {
+                await database.DisposeAsync();
+            }
+
             throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            MssqlProvisioningTimingRecorder.Record(
+                outcome,
+                stopwatch.Elapsed,
+                databaseName,
+                commandTimeoutSeconds,
+                callerMemberName,
+                callerFilePath,
+                callerLineNumber
+            );
         }
     }
 
@@ -371,5 +400,71 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 UpdateAction
             );
         }
+    }
+}
+
+internal static class MssqlProvisioningTimingRecorder
+{
+    private const string TimingsPathVariable = "MSSQL_FIXTURE_TIMINGS_PATH";
+    private static readonly object _lock = new();
+
+    public static void Record(
+        string outcome,
+        TimeSpan duration,
+        string databaseName,
+        int commandTimeoutSeconds,
+        string callerMemberName,
+        string callerFilePath,
+        int callerLineNumber
+    )
+    {
+        var timingsPath = Environment.GetEnvironmentVariable(TimingsPathVariable);
+        if (string.IsNullOrWhiteSpace(timingsPath))
+        {
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(timingsPath);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string[] fields =
+        [
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+            outcome,
+            duration.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture),
+            databaseName,
+            commandTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
+            callerMemberName,
+            callerFilePath,
+            callerLineNumber.ToString(CultureInfo.InvariantCulture),
+        ];
+
+        lock (_lock)
+        {
+            var writeHeader = !File.Exists(fullPath);
+            using var writer = new StreamWriter(fullPath, append: true, Encoding.UTF8);
+            if (writeHeader)
+            {
+                writer.WriteLine(
+                    "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,CallerMemberName,CallerFilePath,CallerLineNumber"
+                );
+            }
+
+            writer.WriteLine(string.Join(",", fields.Select(EscapeCsv)));
+        }
+    }
+
+    private static string EscapeCsv(string value)
+    {
+        if (!value.Contains('"') && !value.Contains(',') && !value.Contains('\n') && !value.Contains('\r'))
+        {
+            return value;
+        }
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
     }
 }

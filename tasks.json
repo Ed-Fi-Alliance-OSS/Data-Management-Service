@@ -121,7 +121,7 @@
       "Confirm the baseline-derived projected shard totals are recorded in the PR comment and no projected shard exceeds 120% of the projected median.",
       "Add a PR comment with the validation run URL and the observed shard-duration comparison."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI Speedup Phase 6",

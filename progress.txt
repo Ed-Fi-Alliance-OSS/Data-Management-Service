@@ -25,3 +25,10 @@ Key decisions: added one Release integration assembly build artifact for Backend
 Files changed: .github/workflows/on-dms-pullrequest.yml, tasks.json, progress.txt
 Verification: yq parsed workflow; actionlint passed; git diff --check passed; restored/built four integration projects Release; staged artifacts verified dll/deps/runtimeconfig/NUnit adapter/testhost; dotnet test --list-tests worked from staged DLL paths.
 Blockers/next: push/PR run/comment still need remote branch reconciliation; inspect CI logs to confirm no project restore/build in shard jobs.
+
+2026-06-30 20:48 CDT
+Task completed: CI Speedup Phase 5 for reference/design/backend-redesign/epics/10-update-tracking-change-queries/20-openapi-change-query-surface.md
+Key decisions: aggregated five recent successful DMS PR timing artifacts; moved E2E TrackedChangeAuthorization to shard 1 and RelationshipsWithEdOrgsOnlyQueryAuthorization to shard 2; moved MSSQL StudentSchoolAssociation smoke to shard 1, generated-DDL database tests to shard 2, and relational change-query repository tests to shard 3; kept largest generated-DDL smoke on shard 4. Projected averages: E2E 554/567/521/499s, MSSQL 345/263/181/355s, all under 120% projected median.
+Files changed: .github/workflows/on-dms-pullrequest.yml, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/MssqlGeneratedDdlTestDatabase.cs, MSSQL shard-category test files, E2E feature shard tags, tasks.json, progress.txt
+Verification: downloaded timing artifacts from runs 28486290395, 28483689772, 28481788790, 28481742971, 28481268693; dotnet test --list-tests passed for MSSQL shard categories and E2E shard categories; targeted MSSQL shard guardrail passed 2 tests against temporary SQL Server; yq/actionlint passed workflow; git diff --check passed.
+Blockers/next: branch speed-up-build still ahead/behind origin; push/PR GitHub Actions run and PR timing comment still need remote branch reconciliation or a pushed phase branch.

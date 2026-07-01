@@ -55,7 +55,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Fresh_ChangeVersionSequence_Read_Through_Repository
     : RelationalChangeQueryRepositoryTestBase
 {
@@ -75,7 +75,7 @@ public class Given_Fresh_ChangeVersionSequence_Read_Through_Repository
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_ChangeVersionSequence_Advanced_Three_Times_Read_Through_Repository
     : RelationalChangeQueryRepositoryTestBase
 {
@@ -96,7 +96,7 @@ public class Given_ChangeVersionSequence_Advanced_Three_Times_Read_Through_Repos
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepositoryTestBase
 {
     private long _repositoryResult;
@@ -136,7 +136,7 @@ file sealed record TestTrackedChangeQueryRequest(
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

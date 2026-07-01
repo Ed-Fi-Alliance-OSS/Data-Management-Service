@@ -39,7 +39,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # vary only the client's authorized educationOrganizationId — the direct analog of ODS swapping
         # among its pre-provisioned LEA/School clients. No bespoke claim set is uploaded.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 01 RelationshipsWithEdOrgsAndPeopleIncludingDeletes shows a deleted association to an authorized education organization and hides it from others
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
@@ -88,7 +88,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
                   []
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 02 RelationshipsWithStudentsOnlyIncludingDeletes shows a deleted association to a client reachable through the student and hides it from others
@@ -137,7 +137,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # which the broad set does not grant). It IS granted by the built-in EdFiSandbox claim set (used the
         # same way by RelationshipsWithStudentsOnlyThroughResponsibility.feature). The seed+delete therefore
         # runs under EdFiSandbox; the /deletes query still runs under the uploaded strategy claim set.
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 03 RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes filters a deleted responsibility association by the responsibility relationship
@@ -204,7 +204,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # (255901001) resolves through the inverted view and sees the delete, while an unrelated edOrg
         # (255901999) sees nothing. The LEA 255901 is seeded only so the School has a valid parent
         # reference. (Confirmed at run time which scope resolves; see report.)
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 04 RelationshipsWithEdOrgsOnlyInverted filters a deleted education organization by the inverted hierarchy
@@ -248,7 +248,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
                   []
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 05 RelationshipsWithEdOrgsOnly filters a ClassPeriod key change by education organization
@@ -300,7 +300,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # row. Under RelationshipsWithEdOrgsAndPeopleIncludingDeletes a client scoped to either school in
         # the key change sees the row; an unrelated edOrg sees nothing.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 06 RelationshipsWithEdOrgsAndPeopleIncludingDeletes filters a StudentSchoolAssociation key change by education organization
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001, 255901002"
@@ -364,7 +364,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # filtering: a client scoped to the parent LEA (255901) sees the Section key change; an unrelated
         # edOrg (255901999) sees nothing. (Explicit RelationshipsWithEdOrgsOnly coverage lives in scenario 05.)
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 07 Education-organization ReadChanges filters a Section key change by the parent LEA scope
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901, 255901001"
@@ -458,7 +458,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # securable fell back to NoFurtherAuthorizationRequired and could not be relationship-filtered).
         # OrganizationDepartment is seedable under the broad set via the domains/educationOrganizations
         # grant. A client scoped to the parent edOrg (255901001) sees the delete; 255901999 does not.
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 08 RelationshipsWithEdOrgsOnly filters a deleted OrganizationDepartment by its parent education organization
@@ -516,7 +516,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # tracked-delete rows. Run under the standard EdFiSandbox client (single matching scope, as ODS
         # does) to confirm the recreate-suppression holds through ReadChanges authorization.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 09 StudentContactAssociation deleted then recreated within the change window is suppressed from deletes
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
@@ -588,7 +588,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # beginDate, studentUniqueId. The program here is defined at the LEA (255901), so
         # programEducationOrganizationId is 255901 while educationOrganizationId is the school.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 10 RelationshipsWithEdOrgsAndPeopleIncludingDeletes shows deleted StudentProgramAssociations to the parent LEA and scopes a single school to its own
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901, 255901001, 255901002"
@@ -698,7 +698,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # after the first delete, before the recreate suppresses it. Self-contained (globally unique
         # ids), so no data reset is required.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         Scenario: 11 StudentContactAssociation recreate suppresses the delete even after its Contact is deleted and recreated with the same contactUniqueId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "920201197"
               And the system has these "schools"
@@ -792,7 +792,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # "uri://other.org" (non-matching client). EdFiSandbox inherits NamespaceBased ReadChanges for
         # assessment metadata, matching the ODS Postman ChangeQueries sandbox-client authorization shape.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 01 NamespaceBased shows a deleted resource to a matching namespace prefix and hides it from a non-matching one
             Given the system has these descriptors
@@ -836,7 +836,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # identity, so this verifies the endpoint is authorized for a matching namespace prefix and
         # returns an empty page (no key changes were produced).
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 02 NamespaceBased authorizes the keyChanges endpoint for a matching namespace prefix
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -854,7 +854,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # the uri://ed-fi.org-scoped client sees only the ed-fi.org delete and the uri://other.org-scoped
         # client sees only the other.org delete.
         @ods-migrated
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @reset-data-before-scenario
         Scenario: 03 NamespaceBased on EducationContent isolates deletes by client namespace
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://other.org"
@@ -906,7 +906,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # deleted School, and an unrelated edOrg (255901999) sees nothing. The School is seeded+deleted
         # under the broad claim set first (the proven seed-before-upload pattern), so the composed
         # strategies only affect the ReadChanges query.
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 04 NoFurtherAuthorizationRequired composed with a relationship strategy remains a no-op
@@ -949,7 +949,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # applies no filtering at all. The School is seeded+deleted under the broad claim set first, then
         # the NoFurther strategy claim set is uploaded and authorized with a deliberately non-matching
         # namespace and edOrg; the delete is still returned (total-count 1).
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 05 NoFurtherAuthorizationRequired on a resource returns deletes regardless of caller scope
@@ -985,7 +985,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
         # RelationshipsWithPeopleOnly, which has no ReadChanges implementation. DMS returns a security
         # configuration ProblemDetails (HTTP 500). The errors[0] text is copied verbatim from the live
         # response.
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 06 ReadChanges configured with RelationshipsWithPeopleOnly returns a security configuration ProblemDetails
@@ -1014,7 +1014,7 @@ Feature: TrackedChange endpoints apply relationship-based ReadChanges authorizat
                   }
                   """
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-1
         @ResetClaimsetsAfterScenario
         @reset-data-before-scenario
         Scenario: 07 ReadChanges configured with RelationshipsWithEdOrgsAndPeopleInverted returns a security configuration ProblemDetails

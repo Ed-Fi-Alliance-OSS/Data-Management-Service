@@ -528,6 +528,7 @@ jobs:
       contents: read
     env:
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/backend-mssql/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll
+      MSSQL_FIXTURE_TIMINGS_PATH: ./TestResults/test-timings/mssql-shard-${{ matrix.shard }}/mssql-fixture-setup-timings.csv
     strategy:
       fail-fast: false
       matrix:
