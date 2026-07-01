@@ -26,6 +26,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         "minimal"
     );
 
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
 
     [OneTimeSetUp]
@@ -39,7 +40,12 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         }
 
         var fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
     }
 
     [SetUp]
@@ -56,9 +62,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     [OneTimeTearDown]
     public async Task TearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

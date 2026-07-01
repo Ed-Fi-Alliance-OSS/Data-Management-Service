@@ -12,14 +12,14 @@ namespace EdFi.DataManagementService.Tests.Integration.Mssql;
 
 /// <summary>
 /// SQL Server-flavored concrete <see cref="ApiIntegrationTestBase"/>. Acquires a
-/// snapshot-restored per-test database lease from the cached
-/// <see cref="MssqlGeneratedDdlBaselineDatabase"/> for the bound fixture and hands
+/// strategy-selected per-test database lease from the cached
+/// <see cref="IMssqlGeneratedDdlBaselineDatabase"/> for the bound fixture and hands
 /// its connection string to the harness.
 /// </summary>
 [Category("MssqlIntegration")]
 public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
 {
-    private MssqlGeneratedDdlBaselineLease? _lease;
+    private IMssqlGeneratedDdlBaselineLease? _lease;
 
     protected override string Datastore => "mssql";
 
@@ -33,7 +33,7 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
 
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {
-        MssqlGeneratedDdlBaselineDatabase baseline = await MssqlBaselineCache.CreateOrGetAsync(fixture);
+        IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBaselineCache.CreateOrGetAsync(fixture);
         _lease = await baseline.AcquireRestoredDatabaseAsync();
         return _lease.Database.ConnectionString;
     }

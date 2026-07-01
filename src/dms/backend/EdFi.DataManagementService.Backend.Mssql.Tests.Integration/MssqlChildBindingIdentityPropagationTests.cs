@@ -31,6 +31,7 @@ public class MssqlChildBindingIdentityPropagationTests
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
 
     [OneTimeSetUp]
@@ -47,7 +48,12 @@ public class MssqlChildBindingIdentityPropagationTests
             FixtureRelativePath,
             strict: true
         );
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
     }
 
     [SetUp]
@@ -59,9 +65,9 @@ public class MssqlChildBindingIdentityPropagationTests
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
             _database = null!;
         }
     }

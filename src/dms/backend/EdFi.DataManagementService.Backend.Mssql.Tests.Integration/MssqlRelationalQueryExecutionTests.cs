@@ -200,6 +200,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
@@ -227,7 +228,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             strict: true
         );
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = CreateServiceProvider();
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
 
@@ -265,9 +271,9 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -35,13 +35,24 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     public static Task<MssqlGeneratedDdlBaselineDatabase> CreateAsync(
         string fixtureSignature,
         string generatedDdl,
-        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds,
+        [CallerMemberName] string callerMemberName = "",
+        [CallerFilePath] string callerFilePath = "",
+        [CallerLineNumber] int callerLineNumber = 0
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fixtureSignature);
         ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
 
-        var generatedDdlHash = ComputeGeneratedDdlHash(generatedDdl);
+        var generatedDdlHash = MssqlProvisioningTimingRecorder.ComputeGeneratedDdlHash(generatedDdl);
+        var timingContext = new MssqlProvisioningTimingContext(
+            fixtureSignature,
+            generatedDdlHash,
+            MssqlGeneratedDdlLeaseStrategy.SnapshotSlot,
+            callerMemberName,
+            callerFilePath,
+            callerLineNumber
+        );
         SharedBaselineEntry sharedBaselineEntry;
 
         lock (_sync)
@@ -67,7 +78,12 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             }
             else
             {
-                sharedBaselineEntry = new(generatedDdlHash, generatedDdl, commandTimeoutSeconds);
+                sharedBaselineEntry = new(
+                    generatedDdlHash,
+                    generatedDdl,
+                    commandTimeoutSeconds,
+                    timingContext
+                );
                 _sharedBaselines[fixtureSignature] = sharedBaselineEntry;
             }
         }
@@ -99,6 +115,7 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             if (leasedSlot is null)
             {
                 leasedSlot = await CreateSharedBaselineSlotAsync(
+                    _sharedBaselineEntry.TimingContext,
                     _sharedBaselineEntry.GeneratedDdl,
                     resolvedCommandTimeoutSeconds
                 );
@@ -106,10 +123,12 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             else
             {
                 await RestoreSnapshotAsync(
+                    _sharedBaselineEntry.TimingContext,
                     leasedSlot.Database.DatabaseName,
                     leasedSlot.SnapshotName,
                     resolvedCommandTimeoutSeconds
                 );
+                await leasedSlot.Database.RefreshResetPlanAsync(resolvedCommandTimeoutSeconds);
             }
 
             var acquiredSlot = leasedSlot;
@@ -225,20 +244,22 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     }
 
     private static async Task<SharedBaselineSlot> CreateSharedBaselineSlotAsync(
+        MssqlProvisioningTimingContext context,
         string generatedDdl,
         int commandTimeoutSeconds
     )
     {
         var database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
             generatedDdl,
-            commandTimeoutSeconds
+            commandTimeoutSeconds,
+            context
         );
         var snapshotName = $"{database.DatabaseName}_baseline";
 
         try
         {
             await DropSnapshotIfExistsAsync(snapshotName, commandTimeoutSeconds);
-            await CreateSnapshotAsync(database.DatabaseName, snapshotName, commandTimeoutSeconds);
+            await CreateSnapshotAsync(context, database.DatabaseName, snapshotName, commandTimeoutSeconds);
             return new(snapshotName, database);
         }
         catch
@@ -248,62 +269,115 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         }
     }
 
-    private static string ComputeGeneratedDdlHash(string generatedDdl)
-    {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(generatedDdl)));
-    }
-
     private static async Task CreateSnapshotAsync(
+        MssqlProvisioningTimingContext context,
         string databaseName,
         string snapshotName,
         int commandTimeoutSeconds
     )
     {
-        var snapshotFiles = await GetSnapshotFilesAsync(databaseName);
-        var snapshotFileDefinitions = string.Join(
-            "," + Environment.NewLine,
-            snapshotFiles.Select(file =>
-                $"""    ( NAME = N'{EscapeSqlLiteral(file.LogicalName)}', FILENAME = N'{EscapeSqlLiteral(file.SnapshotPath)}' )"""
-            )
-        );
-        var sql = $"""
-            CREATE DATABASE {QuoteIdentifier(snapshotName)}
-            ON
-            {snapshotFileDefinitions}
-            AS SNAPSHOT OF {QuoteIdentifier(databaseName)};
-            """;
+        var stopwatch = Stopwatch.StartNew();
+        var outcome = "Succeeded";
 
-        await ExecuteAdminNonQueryAsync(sql, commandTimeoutSeconds);
+        try
+        {
+            var snapshotFiles = await GetSnapshotFilesAsync(databaseName);
+            var snapshotFileDefinitions = string.Join(
+                "," + Environment.NewLine,
+                snapshotFiles.Select(file =>
+                    $"""    ( NAME = N'{EscapeSqlLiteral(file.LogicalName)}', FILENAME = N'{EscapeSqlLiteral(file.SnapshotPath)}' )"""
+                )
+            );
+            var sql = $"""
+                CREATE DATABASE {QuoteIdentifier(snapshotName)}
+                ON
+                {snapshotFileDefinitions}
+                AS SNAPSHOT OF {QuoteIdentifier(databaseName)};
+                """;
+
+            await ExecuteAdminNonQueryAsync(sql, commandTimeoutSeconds);
+        }
+        catch
+        {
+            outcome = "Failed";
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            MssqlProvisioningTimingRecorder.Record(
+                outcome,
+                stopwatch.Elapsed,
+                databaseName,
+                commandTimeoutSeconds,
+                context.FixtureSignature,
+                context.GeneratedDdlHash,
+                "create-snapshot",
+                context.LeaseStrategy,
+                context.CallerMemberName,
+                context.CallerFilePath,
+                context.CallerLineNumber
+            );
+        }
     }
 
     private static async Task RestoreSnapshotAsync(
+        MssqlProvisioningTimingContext context,
         string databaseName,
         string snapshotName,
         int commandTimeoutSeconds
     )
     {
-        SqlConnection.ClearAllPools();
+        var stopwatch = Stopwatch.StartNew();
+        var outcome = "Succeeded";
 
-        var sql = $"""
-            BEGIN TRY
-                ALTER DATABASE {QuoteIdentifier(databaseName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                RESTORE DATABASE {QuoteIdentifier(databaseName)} FROM DATABASE_SNAPSHOT = N'{EscapeSqlLiteral(
-                snapshotName
-            )}';
-                ALTER DATABASE {QuoteIdentifier(databaseName)} SET MULTI_USER;
-            END TRY
-            BEGIN CATCH
+        try
+        {
+            SqlConnection.ClearAllPools();
+
+            var sql = $"""
                 BEGIN TRY
+                    ALTER DATABASE {QuoteIdentifier(databaseName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    RESTORE DATABASE {QuoteIdentifier(databaseName)} FROM DATABASE_SNAPSHOT = N'{EscapeSqlLiteral(
+                    snapshotName
+                )}';
                     ALTER DATABASE {QuoteIdentifier(databaseName)} SET MULTI_USER;
                 END TRY
                 BEGIN CATCH
+                    BEGIN TRY
+                        ALTER DATABASE {QuoteIdentifier(databaseName)} SET MULTI_USER;
+                    END TRY
+                    BEGIN CATCH
+                    END CATCH;
+
+                    THROW;
                 END CATCH;
+                """;
 
-                THROW;
-            END CATCH;
-            """;
-
-        await ExecuteAdminNonQueryAsync(sql, commandTimeoutSeconds);
+            await ExecuteAdminNonQueryAsync(sql, commandTimeoutSeconds);
+        }
+        catch
+        {
+            outcome = "Failed";
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            MssqlProvisioningTimingRecorder.Record(
+                outcome,
+                stopwatch.Elapsed,
+                databaseName,
+                commandTimeoutSeconds,
+                context.FixtureSignature,
+                context.GeneratedDdlHash,
+                "restore-snapshot",
+                context.LeaseStrategy,
+                context.CallerMemberName,
+                context.CallerFilePath,
+                context.CallerLineNumber
+            );
+        }
     }
 
     private static Task DropSnapshotIfExistsAsync(string snapshotName, int commandTimeoutSeconds)
@@ -443,7 +517,8 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     private sealed class SharedBaselineEntry(
         string generatedDdlHash,
         string generatedDdl,
-        int slotCommandTimeoutSeconds
+        int slotCommandTimeoutSeconds,
+        MssqlProvisioningTimingContext timingContext
     )
     {
         public string GeneratedDdlHash { get; } = generatedDdlHash;
@@ -451,6 +526,8 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         public string GeneratedDdl { get; } = generatedDdl;
 
         public int SlotCommandTimeoutSeconds { get; } = slotCommandTimeoutSeconds;
+
+        public MssqlProvisioningTimingContext TimingContext { get; } = timingContext;
 
         public int ManagerHandleCount { get; set; } = 1;
 

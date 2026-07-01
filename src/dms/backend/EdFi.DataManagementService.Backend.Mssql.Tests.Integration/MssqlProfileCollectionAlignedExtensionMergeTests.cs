@@ -445,6 +445,7 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
 
     protected MssqlGeneratedDdlFixture Fixture = null!;
     protected MappingSet MappingSet = null!;
+    protected IMssqlGeneratedDdlBaselineLease DatabaseLease = null!;
     protected MssqlGeneratedDdlTestDatabase Database = null!;
     protected ServiceProvider ServiceProvider = null!;
 
@@ -460,7 +461,12 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
 
         Fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         MappingSet = Fixture.MappingSet;
-        Database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(Fixture.GeneratedDdl);
+        IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBackendBaselineCache.CreateOrGetAsync(
+            MssqlBackendBaselineCache.BuildFixtureSignature(FixtureRelativePath, strict: false),
+            Fixture.GeneratedDdl
+        );
+        DatabaseLease = await baseline.AcquireRestoredDatabaseAsync();
+        Database = DatabaseLease.Database;
         ServiceProvider = MssqlProfileCollectionAlignedExtensionSupport.CreateServiceProvider();
     }
 
@@ -471,9 +477,9 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
         {
             await ServiceProvider.DisposeAsync();
         }
-        if (Database is not null)
+        if (DatabaseLease is not null)
         {
-            await Database.DisposeAsync();
+            await DatabaseLease.DisposeAsync();
         }
     }
 

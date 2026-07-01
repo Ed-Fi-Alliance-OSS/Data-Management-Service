@@ -190,6 +190,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private MssqlRelationalQueryAuthorizationWriteSessionRecorder _writeSessionRecorder = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
 
     public MappingSet MappingSet => _fixture.MappingSet;
 
@@ -212,7 +213,12 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     )
     {
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(fixtureRelativePath, strict);
-        Database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBackendBaselineCache.CreateOrGetAsync(
+            MssqlBackendBaselineCache.BuildFixtureSignature(fixtureRelativePath, strict),
+            _fixture.GeneratedDdl
+        );
+        _databaseLease = await baseline.AcquireRestoredDatabaseAsync();
+        Database = _databaseLease.Database;
         _serviceProvider = CreateServiceProvider(replaceReadTargetLookup);
         _recorder = _serviceProvider.GetRequiredService<MssqlRelationalQueryExecutionRecorder>();
         _writeSessionRecorder =
@@ -226,9 +232,9 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             await _serviceProvider.DisposeAsync();
         }
 
-        if (Database is not null)
+        if (_databaseLease is not null)
         {
-            await Database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

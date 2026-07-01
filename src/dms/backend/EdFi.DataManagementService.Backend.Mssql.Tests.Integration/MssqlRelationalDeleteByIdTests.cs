@@ -67,6 +67,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private RecordingLogger<RelationalDocumentStoreRepository> _recordingLogger = null!;
@@ -76,7 +77,12 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     {
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
 
         // SQL Server's "DBCC CHECKIDENT(..., RESEED, 0)" (used by MssqlDatabaseResetSql) makes the
         // next INSERT use 0 on a table that has never been populated — but RESEED N + 1 on a table
@@ -118,9 +124,9 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
             _database = null!;
         }
     }

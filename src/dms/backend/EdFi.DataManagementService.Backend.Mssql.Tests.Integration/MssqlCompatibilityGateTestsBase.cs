@@ -27,6 +27,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </summary>
 public abstract class MssqlCompatibilityGateTestsBase : CompatibilityGateTestsBase
 {
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
 
     // -------------------------------------------------------------------------
@@ -75,14 +76,15 @@ public abstract class MssqlCompatibilityGateTestsBase : CompatibilityGateTestsBa
 
     protected override async Task ProvisionDatabaseAsync(string ddl)
     {
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(ddl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(FixtureRelativePath, Strict, ddl);
+        _database = _databaseLease.Database;
     }
 
     protected override async Task DisposeDatabaseAsync()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

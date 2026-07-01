@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard3)]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_DescriptorRead_Get_Request
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -42,6 +42,7 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
@@ -58,7 +59,12 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = CreateServiceProvider();
         _resourceInfo = DescriptorReadIntegrationTestSupport.CreateResourceInfo(
             _fixture.EffectiveSchemaSet,
@@ -82,9 +88,9 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
             _serviceProvider = null!;
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
             _database = null!;
         }
     }

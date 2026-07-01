@@ -27,6 +27,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private RecordingMssqlRelationalCommandExecutor _commandExecutor = null!;
     private short _stateEducationAgencyResourceKeyId;
@@ -49,7 +50,12 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             FixtureRelativePath,
             strict: true
         );
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
 
         _stateEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StateEducationAgency");
         _localEducationAgencyResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "LocalEducationAgency");
@@ -80,9 +86,9 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

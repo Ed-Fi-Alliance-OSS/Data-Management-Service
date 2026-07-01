@@ -30,10 +30,17 @@ internal sealed record MssqlGeneratedDdlDocumentState(
     long IdentityVersion
 );
 
+internal sealed record MssqlGeneratedDdlResetIntegrityState(
+    long DisabledForeignKeyCount,
+    long UntrustedForeignKeyCount,
+    long TriggerCount,
+    long DisabledTriggerCount
+);
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard2)]
 public class Given_MssqlGeneratedDdlTestDatabase
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -87,6 +94,7 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
         var resetMutableCounts = await ReadMutableCountsAsync();
         var resetBaselineCounts = await ReadBaselineCountsAsync();
+        var resetIntegrityState = await ReadResetIntegrityStateAsync();
         var authorCollectionItemDefault = await _database.GetColumnDefaultAsync(
             "sample",
             "ContactExtensionAuthor",
@@ -105,6 +113,10 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
         resetMutableCounts.Should().Be(new MssqlGeneratedDdlMutableCounts(0, 0, 0, 0, 0));
         resetBaselineCounts.Should().Be(baselineCounts);
+        resetIntegrityState.DisabledForeignKeyCount.Should().Be(0);
+        resetIntegrityState.UntrustedForeignKeyCount.Should().Be(0);
+        resetIntegrityState.TriggerCount.Should().BeGreaterThan(0);
+        resetIntegrityState.DisabledTriggerCount.Should().Be(0);
         authorCollectionItemDefault.Should().Contain("CollectionItemIdSequence");
         authorCollectionItemDefault.Should().Contain("NEXT VALUE FOR");
         (await _database.SequenceExistsAsync("dms", "ChangeVersionSequence")).Should().BeTrue();
@@ -120,6 +132,67 @@ public class Given_MssqlGeneratedDdlTestDatabase
             await ReadTableCountAsync("[dms].[EffectiveSchema]"),
             await ReadTableCountAsync("[dms].[ResourceKey]"),
             await ReadTableCountAsync("[dms].[SchemaComponent]")
+        );
+    }
+
+    private async Task<MssqlGeneratedDdlResetIntegrityState> ReadResetIntegrityStateAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN foreign_keys.[is_disabled] = 1 THEN 1 ELSE 0 END), 0) AS [DisabledForeignKeyCount],
+                COALESCE(SUM(CASE WHEN foreign_keys.[is_not_trusted] = 1 THEN 1 ELSE 0 END), 0) AS [UntrustedForeignKeyCount],
+                (
+                    SELECT COUNT(*)
+                    FROM sys.triggers triggers
+                    INNER JOIN sys.tables tables
+                        ON tables.[object_id] = triggers.[parent_id]
+                    INNER JOIN sys.schemas schemas
+                        ON schemas.[schema_id] = tables.[schema_id]
+                    WHERE triggers.[parent_class_desc] = N'OBJECT_OR_COLUMN'
+                      AND tables.[is_ms_shipped] = 0
+                      AND schemas.[name] NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys')
+                      AND NOT (
+                          schemas.[name] = N'dms'
+                          AND tables.[name] IN (N'EffectiveSchema', N'ResourceKey', N'SchemaComponent')
+                      )
+                ) AS [TriggerCount],
+                (
+                    SELECT COUNT(*)
+                    FROM sys.triggers triggers
+                    INNER JOIN sys.tables tables
+                        ON tables.[object_id] = triggers.[parent_id]
+                    INNER JOIN sys.schemas schemas
+                        ON schemas.[schema_id] = tables.[schema_id]
+                    WHERE triggers.[parent_class_desc] = N'OBJECT_OR_COLUMN'
+                      AND triggers.[is_disabled] = 1
+                      AND tables.[is_ms_shipped] = 0
+                      AND schemas.[name] NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys')
+                      AND NOT (
+                          schemas.[name] = N'dms'
+                          AND tables.[name] IN (N'EffectiveSchema', N'ResourceKey', N'SchemaComponent')
+                      )
+                ) AS [DisabledTriggerCount]
+            FROM sys.foreign_keys foreign_keys
+            INNER JOIN sys.tables tables
+                ON tables.[object_id] = foreign_keys.[parent_object_id]
+            INNER JOIN sys.schemas schemas
+                ON schemas.[schema_id] = tables.[schema_id]
+            WHERE tables.[is_ms_shipped] = 0
+              AND schemas.[name] NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys')
+              AND NOT (
+                  schemas.[name] = N'dms'
+                  AND tables.[name] IN (N'EffectiveSchema', N'ResourceKey', N'SchemaComponent')
+              );
+            """
+        );
+        var row = rows.Should().ContainSingle().Which;
+
+        return new(
+            Convert.ToInt64(row["DisabledForeignKeyCount"]),
+            Convert.ToInt64(row["UntrustedForeignKeyCount"]),
+            Convert.ToInt64(row["TriggerCount"]),
+            Convert.ToInt64(row["DisabledTriggerCount"])
         );
     }
 

@@ -197,6 +197,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
@@ -222,7 +223,12 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             strict: true
         );
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            MssqlSurveyRuntimeIntegrationTestSupport.FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlSurveyRuntimeIntegrationTestSupport.CreateServiceProvider();
 
         var (projectSchema, resourceSchema) = MssqlSurveyRuntimeIntegrationTestSupport.GetResourceSchema(
@@ -279,9 +285,9 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

@@ -32,6 +32,10 @@ permissions:
   actions: read
   id-token: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-populated-template:
     name: Build Populated Template ${{ matrix.standard_version }}
@@ -68,10 +72,113 @@ jobs:
       AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
+  build-ci-docker-images:
+    name: Build CI Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      use_prebuilt_images: ${{ steps.prepare-images.outputs.use_prebuilt_images }}
+      dms_image: ${{ steps.prepare-images.outputs.dms_image }}
+      config_image: ${{ steps.prepare-images.outputs.config_image }}
+      dms_compose_image: ${{ steps.prepare-images.outputs.dms_compose_image }}
+      config_compose_image: ${{ steps.prepare-images.outputs.config_compose_image }}
+    env:
+      # Set repository variable REBUILD_DOWNSTREAM_IMAGES=true to keep downstream
+      # smoke jobs rebuilding local images while rolling this change back or forward.
+      REBUILD_DOWNSTREAM_IMAGES: ${{ vars.REBUILD_DOWNSTREAM_IMAGES }}
+      IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Prepare CI image tags
+        id: prepare-images
+        shell: bash
+        run: |
+          rebuild_downstream_images="${REBUILD_DOWNSTREAM_IMAGES:-false}"
+          rebuild_downstream_images="${rebuild_downstream_images,,}"
+          use_prebuilt_images="true"
+
+          case "$rebuild_downstream_images" in
+            1|true|yes|y|on)
+              use_prebuilt_images="false"
+              ;;
+          esac
+
+          if [[ "$IS_FORK_PULL_REQUEST" == "true" ]]; then
+            use_prebuilt_images="false"
+          fi
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_sha="${PULL_REQUEST_HEAD_SHA:-$GITHUB_SHA}"
+          dms_image="ghcr.io/${owner}/data-management-service-smoke-ed-fi-api-ci:${image_sha}"
+          config_image="ghcr.io/${owner}/data-management-service-smoke-ed-fi-api-config-ci:${image_sha}"
+
+          dms_compose_image=""
+          config_compose_image=""
+          if [[ "$use_prebuilt_images" == "true" ]]; then
+            dms_compose_image="$dms_image"
+            config_compose_image="$config_image"
+          fi
+
+          {
+            echo "use_prebuilt_images=$use_prebuilt_images"
+            echo "dms_image=$dms_image"
+            echo "config_image=$config_image"
+            echo "dms_compose_image=$dms_compose_image"
+            echo "config_compose_image=$config_compose_image"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Login to GitHub Container Registry
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push DMS smoke CI Docker image
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: true
+          tags: ${{ steps.prepare-images.outputs.dms_image }}
+          cache-from: type=gha,scope=smoke-dms-image
+          cache-to: type=gha,mode=max,scope=smoke-dms-image
+
+      - name: Build and push Config smoke CI Docker image
+        if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: true
+          tags: ${{ steps.prepare-images.outputs.config_image }}
+          cache-from: type=gha,scope=smoke-config-image
+          cache-to: type=gha,mode=max,scope=smoke-config-image
+
   smoke-test:
     name: Smoke Tests ${{ matrix.standard_version }}
-    needs: build-populated-template
+    needs: [build-populated-template, build-ci-docker-images]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     # Each leg smoke-tests the template built for the same version. Keep this matrix in sync
     # with the build-populated-template matrix above.
     strategy:
@@ -90,6 +197,8 @@ jobs:
             run_ods_sdk_tests: false
 
     env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
       SMOKE_DATABASE_NAME: edfi_datamanagementservice_smoke
 
     defaults:
@@ -100,6 +209,20 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
@@ -115,13 +238,15 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Dockerfile', 'src/dms/**') }}
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/nuget.config', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
           restore-keys: |
             ${{ runner.os }}-buildx-
 
@@ -129,6 +254,7 @@ jobs:
         run: ./build-dms.ps1 Build -Configuration Release
 
       - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           load: true
@@ -138,6 +264,20 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 

@@ -55,7 +55,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Fresh_ChangeVersionSequence_Read_Through_Repository
     : RelationalChangeQueryRepositoryTestBase
 {
@@ -75,7 +75,7 @@ public class Given_Fresh_ChangeVersionSequence_Read_Through_Repository
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_ChangeVersionSequence_Advanced_Three_Times_Read_Through_Repository
     : RelationalChangeQueryRepositoryTestBase
 {
@@ -96,7 +96,7 @@ public class Given_ChangeVersionSequence_Advanced_Three_Times_Read_Through_Repos
 
 [TestFixture]
 [NonParallelizable]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepositoryTestBase
 {
     private long _repositoryResult;
@@ -136,7 +136,7 @@ file sealed record TestTrackedChangeQueryRequest(
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard4)]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
@@ -167,6 +167,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _schoolResourceInfo = null!;
@@ -191,7 +192,12 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             strict: true
         );
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = CreateServiceProvider();
 
         (ProjectSchema schoolProjectSchema, ResourceSchema schoolSchema) = GetResourceSchema(
@@ -243,9 +249,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

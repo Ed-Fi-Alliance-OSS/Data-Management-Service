@@ -76,6 +76,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         "FK_ContactExtensionAddressTerm_ContactExtensionAddress";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private AuthoritativeSampleSmokeSeedData _seedData = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _contactExtensionAuthorForeignKeys = null!;
@@ -101,7 +102,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             FixtureRelativePath,
             strict: true
         );
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: true,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         await InstallReferentialIdentityAuditAsync();
         _contactExtensionAuthorForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
@@ -152,9 +158,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

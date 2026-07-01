@@ -160,6 +160,7 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpsertResult _result = null!;
@@ -176,7 +177,12 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
 
         _result = await ExecuteProfiledPostAsync();
@@ -190,9 +196,9 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 
@@ -304,6 +310,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpsertResult _profiledPostAsUpdateResult = null!;
@@ -320,7 +327,12 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
 
         var createResult = await ExecuteNonProfiledUpsertAsync();
@@ -337,9 +349,9 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 
@@ -482,6 +494,7 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
+    private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _profiledPutResult = null!;
@@ -498,7 +511,12 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
+            FixtureRelativePath,
+            strict: false,
+            _fixture.GeneratedDdl
+        );
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
 
         var createResult = await ExecuteNonProfiledUpsertAsync();
@@ -515,9 +533,9 @@ public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
             await _serviceProvider.DisposeAsync();
         }
 
-        if (_database is not null)
+        if (_databaseLease is not null)
         {
-            await _database.DisposeAsync();
+            await _databaseLease.DisposeAsync();
         }
     }
 

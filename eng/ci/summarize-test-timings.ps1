@@ -66,6 +66,45 @@ function Resolve-TrxFile {
         Sort-Object -Property FullName -Unique
 }
 
+function Resolve-MssqlFixtureTimingFile {
+    param(
+        [string[]]
+        $CandidatePaths
+    )
+
+    $files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+
+    foreach ($candidatePath in $CandidatePaths) {
+        if ([string]::IsNullOrWhiteSpace($candidatePath)) {
+            continue
+        }
+
+        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+            $file = Get-Item -LiteralPath $candidatePath
+            if ($file.Name -eq "mssql-fixture-setup-timings.csv") {
+                $files.Add($file)
+            }
+
+            continue
+        }
+
+        if (Test-Path -LiteralPath $candidatePath -PathType Container) {
+            Get-ChildItem -LiteralPath $candidatePath -Filter "mssql-fixture-setup-timings.csv" -Recurse -File | ForEach-Object {
+                $files.Add($_)
+            }
+
+            continue
+        }
+
+        Get-ChildItem -Path $candidatePath -Filter "mssql-fixture-setup-timings.csv" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $files.Add($_)
+        }
+    }
+
+    $files |
+        Sort-Object -Property FullName -Unique
+}
+
 function Get-TrxNamespaceManager {
     param(
         [xml]
@@ -168,6 +207,307 @@ function Format-MarkdownText {
     }
 
     $Value.Replace("|", "\|").Replace("`r", " ").Replace("`n", " ")
+}
+
+function Get-CsvValue {
+    param(
+        [psobject]
+        $Record,
+
+        [string]
+        $Name,
+
+        [string]
+        $Default = ""
+    )
+
+    $property = $Record.PSObject.Properties[$Name]
+    if ($null -eq $property -or $null -eq $property.Value) {
+        return $Default
+    }
+
+    $value = [string]$property.Value
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $Default
+    }
+
+    $value
+}
+
+function ConvertTo-MssqlTimingDurationSeconds {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Mssql is a product acronym in the helper name, not a plural noun.')]
+    param(
+        [string]
+        $Value
+    )
+
+    $durationSeconds = 0.0
+    if ([double]::TryParse($Value, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$durationSeconds)) {
+        return [Math]::Round($durationSeconds, 3)
+    }
+
+    Write-Warning "Could not parse MSSQL fixture timing duration '$Value'. Treating it as zero."
+    0.0
+}
+
+function ConvertTo-MssqlTimingBoolean {
+    param(
+        [string]
+        $Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    $normalizedValue = $Value.Trim()
+    return $normalizedValue -in @("1", "true", "True", "TRUE", "yes", "Yes", "YES")
+}
+
+function Resolve-MssqlTimingShard {
+    param(
+        [System.IO.FileInfo]
+        $File,
+
+        [psobject]
+        $Record
+    )
+
+    $shard = Get-CsvValue -Record $Record -Name "Shard"
+    if (-not [string]::IsNullOrWhiteSpace($shard)) {
+        return $shard
+    }
+
+    if ($File.FullName -match "mssql-shard-(?<shard>[^\\/]+)") {
+        return $Matches["shard"]
+    }
+
+    if ($File.FullName -match "mssql-api") {
+        return "api"
+    }
+
+    ""
+}
+
+function ConvertFrom-MssqlFixtureTimingFile {
+    param(
+        [System.IO.FileInfo]
+        $TimingFile
+    )
+
+    Import-Csv -LiteralPath $TimingFile.FullName | ForEach-Object {
+        $phase = Get-CsvValue -Record $_ -Name "Phase" -Default "create-provisioned"
+        $leaseStrategy = Get-CsvValue -Record $_ -Name "LeaseStrategy" -Default "direct"
+
+        [pscustomobject]@{
+            SourceFile = $TimingFile.FullName
+            SourceFileName = $TimingFile.Name
+            TimestampUtc = Get-CsvValue -Record $_ -Name "TimestampUtc"
+            Outcome = Get-CsvValue -Record $_ -Name "Outcome"
+            DurationSeconds = ConvertTo-MssqlTimingDurationSeconds -Value (Get-CsvValue -Record $_ -Name "DurationSeconds" -Default "0")
+            DatabaseName = Get-CsvValue -Record $_ -Name "DatabaseName"
+            CommandTimeoutSeconds = Get-CsvValue -Record $_ -Name "CommandTimeoutSeconds"
+            FixtureSignature = Get-CsvValue -Record $_ -Name "FixtureSignature"
+            GeneratedDdlHash = Get-CsvValue -Record $_ -Name "GeneratedDdlHash"
+            Phase = $phase
+            LeaseStrategy = $leaseStrategy
+            Shard = Resolve-MssqlTimingShard -File $TimingFile -Record $_
+            TestWorkerId = Get-CsvValue -Record $_ -Name "TestWorkerId"
+            CallerMemberName = Get-CsvValue -Record $_ -Name "CallerMemberName"
+            CallerFilePath = Get-CsvValue -Record $_ -Name "CallerFilePath"
+            CallerLineNumber = Get-CsvValue -Record $_ -Name "CallerLineNumber"
+            IsDiagnostic = ConvertTo-MssqlTimingBoolean -Value (Get-CsvValue -Record $_ -Name "IsDiagnostic")
+            Detail = Get-CsvValue -Record $_ -Name "Detail"
+            BatchOrdinal = Get-CsvValue -Record $_ -Name "BatchOrdinal"
+            BatchCount = Get-CsvValue -Record $_ -Name "BatchCount"
+            BatchHash = Get-CsvValue -Record $_ -Name "BatchHash"
+        }
+    }
+}
+
+function Format-MssqlFixtureTimingMarkdown {
+    param(
+        [object[]]
+        $Results,
+
+        [int]
+        $MaxSlowGroups
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $primaryResults = @($Results | Where-Object { -not $_.IsDiagnostic })
+    $diagnosticResults = @($Results | Where-Object { $_.IsDiagnostic })
+    $totalSeconds = ($primaryResults | Measure-Object -Property DurationSeconds -Sum).Sum
+    if ($null -eq $totalSeconds) {
+        $totalSeconds = 0
+    }
+
+    $failedCount = @($primaryResults | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+    $diagnosticFailedCount = @($diagnosticResults | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+
+    $lines.Add("## MSSQL Fixture Setup Timings")
+    $lines.Add("")
+    $lines.Add("| Metric | Value |")
+    $lines.Add("| --- | ---: |")
+    $lines.Add("| Timing rows | $($Results.Count) |")
+    $lines.Add("| Diagnostic rows | $($diagnosticResults.Count) |")
+    $lines.Add("| Failed rows | $failedCount |")
+    $lines.Add("| Failed diagnostic rows | $diagnosticFailedCount |")
+    $lines.Add("| Total recorded duration | $(Format-Duration -Seconds $totalSeconds) |")
+    $lines.Add("")
+
+    $phaseTotals = $primaryResults |
+        Group-Object -Property Shard, Phase |
+        ForEach-Object {
+            $first = $_.Group | Select-Object -First 1
+            $groupTotalSeconds = ($_.Group | Measure-Object -Property DurationSeconds -Sum).Sum
+            $groupFailures = @($_.Group | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+
+            [pscustomobject]@{
+                Shard = $first.Shard
+                Phase = $first.Phase
+                Count = $_.Count
+                FailedCount = $groupFailures
+                TotalSeconds = [Math]::Round($groupTotalSeconds, 3)
+            }
+        } |
+        Sort-Object -Property TotalSeconds -Descending
+
+    $lines.Add("### Phase Totals")
+    $lines.Add("")
+    $lines.Add("| Total | Rows | Failures | Shard | Phase |")
+    $lines.Add("| ---: | ---: | ---: | --- | --- |")
+    foreach ($phaseTotal in $phaseTotals) {
+        $lines.Add("| $(Format-Duration -Seconds $phaseTotal.TotalSeconds) | $($phaseTotal.Count) | $($phaseTotal.FailedCount) | $(Format-MarkdownText -Value $phaseTotal.Shard) | $(Format-MarkdownText -Value $phaseTotal.Phase) |")
+    }
+
+    if (@($phaseTotals).Count -eq 0) {
+        $lines.Add("| 0:00.000 | 0 | 0 | | No MSSQL fixture timing data found |")
+    }
+
+    $lines.Add("")
+    $lines.Add("### Slowest Setup Groups")
+    $lines.Add("")
+    $lines.Add("| Total | Rows | Failures | Shard | Phase | Fixture Signature | Caller File |")
+    $lines.Add("| ---: | ---: | ---: | --- | --- | --- | --- |")
+
+    $slowGroups = $primaryResults |
+        Group-Object -Property Shard, FixtureSignature, CallerFilePath, Phase |
+        ForEach-Object {
+            $first = $_.Group | Select-Object -First 1
+            $groupTotalSeconds = ($_.Group | Measure-Object -Property DurationSeconds -Sum).Sum
+            $groupFailures = @($_.Group | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+
+            [pscustomobject]@{
+                Shard = $first.Shard
+                FixtureSignature = if ([string]::IsNullOrWhiteSpace($first.FixtureSignature)) { "(unknown)" } else { $first.FixtureSignature }
+                CallerFilePath = if ([string]::IsNullOrWhiteSpace($first.CallerFilePath)) { "(unknown)" } else { $first.CallerFilePath }
+                Phase = $first.Phase
+                Count = $_.Count
+                FailedCount = $groupFailures
+                TotalSeconds = [Math]::Round($groupTotalSeconds, 3)
+            }
+        } |
+        Sort-Object -Property TotalSeconds -Descending |
+        Select-Object -First $MaxSlowGroups
+
+    foreach ($group in $slowGroups) {
+        $lines.Add("| $(Format-Duration -Seconds $group.TotalSeconds) | $($group.Count) | $($group.FailedCount) | $(Format-MarkdownText -Value $group.Shard) | $(Format-MarkdownText -Value $group.Phase) | $(Format-MarkdownText -Value $group.FixtureSignature) | $(Format-MarkdownText -Value $group.CallerFilePath) |")
+    }
+
+    if (@($slowGroups).Count -eq 0) {
+        $lines.Add("| 0:00.000 | 0 | 0 | | | No MSSQL fixture timing data found | |")
+    }
+
+    if ($diagnosticResults.Count -ne 0) {
+        $lines.Add("")
+        $lines.Add("### Slowest Diagnostic Rows")
+        $lines.Add("")
+        $lines.Add("| Duration | Outcome | Shard | Phase | Batch | Batch Hash | Fixture Signature | Caller File |")
+        $lines.Add("| ---: | --- | --- | --- | ---: | --- | --- | --- |")
+
+        $slowDiagnosticRows = $diagnosticResults |
+            Sort-Object -Property DurationSeconds -Descending |
+            Select-Object -First $MaxSlowGroups
+
+        foreach ($row in $slowDiagnosticRows) {
+            $batch = if ([string]::IsNullOrWhiteSpace($row.BatchOrdinal)) { "" } else { "$($row.BatchOrdinal)/$($row.BatchCount)" }
+            $lines.Add("| $(Format-Duration -Seconds $row.DurationSeconds) | $(Format-MarkdownText -Value $row.Outcome) | $(Format-MarkdownText -Value $row.Shard) | $(Format-MarkdownText -Value $row.Phase) | $(Format-MarkdownText -Value $batch) | $(Format-MarkdownText -Value $row.BatchHash) | $(Format-MarkdownText -Value $row.FixtureSignature) | $(Format-MarkdownText -Value $row.CallerFilePath) |")
+        }
+    }
+
+    $lines -join [Environment]::NewLine
+}
+
+function Write-MssqlFixtureTimingSummary {
+    param(
+        [object[]]
+        $Results,
+
+        [string]
+        $OutputDirectory,
+
+        [int]
+        $MaxSlowGroups,
+
+        [switch]
+        $AppendToGitHubStepSummary
+    )
+
+    if ($Results.Count -eq 0) {
+        return
+    }
+
+    $normalizedPath = Join-Path $OutputDirectory "mssql-fixture-setup-timings-normalized.csv"
+    $summaryCsvPath = Join-Path $OutputDirectory "mssql-fixture-setup-summary.csv"
+    $summaryJsonPath = Join-Path $OutputDirectory "mssql-fixture-setup-summary.json"
+    $summaryMarkdownPath = Join-Path $OutputDirectory "mssql-fixture-setup-summary.md"
+
+    $sortedResults = @($Results | Sort-Object -Property DurationSeconds -Descending)
+    $sortedResults |
+        Export-Csv -LiteralPath $normalizedPath -NoTypeInformation -Encoding utf8
+
+    $summaryResults = @($Results | Where-Object { -not $_.IsDiagnostic })
+    $summary = @(
+        $summaryResults |
+            Group-Object -Property Shard, FixtureSignature, CallerFilePath, Phase |
+            ForEach-Object {
+                $first = $_.Group | Select-Object -First 1
+                $groupTotalSeconds = ($_.Group | Measure-Object -Property DurationSeconds -Sum).Sum
+                $groupFailures = @($_.Group | Where-Object { $_.Outcome -ne "Succeeded" }).Count
+
+                [pscustomobject]@{
+                    Shard = $first.Shard
+                    FixtureSignature = $first.FixtureSignature
+                    CallerFilePath = $first.CallerFilePath
+                    Phase = $first.Phase
+                    LeaseStrategy = $first.LeaseStrategy
+                    Count = $_.Count
+                    FailedCount = $groupFailures
+                    TotalSeconds = [Math]::Round($groupTotalSeconds, 3)
+                }
+            } |
+            Sort-Object -Property TotalSeconds -Descending
+    )
+
+    $summary |
+        Export-Csv -LiteralPath $summaryCsvPath -NoTypeInformation -Encoding utf8
+
+    ConvertTo-Json -InputObject $summary -Depth 5 |
+        Set-Content -LiteralPath $summaryJsonPath -Encoding utf8
+
+    $markdown = Format-MssqlFixtureTimingMarkdown -Results $Results -MaxSlowGroups $MaxSlowGroups
+    $markdown | Set-Content -LiteralPath $summaryMarkdownPath -Encoding utf8
+
+    if ($AppendToGitHubStepSummary -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
+        $markdown | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+    }
+
+    Write-Output "Parsed $($Results.Count) MSSQL fixture setup timing row(s)."
+    Write-Output "MSSQL fixture timing normalized CSV: $normalizedPath"
+    Write-Output "MSSQL fixture timing summary CSV: $summaryCsvPath"
+    Write-Output "MSSQL fixture timing summary JSON: $summaryJsonPath"
+    Write-Output "MSSQL fixture timing summary Markdown: $summaryMarkdownPath"
 }
 
 function ConvertFrom-TrxFile {
@@ -336,6 +676,13 @@ if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 }
 
+$mssqlTimingFiles = @(Resolve-MssqlFixtureTimingFile -CandidatePaths ($Path + @($OutputDirectory)))
+$mssqlTimingResults = @(
+    foreach ($mssqlTimingFile in $mssqlTimingFiles) {
+        ConvertFrom-MssqlFixtureTimingFile -TimingFile $mssqlTimingFile
+    }
+)
+
 if ($trxFiles.Count -eq 0) {
     $message = "No TRX files found for timing summary. Searched: $($Path -join ', ')"
     Write-Warning $message
@@ -347,6 +694,12 @@ if ($trxFiles.Count -eq 0) {
     if ($AppendToGitHubStepSummary -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
         $markdown | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
     }
+
+    Write-MssqlFixtureTimingSummary `
+        -Results $mssqlTimingResults `
+        -OutputDirectory $OutputDirectory `
+        -MaxSlowGroups $SlowFixtureCount `
+        -AppendToGitHubStepSummary:$AppendToGitHubStepSummary
 
     exit 0
 }
@@ -380,6 +733,12 @@ $markdown | Set-Content -LiteralPath $markdownPath -Encoding utf8
 if ($AppendToGitHubStepSummary -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
     $markdown | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 }
+
+Write-MssqlFixtureTimingSummary `
+    -Results $mssqlTimingResults `
+    -OutputDirectory $OutputDirectory `
+    -MaxSlowGroups $SlowFixtureCount `
+    -AppendToGitHubStepSummary:$AppendToGitHubStepSummary
 
 Write-Output "Parsed $($results.Count) test result(s) from $($trxFiles.Count) TRX file(s)."
 Write-Output "Timing CSV: $csvPath"
