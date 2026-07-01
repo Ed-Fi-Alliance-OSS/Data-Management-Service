@@ -64,7 +64,7 @@
       "Download the successful PR run timing artifacts and compare against Phase 0 for apply-generated-ddl count, total setup seconds, and cache creation/reuse evidence.",
       "Open the successful PR run and record the converted fixture timing comparison in a PR comment before starting Phase 2."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MSSQL Setup Speedup Phase 2",
