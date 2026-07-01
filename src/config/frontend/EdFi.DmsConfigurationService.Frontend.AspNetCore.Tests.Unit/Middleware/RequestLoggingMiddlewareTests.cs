@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FluentAssertions;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -258,7 +259,7 @@ internal class Given_RequestLoggingMiddleware
     }
 
     [Test]
-    public async Task It_logs_downstream_500_response_as_completion_not_failure()
+    public async Task It_logs_downstream_500_response_as_failure()
     {
         var httpContext = new DefaultHttpContext();
         var logger = new TestLogger<RequestLoggingMiddleware>();
@@ -270,13 +271,35 @@ internal class Given_RequestLoggingMiddleware
 
         await middleware.Invoke(httpContext, logger);
 
-        logger.Entries.Should().ContainSingle(e => e.EventId.Name == "HttpRequestCompleted");
-        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Name == "HttpRequestFailed").Subject;
+        entry.EventId.Should().Be(RequestLoggingEventIds.HttpRequestFailed);
+        entry.Level.Should().Be(LogLevel.Error);
+        entry.Exception.Should().BeNull();
+        entry.State.ContainStructuredProperty("EventName", "HttpRequestFailed");
         logger
             .Scopes.Should()
             .Contain(scope =>
                 scope.HasStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError)
             );
+    }
+
+    [Test]
+    public async Task It_attaches_exception_handler_feature_exception_to_downstream_500_failure()
+    {
+        var exception = new InvalidOperationException("handled by exception handler");
+        var httpContext = new DefaultHttpContext();
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(context =>
+        {
+            context.Features.Set<IExceptionHandlerFeature>(new ExceptionHandlerFeature { Error = exception });
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            return Task.CompletedTask;
+        });
+
+        await middleware.Invoke(httpContext, logger);
+
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Name == "HttpRequestFailed").Subject;
+        entry.Exception.Should().BeSameAs(exception);
     }
 
     [Test]

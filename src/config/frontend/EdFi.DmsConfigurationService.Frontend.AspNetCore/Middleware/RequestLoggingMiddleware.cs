@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using EdFi.DmsConfigurationService.DataModel;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -26,28 +27,66 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             await _next(context);
             sw.Stop();
 
-            if (!logger.IsEnabled(logLevel))
+            var statusCode = context.Response?.StatusCode ?? 0;
+            var statusCodeLogLevel =
+                statusCode >= StatusCodes.Status500InternalServerError ? LogLevel.Error : logLevel;
+
+            if (!logger.IsEnabled(statusCodeLogLevel))
             {
                 return;
             }
 
             var scopeValues = BuildScopeValues(context);
-            scopeValues["StatusCode"] = context.Response?.StatusCode ?? 0;
+            scopeValues["StatusCode"] = statusCode;
             scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
 
             using (logger.BeginScope(scopeValues))
             {
-                logger.Log(
-                    logLevel,
-                    RequestLoggingEventIds.HttpRequestCompleted,
-                    "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                    RequestLoggingEventIds.HttpRequestCompleted.Name,
-                    (string)scopeValues["Method"],
-                    (string)scopeValues["Path"],
-                    scopeValues["StatusCode"],
-                    scopeValues["DurationMs"],
-                    (string)scopeValues["TraceId"]
-                );
+                if (statusCode >= StatusCodes.Status500InternalServerError)
+                {
+                    var handledException = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+                    if (handledException is not null)
+                    {
+                        logger.LogError(
+                            RequestLoggingEventIds.HttpRequestFailed,
+                            handledException,
+                            "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                            RequestLoggingEventIds.HttpRequestFailed.Name,
+                            (string)scopeValues["Method"],
+                            (string)scopeValues["Path"],
+                            scopeValues["StatusCode"],
+                            scopeValues["DurationMs"],
+                            (string)scopeValues["TraceId"]
+                        );
+                    }
+                    else
+                    {
+                        logger.LogError(
+                            RequestLoggingEventIds.HttpRequestFailed,
+                            "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                            RequestLoggingEventIds.HttpRequestFailed.Name,
+                            (string)scopeValues["Method"],
+                            (string)scopeValues["Path"],
+                            scopeValues["StatusCode"],
+                            scopeValues["DurationMs"],
+                            (string)scopeValues["TraceId"]
+                        );
+                    }
+                }
+                else
+                {
+                    logger.Log(
+                        logLevel,
+                        RequestLoggingEventIds.HttpRequestCompleted,
+                        "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        RequestLoggingEventIds.HttpRequestCompleted.Name,
+                        (string)scopeValues["Method"],
+                        (string)scopeValues["Path"],
+                        scopeValues["StatusCode"],
+                        scopeValues["DurationMs"],
+                        (string)scopeValues["TraceId"]
+                    );
+                }
             }
         }
         catch (Exception ex)

@@ -602,22 +602,6 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
-      "edfi.datamanagementservice.backend.external": {
-        "type": "Project",
-        "dependencies": {
-          "EdFi.DataManagementService.Core.External": "[1.0.0, )"
-        }
-      },
-      "edfi.datamanagementservice.core.external": {
-        "type": "Project",
-        "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
-          "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Extensions.Logging": "[10.0.1, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
-          "Sandwych.QuickGraph.Core": "[1.0.0, )"
-        }
-      },
       "edfi.dmsconfigurationservice.backend": {
         "type": "Project",
         "dependencies": {
@@ -707,12 +691,6 @@
           "Serilog.Sinks.File": "[6.0.0, )",
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
         }
-      },
-      "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": {
-        "type": "CentralTransitive",
-        "requested": "[4.0.0, )",
-        "resolved": "4.0.0",
-        "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
       },
       "Dapper": {
         "type": "CentralTransitive",
@@ -1135,12 +1113,6 @@
           "Microsoft.Extensions.Options": "8.0.0",
           "Polly.Core": "8.4.2"
         }
-      },
-      "Sandwych.QuickGraph.Core": {
-        "type": "CentralTransitive",
-        "requested": "[1.0.0, )",
-        "resolved": "1.0.0",
-        "contentHash": "OJEAm5kik+51yBaDfDuSD9+bx3dI23IvcfFcSL+H6v/YfAYtHbiMkAn5aOljNlkHSig3uakMRGhCTYr3lDKrEA=="
       },
       "Serilog": {
         "type": "CentralTransitive",

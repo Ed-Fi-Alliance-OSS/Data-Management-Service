@@ -606,25 +606,6 @@ function RunE2E {
     }
 }
 
-function Get-EffectiveSchemaHashFromOutput {
-    param(
-        [object[]]
-        $Output
-    )
-
-    $effectiveSchemaHash = $null
-
-    foreach ($line in $Output) {
-        $lineText = [string]$line
-
-        if ($lineText -match '(?i)Effective schema hash:\s*([a-f0-9]{64})') {
-            $effectiveSchemaHash = $Matches[1].ToLowerInvariant()
-        }
-    }
-
-    return $effectiveSchemaHash
-}
-
 function Invoke-E2EDatabaseProvisioning {
     param(
         [pscustomobject]
