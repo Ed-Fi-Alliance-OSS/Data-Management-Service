@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
+using DbUp;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Deploy;
@@ -11,6 +13,32 @@ public class DatabaseDeploy : IDatabaseDeploy
 {
     public DatabaseDeployResult DeployDatabase(string connectionString)
     {
-        throw new NotImplementedException();
+        try
+        {
+            EnsureDatabase.For.SqlDatabase(connectionString);
+        }
+        catch (Exception e)
+        {
+            return new DatabaseDeployResult.DatabaseDeployFailure(e);
+        }
+
+        var upgrader = DeployChanges
+            .To.SqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+            .JournalToSqlTable("dbo", "dmscs_SchemaVersions")
+            .WithVariablesDisabled()
+            .LogScriptOutput()
+            .LogToAutodetectedLog()
+            .Build();
+
+        if (!upgrader.TryConnect(out string error))
+        {
+            return new DatabaseDeployResult.DatabaseDeployFailure(new Exception(error));
+        }
+
+        var result = upgrader.PerformUpgrade();
+        return result.Successful
+            ? new DatabaseDeployResult.DatabaseDeploySuccess()
+            : new DatabaseDeployResult.DatabaseDeployFailure(result.Error);
     }
 }

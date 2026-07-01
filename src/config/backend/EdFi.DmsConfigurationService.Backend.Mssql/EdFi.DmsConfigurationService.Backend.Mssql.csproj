@@ -5,9 +5,21 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Dapper" />
+        <PackageReference Include="dbup-core" />
+        <PackageReference Include="dbup-sqlserver" />
+        <PackageReference Include="Microsoft.Data.SqlClient" />
+    </ItemGroup>
+    <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="Deploy\Scripts\*.sql">
+            <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        </EmbeddedResource>
     </ItemGroup>
 </Project>
