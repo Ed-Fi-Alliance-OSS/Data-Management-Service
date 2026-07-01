@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Shared Keycloak identity provider for the security-review environment.
+#
+# Kept in a separate compose file (as in AdminApp-v4-security-review) so its
+# realm + clients survive `reset.sh`, which drops only the app/database volumes.
+# Reachable through the gateway at /auth.
+#
+# Realm + service clients are created by bootstrap/bootstrap.ps1 (which vendors
+# setup-keycloak.ps1). MFA is intentionally NOT enabled so credentials can be
+# shared with the review team — recommend enforcing MFA for any real deployment.
+#
+# NOT FOR PRODUCTION.
+
+name: dms-security-review
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    hostname: dms-keycloak
+    container_name: dms-sec-keycloak
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_ADMIN:-admin}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}"
+      # Public base URL; with the relative path below the issuer becomes
+      # ${PUBLIC_BASE_URL}/auth/realms/<realm>.
+      KC_HOSTNAME: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth"
+      KC_HOSTNAME_STRICT: "false"
+      # Allow internal (in-network) access via the request host so DMS/CMS can
+      # fetch JWKS at http://dms-keycloak:8080/auth/... while tokens keep the
+      # public issuer.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: "/auth"
+      KC_PROXY_HEADERS: "xforwarded"
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_CONSOLE_LEVEL: "${KEYCLOAK_LOG_LEVEL:-info}"
+    volumes:
+      - dms-sec-keycloak:/opt/keycloak/data
+    command: ["start"]
+    # Explicit alias so DMS/CMS/gateway can reach Keycloak at `dms-keycloak` regardless of
+    # Docker's hostname-registration behavior (the service name is `keycloak`; this makes the
+    # `dms-keycloak` name they reference an intentional, self-documenting network alias).
+    networks:
+      dms-sec:
+        aliases:
+          - dms-keycloak
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  dms-sec:
+    external: true
+    name: dms-sec
+
+volumes:
+  dms-sec-keycloak:

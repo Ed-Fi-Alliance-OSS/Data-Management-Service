@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Gateway routing for the DMS security-review environment.
+# Rendered by the official nginx image's envsubst step
+# (${PUBLIC_HOST}, ${EXTERNAL_PORT} are substituted; $host, $scheme, etc. are nginx runtime vars).
+#
+# Single public hostname, path-based routing. Each upstream is resolved at
+# request time (resolver 127.0.0.11 = Docker DNS) so the gateway starts even if
+# a backend is temporarily down.
+
+server {
+    listen 80 default_server;
+    server_name _;
+    server_tokens off;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${PUBLIC_HOST};
+
+    # Self-signed locally; replace with Let's Encrypt fullchain/privkey on the VM
+    # (see provision/ runbook). Keep these filenames or symlink the LE files to them.
+    ssl_certificate     /ssl/server.crt;
+    ssl_certificate_key /ssl/server.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    client_max_body_size 20M;
+    server_tokens off;   # don't leak the nginx version in headers / error pages
+
+    # Defense in depth: never expose CMS dynamic client self-registration through the public
+    # gateway. AllowRegistration is already false on both config services; this also returns 403
+    # at the edge for /st-config/connect/register and /mt-config/connect/register (and subpaths).
+    # Regex locations take precedence over the prefix routes below, so this wins for that path
+    # while /connect/token, /connect/introspect, and /connect/revoke continue to pass through.
+    location ~ ^/(st|mt)-config/connect/register {
+        return 403;
+    }
+
+    # ----- Single-tenant stack -----
+    location /st-dms {
+        resolver 127.0.0.11 valid=10s;
+        set $u_st_dms st-dms;
+        proxy_pass http://$u_st_dms:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port ${EXTERNAL_PORT};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /st-config {
+        resolver 127.0.0.11 valid=10s;
+        set $u_st_config st-config;
+        proxy_pass http://$u_st_config:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port ${EXTERNAL_PORT};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # ----- Multi-tenant stack -----
+    location /mt-dms {
+        resolver 127.0.0.11 valid=10s;
+        set $u_mt_dms mt-dms;
+        proxy_pass http://$u_mt_dms:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port ${EXTERNAL_PORT};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /mt-config {
+        resolver 127.0.0.11 valid=10s;
+        set $u_mt_config mt-config;
+        proxy_pass http://$u_mt_config:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port ${EXTERNAL_PORT};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # ----- Keycloak (relative path /auth set on the container) -----
+    location /auth {
+        resolver 127.0.0.11 valid=10s;
+        set $u_kc dms-keycloak;
+        proxy_pass http://$u_kc:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port ${EXTERNAL_PORT};
+    }
+
+    # ----- pgAdmin (database access) -----
+    location /pgadmin {
+        resolver 127.0.0.11 valid=10s;
+        set $u_pg pgadmin;
+        proxy_pass http://$u_pg:80;
+        proxy_set_header X-Script-Name /pgadmin;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ----- Landing page -----
+    location = / {
+        default_type text/html;
+        return 200 '<!doctype html><title>DMS Security Review</title><h1>Ed-Fi DMS Security Review</h1><ul><li><a href="/st-dms">/st-dms</a> - single-tenant DMS API</li><li><a href="/st-config">/st-config</a> - single-tenant Config Service</li><li><a href="/mt-dms">/mt-dms</a> - multi-tenant DMS API</li><li><a href="/mt-config">/mt-config</a> - multi-tenant Config Service</li><li><a href="/auth">/auth</a> - Keycloak</li><li><a href="/pgadmin">/pgadmin</a> - pgAdmin</li></ul>';
+    }
+}
