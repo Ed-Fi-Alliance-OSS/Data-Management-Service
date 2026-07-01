@@ -27,6 +27,14 @@ public readonly record struct VariantKey(string Value)
     public override string ToString() => Value;
 }
 
+/// <summary>
+/// The representation inputs a caller supplies so the read materializer can compose a
+/// profile/format/link-sensitive <c>_etag</c>. <see cref="ProfileName"/> is <see langword="null"/>
+/// when no readable profile applies. The materializer supplies the link mode from its own
+/// <c>ResourceLinksOptions</c> and the schema epoch from the request's mapping set.
+/// </summary>
+public readonly record struct EtagVariantInputs(string? ProfileName, ResponseFormat Format);
+
 /// <summary>Builds a <see cref="VariantKey"/> from a request's representation context.</summary>
 public static class VariantKeyFactory
 {
