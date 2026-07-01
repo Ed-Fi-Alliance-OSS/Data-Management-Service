@@ -3,32 +3,128 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using System.Diagnostics;
+using EdFi.DmsConfigurationService.DataModel;
+using Microsoft.AspNetCore.Http;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 
 public class RequestLoggingMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+    private const string ApplicationName = "EdFi.DmsConfigurationService";
 
     public async Task Invoke(HttpContext context, ILogger<RequestLoggingMiddleware> logger)
     {
-        if (context.Request.Path.StartsWithSegments(new PathString("/.well-known")))
+        var sw = Stopwatch.StartNew();
+        var logLevel = context.Request.Path.StartsWithSegments(new PathString("/.well-known"))
+            ? LogLevel.Debug
+            : LogLevel.Information;
+
+        try
         {
-            logger.LogDebug(
-                JsonSerializer.Serialize(
-                    new { path = context.Request.Path.Value, traceId = context.TraceIdentifier }
-                )
-            );
+            await _next(context);
+            sw.Stop();
+
+            if (!logger.IsEnabled(logLevel))
+            {
+                return;
+            }
+
+            var scopeValues = BuildScopeValues(context);
+            scopeValues["StatusCode"] = context.Response?.StatusCode ?? 0;
+            scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+
+            using (logger.BeginScope(scopeValues))
+            {
+                logger.Log(
+                    logLevel,
+                    RequestLoggingEventIds.HttpRequestCompleted,
+                    "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                    RequestLoggingEventIds.HttpRequestCompleted.Name,
+                    (string)scopeValues["Method"],
+                    (string)scopeValues["Path"],
+                    scopeValues["StatusCode"],
+                    scopeValues["DurationMs"],
+                    (string)scopeValues["TraceId"]
+                );
+            }
         }
-        else
+        catch (Exception ex)
         {
-            logger.LogInformation(
-                JsonSerializer.Serialize(
-                    new { path = context.Request.Path.Value, traceId = context.TraceIdentifier }
-                )
-            );
+            LogFailure(context, logger, sw, ex);
+            throw;
         }
-        await _next(context);
+    }
+
+    private static void LogFailure(
+        HttpContext context,
+        ILogger<RequestLoggingMiddleware> logger,
+        Stopwatch sw,
+        Exception ex
+    )
+    {
+        try
+        {
+            if (sw.IsRunning)
+            {
+                sw.Stop();
+            }
+
+            var scopeValues = BuildScopeValues(context);
+            scopeValues["StatusCode"] = GetFailureStatusCode(context);
+            scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+
+            using (logger.BeginScope(scopeValues))
+            {
+                logger.LogError(
+                    RequestLoggingEventIds.HttpRequestFailed,
+                    ex,
+                    "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                    RequestLoggingEventIds.HttpRequestFailed.Name,
+                    (string)scopeValues["Method"],
+                    (string)scopeValues["Path"],
+                    scopeValues["StatusCode"],
+                    scopeValues["DurationMs"],
+                    (string)scopeValues["TraceId"]
+                );
+            }
+        }
+        catch (Exception)
+        {
+            // Preserve the original downstream exception if the failure log path itself fails.
+        }
+    }
+
+    private static Dictionary<string, object> BuildScopeValues(HttpContext context)
+    {
+        var scopeValues = new Dictionary<string, object>
+        {
+            ["Application"] = ApplicationName,
+            ["TraceId"] = LoggingUtility.SanitizeForLog(context.TraceIdentifier),
+            ["Method"] = LoggingUtility.SanitizeForLog(context.Request.Method),
+            ["Path"] = LoggingUtility.SanitizeForLog(context.Request.Path.Value),
+            ["PathBase"] = LoggingUtility.SanitizeForLog(context.Request.PathBase.Value),
+        };
+
+        var activity = Activity.Current;
+        if (activity is not null)
+        {
+            scopeValues["ActivityTraceId"] = activity.TraceId.ToString();
+            scopeValues["SpanId"] = activity.SpanId.ToString();
+        }
+
+        return scopeValues;
+    }
+
+    private static int GetFailureStatusCode(HttpContext context)
+    {
+        var statusCode = context.Response?.StatusCode ?? 0;
+        if (context.Response is not null && !context.Response.HasStarted)
+        {
+            return StatusCodes.Status500InternalServerError;
+        }
+
+        return statusCode == 0 ? StatusCodes.Status500InternalServerError : statusCode;
     }
 }

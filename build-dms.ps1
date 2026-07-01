@@ -148,6 +148,7 @@ $targetDir = "coveragereport"
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+Import-Module -Name "$PSScriptRoot/eng/docker-compose/effective-schema-hash.psm1" -Force
 Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
 
 function DotNetClean {
