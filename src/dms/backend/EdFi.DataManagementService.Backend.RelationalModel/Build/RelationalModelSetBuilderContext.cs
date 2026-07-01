@@ -820,7 +820,7 @@ public sealed class RelationalModelSetBuilderContext
 
     /// <summary>
     /// Validates the tracked-change inventory: no duplicate tracked-change tables, and within each table
-    /// no duplicate <c>Old_</c>/<c>New_</c> value-column names and no duplicate descriptor/person join names.
+    /// no duplicate <c>Old</c>/<c>New</c> value-column names and no duplicate descriptor/person join names.
     /// </summary>
     private void ValidateTrackedChangeInventory()
     {

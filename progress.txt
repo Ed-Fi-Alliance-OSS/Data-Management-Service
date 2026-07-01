@@ -3,3 +3,9 @@ DMS-1244 - completed dmscs identifier/naming inventory task.
 - Files changed: dmscs-identifier-and-naming-inventory.md, tasks.json, progress.txt.
 - Verification: ran deploy-script identifier/constraint search, repository duplicate/tenant/order search, reviewed ConstraintNaming.cs.
 - Notes: later tasks must update ON CONFLICT ClaimSetName/ClaimName to new tenant-aware UX constraints; progress.txt was missing and created in this iteration.
+
+DMS-1244 - completed tracked-change value-column derivation prefix task.
+- Key decisions: derive physical tracked-change value columns as OldX/NewX by changing only the derivation prefix; keep source-name internal underscores, e.g. OldStudent_DocumentId and OldSchoolId_Unified.
+- Files changed: DeriveTrackedChangeInventoryPass.cs, RelationalModelSetBuilderContext.cs, DeriveTrackedChangeInventoryPassTests.cs, IdentifierShorteningScopeTests.cs, relational-model expected manifests, tasks.json, progress.txt.
+- Verification: dotnet test RelationalModel.Tests.Unit passed 865/865; task filter command was attempted first but matched no tests; guard searches show remaining Old_ references in static read-changes auth views and downstream DDL/integration fixtures for later tasks.
+- Notes: static AuthObjectDefinitions/read-changes SQL still uses Old_ names by design for a later query/auth task; backend DDL and integration fixture artifacts still need refresh in later fixture task.
