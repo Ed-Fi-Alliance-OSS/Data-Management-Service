@@ -1,7 +1,7 @@
 Feature: The Discovery API provides information about the application version, supported data model(s), and URLs for additional metadata.
 
-        @API-062 @relational-backend
-        @relational-ci-shard-4
+        @API-062
+        @e2e-ci-shard-4
         Scenario: 01 GET / returns the root Discovery API document
              When a GET request is made to "/"
              Then it should respond with 200
@@ -43,9 +43,49 @@ Feature: The Discovery API provides information about the application version, s
                   }
                   """
 
+        # DS 6.1 variant of scenario 01. Runs only in the dedicated per-PR DS 6.1 E2E lane (selected by
+        # the @StandardVersion-6_1 category against a 6.1 stack); no shard tag, so the DS 5.2 shard lanes
+        # never pick it up. Educator preparation is folded into core in 6.1, so TPDM is not advertised.
+        @API-062
+        @StandardVersion-6_1
+        Scenario: 01 GET / returns the root Discovery API document (DS 6.1)
+             When a GET request is made to "/"
+             Then it should respond with 200
+              And the discovery API root response body is
+                  """
+                  {
+                    "applicationName": "Ed-Fi API",
+                    "dataModels": [
+                      {
+                        "name": "Ed-Fi",
+                        "version": "6.1.0",
+                        "informationalVersion": "The Ed-Fi Data Model 6.1"
+                      },
+                      {
+                        "name": "Homograph",
+                        "version": "1.0.0",
+                        "informationalVersion": ""
+                      },
+                      {
+                        "name": "Sample",
+                        "version": "1.0.0",
+                        "informationalVersion": ""
+                      }
+                    ],
+                    "urls": {
+                      "dependencies": "{BASE_URL}/metadata/dependencies",
+                      "openApiMetadata": "{BASE_URL}/metadata/specifications",
+                      "oauth": "{OAUTH_URL}",
+                      "tokenInfo": "{BASE_URL}/oauth/token_info",
+                      "dataManagementApi": "{BASE_URL}/data",
+                      "changeQueries": "{BASE_URL}/changeQueries/v1/",
+                      "xsdMetadata": "{BASE_URL}/metadata/xsd"
+                    }
+                  }
+                  """
+
         @API-063
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 GET /metadata returns the metadata URL list
              When a GET request is made to "/metadata"
              Then it should respond with 200
@@ -59,8 +99,7 @@ Feature: The Discovery API provides information about the application version, s
                   """
 
         @API-064
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 GET /metadata/specifications returns the list of supported API specifications
              When a GET request is made to "/metadata/specifications"
              Then it should respond with 200
@@ -325,8 +364,7 @@ Feature: The Discovery API provides information about the application version, s
                   ]
                   """
         @API-065
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 GET /metadata/dependencies returns the dependency order for loading documents
              When a GET request is made to "/metadata/dependencies"
              Then it should respond with 200

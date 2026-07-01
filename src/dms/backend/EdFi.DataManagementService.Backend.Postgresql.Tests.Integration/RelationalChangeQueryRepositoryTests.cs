@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -17,11 +17,9 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
@@ -112,50 +110,6 @@ public class Given_Repository_And_Raw_Function_Call : RelationalChangeQueryRepos
         _repositoryResult.Should().Be(_rawResult);
         _repositoryResult.Should().Be(5L);
     }
-}
-
-file sealed class ChangeQueryHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ChangeQueryAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ChangeQueryNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
 }
 
 file sealed record TestTrackedChangeQueryRequest(
@@ -471,7 +425,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ChangeQueryHostApplicationLifetime>();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -545,9 +498,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -619,11 +570,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("pg-change-query-seed-school"),
-                    DocumentUuid: SchoolDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new ChangeQueryAllowAllResourceAuthorizationHandler(),
-                    ResourceAuthorizationPathways: []
+                    DocumentUuid: SchoolDocumentUuid
                 )
             )
         );
@@ -646,11 +593,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("pg-change-query-seed-academicweek"),
-                    DocumentUuid: AcademicWeekDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new ChangeQueryNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new ChangeQueryAllowAllResourceAuthorizationHandler(),
-                    ResourceAuthorizationPathways: []
+                    DocumentUuid: AcademicWeekDocumentUuid
                 )
             )
         );

@@ -1,5 +1,4 @@
-@relational-backend
-@relational-ci-shard-3
+@e2e-ci-shard-3
 @ResetClaimsetsAfterScenario
 Feature: StudentAssessment Authorization
 

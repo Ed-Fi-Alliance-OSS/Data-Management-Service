@@ -17,8 +17,7 @@ Feature: Identity Conflict validation
                   | secondClassPeriod           | { "schoolId": 255901001 } | Second          |
 
         @API-183
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         # DMS-1234: Quarantined until abstract EducationOrganization identity-table
         # unique violations map to 409 identity-conflict responses.
         @ignore
@@ -56,8 +55,7 @@ Feature: Identity Conflict validation
                   }
                   """
 
-        @relational-ci-shard-1
-        @relational-backend
+        @e2e-ci-shard-1
         Scenario: 02 Ensure client can't create a resource with the same identity as another resource
              When a PUT request is made to "/ed-fi/classPeriods/{secondClassPeriod}" with
                   """

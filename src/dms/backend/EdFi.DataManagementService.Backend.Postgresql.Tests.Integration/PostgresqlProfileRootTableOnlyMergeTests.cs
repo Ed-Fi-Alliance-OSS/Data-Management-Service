@@ -22,6 +22,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
@@ -30,60 +31,14 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class ProfileMergeNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ProfileMergeAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class ProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 /// <summary>
 /// Test-configurable <see cref="IStoredStateProjectionInvoker"/> that emits a single
@@ -145,15 +100,12 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
         ResourceName: new ResourceName("NamingStressItem"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
-        services.AddSingleton<IHostApplicationLifetime, ProfileMergeNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -249,11 +201,7 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
             EdfiDoc: body,
             Headers: [],
             TraceId: new TraceId(traceLabel),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -390,10 +338,6 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_Column_Preservation
             Headers: [],
             TraceId: new TraceId("profile-merge-hidden-preservation-put"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -525,10 +469,6 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
             Headers: [],
             TraceId: new TraceId("profile-merge-create-new-post"),
             DocumentUuid: DocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -674,10 +614,6 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
             Headers: [],
             TraceId: new TraceId("profile-merge-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
@@ -754,9 +690,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingDocumentUuid = new(
         Guid.Parse("99999999-9999-9999-9999-999999999999")
@@ -837,11 +771,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
             TraceId: new TraceId("profile-merge-multi-table-root-only-seed"),
-            DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: ExistingDocumentUuid
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -897,10 +827,6 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             Headers: [],
             TraceId: new TraceId("profile-merge-multi-table-root-only-put"),
             DocumentUuid: ExistingDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileContext
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();

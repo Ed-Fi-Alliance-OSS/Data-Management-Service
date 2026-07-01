@@ -36,7 +36,7 @@ internal sealed class TrackedChangeQueryRequestHandler(
         if (changeQueryRepository is null)
         {
             _logger.LogWarning(
-                "IChangeQueryRepository is not registered; tracked Change Queries require the relational backend - {TraceId}",
+                "IChangeQueryRepository is not registered; tracked Change Queries are unsupported for this datastore configuration - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = NotFoundResponse(requestInfo);

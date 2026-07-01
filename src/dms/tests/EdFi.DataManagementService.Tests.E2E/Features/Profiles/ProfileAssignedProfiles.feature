@@ -12,8 +12,7 @@ Feature: Profile Assigned Profiles
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade               |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 01 Covered resource with assigned profile content type succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -36,15 +35,13 @@ Feature: Profile Assigned Profiles
              When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-IncludeAll" for resource "School"
              Then the profile response status is 200
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 02 Covered resource with different profile content type fails
              When a GET request is made to "/ed-fi/schools" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "School"
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 03 Covered resource write with assigned profile content type succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -65,8 +62,7 @@ Feature: Profile Assigned Profiles
                   """
              Then the profile response status is 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 04 Covered resource write with different profile content type fails
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "School" with body
                   """
@@ -91,14 +87,12 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # with no profile header, the request succeeds when exactly one assigned
         # profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 05 Covered resource with standard content type and one assigned profile
              When a GET request is made to "/ed-fi/schools" without profile header
              Then the profile response status is 200
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 06 Covered resource with one of several assigned profiles succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/students" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student" with body
@@ -114,16 +108,14 @@ Feature: Profile Assigned Profiles
              When a GET request is made to "/ed-fi/students/{id}" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student"
              Then the profile response status is 200
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 07 Covered resource with different profile content type for API client with several assigned profiles fails with incorrect-usage
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "School"
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 08 Covered resource write with one of several assigned profiles succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/students" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student" with body
@@ -140,8 +132,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # with no profile header, the request succeeds when exactly one assigned
         # profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 09 Covered resource write with standard content type and one assigned profile succeeds
              When a POST request is made to "/ed-fi/schools" without profile header with body
                   """
@@ -165,8 +156,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # even with multiple assigned profiles, the request succeeds when only one
         # assigned profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 10 Covered resource write with standard content type and several assigned profiles succeeds when only one applies
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" without profile header with body
@@ -191,8 +181,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # even with multiple assigned profiles, the request succeeds when only one
         # assigned profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 11 Covered resource with standard content type and several assigned profiles succeeds when only one applies
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools" without profile header
@@ -201,8 +190,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # with no profile header, the request succeeds when exactly one assigned
         # profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 12 Covered resource update with standard content type and one assigned profile succeeds
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -245,8 +233,7 @@ Feature: Profile Assigned Profiles
         # Current DMS behavior follows the implicit-profile design:
         # even with multiple assigned profiles, the request succeeds when only one
         # assigned profile applies to the target resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 13 Covered resource update with standard content type and several assigned profiles succeeds when only one applies
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
@@ -289,16 +276,14 @@ Feature: Profile Assigned Profiles
 
         # Current DMS returns incorrect-usage when the caller omits the profile
         # header and multiple assigned profiles apply to the same resource/verb.
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 14 Covered resource read with standard content type and multiple applicable assigned profiles returns incorrect-usage
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools" without profile header
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 15 Covered resource create with standard content type and multiple applicable assigned profiles returns incorrect-usage
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" without profile header with body
@@ -321,8 +306,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 16 Covered resource create with standard content type and several assigned profiles returns incorrect-usage when multiple apply
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" without profile header with body
@@ -345,16 +329,14 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 17 Covered resource read with standard content type and several assigned profiles returns incorrect-usage when multiple apply
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools" without profile header
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 18 Covered resource update with standard content type and multiple applicable assigned profiles returns incorrect-usage
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
                   """
@@ -396,8 +378,7 @@ Feature: Profile Assigned Profiles
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 19 Covered resource update with standard content type and several assigned profiles returns incorrect-usage when multiple apply
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-IncludeOnly" for resource "School" with body
@@ -454,22 +435,19 @@ Feature: Profile Assigned Profiles
                   """
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 03 Not-covered resource with standard content type succeeds
              When a GET request is made to "/ed-fi/students/{id}" without profile header
              Then the profile response status is 200
               And the response body should contain fields "id, studentUniqueId, firstName, lastSurname"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 04 Not-covered resource with unassigned profile succeeds
              When a GET request is made to "/ed-fi/students/{id}" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student"
              Then the profile response status is 200
               And the response body should contain fields "id, studentUniqueId, firstName, lastSurname"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 05 Not-covered resource write with standard content type succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
               And a profile test POST request is made to "/ed-fi/students" with
@@ -483,8 +461,7 @@ Feature: Profile Assigned Profiles
                   """
              Then the profile response status is 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 06 Not-covered resource write with unassigned profile succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "/ed-fi/students" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student" with body
@@ -498,8 +475,7 @@ Feature: Profile Assigned Profiles
                   """
              Then the profile response status is 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 07 Not-covered resource update with standard content type succeeds
              When a PUT request is made to "/ed-fi/students/{id}" without profile header with body
                   """

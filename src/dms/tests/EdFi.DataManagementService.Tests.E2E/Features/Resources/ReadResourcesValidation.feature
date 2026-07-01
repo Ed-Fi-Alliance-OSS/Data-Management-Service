@@ -11,8 +11,8 @@ Feature: Resources "Read" Operation validations
                     }
                   """
 
-        @API-181 @relational-backend
-        @relational-ci-shard-1
+        @API-181
+        @e2e-ci-shard-1
         Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools"
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                  | gradeLevels                                                                     |
@@ -37,8 +37,8 @@ Feature: Resources "Read" Operation validations
              When a GET request is made to "/ed-fi/schools/{id}"
              Then it should respond with 404
 
-        @API-182 @relational-backend
-        @relational-ci-shard-1
+        @API-182
+        @e2e-ci-shard-1
         Scenario: 02 Verify response code 200 when trying to get a student with a correct ID
             Given a POST request is made to "/ed-fi/students" with
                   """

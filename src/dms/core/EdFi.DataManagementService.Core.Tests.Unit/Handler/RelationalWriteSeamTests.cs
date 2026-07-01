@@ -7,17 +7,14 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -642,7 +639,7 @@ actual: {requestInfo.FrontendResponse.Body}
     }
 
     [Test]
-    public void It_keeps_missing_mapping_set_as_a_defensive_invariant_for_direct_handler_calls()
+    public async Task It_keeps_missing_mapping_set_as_a_defensive_invariant_for_direct_handler_calls()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
@@ -656,7 +653,8 @@ actual: {requestInfo.FrontendResponse.Body}
                 _fixture.CreateDocumentInfo()
             );
 
-        act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
+        var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        exception.Message.Should().Contain("upsert requests").And.Contain("ResolveMappingSetMiddleware");
     }
 
     private static BackendProfileWriteContext CreateBackendProfileWriteContext(JsonNode requestBody)
@@ -690,18 +688,8 @@ actual: {requestInfo.FrontendResponse.Body}
             _resourceInfo = resourceInfo;
             WriteExecutor = writeExecutor;
             _serviceProvider = new RepositoryServiceProvider(repository);
-            _upsertHandler = new UpsertHandler(
-                NullLogger.Instance,
-                ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider(),
-                new NoAuthorizationServiceFactory()
-            );
-            _updateHandler = new UpdateByIdHandler(
-                NullLogger.Instance,
-                ResiliencePipeline.Empty,
-                new StaticApiSchemaProvider(),
-                new NoAuthorizationServiceFactory()
-            );
+            _upsertHandler = new UpsertHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+            _updateHandler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
         }
 
         public CapturingWriteExecutor WriteExecutor { get; }
@@ -915,24 +903,5 @@ actual: {requestInfo.FrontendResponse.Body}
         {
             return serviceType == typeof(IDocumentStoreRepository) ? repository : null;
         }
-    }
-
-    private sealed class StaticApiSchemaProvider : IApiSchemaProvider
-    {
-        private static readonly JsonNode _apiSchemaRootNode =
-            JsonNode.Parse(
-                "{\"projectNameMapping\":{},\"projectSchemas\":{\"ed-fi\":{\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"Test\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"1.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}}}}"
-            ) ?? new JsonObject();
-
-        public ApiSchemaDocumentNodes GetApiSchemaNodes()
-        {
-            return new ApiSchemaDocumentNodes(_apiSchemaRootNode, []);
-        }
-
-        public Guid SchemaLoadId => Guid.Empty;
-
-        public bool IsSchemaValid => true;
-
-        public List<ApiSchemaFailure> ApiSchemaFailures => [];
     }
 }

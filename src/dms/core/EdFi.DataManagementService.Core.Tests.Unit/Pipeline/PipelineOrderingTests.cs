@@ -95,12 +95,6 @@ public class PipelineOrderingTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
-            services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
-            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-                NullLogger<ProfileFilteringMiddleware>.Instance
-            );
-
             var serviceProvider = services.BuildServiceProvider();
 
             var apiService = new ApiService(
@@ -113,7 +107,6 @@ public class PipelineOrderingTests
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                A.Fake<IAuthorizationServiceFactory>(),
                 ResiliencePipeline.Empty,
                 A.Fake<ResourceLoadOrderCalculator>(),
                 serviceProvider,
@@ -306,7 +299,6 @@ public class PipelineOrderingTests
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                A.Fake<IAuthorizationServiceFactory>(),
                 ResiliencePipeline.Empty,
                 A.Fake<ResourceLoadOrderCalculator>(),
                 serviceProvider,
@@ -395,9 +387,9 @@ public class PipelineOrderingTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_The_Write_Pipelines : PipelineOrderingTests
+    public class Given_The_Routed_Resource_Pipelines : PipelineOrderingTests
     {
-        private static List<Type> GetWritePipelineStepTypes(string factoryMethodName)
+        private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName)
         {
             var services = new ServiceCollection();
 
@@ -436,18 +428,7 @@ public class PipelineOrderingTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
-            services.AddTransient<ProfileFilteringMiddleware>();
-            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
-            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-                NullLogger<ProfileFilteringMiddleware>.Instance
-            );
-
-            services.AddSingleton<IProfileCreatabilityValidator>(A.Fake<IProfileCreatabilityValidator>());
             services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
-            services.AddTransient<ProfileWriteValidationMiddleware>();
-            services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
-                NullLogger<ProfileWriteValidationMiddleware>.Instance
-            );
             services.AddTransient<ProfileWritePipelineMiddleware>();
             services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
                 NullLogger<ProfileWritePipelineMiddleware>.Instance
@@ -465,7 +446,6 @@ public class PipelineOrderingTests
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                A.Fake<IAuthorizationServiceFactory>(),
                 ResiliencePipeline.Empty,
                 A.Fake<ResourceLoadOrderCalculator>(),
                 serviceProvider,
@@ -483,7 +463,7 @@ public class PipelineOrderingTests
         [TestCase("CreateDeleteByIdPipeline")]
         public void It_places_validate_route_semantics_after_validate_endpoint(string factoryMethodName)
         {
-            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
             var validateEndpointIndex = stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
 
@@ -503,7 +483,7 @@ public class PipelineOrderingTests
             string factoryMethodName
         )
         {
-            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
             var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
             var parseBodyIndex = stepTypes.IndexOf(typeof(ParseBodyMiddleware));
 
@@ -580,7 +560,6 @@ public class PipelineOrderingTests
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
                 appSettingsOptions,
-                A.Fake<IAuthorizationServiceFactory>(),
                 ResiliencePipeline.Empty,
                 A.Fake<ResourceLoadOrderCalculator>(),
                 serviceProvider,

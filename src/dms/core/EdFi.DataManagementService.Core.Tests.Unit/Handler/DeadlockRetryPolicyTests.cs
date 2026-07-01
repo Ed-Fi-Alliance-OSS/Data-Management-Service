@@ -4,15 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -420,11 +419,7 @@ public class DeadlockRetryPolicyTests
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(repository);
 
-        var handler = new GetByIdHandler(
-            logger,
-            BuildHandlerPipeline(maxRetryAttempts),
-            new NoAuthorizationServiceFactory()
-        );
+        var handler = new GetByIdHandler(logger, BuildHandlerPipeline(maxRetryAttempts));
 
         return (handler, serviceProvider);
     }
@@ -448,7 +443,7 @@ public class DeadlockRetryPolicyTests
         public async Task Setup()
         {
             _logger = new CapturingLogger();
-            _requestInfo = No.RequestInfo("test-trace-id");
+            _requestInfo = RequestInfoWithRelationalMappingSet("test-trace-id");
             var (handler, serviceProvider) = CreateGetByIdHandler(new AlwaysRetryableRepository(), _logger);
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);
@@ -514,7 +509,7 @@ public class DeadlockRetryPolicyTests
         public async Task Setup()
         {
             _logger = new CapturingLogger();
-            _requestInfo = No.RequestInfo("test-trace-id");
+            _requestInfo = RequestInfoWithRelationalMappingSet("test-trace-id");
             var (handler, serviceProvider) = CreateGetByIdHandler(new RetryThenSuccessRepository(), _logger);
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);

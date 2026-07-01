@@ -573,6 +573,44 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .NotBeNullOrWhiteSpace("access_token should be non-empty");
     }
 
+    [Then("the token response body is valid")]
+    public async Task ThenTheTokenResponseBodyIsValid()
+    {
+        string responseJsonString = await _apiResponse.TextAsync();
+        using JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonElement responseJson = responseJsonDoc.RootElement;
+
+        responseJson.ValueKind.Should().Be(JsonValueKind.Object);
+
+        responseJson
+            .TryGetProperty("access_token", out JsonElement accessToken)
+            .Should()
+            .BeTrue("response should include an access_token");
+        accessToken.GetString().Should().NotBeNullOrWhiteSpace("access_token should be non-empty");
+
+        responseJson
+            .TryGetProperty("token_type", out JsonElement tokenType)
+            .Should()
+            .BeTrue("response should include a token_type");
+        tokenType.GetString().Should().Be("Bearer");
+
+        responseJson
+            .TryGetProperty("expires_in", out JsonElement expiresIn)
+            .Should()
+            .BeTrue("response should include expires_in");
+        expiresIn.ValueKind.Should().Be(JsonValueKind.Number);
+
+        const int expectedTokenLifetimeSeconds = 1800;
+        const int tokenLifetimeToleranceSeconds = 60;
+        expiresIn
+            .GetInt32()
+            .Should()
+            .BeInRange(
+                expectedTokenLifetimeSeconds - tokenLifetimeToleranceSeconds,
+                expectedTokenLifetimeSeconds
+            );
+    }
+
     [Then("the response body contains an object matching")]
     public async Task ThenTheResponseBodyContainsAnObjectMatching(string expectedPartial)
     {

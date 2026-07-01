@@ -171,6 +171,10 @@ public static class WebApplicationBuilderExtensions
                 IClaimsTableValidator,
                 Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
             >();
+            webAppBuilder.Services.AddTransient<
+                IResourceClaimMetadataRepository,
+                Backend.Postgresql.ClaimsDataLoader.ResourceClaimMetadataRepository
+            >();
             webAppBuilder.Services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
         }
         else

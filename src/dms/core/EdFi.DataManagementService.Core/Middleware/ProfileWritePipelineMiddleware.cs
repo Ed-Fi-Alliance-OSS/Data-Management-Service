@@ -8,14 +8,12 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -24,29 +22,12 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// governed by a writable profile, and attaches the resulting BackendProfileWriteContext
 /// to the request for downstream backend consumption.
 /// </summary>
-internal class ProfileWritePipelineMiddleware(
-    IOptions<AppSettings> appSettings,
-    ILogger<ProfileWritePipelineMiddleware> logger
-) : IPipelineStep
+internal class ProfileWritePipelineMiddleware(ILogger<ProfileWritePipelineMiddleware> logger) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // Short-circuit: not relational backend
-        if (!appSettings.Value.UseRelationalBackend)
-        {
-            await next();
-            return;
-        }
-
         // Short-circuit: not a write operation
         if (requestInfo.Method is not (RequestMethod.POST or RequestMethod.PUT))
-        {
-            await next();
-            return;
-        }
-
-        // Short-circuit: no mapping set resolved
-        if (requestInfo.MappingSet is null)
         {
             await next();
             return;
@@ -58,6 +39,13 @@ internal class ProfileWritePipelineMiddleware(
             await next();
             return;
         }
+
+        var mappingSet =
+            requestInfo.MappingSet
+            ?? throw new InvalidOperationException(
+                "A resolved relational mapping set is required before executing profile write requests. "
+                    + "Ensure ResolveMappingSetMiddleware runs before ProfileWritePipelineMiddleware."
+            );
 
         var profileContext = requestInfo.ProfileContext;
         var writeContentType = profileContext.ResourceProfile.WriteContentType;
@@ -96,7 +84,7 @@ internal class ProfileWritePipelineMiddleware(
         ResourceWritePlan writePlan;
         try
         {
-            writePlan = requestInfo.MappingSet.GetWritePlanOrThrow(qualifiedResourceName);
+            writePlan = mappingSet.GetWritePlanOrThrow(qualifiedResourceName);
         }
         catch (Exception ex) when (ex is NotSupportedException or MissingWritePlanLookupGuardRailException)
         {

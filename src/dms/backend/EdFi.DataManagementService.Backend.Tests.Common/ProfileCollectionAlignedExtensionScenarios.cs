@@ -40,9 +40,7 @@ public static class ProfileCollectionAlignedExtensionScenarios
         ResourceName: new ResourceName("ParentResource"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
 
     public static JsonNode CreateParentResourceBody(int parentResourceId, params ParentInput[] parents)

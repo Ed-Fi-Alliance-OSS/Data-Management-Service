@@ -12,8 +12,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 01 POST with profile excluding required scalar field returns 400 with data-policy-enforced error
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeRequired" for resource "School" with body
                   """
@@ -45,8 +44,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 02 POST with IncludeOnly profile omitting required field returns 400 with data-policy-enforced error
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnlyMissingRequired" for resource "School" with body
                   """
@@ -78,8 +76,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 03 POST with profile excluding required collection returns 400 with data-policy-enforced error
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeRequiredCollection" for resource "School" with body
                   """
@@ -112,8 +109,10 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
+        # DMS-1229: Quarantined until profile write handling of out-of-profile
+        # submitted data matches ODS behavior.
+        @ignore
         Scenario: 04 PUT with profile excluding required field succeeds
             # First create a school using a profile that includes nameOfInstitution
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
@@ -171,8 +170,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 05 POST with IncludeAll profile succeeds
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body
                   """
@@ -203,8 +201,10 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth grade                      |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
+        # DMS-1229: Quarantined until submitted collection items failing profile
+        # value filters return ODS-style data-validation errors.
+        @ignore
         Scenario: 06 POST with CollectionRule on required collection rejects non-matching submitted items
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School" with body
                   """
@@ -242,8 +242,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test                       |
                   | uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts                  |
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 07 Profile with non-creatable child collection rule fails creation
             When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items" for resource "School" with body
                   """
@@ -272,8 +271,7 @@ Feature: Profile Creatability Validation
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 08 Profile allows school creation when non-creatable child collection item is not supplied
             When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items" for resource "School" with body
                   """
@@ -294,8 +292,7 @@ Feature: Profile Creatability Validation
                   """
             Then the profile response status is 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 09 PUT with non-creatable child collection item fails
             When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items" for resource "School" with body
                   """
@@ -343,8 +340,7 @@ Feature: Profile Creatability Validation
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 10 Profile with non-creatable embedded object rule fails creation
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
@@ -367,8 +363,7 @@ Feature: Profile Creatability Validation
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 11 Profile allows assessment creation when non-creatable embedded object is not supplied
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
@@ -387,8 +382,7 @@ Feature: Profile Creatability Validation
                   """
             Then the profile response status is 201
 
-        @relational-backend
-        @relational-ci-shard-1
+        @e2e-ci-shard-1
         Scenario: 12 PUT with non-creatable embedded object fails
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body

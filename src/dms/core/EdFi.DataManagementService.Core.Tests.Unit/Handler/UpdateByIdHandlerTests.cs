@@ -8,14 +8,11 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,25 +27,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class UpdateByIdHandlerTests
 {
-    private static readonly JsonNode _apiSchemaRootNode =
-        JsonNode.Parse(
-            "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
-        ) ?? new JsonObject();
-
-    internal class Provider : IApiSchemaProvider
-    {
-        public ApiSchemaDocumentNodes GetApiSchemaNodes()
-        {
-            return new(_apiSchemaRootNode, []);
-        }
-
-        public Guid SchemaLoadId => Guid.Empty;
-
-        public bool IsSchemaValid => true;
-
-        public List<ApiSchemaFailure> ApiSchemaFailures => [];
-    }
-
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
     )
@@ -57,12 +35,7 @@ public class UpdateByIdHandlerTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new UpdateByIdHandler(
-            NullLogger.Instance,
-            ResiliencePipeline.Empty,
-            new Provider(),
-            new NoAuthorizationServiceFactory()
-        );
+        var handler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }
@@ -125,7 +98,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -155,7 +128,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -190,7 +163,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -221,13 +194,11 @@ public class UpdateByIdHandlerTests
     {
         internal sealed class Repository : NotImplementedDocumentStoreRepository
         {
-            public IRelationalUpdateRequest CapturedRequest { get; private set; } = null!;
+            public IUpdateRequest CapturedRequest { get; private set; } = null!;
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                CapturedRequest =
-                    updateRequest as IRelationalUpdateRequest
-                    ?? throw new AssertionException($"Expected {nameof(IRelationalUpdateRequest)} request.");
+                CapturedRequest = updateRequest;
 
                 return Task.FromResult<UpdateResult>(
                     new UpdateSuccess(CapturedRequest.DocumentUuid, "\"72\"")
@@ -235,7 +206,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = No.RequestInfo();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private ContentTypeDefinition _readContentType = null!;
         private JsonNode _writableRequestBody = null!;
@@ -246,13 +217,7 @@ public class UpdateByIdHandlerTests
                 ResourceName: new ResourceName("Student"),
                 IsDescriptor: false,
                 ResourceVersion: new SemVer("1.0.0"),
-                AllowIdentityUpdates: false,
-                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
-                    false,
-                    default,
-                    default
-                ),
-                AuthorizationSecurableInfo: []
+                AllowIdentityUpdates: false
             );
 
         private static ResourceSchema CreateProfileAwareResourceSchema() =>
@@ -377,7 +342,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -448,7 +413,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -515,7 +480,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -598,7 +563,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -657,7 +622,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -689,7 +654,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -723,7 +688,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -756,7 +721,9 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo("relationship-put-403");
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-put-403"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -829,7 +796,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "namespace-put-403";
-        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -871,7 +838,9 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly Repository _repository = new();
-        private readonly RequestInfo requestInfo = No.RequestInfo("relationship-put-501");
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(
+            "relationship-put-501"
+        );
 
         [SetUp]
         public async Task Setup()
@@ -928,7 +897,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "relationship-put-500";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -979,7 +948,7 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = No.RequestInfo();
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1017,7 +986,7 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()

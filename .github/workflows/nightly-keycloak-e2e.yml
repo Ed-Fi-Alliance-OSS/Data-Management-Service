@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Nightly Keycloak Relational E2E
+name: Nightly Keycloak DMS E2E
 
 on:
   workflow_dispatch:
@@ -16,8 +16,8 @@ env:
   CONFIGURATION: "Release"
 
 jobs:
-  keycloak-relational-e2e:
-    name: Run PostgreSQL Relational E2E (keycloak, Shard ${{ matrix.shard }})
+  keycloak-e2e:
+    name: Run PostgreSQL DMS E2E (keycloak, Shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -83,26 +83,21 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider keycloak
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
-      - name: Run Relational E2E (IdentityProvider keycloak, Shard ${{ matrix.shard }})
-        id: relational_e2e
+      - name: Run DMS E2E (IdentityProvider keycloak, Shard ${{ matrix.shard }})
+        id: e2e
         if: success()
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
           ./build-dms.ps1 E2ETest `
             -Configuration ${{ env.CONFIGURATION }} `
             -SkipDockerBuild `
             -IdentityProvider keycloak `
-            -EnvironmentFile './.env.e2e.relational' `
-            -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-${{ matrix.shard }}'
+            -EnvironmentFile './.env.e2e' `
+            -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
-      - name: Export Relational Docker Logs
-        if: always() && steps.relational_e2e.outcome == 'failure'
+      - name: Export DMS E2E Docker Logs
+        if: always() && steps.e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs/nightly-keycloak-relational-shard-${{ matrix.shard }}"
+          $logDir = "${{ github.workspace }}/logs/nightly-keycloak-e2e-shard-${{ matrix.shard }}"
           Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
@@ -125,68 +120,68 @@ jobs:
               }
           }
 
-      - name: Upload Relational Logs
-        if: always() && steps.relational_e2e.outcome == 'failure'
+      - name: Upload DMS E2E Logs
+        if: always() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: nightly-keycloak-relational-shard-${{ matrix.shard }}-test-logs
+          name: nightly-keycloak-e2e-shard-${{ matrix.shard }}-test-logs
           path: |
-            ${{ github.workspace }}/logs/nightly-keycloak-relational-shard-${{ matrix.shard }}
+            ${{ github.workspace }}/logs/nightly-keycloak-e2e-shard-${{ matrix.shard }}
           retention-days: 10
 
-      - name: Report Relational Test Results
+      - name: Report DMS E2E Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
-        if: always() && hashFiles(format('TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-{0}.trx', matrix.shard)) != ''
+        if: always() && hashFiles(format('TestResults/EdFi.DataManagementService.Tests.E2E.e2e-shard-{0}.trx', matrix.shard)) != ''
         with:
-          name: E2E Test Results (keycloak, relational, shard ${{ matrix.shard }})
-          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-${{ matrix.shard }}.trx
+          name: DMS E2E Test Results (keycloak, shard ${{ matrix.shard }})
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e-shard-${{ matrix.shard }}.trx
           path-replace-backslashes: "true"
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
 
-      - name: Upload Relational Test Results
+      - name: Upload DMS E2E Test Results
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         if: always()
         with:
-          name: nightly-keycloak-relational-shard-${{ matrix.shard }}-test-results
-          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-${{ matrix.shard }}.trx
+          name: nightly-keycloak-e2e-shard-${{ matrix.shard }}-test-results
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e-shard-${{ matrix.shard }}.trx
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Summarize Relational Test Timings
+      - name: Summarize DMS E2E Test Timings
         if: always()
         run: |
           ./eng/ci/summarize-test-timings.ps1 `
-            -Path "./TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-${{ matrix.shard }}.trx" `
-            -OutputDirectory "./TestResults/test-timings/nightly-keycloak-relational-shard-${{ matrix.shard }}" `
-            -SuiteName "Nightly Keycloak Relational E2E (Shard ${{ matrix.shard }})" `
+            -Path "./TestResults/EdFi.DataManagementService.Tests.E2E.e2e-shard-${{ matrix.shard }}.trx" `
+            -OutputDirectory "./TestResults/test-timings/nightly-keycloak-e2e-shard-${{ matrix.shard }}" `
+            -SuiteName "Nightly Keycloak DMS E2E (Shard ${{ matrix.shard }})" `
             -AppendToGitHubStepSummary
 
-      - name: Upload Relational Timing Artifacts
+      - name: Upload DMS E2E Timing Artifacts
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         if: always()
         with:
-          name: test-timings-nightly-keycloak-relational-shard-${{ matrix.shard }}
+          name: test-timings-nightly-keycloak-e2e-shard-${{ matrix.shard }}
           path: |
-            TestResults/EdFi.DataManagementService.Tests.E2E.relational-shard-${{ matrix.shard }}.trx
-            TestResults/test-timings/nightly-keycloak-relational-shard-${{ matrix.shard }}/**
+            TestResults/EdFi.DataManagementService.Tests.E2E.e2e-shard-${{ matrix.shard }}.trx
+            TestResults/test-timings/nightly-keycloak-e2e-shard-${{ matrix.shard }}/**
           if-no-files-found: ignore
           retention-days: 30
 
   notify-results:
     name: Notify Results
     runs-on: ubuntu-latest
-    needs: keycloak-relational-e2e
+    needs: keycloak-e2e
     if: always()
     steps:
       - name: Notify Slack on success
-        if: github.event_name != 'workflow_dispatch' && needs.keycloak-relational-e2e.result == 'success'
+        if: github.event_name != 'workflow_dispatch' && needs.keycloak-e2e.result == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
             {
-              "text": "Nightly Keycloak Relational E2E passed",
+              "text": "Nightly Keycloak DMS E2E passed",
               "blocks": [
                 {
                   "type": "section",
@@ -201,18 +196,18 @@ jobs:
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: github.event_name != 'workflow_dispatch' && needs.keycloak-relational-e2e.result != 'success'
+        if: github.event_name != 'workflow_dispatch' && needs.keycloak-e2e.result != 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
             {
-              "text": "Nightly Keycloak Relational E2E failed",
+              "text": "Nightly Keycloak DMS E2E failed",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Result:* ${{ needs.keycloak-relational-e2e.result }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Result:* ${{ needs.keycloak-e2e.result }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

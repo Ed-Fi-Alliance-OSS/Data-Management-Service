@@ -25,7 +25,7 @@ public class Given_Embedded_Claims_Json
     // Resource claims whose SeedLoader Create grant declares an explicit
     // NoFurtherAuthorizationRequired override because the inherited authorization chain does not
     // cover Create. The canonical example is schoolYearType: the parent edFiTypes
-    // defaultAuthorization only defines Read, so the SeedLoader Application would otherwise see
+    // defaultAuthorization does not define Create, so the SeedLoader Application would otherwise see
     // zero strategies on Create and 403 the Story-02 REST precondition POST. See
     // bootstrap-design.md §7.2 "schoolYearType override" for the design rationale.
     private static readonly HashSet<string> SeedLoaderCreateOverrideExceptions = new(StringComparer.Ordinal)
@@ -108,6 +108,42 @@ public class Given_Embedded_Claims_Json
     }
 
     [Test]
+    public void It_defines_ds61_claims_with_dms_operational_claim_sets_and_normalized_claim_names()
+    {
+        JsonObject claims = LoadEmbeddedClaims("ds61");
+        JsonArray claimSets = claims["claimSets"]!.AsArray();
+
+        claimSets
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>())
+            .Should()
+            .Contain([
+                "E2E-NameSpaceBasedClaimSet",
+                "E2E-NoFurtherAuthRequiredClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+                "SeedLoader",
+                "EdFiODSAdminApp",
+            ]);
+
+        ClaimNames(claims["claimsHierarchy"]!)
+            .Should()
+            .NotContain(claimName => claimName.Contains("/ods/identity/claims", StringComparison.Ordinal));
+
+        SeedLoaderGrant? epdmGrant = FindSeedLoaderGrant(
+            claims["claimsHierarchy"]!,
+            "http://ed-fi.org/identity/claims/domains/epdm",
+            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+        );
+
+        epdmGrant.Should().NotBeNull();
+        epdmGrant!.HasCreate.Should().BeTrue();
+        epdmGrant.HasOverride.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_projects_ODS_effective_people_CRUD_claim_metadata()
     {
         const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
@@ -167,6 +203,82 @@ public class Given_Embedded_Claims_Json
         }
     }
 
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public async Task It_projects_smoke_ReadChanges_claim_metadata(string standardFolder)
+    {
+        const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
+        const string relationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
+        const string relationshipsWithEdOrgsAndPeopleIncludingDeletes =
+            "RelationshipsWithEdOrgsAndPeopleIncludingDeletes";
+
+        _claims = LoadEmbeddedClaims(standardFolder);
+        var metadata = await CreateClaimSetMetadata("EdFiSandbox");
+
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("schoolYearType"),
+            "ReadChanges",
+            noFurtherAuthorizationRequired
+        );
+
+        foreach (
+            var financeClaimName in new[]
+            {
+                "chartOfAccount",
+                "localAccount",
+                "localActual",
+                "localBudget",
+                "localContractedStaff",
+                "localEncumbrance",
+                "localPayroll",
+            }.Select(EdFiClaim)
+        )
+        {
+            AssertActionStrategies(
+                metadata,
+                financeClaimName,
+                "ReadChanges",
+                relationshipsWithEdOrgsAndPeopleIncludingDeletes
+            );
+        }
+
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentHealth"),
+            "ReadChanges",
+            relationshipsWithEdOrgsAndPeopleIncludingDeletes
+        );
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentHealth"),
+            "Read",
+            relationshipsWithEdOrgsAndPeople
+        );
+
+        if (standardFolder == "ds61")
+        {
+            foreach (
+                var specialEducationClaimName in new[]
+                {
+                    "IDEAEvent",
+                    "StudentIEP",
+                    "StudentIEPGoal",
+                    "StudentIEPServiceDelivery",
+                    "StudentIEPServicePrescription",
+                }.Select(EdFiClaim)
+            )
+            {
+                AssertActionStrategies(
+                    metadata,
+                    specialEducationClaimName,
+                    "ReadChanges",
+                    relationshipsWithEdOrgsAndPeopleIncludingDeletes
+                );
+            }
+        }
+    }
+
     [TestCaseSource(nameof(SeedLoaderInventorySource))]
     public void It_grants_SeedLoader_Create_with_inherited_authorization(string resourceClaimUri)
     {
@@ -193,7 +305,7 @@ public class Given_Embedded_Claims_Json
                 .BeTrue(
                     $"SeedLoader Create on '{resourceClaimUri}' must declare an explicit "
                         + "authorizationStrategyOverrides entry because the inherited authorization chain "
-                        + "does not cover Create (e.g. edFiTypes defaultAuthorization defines only Read for "
+                        + "does not cover Create (e.g. edFiTypes defaultAuthorization does not define Create for "
                         + "closed-XSD-enum types); see bootstrap-design.md §7.2 'schoolYearType override'"
                 );
         }
@@ -211,6 +323,56 @@ public class Given_Embedded_Claims_Json
     }
 
     private sealed record SeedLoaderGrant(bool HasCreate, bool HasOverride);
+
+    private static IEnumerable<string> ClaimNames(JsonNode node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                if (item is null)
+                {
+                    continue;
+                }
+
+                foreach (string itemClaimName in ClaimNames(item))
+                {
+                    yield return itemClaimName;
+                }
+            }
+
+            yield break;
+        }
+
+        if (node is not JsonObject obj)
+        {
+            yield break;
+        }
+
+        if (
+            obj.TryGetPropertyValue("name", out JsonNode? nameNode)
+            && nameNode?.GetValue<string>() is string claimName
+        )
+        {
+            yield return claimName;
+        }
+
+        if (obj.TryGetPropertyValue("claims", out JsonNode? claimsNode) && claimsNode is JsonArray claims)
+        {
+            foreach (JsonNode? child in claims)
+            {
+                if (child is null)
+                {
+                    continue;
+                }
+
+                foreach (string childClaimName in ClaimNames(child))
+                {
+                    yield return childClaimName;
+                }
+            }
+        }
+    }
 
     private static SeedLoaderGrant? FindSeedLoaderGrant(
         JsonNode node,
@@ -386,10 +548,10 @@ public class Given_Embedded_Claims_Json
     private static string EdFiClaim(string claimName) =>
         $"http://ed-fi.org/identity/claims/ed-fi/{claimName}";
 
-    private static JsonObject LoadEmbeddedClaims()
+    private static JsonObject LoadEmbeddedClaims(string standardFolder = "ds52")
     {
         Assembly assembly = typeof(ClaimsProvider).Assembly;
-        string resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+        string resourceName = $"{assembly.GetName().Name}.Claims.Standards.{standardFolder}.Claims.json";
 
         using Stream stream =
             assembly.GetManifestResourceStream(resourceName)

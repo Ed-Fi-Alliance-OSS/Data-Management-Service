@@ -8,8 +8,8 @@
     Infrastructure-lifecycle phase for the local DMS Docker stack.
 .DESCRIPTION
     This script is the infrastructure-lifecycle phase. It starts or stops the Docker
-    services that underpin local DMS development (PostgreSQL, Kafka, Config Service,
-    optional Keycloak/SwaggerUI/KafkaUI). The wrapper bootstrap-local-dms.ps1
+    services that underpin local DMS development (PostgreSQL, Config Service,
+    optional Keycloak/SwaggerUI/Kafka/KafkaUI). The wrapper bootstrap-local-dms.ps1
     orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
     time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
     already exist.
@@ -17,8 +17,7 @@
     Direct invocation is supported for diagnostics and partial-phase orchestration
     (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
     script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
-    schema provisioning will NOT happen here. Legacy direct-start database provisioning
-    remains controlled by the supplied environment file's NEED_DATABASE_SETUP value.
+    schema provisioning will NOT happen here.
 
     BREAKING CHANGE (DMS-1153): The following flags have been removed from this script
     and relocated to phase-specific commands:
@@ -93,7 +92,11 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI
+    # Enable Kafka and Kafka Connect infrastructure
+    [Switch]
+    $EnableKafka,
+
+    # Enable Kafka UI. This also enables Kafka infrastructure.
     [Switch]
     $EnableKafkaUI,
 
@@ -122,12 +125,6 @@ param (
     [Switch]
     $DmsOnly,
 
-    # Skip registering the default Debezium source connector. Used by Instance Management E2E,
-    # which provisions per-data-store databases after startup and creates per-data-store connectors
-    # from the tests.
-    [Switch]
-    $SkipConnectorSetup,
-
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
     [Switch]
@@ -147,7 +144,13 @@ param (
     # provisioning, smoke-credential, or seed work is performed — those are caller preconditions.
     # See .DESCRIPTION for the two -InfraOnly workflow shapes.
     [string]
-    $DmsBaseUrl
+    $DmsBaseUrl,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). When supplied, the matching
+    # .env.ds<NN> overlay is composed onto -EnvironmentFile so the stack runs that data standard.
+    # Omit for the default (DS 5.2) behavior driven entirely by the base environment file.
+    [string]
+    $DataStandardVersion
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -182,6 +185,9 @@ $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
+# Compose the data-standard overlay onto the base env file when a version is requested; with no
+# -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+$EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
@@ -244,12 +250,12 @@ if ($usePostgresqlTmpfs) {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @(
-    "-f",
-    "local-dms.yml",
-    "-f",
-    "kafka.yml"
-)
+$files += @("-f", "local-dms.yml")
+
+$enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
+if ($enableKafkaInfrastructure) {
+    $files += @("-f", "kafka.yml")
+}
 
 if ($IdentityProvider -eq "keycloak") {
     # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
@@ -279,15 +285,17 @@ if ($EnableSwaggerUI) {
 }
 
 if ($d) {
+    $downArgs = @("--remove-orphans")
     if ($v) {
+        $downArgs += "-v"
         Write-Output "Shutting down with volume delete"
-        docker compose $files --env-file $EnvironmentFile -p dms-local down -v
+        docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
 
         Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files --env-file $EnvironmentFile -p dms-local down
+        docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
     }
 }
 else {
@@ -297,7 +305,8 @@ else {
     }
 
     $upArgs = @(
-        "--detach"
+        "--detach",
+        "--remove-orphans"
     )
     if ($r) {
         Write-Output "Building images with no cache (this may take a few minutes)..."
@@ -342,25 +351,12 @@ else {
     }
 
     if ($DmsOnly) {
-        Write-Output "Starting DMS service only with startup database provisioning disabled..."
+        Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
         if ($EnableSwaggerUI) {
             $dmsServices += "swagger-ui"
         }
-        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-        try {
-            $env:NEED_DATABASE_SETUP = "false"
-            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            $env:AppSettings__DeployDatabaseOnStartup = "false"
-            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs $dmsServices
-        }
-        finally {
-            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
-        }
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs $dmsServices
 
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to start local DMS service, with exit code $LASTEXITCODE."
@@ -368,29 +364,6 @@ else {
 
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
-
-        if ($bootstrapMode) {
-            # Bootstrap mode provisions the redesigned relational schema (dms."Document", "ResourceKey",
-            # etc.) via dms-schema ddl provision. The default Debezium connector targets the legacy
-            # document-store CDC path: publication.name=to_debezium, publication.autocreate.mode=disabled,
-            # and table.include.list=dms.document,dms.educationorganizationhierarchytermslookup. Those
-            # legacy tables and the to_debezium publication are created only by the legacy installer DDL
-            # (0009_Configure_Replication.sql), which bootstrap mode never runs. Registering the default
-            # connector in bootstrap mode would leave it permanently in a FAILED/ERROR state because the
-            # required publication and tables do not exist by design.
-            Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
-        }
-        elseif (-not $SkipConnectorSetup) {
-            # Register the Debezium source connector now that the schema has been provisioned and
-            # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
-            # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
-            # RUNNING state and throws on failure.
-            Write-Output "Running connector setup..."
-            ./setup-connectors.ps1 $EnvironmentFile
-        }
-        else {
-            Write-Output "Skipping default connector setup."
-        }
 
         return
     }
@@ -444,16 +417,13 @@ else {
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
         }
 
-        Write-Output "Starting Kafka connector infrastructure..."
-        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-postgresql-source
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to start Kafka connector infrastructure. Exit code $LASTEXITCODE"
+        if ($enableKafkaInfrastructure) {
+            Write-Output "Starting Kafka infrastructure..."
+            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
+            }
         }
-
-        # Connector registration is intentionally deferred to the -DmsOnly phase. The Debezium
-        # source connector snapshots dms.document on registration; those tables do not exist
-        # until provision-dms-schema.ps1 runs, so registering here would start the connector
-        # task in a failed state. setup-connectors.ps1 runs after schema provisioning completes.
 
         if ($EnableKafkaUI) {
             Write-Output "Starting Kafka UI..."
@@ -465,7 +435,7 @@ else {
 
         # Claims-ready gate: prove CMS has applied the expected claims content before
         # instance configuration begins. Runs only on bootstrap-manifest runs; skipped
-        # with an informational message on legacy no-manifest invocations.
+        # with an informational message on no-bootstrap invocations.
         if ($bootstrapManifestPresent) {
             Write-Output "Running claims-ready gate..."
             Test-CmsClaimsReady `
@@ -473,7 +443,7 @@ else {
                 -IdentityProvider $IdentityProvider
         }
         else {
-            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run." -InformationAction Continue
+            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run." -InformationAction Continue
         }
 
         if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
@@ -509,29 +479,11 @@ else {
     }
 
     if ($bootstrapManifestPresent) {
-        # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the
-        # story-aligned bootstrap flow. Force the legacy Backend.Installer entrypoint off
-        # when a bootstrap manifest is present so a stale NEED_DATABASE_SETUP=true value
-        # in the env file or process environment cannot reactivate it. Direct, non-bootstrap
-        # startup remains backward compatible with the env-file NEED_DATABASE_SETUP value.
-        Write-Output "Bootstrap manifest detected; starting DMS with startup database provisioning disabled."
-        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-        try {
-            $env:NEED_DATABASE_SETUP = "false"
-            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            $env:AppSettings__DeployDatabaseOnStartup = "false"
-            docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
-        }
-        finally {
-            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
-        }
+        Write-Output "Bootstrap manifest detected; starting DMS."
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
     }
     else {
-        Write-Output "No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file."
+        Write-Output "No bootstrap manifest detected; starting DMS."
         docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
     }
 
@@ -552,17 +504,6 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
-    if ($bootstrapMode) {
-        Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
-    }
-    elseif (-not $SkipConnectorSetup) {
-        Write-Output "Running connector setup..."
-        ./setup-connectors.ps1 $EnvironmentFile
-    }
-    else {
-        Write-Output "Skipping default connector setup."
-    }
-
     Start-Sleep 20
 }
 } finally {

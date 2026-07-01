@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -15,7 +14,6 @@ using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -65,12 +63,7 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -120,9 +113,7 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -139,6 +130,113 @@ public class Given_A_Writable_Profile_Post_Request_With_A_Missing_Write_Plan
             ),
             WasExplicitlySpecified: true
         );
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_A_Writable_Profile_Post_Request_With_No_Mapping_Set
+{
+    private Exception? _exception;
+    private bool _nextCalled;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var requestInfo = CreateRequestInfo();
+        _nextCalled = false;
+
+        try
+        {
+            await CreateMiddleware()
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_fast_as_a_pipeline_configuration_error()
+    {
+        _exception
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("A resolved relational mapping set is required");
+    }
+
+    [Test]
+    public void It_does_not_call_next()
+    {
+        _nextCalled.Should().BeFalse();
+    }
+
+    private static ProfileWritePipelineMiddleware CreateMiddleware()
+    {
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
+    }
+
+    private static RequestInfo CreateRequestInfo()
+    {
+        ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("School")
+            .WithIdentityJsonPaths(["$.schoolId"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("SchoolId", "$.schoolId")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+
+        ProjectSchema projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
+
+        return new RequestInfo(
+            new FrontendRequest(
+                Path: "/ed-fi/schools",
+                Body: """{"schoolId":255901}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            ),
+            RequestMethod.POST,
+            No.ServiceProvider
+        )
+        {
+            ParsedBody = JsonNode.Parse("""{"schoolId":255901}""")!,
+            ProjectSchema = projectSchema,
+            ResourceSchema = resourceSchema,
+            ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("School"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false
+            ),
+            ProfileContext = new ProfileContext(
+                ProfileName: "TestWriteProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: new ResourceProfile(
+                    ResourceName: "School",
+                    LogicalSchema: null,
+                    ReadContentType: null,
+                    WriteContentType: new ContentTypeDefinition(MemberSelection.IncludeAll, [], [], [], [])
+                ),
+                WasExplicitlySpecified: true
+            ),
+        };
     }
 }
 
@@ -209,12 +307,7 @@ public class Given_A_Writable_Profile_Post_Request_That_May_Resolve_To_An_Existi
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -264,9 +357,7 @@ public class Given_A_Writable_Profile_Post_Request_That_May_Resolve_To_An_Existi
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -315,9 +406,7 @@ public class Given_A_Writable_Profile_Post_Request_Without_Preseeded_ResourceInf
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
 
         _requestInfo = new RequestInfo(
@@ -379,12 +468,7 @@ public class Given_A_Writable_Profile_Post_Request_Without_Preseeded_ResourceInf
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static ProfileContext CreateWriteProfileContext()
@@ -459,12 +543,7 @@ public class Given_A_Writable_Profile_Post_Create_New_With_Profile_Hiding_A_Requ
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -529,9 +608,7 @@ public class Given_A_Writable_Profile_Post_Create_New_With_Profile_Hiding_A_Requ
             ResourceName: new ResourceName("School"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -616,12 +693,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -697,9 +769,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -770,12 +840,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -856,9 +921,7 @@ public class Given_A_Writable_Profile_Post_Create_With_Profile_Hiding_A_Required
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 
@@ -938,12 +1001,7 @@ public class Given_A_Writable_Profile_Post_Update_Stored_State_Projection_With_H
 
     private static ProfileWritePipelineMiddleware CreateMiddleware()
     {
-        return new ProfileWritePipelineMiddleware(
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
-            ),
-            NullLogger<ProfileWritePipelineMiddleware>.Instance
-        );
+        return new ProfileWritePipelineMiddleware(NullLogger<ProfileWritePipelineMiddleware>.Instance);
     }
 
     private static RequestInfo CreateRequestInfo()
@@ -1015,9 +1073,7 @@ public class Given_A_Writable_Profile_Post_Update_Stored_State_Projection_With_H
             ResourceName: new ResourceName("StudentSchoolEnrollment"),
             IsDescriptor: false,
             ResourceVersion: new SemVer("1.0.0"),
-            AllowIdentityUpdates: false,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: false
         );
     }
 

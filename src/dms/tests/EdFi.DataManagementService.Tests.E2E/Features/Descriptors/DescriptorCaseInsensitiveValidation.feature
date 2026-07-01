@@ -13,8 +13,7 @@ Feature: Descriptor CaseInsensitive Validation
                   | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code |
                   | uri://ed-fi.org/CourseGpaApplicabilityDescriptor#Applicable          |
               
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 1 Ensure clients can create objectiveAssessments with case-insensitive descriptor values
              When a POST request is made to "/ed-fi/assessments" with
                   """
@@ -95,8 +94,7 @@ Feature: Descriptor CaseInsensitive Validation
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 2 Ensure clients can create courses with mixed-case namespace descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """
@@ -137,8 +135,7 @@ Feature: Descriptor CaseInsensitive Validation
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 3 Ensure clients can create courses with all-uppercase namespace descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """
@@ -179,8 +176,7 @@ Feature: Descriptor CaseInsensitive Validation
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
+        @e2e-ci-shard-2
         Scenario: 4 Ensure clients can create courses with mixed upper/lower throughout descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Unit;
@@ -22,155 +21,101 @@ public class Given_Build_Dms_E2E_Guardrails
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_relational_environment_uses_a_legacy_filter()
+    public void It_does_not_define_backend_lane_filter_assertions()
     {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
-            """,
-            "Category!=@relational-backend"
-        );
+        var removedPositiveBackendLaneFilter = "Category=@relational-" + "backend";
+        var removedNegativeBackendLaneFilter = "Category!=@relational-" + "backend";
 
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("Relational E2E environment");
-        result.Output.Should().Contain("Category=@relational-backend");
+        _buildScriptContents.Should().NotContain("Test-FilterIncludesRelationalCategory");
+        _buildScriptContents.Should().NotContain("Test-FilterExcludesRelationalCategory");
+        _buildScriptContents.Should().NotContain("Assert-E2ETestLaneMatchesFilter");
+        _buildScriptContents.Should().NotContain(removedPositiveBackendLaneFilter);
+        _buildScriptContents.Should().NotContain(removedNegativeBackendLaneFilter);
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_legacy_environment_uses_a_relational_filter()
+    public void It_does_not_read_the_legacy_backend_lane_environment_variable()
     {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=false
-            """,
-            "Category=@relational-backend"
-        );
+        var environmentContextFunctionContents = ExtractFunctionBody("Get-E2ETestEnvironmentContext");
 
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("Legacy E2E environment");
-        result.Output.Should().Contain("@relational-backend");
-        result.Output.Should().Contain("./.env.e2e.relational");
+        environmentContextFunctionContents.Should().NotContain("USE" + "_RELATIONAL_BACKEND");
+        environmentContextFunctionContents.Should().NotContain("ConvertTo-Boolean");
+        environmentContextFunctionContents.Should().Contain("E2E_DATABASE_NAME");
+        environmentContextFunctionContents.Should().Contain("E2E_DATABASE_NAME must be set");
+        environmentContextFunctionContents.Should().Contain("ShouldProvisionE2EDatabase = $true");
+        environmentContextFunctionContents.Should().NotContain("\"edfi_datamanagementservice\"");
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_legacy_environment_omits_the_legacy_filter()
+    public void It_restarts_dms_after_e2e_database_reprovisioning()
     {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=false
-            """
-        );
+        _buildScriptContents.Should().NotContain("Initialize-RelationalE2EDatabase");
+        _buildScriptContents.Should().NotContain("Invoke-RelationalE2EDatabaseProvisioning");
 
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("Legacy E2E environment");
-        result.Output.Should().Contain("Category!=@relational-backend");
-    }
+        var provisioningFunctionContents = ExtractFunctionBody("Invoke-E2EDatabaseProvisioning");
+        var initializeFunctionContents = ExtractFunctionBody("Initialize-E2EDatabase");
+        var e2eTestFunctionContents = ExtractFunctionBody("E2ETests");
 
-    [Test]
-    public async Task It_fails_fast_when_a_relational_environment_omits_the_relational_filter()
-    {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
-            """
-        );
-
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("Relational E2E environment");
-        result.Output.Should().Contain("Category=@relational-backend");
-    }
-
-    [Test]
-    public async Task It_fails_fast_when_a_relational_environment_omits_the_relational_database_name()
-    {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=true
-            """,
-            "Category=@relational-backend"
-        );
-
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("Relational E2E environment");
-        result.Output.Should().Contain("RELATIONAL_E2E_DATABASE_NAME");
-    }
-
-    [Test]
-    public async Task It_fails_fast_when_a_relational_environment_uses_a_disjunctive_filter()
-    {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
-            """,
-            "Category=@relational-backend|FullyQualifiedName~LegacySuite"
-        );
-
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("cannot use");
-        result.Output.Should().Contain("Use '&'");
-    }
-
-    [Test]
-    public async Task It_fails_fast_when_a_legacy_environment_uses_a_disjunctive_filter()
-    {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=false
-            """,
-            "Category!=@relational-backend|FullyQualifiedName~RelationalBackendLane"
-        );
-
-        result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("cannot use");
-        result.Output.Should().Contain("Use '&'");
-    }
-
-    [Test]
-    public void It_restarts_dms_after_relational_database_reprovisioning()
-    {
-        var provisioningFunctionContents = ExtractFunctionBody("Invoke-RelationalE2EDatabaseProvisioning");
-        var initializeFunctionContents = ExtractFunctionBody("Initialize-RelationalE2EDatabase");
-
-        provisioningFunctionContents.Should().Contain("./provision-relational-e2e-database.ps1");
+        provisioningFunctionContents.Should().Contain("./provision-e2e-database.ps1");
         initializeFunctionContents
             .Should()
-            .Contain("Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+            .Contain("Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+        e2eTestFunctionContents
+            .Should()
+            .Contain(
+                "Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }"
+            );
         initializeFunctionContents
             .Should()
             .Contain("Restart-DmsContainer")
-            .And.Contain("-Reason \"discard cached PostgreSQL pools after relational reprovisioning\"");
+            .And.Contain("-Reason \"discard cached PostgreSQL pools after E2E database reprovisioning\"");
     }
 
     [Test]
-    public async Task It_accepts_a_relational_filter_combined_with_a_shard_filter()
-    {
-        var result = await RunBuildDmsE2ETest(
-            """
-            USE_RELATIONAL_BACKEND=true
-            RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational
-            """,
-            "Category=@relational-backend&Category=@relational-ci-shard-2"
-        );
-
-        // The script bails out before docker / dotnet are available in this unit context,
-        // so it will not exit 0, but the filter itself must not be rejected by the lane assertion.
-        result.Output.Should().NotContain("Relational E2E environment");
-        result.Output.Should().NotContain("cannot use");
-    }
-
-    [Test]
-    public void It_derives_shard_suffix_from_relational_ci_shard_filter()
+    public void It_derives_shard_suffix_from_neutral_e2e_ci_shard_filter()
     {
         var suffixDefinition = ExtractFunctionBody("Get-E2ETestResultSuffix");
 
         suffixDefinition
             .Should()
-            .Contain("relational-ci-shard-")
-            .And.Contain("relational-shard-")
+            .Contain("e2e-ci-shard-")
+            .And.Contain("e2e-shard-")
             .And.Contain("ConvertTo-NormalizedTestFilter");
+        suffixDefinition.Should().NotContain("relational-" + "ci-shard-");
+        suffixDefinition.Should().NotContain("relational-shard-");
+    }
+
+    [Test]
+    public void It_always_sets_the_e2e_datastore_database_name_for_the_test_process()
+    {
+        var processContextDefinition = ExtractFunctionBody("Invoke-WithE2ETestProcessContext");
+        var beforeAction = processContextDefinition.Split("& $Action", StringSplitOptions.None)[0];
+        var removedRelationalBackendSetting = "AppSettings__Use" + "Relational" + "Backend";
+
+        beforeAction
+            .Should()
+            .Contain("AppSettings__DataStoreDatabaseName must be set")
+            .And.Contain("$env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName");
+        beforeAction.Should().NotContain("Remove-Item Env:AppSettings__DataStoreDatabaseName");
+        processContextDefinition.Should().NotContain(removedRelationalBackendSetting);
+    }
+
+    [Test]
+    public void It_uses_the_e2e_datastore_database_name_when_creating_cms_data_stores()
+    {
+        var startEnvironmentDefinition = ExtractFunctionBody("Start-DockerEnvironment");
+        var e2eTestDefinition = ExtractFunctionBody("E2ETests");
+
+        startEnvironmentDefinition
+            .Should()
+            .Contain("[string]")
+            .And.Contain("$DataStoreDatabaseName = \"\"")
+            .And.Contain("configure-local-data-store.ps1")
+            .And.Contain("-DataStoreDatabaseName $DataStoreDatabaseName")
+            .And.Contain("start-published-dms.ps1")
+            .And.Contain("-DataStoreDatabaseName $DataStoreDatabaseName");
+
+        e2eTestDefinition.Should().Contain("-DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName");
     }
 
     private string ExtractFunctionBody(string functionName)
@@ -186,67 +131,6 @@ public class Given_Build_Dms_E2E_Guardrails
 
         int endIndex = nextFunctionIndex == -1 ? _buildScriptContents.Length : nextFunctionIndex;
         return _buildScriptContents.Substring(startIndex, endIndex - startIndex);
-    }
-
-    private async Task<BuildScriptResult> RunBuildDmsE2ETest(
-        string environmentFileContents,
-        string? testFilter = null
-    )
-    {
-        var environmentFilePath = Path.Combine(
-            Path.GetTempPath(),
-            $"build-dms-e2e-guardrails-{Guid.NewGuid():N}.env"
-        );
-        await File.WriteAllTextAsync(environmentFilePath, environmentFileContents);
-
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "pwsh",
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                WorkingDirectory = _repositoryRoot.FullName,
-            };
-
-            startInfo.ArgumentList.Add("-NoLogo");
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-File");
-            startInfo.ArgumentList.Add(Path.Combine(_repositoryRoot.FullName, "build-dms.ps1"));
-            startInfo.ArgumentList.Add("E2ETest");
-            startInfo.ArgumentList.Add("-Configuration");
-            startInfo.ArgumentList.Add("Release");
-            startInfo.ArgumentList.Add("-SkipDockerBuild");
-            startInfo.ArgumentList.Add("-EnvironmentFile");
-            startInfo.ArgumentList.Add(environmentFilePath);
-
-            if (testFilter is not null)
-            {
-                startInfo.ArgumentList.Add("-TestFilter");
-                startInfo.ArgumentList.Add(testFilter);
-            }
-
-            using var process = Process.Start(startInfo);
-            process.Should().NotBeNull();
-
-            var standardOutputTask = process!.StandardOutput.ReadToEndAsync();
-            var standardErrorTask = process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            return new BuildScriptResult(
-                process.ExitCode,
-                await standardOutputTask + await standardErrorTask
-            );
-        }
-        finally
-        {
-            if (File.Exists(environmentFilePath))
-            {
-                File.Delete(environmentFilePath);
-            }
-        }
     }
 
     private static DirectoryInfo FindRepositoryRoot()
@@ -265,6 +149,4 @@ public class Given_Build_Dms_E2E_Guardrails
                 "Could not locate repository root from the test assembly output."
             );
     }
-
-    private sealed record BuildScriptResult(int ExitCode, string Output);
 }

@@ -42,6 +42,7 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "env-utility.psm1",
                 "configure-local-data-store.ps1",
                 "provision-dms-schema.ps1",
+                "provision-e2e-database.ps1",
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1"
             )) {
@@ -58,8 +59,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=true
-DMS_DEPLOY_DATABASE_ON_STARTUP=true
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
@@ -70,6 +69,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 EnvFile = $envFile
                 ConfigureScript = Join-Path $dockerComposeRoot "configure-local-data-store.ps1"
                 ProvisionScript = Join-Path $dockerComposeRoot "provision-dms-schema.ps1"
+                E2EProvisionScript = Join-Path $dockerComposeRoot "provision-e2e-database.ps1"
                 WrapperScript = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
             }
         }
@@ -261,6 +261,34 @@ exit $ExitCode
             $params.Count | Should -Be 3
         }
 
+        It "provision-e2e-database.ps1 exposes neutral reset and provision parameters" {
+            $params = Get-DeclaredScriptParameters -Path $script:repo.E2EProvisionScript
+
+            $params | Should -Contain "EnvironmentFile"
+            $params | Should -Contain "DatabaseName"
+            $params | Should -Contain "Configuration"
+            $params | Should -Contain "PostgresContainerName"
+            $params | Should -Not -Contain "SchemaToolPath"
+            $params | Should -Not -Contain "DataStoreId"
+            $params | Should -Not -Contain "SchoolYear"
+            $params.Count | Should -Be 4
+        }
+
+        It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
+            $content = Get-Content -LiteralPath $script:repo.E2EProvisionScript -Raw
+            $oldHelperNamePattern = "provision-relational" + "-e2e-database"
+            $oldDatabaseNamePattern = "RELATIONAL" + "_E2E_DATABASE_NAME"
+
+            $content | Should -Match "E2E_DATABASE_NAME"
+            $content | Should -Match "Reset-E2EDatabase"
+            $content | Should -Match '"ddl"'
+            $content | Should -Match '"provision"'
+            $content | Should -Match '"--create-database"'
+            $content | Should -Match 'if \(\[string\]::IsNullOrWhiteSpace\(\$DatabaseName\)\)'
+            $content | Should -Not -Match $oldHelperNamePattern
+            $content | Should -Not -Match $oldDatabaseNamePattern
+        }
+
         It "wrapper entry script exposes configure flags without exposing direct data-store selectors" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
 
@@ -278,10 +306,40 @@ exit $ExitCode
 
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
-                $params | Should -Contain "SkipConnectorSetup"
+                $params | Should -Contain "EnableKafka"
+                $params | Should -Not -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
+            }
+        }
+
+        It "start scripts keep Kafka compose files behind explicit opt-in" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
+
+                ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
+                $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
+                $content | Should -Match 'if \(\$enableKafkaInfrastructure\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$EnableKafkaUI\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
+                $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
+                $content | Should -Match '"--remove-orphans"'
+            }
+        }
+
+        It "start scripts do not reference removed installer or setup plumbing" {
+            $installerPathPattern = "/app/" + "Installer"
+            $installerProjectPattern = "Backend" + "\.Installer"
+            $setupFlagPattern = "NEED" + "_DATABASE_SETUP"
+            $deployFlagPattern = "DMS" + "_DEPLOY_DATABASE_ON_STARTUP"
+
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1", "start-all-services.ps1")) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
+
+                $content | Should -Not -Match $installerPathPattern
+                $content | Should -Not -Match $installerProjectPattern
+                $content | Should -Not -Match $setupFlagPattern
+                $content | Should -Not -Match $deployFlagPattern
             }
         }
 
@@ -897,6 +955,72 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
 
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
         }
+
+        It "uses an explicit database name when creating the default local data store" {
+            . $script:repo.ConfigureScript
+
+            $script:capturedPostgresDbName = $null
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
+                param(
+                    [string] $CmsUrl,
+                    [string] $AccessToken,
+                    [string] $PostgresPassword,
+                    [string] $PostgresDbName,
+                    [string] $PostgresUser,
+                    [string] $Name,
+                    [string] $DataStoreType,
+                    [string] $Tenant
+                )
+                $script:capturedPostgresDbName = $PostgresDbName
+                return 303
+            }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile $script:repo.EnvFile `
+                -DataStoreDatabaseName "edfi_datamanagementservice_e2e"
+
+            $script:capturedPostgresDbName | Should -Be "edfi_datamanagementservice_e2e"
+            $result.DataStoreIds | Should -Be @([long]303)
+        }
+
+        It "uses an explicit database name when creating school-year local data stores" {
+            . $script:repo.ConfigureScript
+
+            $script:capturedPostgresDbName = $null
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DmsSchoolYearInstances {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
+                param(
+                    [string] $CmsUrl,
+                    [string] $AccessToken,
+                    [int] $StartYear,
+                    [int] $EndYear,
+                    [string] $PostgresPassword,
+                    [string] $PostgresDbName,
+                    [string] $PostgresUser,
+                    [string] $Tenant
+                )
+                $script:capturedPostgresDbName = $PostgresDbName
+                return @(
+                    @{ DataStoreId = [long]401; Year = 2024 },
+                    @{ DataStoreId = [long]402; Year = 2025 }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDataStore `
+                -EnvironmentFile $script:repo.EnvFile `
+                -SchoolYearRange "2024-2025" `
+                -DataStoreDatabaseName "edfi_datamanagementservice_e2e"
+
+            $script:capturedPostgresDbName | Should -Be "edfi_datamanagementservice_e2e"
+            $result.DataStoreIds | Should -Be @([long]401, [long]402)
+        }
     }
 
     Context "wrapper sequencing" {
@@ -1024,7 +1148,7 @@ Add-Content -LiteralPath '$sequencePath' -Value 'configure'
             $sequence | Should -Be @("start-infra", "configure", "provision")
         }
 
-        It "passes a derived env with DMS startup provisioning disabled into DMS-only startup" {
+        It "passes a derived env into DMS-only startup" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $sequencePath = Join-Path $script:repo.RepoRoot "sequence.txt"
 
@@ -1034,12 +1158,7 @@ if (`$InfraOnly) {
     Add-Content -LiteralPath '$sequencePath' -Value 'start-infra'
 }
 elseif (`$DmsOnly) {
-    `$values = @{}
-    Get-Content -LiteralPath `$EnvironmentFile | ForEach-Object {
-        `$parts = `$_.Split('=', 2)
-        if (`$parts.Length -eq 2) { `$values[`$parts[0]] = `$parts[1] }
-    }
-    Add-Content -LiteralPath '$sequencePath' -Value `"start-dms need=`$(`$values['NEED_DATABASE_SETUP']) deploy=`$(`$values['DMS_DEPLOY_DATABASE_ON_STARTUP']) app=`$(`$values['AppSettings__DeployDatabaseOnStartup'])`"
+    Add-Content -LiteralPath '$sequencePath' -Value 'start-dms'
 }
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
 
@@ -1061,41 +1180,23 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile
 
             $sequence = @(Get-Content -LiteralPath $sequencePath)
-            $sequence[-1] | Should -Be "start-dms need=false deploy=false app=false"
+            $sequence[-1] | Should -Be "start-dms"
         }
     }
 
-    Context "legacy startup provisioning lockdown" {
-        It "local-dms.yml defaults NEED_DATABASE_SETUP to false" {
-            $localDmsYaml = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
-            $localDmsYaml | Should -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-false\}'
-            $localDmsYaml | Should -Not -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-true\}'
-        }
-
-        It "published-dms.yml defaults NEED_DATABASE_SETUP to false" {
-            $publishedDmsYaml = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
-            $publishedDmsYaml | Should -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-false\}'
-            $publishedDmsYaml | Should -Not -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-true\}'
-        }
-
-        It ".env.example sets NEED_DATABASE_SETUP=false" {
-            $envExample = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot ".env.example") -Raw
-            $envExample | Should -Match '(?m)^NEED_DATABASE_SETUP=false\s*$'
-            $envExample | Should -Not -Match '(?m)^NEED_DATABASE_SETUP=true\s*$'
-        }
-
-        It "start-local-dms.ps1 keeps direct startup provisioning controlled by the env file when no bootstrap manifest is present" {
+    Context "DMS start script branch messaging" {
+        It "start-local-dms.ps1 reports the no-manifest path" {
             $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
 
             $startScript | Should -Match 'if \(\$bootstrapManifestPresent\)'
-            $startScript | Should -Match 'No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file\.'
+            $startScript | Should -Match 'No bootstrap manifest detected; starting DMS\.'
         }
 
-        It "start-published-dms.ps1 keeps direct startup provisioning controlled by the env file when no bootstrap manifest is present" {
+        It "start-published-dms.ps1 reports the no-manifest path" {
             $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
 
             $startScript | Should -Match 'if \(\$bootstrapManifestPresent\)'
-            $startScript | Should -Match 'No bootstrap manifest detected; starting published DMS with database startup provisioning controlled by the environment file\.'
+            $startScript | Should -Match 'No bootstrap manifest detected; starting published DMS\.'
         }
     }
 
@@ -1467,8 +1568,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 CONFIG_SERVICE_CLIENT_ID=CMSReadOnlyAccess
 CONFIG_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
 CONFIG_SERVICE_CLIENT_SECRET=my-ro-secret
@@ -1667,8 +1766,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 CONFIG_SERVICE_TENANT=isolated-tenant
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
@@ -1714,8 +1811,6 @@ POSTGRES_PORT=9876
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
@@ -1984,136 +2079,6 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
     }
 
-    Context "behavioral start-script lockdown" {
-        BeforeAll {
-            function script:Invoke-StartScriptLockdownBlock {
-                <#
-                .SYNOPSIS
-                Extract the main up-path (or -DmsOnly) try/finally from start-local-dms.ps1
-                or start-published-dms.ps1 and execute it in an isolated scope with a docker
-                stub. The extracted block is the production code, so any drift in the lockdown
-                semantics (env assignment removed, docker call moved before the assignment,
-                env var renamed) is caught at the behavioral level - not just the regex level.
-                When -DmsOnly is set, the helper targets the -DmsOnly branch's try block
-                instead of the main up block.
-                #>
-                param(
-                    [Parameter(Mandatory)]
-                    [string]$ScriptPath,
-
-                    [Parameter(Mandatory)]
-                    [string]$CapturePath,
-
-                    [switch]$DmsOnly
-                )
-
-                $sourceText = Get-Content -Raw -LiteralPath $ScriptPath
-                $parseErrors = $null
-                $tokens = $null
-                $ast = [System.Management.Automation.Language.Parser]::ParseInput(
-                    $sourceText, [ref]$tokens, [ref]$parseErrors)
-                if ($parseErrors.Count -gt 0) {
-                    throw "Failed to parse $ScriptPath"
-                }
-
-                $tries = $ast.FindAll(
-                    { $args[0] -is [System.Management.Automation.Language.TryStatementAst] },
-                    $true)
-                # The outer try wraps the entire script body, so any docker call lives inside
-                # it. We want the innermost try whose body sets NEED_DATABASE_SETUP=false and
-                # immediately calls `docker compose ... up $upArgs` - main up path when -DmsOnly
-                # is false (regex rejects a trailing service argument); -DmsOnly branch when
-                # -DmsOnly is true (regex requires the service array used by that branch).
-                if ($DmsOnly) {
-                    $dockerRegex = 'docker compose .* up \$upArgs\s+\$dmsServices\b'
-                    $branchLabel = "-DmsOnly"
-                } else {
-                    $dockerRegex = 'docker compose .* up \$upArgs(?!\s*\w)'
-                    $branchLabel = "main up"
-                }
-                $candidates = @($tries | Where-Object {
-                    $bodyText = $_.Body.Extent.Text
-                    ($bodyText -match '\$env:NEED_DATABASE_SETUP\s*=\s*"false"') -and
-                    ($bodyText -match $dockerRegex)
-                })
-                $upPathTry = $candidates | Sort-Object { $_.Body.Extent.Text.Length } | Select-Object -First 1
-                if ($null -eq $upPathTry) {
-                    throw "Could not locate the $branchLabel lockdown try block in $ScriptPath"
-                }
-
-                $extracted = $upPathTry.Extent.Text
-                $escapedCapture = $CapturePath.Replace("'", "''")
-                # The docker stub deliberately omits a param() block: declaring
-                # ValueFromRemainingArguments makes it an advanced function, which then binds
-                # common parameters like -PipelineVariable and trips on the production
-                # `-p dms-local` flag. A simple function captures all args via the automatic
-                # `$args` variable and avoids the ambiguity.
-                $isolated = @"
-`$files = @('-f', 'local-dms.yml')
-`$EnvironmentFile = '.env'
-`$upArgs = @('-d')
-`$dmsServices = @('dms')
-function docker {
-    Add-Content -LiteralPath '$escapedCapture' -Value "NEED_DATABASE_SETUP=`$env:NEED_DATABASE_SETUP"
-    Add-Content -LiteralPath '$escapedCapture' -Value "DMS_DEPLOY_DATABASE_ON_STARTUP=`$env:DMS_DEPLOY_DATABASE_ON_STARTUP"
-    Add-Content -LiteralPath '$escapedCapture' -Value "AppSettings__DeployDatabaseOnStartup=`$env:AppSettings__DeployDatabaseOnStartup"
-    `$global:LASTEXITCODE = 0
-}
-$extracted
-"@
-                & ([scriptblock]::Create($isolated))
-            }
-        }
-
-        It "start-local-dms.ps1 bootstrap main up path captures NEED_DATABASE_SETUP=false at docker call time" {
-            $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-local.txt"
-            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
-
-            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath
-
-            $captured = @(Get-Content -LiteralPath $capturePath)
-            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
-            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
-            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
-        }
-
-        It "start-published-dms.ps1 bootstrap main up path captures NEED_DATABASE_SETUP=false at docker call time" {
-            $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-published.txt"
-            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
-
-            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath
-
-            $captured = @(Get-Content -LiteralPath $capturePath)
-            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
-            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
-            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
-        }
-
-        It "start-local-dms.ps1 -DmsOnly path captures NEED_DATABASE_SETUP=false at docker call time" {
-            $capturePath = Join-Path $script:repo.RepoRoot "docker-dmsonly-capture-local.txt"
-            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
-
-            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath -DmsOnly
-
-            $captured = @(Get-Content -LiteralPath $capturePath)
-            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
-            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
-            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
-        }
-
-        It "start-published-dms.ps1 -DmsOnly path captures NEED_DATABASE_SETUP=false at docker call time" {
-            $capturePath = Join-Path $script:repo.RepoRoot "docker-dmsonly-capture-published.txt"
-            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
-
-            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath -DmsOnly
-
-            $captured = @(Get-Content -LiteralPath $capturePath)
-            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
-            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
-            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
-        }
-    }
-
     Context "missing-manifest warning surfaces the post-bootstrap contract" {
         It "warns when no .bootstrap workspace is present and -IsTeardown is false" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-manifest.psm1") -Force
@@ -2334,8 +2299,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=configure-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
@@ -2387,8 +2350,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=provision-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
@@ -2438,8 +2399,6 @@ POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-NEED_DATABASE_SETUP=false
-DMS_DEPLOY_DATABASE_ON_STARTUP=false
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
@@ -2472,7 +2431,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
     }
 
     Context "connector setup" {
-        It "start-all-services.ps1 does not register the connector before the DMS schema exists" {
+        It "start-all-services.ps1 starts PostgreSQL without legacy connector guidance" {
             $scriptPath = Join-Path $script:sourceDockerComposeRoot "start-all-services.ps1"
 
             $tokens = $null
@@ -2480,104 +2439,66 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors)
             $errors.Count | Should -Be 0
 
-            # An automatic invocation would appear as a CommandAst whose command name is the
-            # connector script. Mentioning it inside a Write-Output guidance string is a string
-            # literal, not a command, so it is correctly ignored by GetCommandName().
+            $legacyConnectorScript = "setup" + "-connectors.ps1"
             $invokedCommands = @(
                 $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) |
                     ForEach-Object { $_.GetCommandName() }
             )
-            $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*setup-connectors.ps1" })
+            $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*$legacyConnectorScript" })
             $connectorInvocations | Should -BeNullOrEmpty
 
-            # The deferral guidance must still tell the developer how to register it afterward.
             $sourceText = Get-Content -LiteralPath $scriptPath -Raw
-            $sourceText | Should -Match 'deferred'
-            $sourceText | Should -Match 'setup-connectors\.ps1'
+            $sourceText | Should -Not -Match ([regex]::Escape($legacyConnectorScript))
+            $sourceText | Should -Not -Match 'kafka\.yml'
+            $sourceText | Should -Not -Match ("dms" + "\.document")
 
-            # Removing the connector call removed the only command that previously surfaced a Docker
-            # startup failure, so the up path must check $LASTEXITCODE and throw instead of printing
-            # success guidance over a failed `docker compose up`.
             $sourceText | Should -Match '\$LASTEXITCODE -ne 0'
-            $sourceText | Should -Match 'Failed to start PostgreSQL and Kafka services'
+            $sourceText | Should -Match 'Failed to start PostgreSQL service'
         }
 
-        It "builds connector JSON with a structurally escaped password" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
+        It "removes legacy document-store connector setup files" {
+            $removedConnectorFiles = @(
+                "postgresql" + "_connector.json",
+                "data_store" + "_connector_template.json",
+                "setup" + "-connectors.ps1",
+                "setup-data-store-kafka" + "-connectors.ps1"
+            )
 
-            # A password full of JSON-significant characters that the old string .Replace would corrupt.
-            $trickyPassword = 'p@ss"with\back\slash ''quoted'' #hash'
-            $body = New-ConnectorRequestBody `
-                -TemplatePath (Join-Path $script:sourceDockerComposeRoot "postgresql_connector.json") `
-                -Password $trickyPassword
-
-            $parsed = $body | ConvertFrom-Json
-            $parsed.name | Should -Be "postgresql-source"
-            $parsed.config."database.password" | Should -Be $trickyPassword
-            # The template placeholder password must not survive.
-            $body | Should -Not -Match "abcdefgh1!"
-        }
-
-        It "waits for the connector to disappear after delete before returning" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
-
-            $script:absentProbeCount = 0
-            function Invoke-WebRequest {
-                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
-                $script:absentProbeCount++
-                # Still present on the first probe, gone on the second: the function must keep polling.
-                if ($script:absentProbeCount -ge 2) {
-                    return [pscustomobject]@{ StatusCode = 404 }
-                }
-                return [pscustomobject]@{ StatusCode = 200 }
+            foreach ($removedConnectorFile in $removedConnectorFiles) {
+                Test-Path -LiteralPath (Join-Path $script:sourceDockerComposeRoot $removedConnectorFile) |
+                    Should -BeFalse
             }
-
-            Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 5
-
-            $script:absentProbeCount | Should -BeGreaterOrEqual 2
-        }
-
-        It "throws when the connector never disappears after delete" {
-            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
-
-            function Invoke-WebRequest {
-                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
-                return [pscustomobject]@{ StatusCode = 200 }
-            }
-
-            { Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 3 } |
-                Should -Throw -ExpectedMessage "*was not removed within*"
         }
     }
 
     Context "instance management E2E database setup hardening" {
-        It "drops and recreates each test database with checked exit codes" {
+        It "provisions each route-context test database through the E2E provisioning helper" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'DROP DATABASE IF EXISTS \$db;'
-            $content | Should -Match 'CREATE DATABASE \$db;'
-            # The fire-and-forget form that swallowed CREATE failures must be gone.
-            $content | Should -Not -Match 'CREATE DATABASE \$db;" 2>&1 \| Out-Null'
+            $content | Should -Match 'provision-e2e-database\.ps1'
+            $content | Should -Match 'foreach \(\$db in \$databases\)'
+            $content | Should -Match '-DatabaseName \$db'
+            $content | Should -Match '\$LASTEXITCODE -ne 0'
+            $content | Should -Match 'Failed to provision route-context database'
         }
 
-        It "applies the exported schema with ON_ERROR_STOP and a checked exit code" {
+        It "verifies the relational schema after provisioning" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'psql -v ON_ERROR_STOP=1'
+            $content | Should -Match 'Assert-RelationalSchemaProvisioned -Database \$db'
+            $content | Should -Match 'dms\."EffectiveSchema"'
+            $content | Should -Match 'edfi\.School'
+            $content | Should -Match 'edfi\.Student'
         }
 
-        It "skips the default connector until per-instance databases and connectors are ready" {
+        It "does not pass the removed connector skip flag to start-local-dms.ps1" {
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            # Instance Management E2E disables DMS startup provisioning and creates the per-instance
-            # schemas later in this setup script. The default connector targets the main database's
-            # to_debezium publication, so start-local-dms.ps1 must not register it before this
-            # harness has provisioned the databases and the tests create instance-specific connectors.
             $content | Should -Match 'start-local-dms\.ps1'
-            $content | Should -Match 'SkipConnectorSetup'
+            $content | Should -Not -Match 'SkipConnectorSetup'
         }
     }
 }

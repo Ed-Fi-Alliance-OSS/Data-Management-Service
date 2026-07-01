@@ -22,8 +22,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-067
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Ensure clients cannot retrieve information when the data model name is missing
              When a GET request is made to "/schools"
              Then it should respond with 404
@@ -47,8 +46,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-068
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 02 Ensure clients cannot create a resource when the data model name is missing
              When a POST request is made to "/schools" with
                   """
@@ -88,8 +86,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-069
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 03 Ensure clients cannot update a resource when the data model name is missing
              When a PUT request is made to "/schools/{id}" with
                   """
@@ -130,8 +127,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-070
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 04 Ensure clients cannot delete a resource when the data model name is missing
              When a DELETE request is made to "/schools/{id}"
              Then it should respond with 404
@@ -155,8 +151,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-071
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 05 Ensure clients cannot retrieve a resource when endpoint is not pluralized
              When a GET request is made to "/ed-fi/school"
              Then it should respond with 404
@@ -180,8 +175,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-072
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 06 Ensure clients cannot create a resource when endpoint is not pluralized
              When a POST request is made to "/ed-fi/school" with
                   """
@@ -221,8 +215,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-073
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 07 Ensure clients cannot update a resource when endpoint does not end in plural
              When a PUT request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000" with
                   """
@@ -262,8 +255,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-074
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 08 Ensure clients cannot delete a resource when endpoint does not end in plural
              When a DELETE request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000"
              Then it should respond with 404
@@ -287,8 +279,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-075
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 09 Ensure clients cannot create a resource adding an ID as a path variable
              When a POST request is made to "/ed-fi/schools/00000000-0000-4000-a000-000000000000" with
                   """
@@ -330,8 +321,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-077
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 10 Ensure PUT requests require an Id value
              When a PUT request is made to "/ed-fi/schools/" with
                   """
@@ -373,8 +363,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-078
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 11 Ensure DELETE requests require an Id value
              When a DELETE request is made to "/ed-fi/schools/"
              Then it should respond with 405
@@ -399,8 +388,8 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @API-250 @relational-backend
-        @relational-ci-shard-4
+        @API-250
+        @e2e-ci-shard-4
         Scenario: 13 Ensure client can retrieve information through a case insensitive query parameter
              When a GET request is made to "/ed-fi/classPeriods?CLaSSperIODName=Class+Period+Test"
              Then it should respond with 200
@@ -419,8 +408,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @API-251
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 14 Ensure clients validate identifier on GET requests
              When a GET request is made to "/ed-fi/schools/ffc0a272"
              Then it should respond with 400
@@ -441,8 +429,8 @@ Feature: Validation of the structure of the URLs
                   }
                   """
 
-        @API-252 @relational-backend
-        @relational-ci-shard-4
+        @API-252
+        @e2e-ci-shard-4
         # DMS-397
         Scenario: 15 Ensure client can retrieve information through case insensitive LIMIT parameter
              When a GET request is made to "/ed-fi/schools?liMIt=2"
@@ -474,8 +462,8 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @API-253 @relational-backend
-        @relational-ci-shard-4
+        @API-253
+        @e2e-ci-shard-4
         # DMS-397
         Scenario: 16 Ensure client can retrieve information through case insensitive OFFSET parameter
              # There is only one item, and offset=1 skips that one item.
@@ -486,8 +474,8 @@ Feature: Validation of the structure of the URLs
                   []
                   """
 
-        @API-254 @relational-backend
-        @relational-ci-shard-4
+        @API-254
+        @e2e-ci-shard-4
         # DMS-397
         Scenario: 17 Ensure client can retrieve information through case insensitive TOTALCOUNT parameter
              When a GET request is made to "/ed-fi/SCHOOLS?tOtAlCoUnT=trUE"
@@ -501,8 +489,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 18 Ensure clients get 404 for completely invalid path with prefix before data model
              When a POST request is made to "/ed-fi/notExisting" with
                   """
@@ -534,8 +521,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 19 Ensure clients get 404 for misspelled resource endpoint
              When a POST request is made to "/ed-fi/gradeLevelDescriptorz" with
                   """
@@ -567,8 +553,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 20 Ensure clients get 404 for arbitrary non-existent path
              When a GET request is made to "/foo/bar"
              Then it should respond with 404
@@ -592,8 +577,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 21 Ensure clients get 404 for PUT on non-existent path with ID
              When a PUT request is made to "/invalid/path/00000000-0000-4000-a000-000000000000" with
                   """
@@ -622,8 +606,8 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @DMS-993 @relational-backend
-        @relational-ci-shard-4
+        @DMS-993
+        @e2e-ci-shard-4
         Scenario: 22 Ensure clients get 404 for PUT on unknown Ed-Fi resource collection
              When a PUT request is made to "/ed-fi/unknownResource" with
                   """

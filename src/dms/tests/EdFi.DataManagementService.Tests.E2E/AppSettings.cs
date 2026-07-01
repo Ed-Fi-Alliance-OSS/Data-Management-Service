@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Tests.E2E;
 
 public static class AppSettings
 {
-    public const string LegacyDataStoreDatabaseName = "edfi_datamanagementservice";
+    public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
 
     private const string DefaultDmsPort = "8080";
     private const string DefaultConfigServicePort = "8081";
@@ -21,7 +21,6 @@ public static class AppSettings
     public static string DmsPort => _settings.DmsPort;
     public static string ConfigServicePort => _settings.ConfigServicePort;
     public static string AuthenticationService => _settings.AuthenticationService;
-    public static bool UseRelationalBackend => _settings.UseRelationalBackend;
     public static string DataStoreDatabaseName => _settings.DataStoreDatabaseName;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
@@ -30,8 +29,7 @@ public static class AppSettings
             GetString(configuration, nameof(DmsPort), DefaultDmsPort),
             GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
             GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
-            GetBoolean(configuration, nameof(UseRelationalBackend), defaultValue: false),
-            GetString(configuration, nameof(DataStoreDatabaseName), LegacyDataStoreDatabaseName)
+            GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName)
         );
     }
 
@@ -51,18 +49,11 @@ public static class AppSettings
         string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
         return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
     }
-
-    private static bool GetBoolean(IConfiguration configuration, string key, bool defaultValue)
-    {
-        string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
-        return bool.TryParse(value, out bool parsedValue) ? parsedValue : defaultValue;
-    }
 }
 
 internal sealed record AppSettingsValues(
     string DmsPort,
     string ConfigServicePort,
     string AuthenticationService,
-    bool UseRelationalBackend,
     string DataStoreDatabaseName
 );

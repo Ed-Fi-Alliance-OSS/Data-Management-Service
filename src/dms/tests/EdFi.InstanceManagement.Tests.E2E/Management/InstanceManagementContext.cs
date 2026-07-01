@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
-
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
 
 /// <summary>
@@ -51,16 +49,6 @@ public class InstanceManagementContext
     /// Mapping from route qualifier (e.g., "255901/2024") to data store ID
     /// </summary>
     public Dictionary<string, int> RouteQualifierToDataStoreId { get; } = new();
-
-    /// <summary>
-    /// Tracks data store ID to database name mapping for infrastructure cleanup
-    /// </summary>
-    public Dictionary<int, string> DataStoreIdToDatabaseName { get; } = new();
-
-    /// <summary>
-    /// Infrastructure manager for Kafka/Debezium lifecycle
-    /// </summary>
-    public InstanceInfrastructureManager? InfrastructureManager { get; set; }
 
     /// <summary>
     /// Application IDs per tenant (tenantName -> applicationId)
@@ -118,16 +106,6 @@ public class InstanceManagementContext
     public DmsApiClient? DmsClient { get; set; }
 
     /// <summary>
-    /// Kafka message collector for topic-per-instance validation
-    /// </summary>
-    public InstanceKafkaMessageCollector? KafkaCollector { get; set; }
-
-    /// <summary>
-    /// Messages collected from Kafka, grouped by data store ID
-    /// </summary>
-    public Dictionary<long, List<KafkaTestMessage>> MessagesByInstance { get; } = new();
-
-    /// <summary>
     /// Reset context for new scenario
     /// </summary>
     public void Reset()
@@ -140,7 +118,6 @@ public class InstanceManagementContext
         DataStoreIds.Clear();
         DataStoreIdToTenant.Clear();
         RouteQualifierToDataStoreId.Clear();
-        DataStoreIdToDatabaseName.Clear();
         ApplicationIdsByTenant.Clear();
         CredentialsByTenant.Clear();
         ApplicationId = null;
@@ -153,8 +130,5 @@ public class InstanceManagementContext
         LastResponse = null;
         DmsClient?.Dispose();
         DmsClient = null;
-        KafkaCollector?.Dispose();
-        KafkaCollector = null;
-        MessagesByInstance.Clear();
     }
 }

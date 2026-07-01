@@ -41,7 +41,6 @@ internal class ApiService : IApiService
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
     private readonly IOptions<AppSettings> _appSettings;
-    private readonly IAuthorizationServiceFactory _authorizationServiceFactory;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IServiceProvider _serviceProvider;
@@ -115,7 +114,6 @@ internal class ApiService : IApiService
         IDecimalValidator decimalValidator,
         ILogger<ApiService> logger,
         IOptions<AppSettings> appSettings,
-        IAuthorizationServiceFactory authorizationServiceFactory,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IServiceProvider serviceProvider,
@@ -134,7 +132,6 @@ internal class ApiService : IApiService
         _decimalValidator = decimalValidator;
         _logger = logger;
         _appSettings = appSettings;
-        _authorizationServiceFactory = authorizationServiceFactory;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _serviceProvider = serviceProvider;
@@ -215,28 +212,19 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideEducationOrganizationHierarchyMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
+            new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
-            new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider, _authorizationServiceFactory),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
+            new UpsertHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -254,15 +242,9 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
-            new GetByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
+            new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -276,19 +258,13 @@ internal class ApiService : IApiService
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new QueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
@@ -325,34 +301,20 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-            new ProvideEducationOrganizationHierarchyMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
+            new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
-            new UpdateByIdHandler(
-                _logger,
-                _resiliencePipeline,
-                _apiSchemaProvider,
-                _authorizationServiceFactory
-            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
+            new UpdateByIdHandler(_logger, _resiliencePipeline),
         ]);
         return new PipelineProvider(steps);
     }
@@ -369,15 +331,9 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-            new ProvideAuthorizationPathwayMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            new DeleteByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
+            new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -423,19 +379,14 @@ internal class ApiService : IApiService
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             new ValidateEndpointMiddleware(_logger),
-            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ValidateTrackedChangeQueryMiddleware(_logger),
-            new ResourceActionAuthorizationMiddleware(
-                _claimSetProvider,
-                _logger,
-                _appSettings.Value.UseRelationalBackend
-            ),
-            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 

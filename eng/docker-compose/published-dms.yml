@@ -9,11 +9,6 @@ services:
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
       AppSettings__AuthenticationService: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
-      # Schema provisioning is owned by provision-dms-schema.ps1 per the DMS-916 bootstrap design;
-      # leaving NEED_DATABASE_SETUP unset disables the legacy Backend.Installer entrypoint.
-      NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-false}
-      AppSettings__DeployDatabaseOnStartup: ${DMS_DEPLOY_DATABASE_ON_STARTUP:-false}
-      AppSettings__UseRelationalBackend: ${USE_RELATIONAL_BACKEND:-false}
       AppSettings__BypassTypeCoercion: ${BYPASS_TYPE_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}
@@ -27,7 +22,6 @@ services:
       # The default correlation id header is deliberately blank on the following line
       AppSettings__CorrelationIdHeader: ${CORRELATION_ID_HEADER:-}
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
-      ConnectionStrings__DatabaseConnection: ${DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
       DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects
       DATABASE_CONNECTION_STRING_ADMIN: ${DATABASE_CONNECTION_STRING_ADMIN:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}

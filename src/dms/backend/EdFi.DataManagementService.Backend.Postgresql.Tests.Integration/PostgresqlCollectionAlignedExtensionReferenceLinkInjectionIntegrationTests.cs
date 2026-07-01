@@ -7,6 +7,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -15,11 +16,9 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -31,50 +30,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // the aligned _ext scope on each parents[*] base-collection element). Uses the synthetic
 // IntegrationFixtures/profile-collection-aligned-extension-with-doc-ref fixture — see
 // task-29d notes for why authoritative/sample doesn't carry this shape.
-
-file sealed class CollectionAlignedExtHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class CollectionAlignedExtAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class CollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 [TestFixture]
 [NonParallelizable]
@@ -193,7 +148,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, CollectionAlignedExtHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -267,9 +221,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task<UpsertResult> UpsertSponsorAsync()
@@ -290,11 +242,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-sponsor"),
-            DocumentUuid: SponsorDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new CollectionAlignedExtAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SponsorDocumentUuid
         );
 
         return await scope
@@ -334,11 +282,7 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-parentresource"),
-            DocumentUuid: ParentResourceDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new CollectionAlignedExtNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new CollectionAlignedExtAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: ParentResourceDocumentUuid
         );
 
         return await scope
@@ -356,7 +300,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _parentResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

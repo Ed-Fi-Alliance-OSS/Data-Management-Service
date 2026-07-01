@@ -40,23 +40,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: DMS Build
         id: build_step
         run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Run relational End to End Tests
-        id: relational_e2e
+      - name: Run DMS End to End Tests
+        id: e2e
         if: success()
         continue-on-error: true
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'
+        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e'
 
-      - name: Export Relational Docker Logs
-        if: always() && steps.relational_e2e.outcome == 'failure'
+      - name: Export DMS E2E Docker Logs
+        if: always() && steps.e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs/relational"
+          $logDir = "${{ github.workspace }}/logs/e2e"
           Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
@@ -72,28 +69,28 @@ jobs:
               docker logs $container > $logPath 2>&1
           }
 
-      - name: Upload Relational Logs
-        if: always() && steps.relational_e2e.outcome == 'failure'
+      - name: Upload DMS E2E Logs
+        if: always() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: scheduled-pre-image-logs-${{ matrix.identityprovider }}-relational
+          name: scheduled-pre-image-logs-${{ matrix.identityprovider }}-e2e
           path: |
-            ${{ github.workspace }}/logs/relational
+            ${{ github.workspace }}/logs/e2e
           retention-days: 10
 
-      - name: Upload Relational End to End Test Results
+      - name: Upload DMS End to End Test Results
         if: always()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: scheduled-pre-image-e2e-results-${{ matrix.identityprovider }}-relational
-          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+          name: scheduled-pre-image-e2e-results-${{ matrix.identityprovider }}
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e.trx
           if-no-files-found: ignore
 
-      - name: Fail if relational E2E failed
-        if: always() && steps.relational_e2e.outcome == 'failure'
+      - name: Fail if DMS E2E failed
+        if: always() && steps.e2e.outcome == 'failure'
         run: |
-          Write-Host "Relational lane outcome: ${{ steps.relational_e2e.outcome }}"
-          throw "Relational E2E failed."
+          Write-Host "DMS E2E outcome: ${{ steps.e2e.outcome }}"
+          throw "DMS E2E failed."
 
       - name: Notify Slack on success
         if: success() && github.event_name != 'workflow_dispatch'
@@ -101,7 +98,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "✅ Scheduled pre image tests passed for identityprovider=${{ matrix.identityprovider }} on the relational lane."
+              "text": "✅ Scheduled pre image tests passed for identityprovider=${{ matrix.identityprovider }}."
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -112,13 +109,13 @@ jobs:
         with:
           payload: |
             {
-              "text": "❌ Scheduled pre image tests result: ${{ job.status }}\nIdentityProvider: ${{ matrix.identityprovider }}\nRelational lane: ${{ steps.relational_e2e.outcome }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+              "text": "❌ Scheduled pre image tests result: ${{ job.status }}\nIdentityProvider: ${{ matrix.identityprovider }}\nDMS E2E: ${{ steps.e2e.outcome }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ Scheduled pre image tests result: ${{ job.status }}\n*Identity Provider:* ${{ matrix.identityprovider }}\n*Relational Lane:* ${{ steps.relational_e2e.outcome }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ Scheduled pre image tests result: ${{ job.status }}\n*Identity Provider:* ${{ matrix.identityprovider }}\n*DMS E2E:* ${{ steps.e2e.outcome }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

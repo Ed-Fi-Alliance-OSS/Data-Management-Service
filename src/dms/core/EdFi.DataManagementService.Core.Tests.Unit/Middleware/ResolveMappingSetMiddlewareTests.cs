@@ -6,7 +6,6 @@
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -17,7 +16,6 @@ using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
@@ -32,7 +30,6 @@ public class ResolveMappingSetMiddlewareTests
         ResolveMappingSetMiddleware middleware,
         IMappingSetProvider mappingSetProvider
     ) CreateMiddleware(
-        bool useRelationalBackend,
         IRuntimeMappingSetCompiler? compiler = null,
         IMappingSetProvider? mappingSetProvider = null
     )
@@ -49,14 +46,9 @@ public class ResolveMappingSetMiddlewareTests
                 )
             );
 
-        var appSettings = Options.Create(
-            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = useRelationalBackend }
-        );
-
         IEnumerable<IRuntimeMappingSetCompiler> compilers = compiler is not null ? [compiler] : [];
 
         var middleware = new ResolveMappingSetMiddleware(
-            appSettings,
             provider,
             effectiveSchemaSetProvider,
             compilers,
@@ -136,50 +128,6 @@ public class ResolveMappingSetMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_UseRelationalBackend_Is_False : ResolveMappingSetMiddlewareTests
-    {
-        private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled;
-        private IMappingSetProvider _mappingSetProvider = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (middleware, mappingSetProvider) = CreateMiddleware(useRelationalBackend: false);
-            _mappingSetProvider = mappingSetProvider;
-            _requestInfo = CreateRequestInfo();
-
-            await middleware.Execute(
-                _requestInfo,
-                () =>
-                {
-                    _nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
-        }
-
-        [Test]
-        public void It_calls_next()
-        {
-            _nextCalled.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_does_not_call_mapping_set_provider()
-        {
-            A.CallTo(_mappingSetProvider).MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_does_not_set_mapping_set_on_request_info()
-        {
-            _requestInfo.MappingSet.Should().BeNull();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_Null_DatabaseFingerprint : ResolveMappingSetMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
@@ -190,10 +138,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _mappingSetProvider = mappingSetProvider;
             _requestInfo = CreateRequestInfo(fingerprint: null);
 
@@ -255,10 +200,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             A.CallTo(() =>
@@ -303,10 +245,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _mappingSetProvider = mappingSetProvider;
 
             var fingerprint = CreateFingerprint(hash: _testHash);
@@ -370,10 +309,7 @@ public class ResolveMappingSetMiddlewareTests
         public void Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             A.CallTo(() =>
@@ -421,10 +357,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             A.CallTo(() =>
@@ -482,10 +415,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             A.CallTo(() =>
@@ -537,7 +467,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             // No compiler passed — _dialect will be null
-            var (middleware, _) = CreateMiddleware(useRelationalBackend: true, compiler: null);
+            var (middleware, _) = CreateMiddleware(compiler: null);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             await middleware.Execute(
@@ -583,10 +513,7 @@ public class ResolveMappingSetMiddlewareTests
         public async Task Setup()
         {
             var compiler = CreateFakeCompiler();
-            var (middleware, mappingSetProvider) = CreateMiddleware(
-                useRelationalBackend: true,
-                compiler: compiler
-            );
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
             _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
 
             A.CallTo(() =>

@@ -28,41 +28,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // BellSchedule.classPeriods[*].classPeriodReference -> ClassPeriod. References located
 // by classPeriodName identity field, never by array index.
 
-file sealed class MssqlNestedCollectionAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlNestedCollectionNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -303,9 +268,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -376,11 +339,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -410,11 +369,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId($"mssql-29c-seed-classperiod-{traceSuffix}"),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope
@@ -440,11 +395,7 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-bellschedule"),
-            DocumentUuid: BellScheduleDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlNestedCollectionNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlNestedCollectionAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: BellScheduleDocumentUuid
         );
 
         return await scope
@@ -462,7 +413,6 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _bellScheduleResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

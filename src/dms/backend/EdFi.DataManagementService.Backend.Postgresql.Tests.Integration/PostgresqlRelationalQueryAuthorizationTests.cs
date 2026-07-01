@@ -20,11 +20,9 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -957,7 +955,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
             MappingSet: MappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: resourceHandle.ResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1002,7 +999,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
             MappingSet: mappingSet,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1041,10 +1037,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var request = new DeleteRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             TraceId: new TraceId(traceId ?? $"{resourceName}-authorization-delete-by-id"),
-            DeleteInEdOrgHierarchy: false,
             Headers: CreateHeaders(ifMatch),
             MappingSet: MappingSet
         )
@@ -1388,10 +1381,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1441,10 +1430,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Headers: CreateHeaders(ifMatch),
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
@@ -1680,9 +1665,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
         var resourceHandle = new ResourceHandle(projectSchema, resourceSchema, resourceInfo);
@@ -1694,7 +1677,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, PostgresqlRelationalQueryHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();

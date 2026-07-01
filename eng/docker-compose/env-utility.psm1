@@ -434,10 +434,196 @@ function Resolve-BootstrapDerivedEnv {
         -TargetPath $DerivedTargetPath `
         -KeyOverrides @{
             FAILURE_RATIO = "0.95"
-            NEED_DATABASE_SETUP = "false"
-            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            AppSettings__DeployDatabaseOnStartup = "false"
         }
 
     return $DerivedTargetPath
+}
+
+function Remove-EnvFileKeys {
+    <#
+    .SYNOPSIS
+        Returns the base env-file lines with every entry for the supplied keys removed. Handles both
+        single-line scalars (KEY=value) and multi-line quoted values (e.g. the SCHEMA_PACKAGES JSON
+        block written as KEY='[ ... ]' across several lines). Comments and unrelated lines are kept.
+
+    .PARAMETER Lines
+        The base env file content, one element per line.
+
+    .PARAMETER Keys
+        The key names to remove (case-insensitive).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure helper: returns a filtered copy of the lines and does not change system state.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'The helper removes a set of keys.')]
+    param(
+        [string[]]$Lines,
+        $Keys
+    )
+
+    $keySet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in $Keys) {
+        [void]$keySet.Add([string]$key)
+    }
+
+    $result = [System.Collections.Generic.List[string]]::new()
+    $index = 0
+    while ($index -lt $Lines.Count) {
+        $line = $Lines[$index]
+        $match = [regex]::Match($line, "^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$")
+
+        if ($match.Success -and $keySet.Contains($match.Groups[1].Value)) {
+            $value = $match.Groups[2].Value.TrimStart()
+            $openingQuote = if ($value.StartsWith("'")) { "'" } elseif ($value.StartsWith('"')) { '"' } else { $null }
+
+            # A quoted value with no matching closing quote on the same line spans multiple lines;
+            # skip continuation lines through the one that closes the quote.
+            if ($null -ne $openingQuote -and $value.IndexOf($openingQuote, 1) -lt 0) {
+                $index++
+                while ($index -lt $Lines.Count -and -not $Lines[$index].Contains($openingQuote)) {
+                    $index++
+                }
+                if ($index -lt $Lines.Count) {
+                    $index++
+                }
+            }
+            else {
+                $index++
+            }
+            continue
+        }
+
+        $result.Add($line)
+        $index++
+    }
+
+    return , $result.ToArray()
+}
+
+function New-DataStandardDerivedEnvFile {
+    <#
+    .SYNOPSIS
+        Composes a base environment file with a data-standard overlay (e.g. .env.ds52, .env.ds61)
+        into a single derived env file, so callers keep passing one -EnvironmentFile / --env-file
+        while selecting a data standard version. The base and overlay files are left untouched.
+
+    .DESCRIPTION
+        Overlay keys (e.g. SCHEMA_PACKAGES, DATABASE_TEMPLATE_PACKAGE, DMS_CONFIG_DATA_STANDARD_VERSION)
+        replace the matching entries from the base file; every other base line is preserved. Authoring
+        the overlay's SCHEMA_PACKAGES on a single line keeps overlay parsing trivial; the base file's
+        multi-line SCHEMA_PACKAGES block is removed wholesale before the overlay is appended.
+
+    .PARAMETER BaseEnvironmentFile
+        Absolute path to the base env file (e.g. .env.e2e). Must exist.
+
+    .PARAMETER OverlayEnvironmentFile
+        Absolute path to the overlay env file (e.g. .env.ds61). Must exist.
+
+    .PARAMETER TargetPath
+        Path where the derived file is written. Parent directory is created if missing.
+
+    .OUTPUTS
+        [string] Returns the TargetPath on success.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Local-dev helper, no -WhatIf surface needed.')]
+    param(
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [Parameter(Mandatory)] [string]$OverlayEnvironmentFile,
+        [Parameter(Mandatory)] [string]$TargetPath
+    )
+
+    if (-not (Test-Path -LiteralPath $BaseEnvironmentFile -PathType Leaf)) {
+        throw "New-DataStandardDerivedEnvFile: base environment file not found: $BaseEnvironmentFile"
+    }
+    if (-not (Test-Path -LiteralPath $OverlayEnvironmentFile -PathType Leaf)) {
+        throw "New-DataStandardDerivedEnvFile: data standard overlay file not found: $OverlayEnvironmentFile"
+    }
+
+    $overlayKeys = (ReadValuesFromEnvFile $OverlayEnvironmentFile).Keys
+    $baseLines = @(Get-Content -LiteralPath $BaseEnvironmentFile)
+    $baseWithoutOverlayKeys = Remove-EnvFileKeys -Lines $baseLines -Keys $overlayKeys
+
+    $overlayContent = (Get-Content -LiteralPath $OverlayEnvironmentFile -Raw) -replace "`r`n", "`n"
+
+    $merged = (($baseWithoutOverlayKeys -join "`n").TrimEnd("`n")) + "`n`n" + $overlayContent.TrimEnd("`n") + "`n"
+
+    $targetDir = Split-Path -Parent $TargetPath
+    if (-not [string]::IsNullOrWhiteSpace($targetDir) -and -not (Test-Path -LiteralPath $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    }
+
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($TargetPath, $merged, $utf8NoBom)
+
+    return $TargetPath
+}
+
+function Get-DataStandardOverlayToken {
+    <#
+    .SYNOPSIS
+        Normalizes a data standard version (e.g. "5.2", "6.1", "ds52") to its overlay token
+        ("ds52", "ds61"), used to locate the .env.<token> overlay file.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$DataStandardVersion
+    )
+
+    $value = $DataStandardVersion.Trim().ToLowerInvariant()
+    if ($value -match '^ds[0-9]+$') {
+        return $value
+    }
+
+    $digits = ($value -replace '[^0-9]', '')
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        throw "Get-DataStandardOverlayToken: '$DataStandardVersion' is not a recognizable data standard version (expected e.g. '5.2', '6.1', or 'ds52')."
+    }
+
+    return "ds$digits"
+}
+
+function Resolve-DataStandardEnvironmentFile {
+    <#
+    .SYNOPSIS
+        Returns the effective environment file path for a requested data standard version. With no
+        version (the default) the base file is returned unchanged, preserving DS 5.2 default behavior.
+        With a version, the matching .env.<token> overlay is composed onto the base into a derived
+        file under <DockerComposeRoot>/.derived/ and that path is returned.
+
+    .PARAMETER DataStandardVersion
+        e.g. "5.2", "6.1", "ds52", "ds61"; empty/whitespace selects the default (base file unchanged).
+
+    .PARAMETER BaseEnvironmentFile
+        Absolute path to the base env file.
+
+    .PARAMETER DockerComposeRoot
+        Directory holding the .env.<token> overlays and the .derived output. Defaults to this module's
+        directory (eng/docker-compose).
+    #>
+    param(
+        [string]$DataStandardVersion,
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [string]$DockerComposeRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DataStandardVersion)) {
+        return $BaseEnvironmentFile
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) {
+        $DockerComposeRoot = $PSScriptRoot
+    }
+
+    $token = Get-DataStandardOverlayToken $DataStandardVersion
+    $overlayPath = Join-Path $DockerComposeRoot ".env.$token"
+    if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
+        $available = @(Get-ChildItem -Path $DockerComposeRoot -Filter ".env.ds*" -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name) -join ", "
+        throw "Resolve-DataStandardEnvironmentFile: no overlay for data standard version '$DataStandardVersion' (expected '$overlayPath'). Available overlays: $available."
+    }
+
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$token"
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+
+    return New-DataStandardDerivedEnvFile `
+        -BaseEnvironmentFile $BaseEnvironmentFile `
+        -OverlayEnvironmentFile $overlayPath `
+        -TargetPath $derivedPath
 }

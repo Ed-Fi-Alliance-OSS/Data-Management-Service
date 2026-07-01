@@ -31,6 +31,15 @@ cd ../
 ./build-dms.ps1 run
 ```
 
+## Selecting a Data Standard version
+
+The local start/build scripts run **Data Standard 5.2 by default**. To run a
+different supported version, pass `-DataStandardVersion` (e.g. `6.1`) to
+`build-dms.ps1`, `eng/docker-compose/start-local-dms.ps1`, or
+`start-published-dms.ps1`; with no parameter the behavior is unchanged. See
+[Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for how version selection
+works and how to add or drop a version.
+
 ## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
 To run the integration tests locally, execute the following command in a PowerShell

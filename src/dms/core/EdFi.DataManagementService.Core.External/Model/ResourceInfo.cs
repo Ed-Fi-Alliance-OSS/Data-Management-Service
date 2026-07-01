@@ -19,14 +19,5 @@ public record ResourceInfo(
     /// <summary>
     /// Whether the resource allows the identity fields of a document to be updated (changed)
     /// </summary>
-    bool AllowIdentityUpdates,
-    /// <summary>
-    /// If a resource is part of the EducationOrganization hierarchy, information about its
-    /// place in that hierarchy for security.
-    /// </summary>
-    EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo,
-    /// <summary>
-    /// How this resource is securable relative to other resources
-    /// </summary>
-    AuthorizationSecurableInfo[] AuthorizationSecurableInfo
+    bool AllowIdentityUpdates
 ) : BaseResourceInfo(ProjectName, ResourceName, IsDescriptor);

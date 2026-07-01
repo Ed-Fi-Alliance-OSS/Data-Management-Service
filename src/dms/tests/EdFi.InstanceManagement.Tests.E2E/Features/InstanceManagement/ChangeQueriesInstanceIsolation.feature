@@ -3,28 +3,24 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# These scenarios require the relational backend in the Instance Management E2E harness,
-# which is enabled in DMS-1239. They are committed @ignore until that lands. They were
-# verified green locally against a throwaway relational harness (see plan Task 6).
-
-@InstanceCleanup @changequeries-isolation @ignore @DMS-1239 @instance-management-ci-shard-2
+@InstanceCleanup @changequeries-isolation @instance-management-ci-shard-2
 Feature: ChangeQueries isolation across tenants and instances
-    Verify that change versions, /deletes, /keyChanges, and ReadChanges authorization are
+              Verify that change versions, /deletes, /keyChanges, and ReadChanges authorization are
     isolated per (tenant, instance) database. Tenant_255901 owns instances 255901/2024 and
     255901/2025; Tenant_255902 owns 255902/2024. Each route maps to a separate database.
 
-    Background:
-        Given I am authenticated to the Configuration Service as system admin
-          And tenant "Tenant_255901" is set up with a vendor and instances:
-              | Route       |
-              | 255901/2024 |
-              | 255901/2025 |
-          And tenant "Tenant_255902" is set up with a vendor and instances:
-              | Route       |
-              | 255902/2024 |
-          And tenant "Tenant_255901" has an application for district "255901"
-          And tenant "Tenant_255902" has an application for district "255902"
-          And I am authenticated to DMS with credentials for tenant "Tenant_255901"
+        Background:
+            Given I am authenticated to the Configuration Service as system admin
+              And tenant "Tenant_255901" is set up with a vendor and instances:
+                  | Route       |
+                  | 255901/2024 |
+                  | 255901/2025 |
+              And tenant "Tenant_255902" is set up with a vendor and instances:
+                  | Route       |
+                  | 255902/2024 |
+              And tenant "Tenant_255901" has an application for district "255901"
+              And tenant "Tenant_255902" has an application for district "255902"
+              And I am authenticated to DMS with credentials for tenant "Tenant_255901"
 
         Scenario: 01 ChangeQueries surface works end-to-end inside a route-qualified instance
             # availableChangeVersions

@@ -8,29 +8,25 @@ Feature: JWT Token Introspection
             Given there is no Authorization header
 
     @API-213
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Accept root endpoint requests that do not contain a token
       When a GET request is made to "/"
       Then it should respond with 200
 
     @API-214
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Accept dependencies endpoint requests that do not contain a token
       When a GET request is made to "/metadata/dependencies"
       Then it should respond with 200
 
     @API-215
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Accept OpenAPI specifications endpoint requests that do not contain a token
       When a GET request is made to "/metadata/specifications"
       Then it should respond with 200
 
     @API-216
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Accept XSD endpoint requests that do not contain a token
       When a GET request is made to "/metadata/xsd"
       Then it should respond with 200
@@ -39,15 +35,13 @@ Feature: JWT Token Introspection
             Given there is no Authorization header
 
     @API-217
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Reject a Resource endpoint GET request that does not contain a token
       When a GET request is made to "/ed-fi/academicWeeks"
       Then it should respond with 401
 
     @API-218
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Reject a Resource endpoint POST request that does not contain a token
       When a POST request is made to "/ed-fi/academicWeeks" with
         """
@@ -64,8 +58,7 @@ Feature: JWT Token Introspection
       Then it should respond with 401
 
     @API-219
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Reject a Resource endpoint PUT request that does not contain a token
       When a PUT request is made to "/ed-fi/academicWeeks/1" with
         """
@@ -82,31 +75,29 @@ Feature: JWT Token Introspection
       Then it should respond with 401
 
     @API-220
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Reject a Resource endpoint DELETE request that does not contain a token
       When a DELETE request is made to "/ed-fi/academicWeeks/1"
       Then it should respond with 401
 
   Rule: Resource API accepts a valid token
 
-    @API-229 @relational-backend
-    @relational-ci-shard-1
+    @API-229
+    @e2e-ci-shard-1
     Scenario: Accept a Resource endpoint GET request where the token is valid
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       When a GET request is made to "/ed-fi/academicWeeks"
       Then it should respond with 200
 
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: Reject a Resource endpoint GET request where the token signature is manipulated
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       And the token signature is manipulated
       When a GET request is made to "/ed-fi/academicWeeks"
       Then it should respond with 401
 
-    @DMS-823 @relational-backend
-    @relational-ci-shard-1
+    @DMS-823
+    @e2e-ci-shard-1
     Scenario: Verify JWT token contains dataStoreIds claim
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
       Then the JWT token should contain the dataStoreIds claim
@@ -131,8 +122,7 @@ Feature: JWT Token Introspection
         | communityProviderId | nameOfInstitution | categories                                                                                                                   | providerStatusDescriptor                        |  | providerCategoryDescriptor                        |
         |            19255901 | CP Test           | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#communityProvider"} ] | "uri://ed-fi.org/providerStatusDescriptor#Test" |  | "uri://ed-fi.org/providerCategoryDescriptor#Test" |
 
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: 01 Valid token returns authorization information including education organization hierarchy
       Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org, uri://ns2.org" and educationOrganizationIds "255950, 19255901"
       When a POST request is made to "/oauth/token_info" with
@@ -230,8 +220,7 @@ Feature: JWT Token Introspection
         }
         """
 
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: 02 Missing token in request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """
@@ -252,8 +241,7 @@ Feature: JWT Token Introspection
         }
         """
 
-    @relational-backend
-    @relational-ci-shard-1
+    @e2e-ci-shard-1
     Scenario: 03 Token mismatch between Authorization header and request body returns bad request error
       When a POST request is made to "/oauth/token_info" with
         """

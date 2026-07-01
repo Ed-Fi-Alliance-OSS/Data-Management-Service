@@ -19,8 +19,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 01 Ensure client can create a descriptor in the ns2 namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -35,14 +34,12 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 02 Ensure client can get a descriptor in the ns2 namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 03 Ensure client can update a descriptor in the ns2 namespace
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -58,14 +55,12 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 04 Ensure client can delete a descriptor in the ns2 namespace
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 05 Ensure claimSet with different namespace can not create a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -81,8 +76,7 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
              
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -110,8 +104,7 @@ Feature: Namespace Authorization
                       "shortDescription": "Namespace Based"
                   }]
                   """
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
@@ -121,8 +114,7 @@ Feature: Namespace Authorization
                   []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -139,8 +131,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 07 Ensure claimSet with different namespace can not update a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -167,8 +158,7 @@ Feature: Namespace Authorization
                     "errors": []
                   }
                   """
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 08 Ensure claimSet with different namespace cannot delete a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -207,8 +197,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 09 Ensure client can create a resource in the ns2 namespace
              When a POST request is made to "/ed-fi/surveys" with
                   """
@@ -223,8 +212,7 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 19 Ensure client can get a resource in the ed-fi namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
               And a POST request is made to "/ed-fi/surveys" with
@@ -254,8 +242,7 @@ Feature: Namespace Authorization
                   }]
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 20 Ensure clients can query a resource when the token is assigned to multiple namespaces
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org, uri://ns2.org"
              When a GET request is made to "/ed-fi/surveys?surveyIdentifier=CE_1&namespace=uri%3A%2F%2Fns2.org"
@@ -273,14 +260,12 @@ Feature: Namespace Authorization
                   }]
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 10 Ensure client can get a resource in the ns2 namespace
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 11 Ensure client can update a resource in the ns2 namespace
              When a PUT request is made to "/ed-fi/surveys/{id}" with
                   """
@@ -296,14 +281,12 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 12 Ensure client can delete a resource in the ns2 namespace
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 13 Ensure claimSet with different namespace can not create a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/surveys" with
@@ -330,8 +313,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 14 Ensure claimSet with different namespace can not get a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/surveys/{id}"
@@ -348,8 +330,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @relational-ci-shard-3
-        @relational-backend
+        @e2e-ci-shard-3
         Scenario: 15 Ensure claimSet with different namespace can not update a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/surveys/{id}" with
@@ -366,8 +347,7 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 16 Ensure claimSet with different namespace cannot delete a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"

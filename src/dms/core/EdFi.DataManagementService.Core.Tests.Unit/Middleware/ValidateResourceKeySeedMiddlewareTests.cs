@@ -16,7 +16,6 @@ using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
@@ -32,7 +31,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         IEffectiveSchemaSetProvider schemaSetProvider,
         IDataStoreSelection dataStoreSelection,
         IServiceProvider serviceProvider
-    ) CreateMiddleware(bool useRelationalBackend)
+    ) CreateMiddleware()
     {
         var validator = A.Fake<IResourceKeyValidator>();
         var cacheProvider = new ResourceKeyValidationCacheProvider();
@@ -40,15 +39,10 @@ public class ValidateResourceKeySeedMiddlewareTests
         var dataStoreSelection = A.Fake<IDataStoreSelection>();
         var logger = A.Fake<ILogger<ValidateResourceKeySeedMiddleware>>();
 
-        var appSettings = Options.Create(
-            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = useRelationalBackend }
-        );
-
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var middleware = new ValidateResourceKeySeedMiddleware(
-            appSettings,
             validator,
             cacheProvider,
             schemaSetProvider,
@@ -122,7 +116,7 @@ public class ValidateResourceKeySeedMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Feature_Flag_Is_Disabled : ValidateResourceKeySeedMiddlewareTests
+    public class Given_Fingerprint_Is_Null : ValidateResourceKeySeedMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
@@ -131,56 +125,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, _, _, serviceProvider) = CreateMiddleware(
-                useRelationalBackend: false
-            );
-            _validator = validator;
-            _requestInfo = CreateRequestInfoWithFingerprint(serviceProvider);
-
-            await middleware.Execute(
-                _requestInfo,
-                () =>
-                {
-                    _nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
-        }
-
-        [Test]
-        public void It_calls_next()
-        {
-            _nextCalled.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_does_not_interact_with_validator()
-        {
-            A.CallTo(_validator).MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_does_not_set_error_response()
-        {
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Feature_Flag_Is_Enabled_But_Fingerprint_Is_Null
-        : ValidateResourceKeySeedMiddlewareTests
-    {
-        private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled;
-        private IResourceKeyValidator _validator = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (middleware, validator, _, _, _, serviceProvider) = CreateMiddleware(
-                useRelationalBackend: true
-            );
+            var (middleware, validator, _, _, _, serviceProvider) = CreateMiddleware();
             _validator = validator;
             _requestInfo = CreateRequestInfoWithFingerprint(serviceProvider, fingerprint: null);
 
@@ -224,7 +169,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         public async Task Setup()
         {
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware(useRelationalBackend: true);
+                CreateMiddleware();
 
             SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
@@ -280,7 +225,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         public async Task Setup()
         {
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware(useRelationalBackend: true);
+                CreateMiddleware();
 
             SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
@@ -377,7 +322,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         public async Task Setup()
         {
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware(useRelationalBackend: true);
+                CreateMiddleware();
             _validator = validator;
 
             SetupDataStoreSelection(dataStoreSelection);
@@ -464,7 +409,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         public async Task Setup()
         {
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware(useRelationalBackend: true);
+                CreateMiddleware();
             _validator = validator;
 
             SetupDataStoreSelection(dataStoreSelection);
@@ -548,7 +493,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         public async Task Setup()
         {
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware(useRelationalBackend: true);
+                CreateMiddleware();
 
             SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());

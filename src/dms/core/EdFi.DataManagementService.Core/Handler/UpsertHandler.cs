@@ -4,14 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,12 +23,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpsertHandler(
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline,
-    IApiSchemaProvider _apiSchemaProvider,
-    IAuthorizationServiceFactory authorizationServiceFactory
-) : IPipelineStep
+internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -41,7 +33,7 @@ internal class UpsertHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
+        var mappingSet = RequireMappingSet(requestInfo, "upsert");
 
         var upsertResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -59,21 +51,11 @@ internal class UpsertHandler(
                     new UpsertRequest(
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
-                        MappingSet: requestInfo.MappingSet,
+                        MappingSet: mappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
                         DocumentUuid: candidateDocumentUuid,
-                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
-                        UpdateCascadeHandler: updateCascadeHandler,
-                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                            requestInfo.AuthorizationStrategyEvaluators,
-                            requestInfo.AuthorizationSecurableInfo,
-                            authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider,
-                            _logger
-                        ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

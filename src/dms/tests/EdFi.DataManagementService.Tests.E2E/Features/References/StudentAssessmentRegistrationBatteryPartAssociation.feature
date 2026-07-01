@@ -22,8 +22,7 @@ Feature: StudentAssessmentRegistrationBatteryPartAssociation References
 
 Rule: Two StudentAssessmentRegistrationBatteryPartAssociation can be created only differing in AssigningEducationOrganizationId
 
-        @relational-backend
-        @relational-ci-shard-4
+        @e2e-ci-shard-4
         Scenario: 01 Create two StudentAssessmentRegistrationBatteryPartAssociation with only different AssigningEducationOrganizationIds
 
              When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with

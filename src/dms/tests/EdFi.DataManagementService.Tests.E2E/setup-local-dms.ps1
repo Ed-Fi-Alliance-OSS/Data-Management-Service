@@ -17,14 +17,19 @@
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
-    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file>
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
+    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DataStoreDatabaseName <E2E_DATABASE_NAME>
+    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseName <E2E_DATABASE_NAME>
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -AddExtensionSecurityMetadata
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param(
-    [string] $EnvironmentFile = "./.env.e2e"
+    [string] $EnvironmentFile = "./.env.e2e",
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment file.
+    [string] $DataStandardVersion
 )
 
 Write-Host @"
@@ -62,6 +67,19 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
 try {
     Set-Location $dockerComposeDir
+    Import-Module ./env-utility.psm1 -Force
+
+    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+    $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $baseEnvironmentFile `
+        -DockerComposeRoot $dockerComposeDir
+    $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
+    $e2eDatabaseName = Get-EnvValue -EnvValues $envValues -Name "E2E_DATABASE_NAME"
+
+    if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
+        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
+    }
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
@@ -78,34 +96,47 @@ try {
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Search Engine UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
-    Write-Host "  - Environment File: $EnvironmentFile" -ForegroundColor Gray
+    Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
+    Write-Host "  - E2E Database: $e2eDatabaseName" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
 
-    Write-Output "Using file-based schema packages from $EnvironmentFile for E2E (non-bootstrap compatibility path)."
+    Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata
+    # Start only the infrastructure and Configuration Service first. DMS starts after the
+    # E2E data store exists and the relational schema has been provisioned.
+    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
+        Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 
     # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
     # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
-    # Config Service is already healthy at this point (start-local-dms.ps1 with -EnableConfig waits
-    # for CMS readiness before returning).
-    #
-    # This non-bootstrap E2E flow intentionally keeps the full start rather than the
-    # -InfraOnly/-DmsOnly split: -DmsOnly forces NEED_DATABASE_SETUP=false (DMS-1151 phase
-    # contract), but this flow relies on .env.e2e legacy in-container provisioning. The DMS
-    # container restarts until this step lands the data store (non-bootstrap compatibility flow).
-    ./configure-local-data-store.ps1 -EnvironmentFile $EnvironmentFile
+    # Config Service is already healthy at this point because the -InfraOnly phase waits for
+    # CMS readiness before returning.
+    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DataStoreDatabaseName $e2eDatabaseName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseName $e2eDatabaseName
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
+    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -AddExtensionSecurityMetadata
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 

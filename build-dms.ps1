@@ -107,11 +107,9 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Opts into the seed phase after the stack starts. For the published-image path, forwarded to
-    # start-published-dms.ps1. For the local-image path, the direct-SQL database-template seed path
-    # (setup-database-template.psm1 LoadSeedData) runs after stack startup: start-local-dms.ps1 is
-    # infrastructure-lifecycle-only as of DMS-1153, and the API-based load-dms-seed-data.ps1 path
-    # requires a staged bootstrap manifest that this flow's -RemoveBootstrap teardown removes.
+    # Opts into the seed phase after the stack starts. For StartEnvironment, forwarded to the
+    # bootstrap wrapper so it uses the documented API-based seed path. E2ETest rejects this switch
+    # because its database is reset and provisioned by provision-e2e-database.ps1 before tests run.
     [switch]
     $LoadSeedData,
 
@@ -126,16 +124,19 @@ param(
 
     # Optional test filter for dotnet test operations
     [string]
-    $TestFilter
+    $TestFilter,
+
+    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). Forwarded to the start scripts, which
+    # compose the matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    [string]
+    $DataStandardVersion
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $applicationRoot = "$solutionRoot/frontend"
-$backendRoot = "$solutionRoot/backend"
 $clisRoot = "$solutionRoot/clis"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
-$installerProjectName = "EdFi.DataManagementService.Backend.Installer"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
 $packageName = "EdFi.Api"
 $testResults = "$PSScriptRoot/TestResults"
@@ -211,14 +212,6 @@ function PublishApi {
     }
 }
 
-function PublishBackendInstaller {
-    Invoke-Execute {
-        $installerProject = "$backendRoot/$installerProjectName/"
-        $outputPath = "$installerProject/publish"
-        dotnet publish $installerProject -c $Configuration -o $outputPath --nologo --no-restore
-    }
-}
-
 function PublishCliApiDownloader {
     Invoke-Execute {
         $schemaDownloaderProject = "$clisRoot/$schemaDownloaderProjectName/"
@@ -274,49 +267,20 @@ function Resolve-E2EEnvironmentFilePath {
     throw "Environment file not found: $Path"
 }
 
-function ConvertTo-Boolean {
-    param(
-        [string]
-        $Value,
-
-        [bool]
-        $DefaultValue = $false
-    )
-
-    $parsedValue = $false
-
-    if ([bool]::TryParse($Value, [ref]$parsedValue)) {
-        return $parsedValue
-    }
-
-    return $DefaultValue
-}
-
 function Get-E2ETestResultSuffix {
     param(
-        [bool]
-        $UseRelationalBackend,
-
         [string]
         $TestFilter
     )
 
     $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
 
-    if ($UseRelationalBackend) {
-        if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-ci-shard-(\d+)\b') {
-            return "relational-shard-$($Matches[1])"
-        }
-
-        return "relational"
-    }
-
     if ([string]::IsNullOrWhiteSpace($TestFilter)) {
-        return $null
+        return "e2e"
     }
 
-    if ($TestFilter -match "@relational-backend" -and $TestFilter -match "!=") {
-        return "legacy"
+    if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*e2e-ci-shard-(\d+)\b') {
+        return "e2e-shard-$($Matches[1])"
     }
 
     return "filtered"
@@ -345,95 +309,6 @@ function ConvertTo-NormalizedTestFilter {
     return $normalizedTestFilter
 }
 
-function Test-FilterIncludesRelationalCategory {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-backend\b'
-}
-
-function Test-FilterExcludesRelationalCategory {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*!=\s*relational-backend\b'
-}
-
-function Test-FilterUsesOrOperator {
-    param(
-        [string]
-        $NormalizedTestFilter
-    )
-
-    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
-        return $false
-    }
-
-    return $NormalizedTestFilter -match '\|'
-}
-
-function Assert-E2ETestLaneMatchesFilter {
-    param(
-        [string]
-        $EnvironmentFile,
-
-        [bool]
-        $UseRelationalBackend,
-
-        [string]
-        $TestFilter
-    )
-
-    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
-    $includesRelationalCategory = Test-FilterIncludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
-    $excludesRelationalCategory = Test-FilterExcludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
-    $usesOrOperator = Test-FilterUsesOrOperator -NormalizedTestFilter $normalizedTestFilter
-
-    if ([string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
-        if ($UseRelationalBackend) {
-            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
-        }
-
-        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
-    }
-
-    if ($usesOrOperator) {
-        throw "E2E lane test filter '$TestFilter' cannot use '|'. Use '&' to further narrow the lane while preserving relational and legacy isolation."
-    }
-
-    if ($UseRelationalBackend) {
-        if (-not $includesRelationalCategory) {
-            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
-        }
-
-        if ($excludesRelationalCategory) {
-            throw "Relational E2E environment '$EnvironmentFile' cannot be combined with a test filter that excludes '@relational-backend'."
-        }
-
-        return
-    }
-
-    if ($includesRelationalCategory) {
-        throw "Legacy E2E environment '$EnvironmentFile' cannot be combined with a test filter that selects '@relational-backend'. Use './.env.e2e.relational' for relational lane runs."
-    }
-
-    if (-not $excludesRelationalCategory) {
-        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
-    }
-}
-
 function Get-E2ETestEnvironmentContext {
     param(
         [string]
@@ -446,33 +321,30 @@ function Get-E2ETestEnvironmentContext {
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+
+    # Compose the requested data-standard overlay (.env.ds<NN>) onto the base env file once, here, so
+    # every downstream consumer - relational provisioning, seed loading, configure, and DMS startup -
+    # reads the same data-standard values. Without this single composition point, startup composed the
+    # overlay (via start-local-dms.ps1 -DataStandardVersion) while provisioning/seed/configure read the
+    # raw base file, mixing e.g. DS 6.1 runtime schema with a DS 5.2 template/seed. With no
+    # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+    $environmentFilePath = Resolve-DataStandardEnvironmentFile `
+        -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $environmentFilePath `
+        -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
-    $useRelationalBackend = ConvertTo-Boolean -Value ([string]$environmentValues["USE_RELATIONAL_BACKEND"])
+    $e2eDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
 
-    Assert-E2ETestLaneMatchesFilter `
-        -EnvironmentFile $environmentFilePath `
-        -UseRelationalBackend:$useRelationalBackend `
-        -TestFilter $TestFilter
-
-    $dataStoreDatabaseName =
-        if ($useRelationalBackend) {
-            $relationalDatabaseName = [string]$environmentValues["RELATIONAL_E2E_DATABASE_NAME"]
-
-            if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
-                throw "Relational E2E environment '$environmentFilePath' requires RELATIONAL_E2E_DATABASE_NAME to be set."
-            }
-
-            $relationalDatabaseName
-        }
-        else {
-            "edfi_datamanagementservice"
-        }
+    if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
+        throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' so the DMS E2E database can be reset and provisioned before tests run."
+    }
 
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
-        UseRelationalBackend = $useRelationalBackend
-        DataStoreDatabaseName = $dataStoreDatabaseName
-        TestResultSuffix = Get-E2ETestResultSuffix -UseRelationalBackend:$useRelationalBackend -TestFilter $TestFilter
+        ShouldProvisionE2EDatabase = $true
+        DataStoreDatabaseName = $e2eDatabaseName
+        TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
 
@@ -485,31 +357,19 @@ function Invoke-WithE2ETestProcessContext {
         $Action
     )
 
-    $previousUseRelationalBackend = $env:AppSettings__UseRelationalBackend
     $previousDataStoreDatabaseName = $env:AppSettings__DataStoreDatabaseName
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
-        if ($E2ETestSettings.UseRelationalBackend) {
-            $env:AppSettings__UseRelationalBackend = $E2ETestSettings.UseRelationalBackend.ToString().ToLowerInvariant()
-            $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
-        }
-        else {
-            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
-            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($E2ETestSettings.DataStoreDatabaseName)) {
+            throw "AppSettings__DataStoreDatabaseName must be set for the DMS E2E test process."
         }
 
+        $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         & $Action
     }
     finally {
-        if ([string]::IsNullOrWhiteSpace($previousUseRelationalBackend)) {
-            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:AppSettings__UseRelationalBackend = $previousUseRelationalBackend
-        }
-
         if ([string]::IsNullOrWhiteSpace($previousDataStoreDatabaseName)) {
             Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
         }
@@ -566,6 +426,38 @@ function Invoke-WithEnvironmentFileSchemaSettings {
             else {
                 [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
             }
+        }
+    }
+}
+
+function Stop-DockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
+    param(
+        [string]
+        $EnvironmentFilePath,
+
+        [string]
+        $IdentityProvider,
+
+        [switch]
+        $RemoveBootstrap,
+
+        [switch]
+        $UseEnvironmentFileSchemaSettings
+    )
+
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+            }
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+            }
+        }
+        finally {
+            Pop-Location
         }
     }
 }
@@ -732,7 +624,7 @@ function Get-EffectiveSchemaHashFromOutput {
     return $effectiveSchemaHash
 }
 
-function Invoke-RelationalE2EDatabaseProvisioning {
+function Invoke-E2EDatabaseProvisioning {
     param(
         [pscustomobject]
         $E2ETestSettings
@@ -741,7 +633,7 @@ function Invoke-RelationalE2EDatabaseProvisioning {
     try {
         Push-Location "$PSScriptRoot/eng/docker-compose"
         $provisionOutput = @()
-        ./provision-relational-e2e-database.ps1 `
+        ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
             -Configuration $Configuration 6>&1 |
             Tee-Object -Variable provisionOutput |
@@ -750,7 +642,7 @@ function Invoke-RelationalE2EDatabaseProvisioning {
         $provisionedEffectiveSchemaHash = Get-EffectiveSchemaHashFromOutput -Output $provisionOutput
 
         if ([string]::IsNullOrWhiteSpace($provisionedEffectiveSchemaHash)) {
-            throw "Relational E2E provisioning completed without reporting an effective schema hash."
+            throw "E2E database provisioning completed without reporting an effective schema hash."
         }
 
         return $provisionedEffectiveSchemaHash
@@ -799,7 +691,6 @@ function Write-DmsSchemaContainerEnvironment {
 
     Write-Output "DMS container schema environment:"
     foreach ($key in @(
-            "AppSettings__UseRelationalBackend",
             "AppSettings__Datastore",
             "AppSettings__UseApiSchemaPath",
             "AppSettings__ApiSchemaPath",
@@ -851,7 +742,7 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
         $LogsSinceUtc = [datetime]::MinValue
     )
 
-    Write-Output "Validating DMS runtime effective schema before relational E2E tests..."
+    Write-Output "Validating DMS runtime effective schema before E2E tests..."
 
     $environmentValues = Get-DockerContainerEnvironmentMap -ContainerName $ContainerName
     Write-DmsSchemaContainerEnvironment -EnvironmentValues $environmentValues
@@ -860,21 +751,102 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
         -ContainerName $ContainerName `
         -LogsSinceUtc $LogsSinceUtc
 
-    Write-Output "Provisioned relational effective schema hash: $ProvisionedEffectiveSchemaHash"
+    Write-Output "Provisioned E2E effective schema hash: $ProvisionedEffectiveSchemaHash"
     Write-Output "DMS runtime effective schema hash: $dmsRuntimeEffectiveSchemaHash"
 
     if ([string]::IsNullOrWhiteSpace($dmsRuntimeEffectiveSchemaHash)) {
         docker logs --tail 120 $ContainerName 2>&1
-        throw "DMS container '$ContainerName' did not report an effective schema hash before relational E2E tests."
+        throw "DMS container '$ContainerName' did not report an effective schema hash before E2E tests."
     }
 
     if ($dmsRuntimeEffectiveSchemaHash -ne $ProvisionedEffectiveSchemaHash) {
         docker logs --tail 120 $ContainerName 2>&1
-        throw "Relational E2E setup mismatch: database was provisioned with effective schema hash '$ProvisionedEffectiveSchemaHash' but DMS runtime expects '$dmsRuntimeEffectiveSchemaHash'."
+        throw "E2E setup mismatch: database was provisioned with effective schema hash '$ProvisionedEffectiveSchemaHash' but DMS runtime expects '$dmsRuntimeEffectiveSchemaHash'."
     }
 }
 
 function Start-DockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
+    param (
+        [switch]
+        $UsePublishedImage,
+
+        [switch]
+        $SkipDockerBuild,
+
+        [string]
+        $IdentityProvider="self-contained",
+
+        [string]
+        $ResolvedEnvironmentFile,
+
+        [string]
+        $DataStoreDatabaseName = "",
+
+        [switch]
+        $UseEnvironmentFileSchemaSettings
+    )
+
+    $environmentFilePath =
+        if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
+            # Standalone entry points (e.g. StartEnvironment) bypass Get-E2ETestEnvironmentContext, so
+            # compose the data-standard overlay here too; otherwise the seed/configure steps below would
+            # read the raw base env file while DMS started on the selected data standard version.
+            Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+            $baseEnvironmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+            Resolve-DataStandardEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -BaseEnvironmentFile $baseEnvironmentFilePath `
+                -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+        }
+        else {
+            # Already composed by Get-E2ETestEnvironmentContext; use as-is (no double-composition).
+            $ResolvedEnvironmentFile
+        }
+
+    if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
+        Invoke-Step { DockerBuild }
+    }
+
+    Stop-DockerEnvironment `
+        -EnvironmentFilePath $environmentFilePath `
+        -IdentityProvider $IdentityProvider `
+        -RemoveBootstrap `
+        -UseEnvironmentFileSchemaSettings:$UseEnvironmentFileSchemaSettings
+
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            if ($UsePublishedImage) {
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
+                }
+            }
+            else {
+                # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
+                # DMS-1153 and no longer accepts -LoadSeedData.
+                #
+                # This flow is intentionally outside the bootstrap-manifest contract: the
+                # -RemoveBootstrap teardown above guarantees no manifest is staged, so the
+                # claims-ready gate is skipped. The DMS container restarts until the configure
+                # step below lands the data store (restart: unless-stopped).
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                }
+
+                # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
+                # create it explicitly so DMS startup finds an instance in CMS.
+                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+function Start-BootstrapDockerEnvironment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param (
         [switch]
         $UsePublishedImage,
@@ -886,119 +858,41 @@ function Start-DockerEnvironment {
         $LoadSeedData,
 
         [string]
-        $IdentityProvider="self-contained",
-
-        [string]
-        $ResolvedEnvironmentFile,
-
-        [switch]
-        $UseEnvironmentFileSchemaSettings
+        $IdentityProvider="self-contained"
     )
 
-    $environmentFilePath =
-        if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
-            Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
-        }
-        else {
-            $ResolvedEnvironmentFile
-        }
+    $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
 
-    # Clean up all the containers and volumes
-    Invoke-Execute {
-        try {
-            Push-Location "$PSScriptRoot/eng/docker-compose"
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            }
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap
-            }
-        }
-        finally {
-            Pop-Location
-        }
-    }
+    Stop-DockerEnvironment `
+        -EnvironmentFilePath $environmentFilePath `
+        -IdentityProvider $IdentityProvider
 
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            if ($UsePublishedImage) {
-                if ($LoadSeedData) {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                    }
-                }
-                else {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                    }
-                }
+
+            $bootstrapArgs = @{
+                EnvironmentFile = $environmentFilePath
+                EnableConfig = $true
+                IdentityProvider = $IdentityProvider
+                AddExtensionSecurityMetadata = $true
             }
-            else {
-                # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
-                # DMS-1153 and no longer accepts -LoadSeedData.
-                #
-                # This flow is intentionally OUTSIDE the bootstrap-manifest contract (non-bootstrap
-                # compatibility): the -RemoveBootstrap teardown above guarantees no manifest is
-                # staged, so the claims-ready gate is skipped and NEED_DATABASE_SETUP from the env
-                # file provisions the database in-container at DMS startup. The full start (rather
-                # than the -InfraOnly/-DmsOnly split) is required here because -DmsOnly forces
-                # NEED_DATABASE_SETUP=false per the DMS-1151 phase contract, which would leave
-                # this legacy DLL-backed flow unprovisioned. The DMS container restarts until
-                # the configure step below lands the data store (restart: unless-stopped).
-                if ($LoadSeedData) {
-                    # The database template must own dms schema creation: the env files used
-                    # here set NEED_DATABASE_SETUP=true, and startup provisioning would create
-                    # an empty dms schema before LoadSeedData runs - setup-database-template.psm1
-                    # skips the restore when the schema already exists, silently leaving an
-                    # unseeded database. Force startup provisioning off for this start (same
-                    # mechanism as the -DmsOnly phase contract); the template restore below
-                    # creates the schema and data, and the DMS container restarts until the
-                    # configure step lands the data store.
-                    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-                    $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-                    $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-                    try {
-                        $env:NEED_DATABASE_SETUP = "false"
-                        $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-                        $env:AppSettings__DeployDatabaseOnStartup = "false"
-                        Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                        }
-                    }
-                    finally {
-                        [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-                        [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-                        [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
-                    }
 
-                    # Direct-SQL database-template seed path, relocated verbatim from the seed
-                    # block de-scoped out of start-local-dms.ps1; its removal is gated on the
-                    # bootstrap-design.md Section 6.4 verification gate closing. The
-                    # API-based load-dms-seed-data.ps1 path is not usable here: it requires a
-                    # staged bootstrap manifest, and the -RemoveBootstrap teardown above
-                    # guarantees none is present.
-                    Import-Module ./setup-database-template.psm1 -Force
-                    Write-Output "Loading initial data from the database template..."
-                    LoadSeedData -EnvironmentFile $environmentFilePath
+            if ($LoadSeedData) {
+                $bootstrapArgs.LoadSeedData = $true
+            }
 
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Failed to load initial data, with exit code $LASTEXITCODE."
-                    }
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+                if ($UsePublishedImage) {
+                    ./bootstrap-published-dms.ps1 @bootstrapArgs
                 }
                 else {
-                    Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                    }
+                    ./bootstrap-local-dms.ps1 @bootstrapArgs
                 }
-
-                # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
-                # create it explicitly so DMS startup finds an instance in CMS.
-                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath
             }
         }
         finally {
@@ -1007,7 +901,7 @@ function Start-DockerEnvironment {
     }
 }
 
-function Initialize-RelationalE2EDatabase {
+function Initialize-E2EDatabase {
     param(
         [pscustomobject]
         $E2ETestSettings,
@@ -1015,10 +909,6 @@ function Initialize-RelationalE2EDatabase {
         [switch]
         $UsePublishedImage
     )
-
-    if (-not $E2ETestSettings.UseRelationalBackend) {
-        return
-    }
 
     $dmsContainerName =
         if ($UsePublishedImage) {
@@ -1028,11 +918,11 @@ function Initialize-RelationalE2EDatabase {
             "ed-fi-api"
         }
 
-    $provisionedEffectiveSchemaHash = Invoke-RelationalE2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
+    $provisionedEffectiveSchemaHash = Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
     $dmsRestartStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
     Restart-DmsContainer `
         -ContainerName $dmsContainerName `
-        -Reason "discard cached PostgreSQL pools after relational reprovisioning"
+        -Reason "discard cached PostgreSQL pools after E2E database reprovisioning"
     Assert-DmsRuntimeSchemaMatchesProvisionedDatabase `
         -ProvisionedEffectiveSchemaHash $provisionedEffectiveSchemaHash `
         -ContainerName $dmsContainerName `
@@ -1057,21 +947,23 @@ function E2ETests {
         $TestFilter
     )
 
+    if ($LoadSeedData) {
+        throw "E2ETest -LoadSeedData is not supported after legacy backend removal. E2ETest resets and provisions E2E_DATABASE_NAME with provision-e2e-database.ps1 before tests run; use StartEnvironment -LoadSeedData or add a relational/API seed path instead."
+    }
+
     $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
 
     Invoke-Step {
         Start-DockerEnvironment `
             -UsePublishedImage:$UsePublishedImage `
             -SkipDockerBuild:$SkipDockerBuild `
-            -LoadSeedData:$LoadSeedData `
             -IdentityProvider $IdentityProvider `
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
-            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.UseRelationalBackend
+            -DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName `
+            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
     }
 
-    if ($e2eTestSettings.UseRelationalBackend) {
-        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
-    }
+    Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
 
     Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
 }
@@ -1118,6 +1010,7 @@ function Wait-ForConfigServiceAndClientRegistration {
 }
 
 function Restart-DmsContainer {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param(
         [string]
         $ContainerName = "ed-fi-api",
@@ -1159,7 +1052,7 @@ function Restart-DmsContainer {
     }
 
     if (-not $ready) {
-        Write-Host "DMS did not become ready, but continuing anyway..." -ForegroundColor Yellow
+        throw "DMS container '$ContainerName' did not become ready within the timeout period"
     }
 }
 
@@ -1174,7 +1067,7 @@ function Wait-ForPostgreSQL {
         Write-Host "Checking PostgreSQL readiness (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
 
         try {
-            $result = docker exec dms-postgresql pg_isready -U postgres 2>&1
+            $null = docker exec dms-postgresql pg_isready -U postgres 2>&1
             if ($LASTEXITCODE -eq 0) {
                 $ready = $true
                 Write-Host "PostgreSQL is ready!" -ForegroundColor Green
@@ -1193,14 +1086,6 @@ function Wait-ForPostgreSQL {
         throw "PostgreSQL did not become ready within the timeout period"
     }
 }
-
-# Setup-InstanceManagementDatabases function removed
-# This is now handled by start-local-dms.ps1 -AddDataStore
-# which creates databases, runs migrations, and sets up Kafka connectors
-
-# Setup-InstanceKafkaConnectors function removed
-# This is now handled by start-local-dms.ps1 -AddDataStore
-# which creates Kafka connectors via setup-data-store-kafka-connectors.ps1
 
 function RunInstanceE2E {
     param (
@@ -1252,23 +1137,28 @@ function InstanceE2ETests {
         $SkipDockerBuild,
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        # Optional Ed-Fi Data Standard version forwarded to the instance setup script so the
+        # route-context stack AND its database provisioning run on the requested version (e.g. 6.1).
+        # Empty (the default) leaves the DS 5.2 behavior unchanged.
+        [string]
+        $DataStandardVersion
     )
 
-    # Instance management tests require the DMS environment to be started with route qualifiers
+    # Instance management tests require route qualifiers and three explicitly provisioned route-context databases.
     Write-Host "Setting up instance management E2E tests..." -ForegroundColor Cyan
 
-    # Start the Docker environment with route qualifiers using the instance management setup script
     $instanceSetupScript = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
 
     if (Test-Path $instanceSetupScript) {
-        Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
+        Write-Host "Starting Docker environment and relational route-context provisioning..." -ForegroundColor Cyan
         Invoke-Execute {
             if ($SkipDockerBuild) {
-                & $instanceSetupScript -SkipDockerBuild
+                & $instanceSetupScript -SkipDockerBuild -DataStandardVersion $DataStandardVersion
             }
             else {
-                & $instanceSetupScript
+                & $instanceSetupScript -DataStandardVersion $DataStandardVersion
             }
         }
     }
@@ -1276,17 +1166,16 @@ function InstanceE2ETests {
         throw "Instance Management setup script not found at: $instanceSetupScript"
     }
 
-    # Wait for config service to have all clients registered
+    # Wait for config service to have all clients registered.
     Invoke-Step { Wait-ForConfigServiceAndClientRegistration }
 
-    # Restart DMS so it can authenticate with the registered clients
-    Invoke-Step { Restart-DmsContainer }
+    # The setup script provisions route-context databases after DMS starts; restart to clear cached database state.
+    Invoke-Step { Restart-DmsContainer -Reason "clear cached route-context database state after relational provisioning" }
 
     Write-Host "`nInstance E2E setup complete!" -ForegroundColor Green
     Write-Host "Infrastructure was created by setup-local-dms.ps1:" -ForegroundColor Cyan
-    Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
+    Write-Host "  - 3 PostgreSQL route-context databases provisioned with relational DMS schema" -ForegroundColor Gray
 
-    # Run the instance management E2E tests
     Invoke-Step { RunInstanceE2E -TestFilter $TestFilter }
 
     Write-Host "`nTests complete!" -ForegroundColor Green
@@ -1341,7 +1230,6 @@ function Invoke-Publish {
     Write-Output "Building Version ($DMSVersion)"
 
     Invoke-Step { PublishApi }
-    Invoke-Step { PublishBackendInstaller }
     Invoke-Step { PublishCliApiDownloader }
 }
 
@@ -1473,7 +1361,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
-        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter } }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter -DataStandardVersion $DataStandardVersion } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
@@ -1481,7 +1369,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

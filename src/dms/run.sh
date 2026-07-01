@@ -7,28 +7,22 @@
 set -e
 set +x
 
-# Safely extract a few environment variables from the admin connection string
-host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-username=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
-until pg_isready -h ${host} -p ${port} -U ${username}; do
-  echo "Waiting for PostgreSQL to start..."
-  sleep 2
-done
+if [ "$datastore" = "postgresql" ]; then
+    # Safely extract a few environment variables from the admin connection string
+    host=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+    port=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+    username=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
-echo "PostgreSQL is ready."
+    until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
+        echo "Waiting for PostgreSQL to start..."
+        sleep 2
+    done
 
-if [ "$NEED_DATABASE_SETUP" = true ]; then
-
-  echo "Installing Ed-Fi API schema."
-
-  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
-
-  export NEED_DATABASE_SETUP=false
-
+    echo "PostgreSQL is ready."
 else
-  echo "Skipping Ed-Fi API schema installation."
+    echo "Skipping PostgreSQL readiness check for datastore '${datastore}'."
 fi
 
 if [ "$AppSettings__UseApiSchemaPath" = true ]; then

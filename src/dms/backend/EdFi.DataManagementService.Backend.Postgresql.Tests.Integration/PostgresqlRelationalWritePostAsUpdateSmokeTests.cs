@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -20,60 +21,14 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class PostAsUpdateNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class PostAsUpdateAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class PostAsUpdateNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 internal sealed class ConcurrentPostCreateRaceCoordinator
 {
@@ -144,7 +99,6 @@ file static class PostAsUpdateIntegrationTestSupport
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, PostAsUpdateNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -320,9 +274,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000005")
@@ -470,11 +422,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
@@ -1092,11 +1040,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-create"),
-                    DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-                    ResourceAuthorizationPathways: []
+                    DocumentUuid: StudentAcademicRecordDocumentUuid
                 )
             );
     }
@@ -1137,11 +1081,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-changed-update"),
-                    DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-                    ResourceAuthorizationPathways: []
+                    DocumentUuid: StudentAcademicRecordDocumentUuid
                 )
             );
     }
@@ -1182,11 +1122,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     EdfiDoc: requestBody,
                     Headers: [],
                     TraceId: new TraceId("pg-authoritative-sample-student-academic-record-no-op-update"),
-                    DocumentUuid: StudentAcademicRecordDocumentUuid,
-                    DocumentSecurityElements: new([], [], [], [], []),
-                    UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-                    ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-                    ResourceAuthorizationPathways: []
+                    DocumentUuid: StudentAcademicRecordDocumentUuid
                 )
             );
     }
@@ -1307,9 +1243,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private static string FormatReferenceFailure(UpsertResult.UpsertFailureReference failure)
@@ -2461,9 +2395,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000003")
@@ -2651,11 +2583,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
@@ -2860,9 +2788,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid CreateWinnerDocumentUuid = new(
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000101")
@@ -3022,11 +2948,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
@@ -3224,9 +3146,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         ResourceName: new ResourceName("SchoolYearType"),
         IsDescriptor: false,
         ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-        AuthorizationSecurableInfo: []
+        AllowIdentityUpdates: false
     );
     private static readonly DocumentUuid ExistingSchoolYearTypeDocumentUuid = new(
         Guid.Parse("cccccccc-0000-0000-0000-000000000001")
@@ -3379,11 +3299,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
     private static DocumentInfo CreateSchoolYearTypeDocumentInfo(ReferentialId? referentialId = null)
@@ -4106,11 +4022,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
     }
 
@@ -4176,9 +4088,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private static string FormatReferenceFailure(UpsertResult.UpsertFailureReference failure)

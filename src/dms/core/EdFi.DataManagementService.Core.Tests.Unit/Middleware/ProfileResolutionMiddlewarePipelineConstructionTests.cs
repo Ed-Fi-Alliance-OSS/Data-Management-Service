@@ -69,12 +69,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
-        services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
-        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-            NullLogger<ProfileFilteringMiddleware>.Instance
-        );
-
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
@@ -93,7 +87,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
             appSettings,
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,

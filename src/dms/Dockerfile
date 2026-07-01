@@ -15,7 +15,6 @@ COPY Directory.Build.props Directory.Build.targets ./
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj frontend/EdFi.DataManagementService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/*.csproj core/EdFi.DataManagementService.Core/packages.lock.json ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/*.csproj core/EdFi.DataManagementService.Core.External/packages.lock.json ./core/EdFi.DataManagementService.Core.External/
-COPY backend/EdFi.DataManagementService.Backend.Installer/*.csproj backend/EdFi.DataManagementService.Backend.Installer/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Installer/
 COPY backend/EdFi.DataManagementService.Backend/*.csproj backend/EdFi.DataManagementService.Backend/packages.lock.json ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/*.csproj backend/EdFi.DataManagementService.Backend.External/packages.lock.json ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/*.csproj backend/EdFi.DataManagementService.Backend.Ddl/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Ddl/
@@ -23,17 +22,14 @@ COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj backend/EdFi.Data
 COPY backend/EdFi.DataManagementService.Backend.Plans/*.csproj backend/EdFi.DataManagementService.Backend.Plans/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Plans/
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/*.csproj backend/EdFi.DataManagementService.Backend.RelationalModel/packages.lock.json ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Old.Postgresql/*.csproj backend/EdFi.DataManagementService.Old.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj clis/EdFi.DataManagementService.ApiSchemaDownloader/packages.lock.json ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode && \
-    dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj --locked-mode && \
     dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/ ./core/EdFi.DataManagementService.Core.External/
-COPY backend/EdFi.DataManagementService.Backend.Installer/ ./backend/EdFi.DataManagementService.Backend.Installer/
 COPY backend/EdFi.DataManagementService.Backend/ ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/ ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/ ./backend/EdFi.DataManagementService.Backend.Ddl/
@@ -41,7 +37,6 @@ COPY backend/EdFi.DataManagementService.Backend.Mssql/ ./backend/EdFi.DataManage
 COPY backend/EdFi.DataManagementService.Backend.Plans/ ./backend/EdFi.DataManagementService.Backend.Plans/
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/ ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Old.Postgresql/ ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 ARG VERSION=""
@@ -56,8 +51,6 @@ RUN version_args=""; \
     fi; \
     dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend $version_args && \
-    dotnet publish backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj \
-    -c Release --no-restore --self-contained false -o /app/Installer $version_args && \
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
     -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader $version_args
 
@@ -73,7 +66,6 @@ ENV ASPNETCORE_HTTP_PORTS=8080
 WORKDIR /app
 
 COPY --from=build /app/Frontend/*.dll ./
-COPY --from=build /app/Installer/*.* ./Installer/
 COPY --from=build /app/Frontend/ApiSchema/ ./ApiSchema/
 COPY --from=build /app/Frontend/*.pdb ./
 COPY --from=build /app/Frontend/appsettings.json ./

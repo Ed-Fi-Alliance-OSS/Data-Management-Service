@@ -59,20 +59,16 @@ function Get-EffectiveBootstrapEnvFile {
         $result = Resolve-BootstrapDerivedEnv `
             -BaseEnvironmentFile $BaseEnvironmentFile `
             -DerivedTargetPath $derivedPath
-        Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled; FAILURE_RATIO=0.95)." -InformationAction Continue
+        Write-Information "Bootstrap-derived env written: $derivedPath (FAILURE_RATIO=0.95)." -InformationAction Continue
         return $result
     }
 
     Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -TargetPath $derivedPath `
-        -KeyOverrides @{
-            NEED_DATABASE_SETUP = "false"
-            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-            AppSettings__DeployDatabaseOnStartup = "false"
-        }
+        -KeyOverrides @{}
 
-    Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled)." -InformationAction Continue
+    Write-Information "Bootstrap-derived env written: $derivedPath." -InformationAction Continue
     return $derivedPath
 }
 

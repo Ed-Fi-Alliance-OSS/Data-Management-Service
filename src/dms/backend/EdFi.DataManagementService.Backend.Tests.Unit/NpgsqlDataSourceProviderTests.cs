@@ -3,11 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Old.Postgresql;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
@@ -23,12 +22,11 @@ public class Given_NpgsqlDataSourceProvider
     [SetUp]
     public void Setup()
     {
-        var applicationLifetime = A.Fake<IHostApplicationLifetime>();
         var cacheLogger = A.Fake<ILogger<NpgsqlDataSourceCache>>();
         var providerLogger = A.Fake<ILogger<NpgsqlDataSourceProvider>>();
 
         _dataStoreSelection = A.Fake<IDataStoreSelection>();
-        _cache = new NpgsqlDataSourceCache(applicationLifetime, cacheLogger);
+        _cache = new NpgsqlDataSourceCache(cacheLogger);
         _provider = new NpgsqlDataSourceProvider(_dataStoreSelection, _cache, providerLogger);
     }
 

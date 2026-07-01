@@ -5,10 +5,10 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -18,62 +18,14 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
-
-file sealed class AuthoritativeSampleStudentSchoolAssociationWriteHostApplicationLifetime
-    : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler
-    : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
 
 file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport
 {
@@ -83,10 +35,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<
-            IHostApplicationLifetime,
-            AuthoritativeSampleStudentSchoolAssociationWriteHostApplicationLifetime
-        >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDataStoreSelection, DataStoreSelection>();
@@ -144,9 +92,7 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     public static DocumentInfo CreateDocumentInfo(
@@ -1133,7 +1079,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),
             ReadableProfileProjectionContext: readableProfileProjectionContext
@@ -1289,11 +1234,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope
@@ -1319,11 +1260,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: StudentSchoolAssociationDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: StudentSchoolAssociationDocumentUuid
         );
 
         return await scope
@@ -2719,11 +2656,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope
@@ -2749,11 +2682,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: StudentSchoolAssociationDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: StudentSchoolAssociationDocumentUuid
         );
 
         return await scope
@@ -3813,11 +3742,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: documentUuid
         );
 
         return await scope

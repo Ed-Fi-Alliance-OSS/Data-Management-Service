@@ -29,41 +29,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // AcademicWeek.School_DocumentId column to a phantom value. CK_AcademicWeek_School_AllNone
 // stays satisfied because School_SchoolId remains non-null.
 
-file sealed class MssqlOrphanedRefAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
-{
-    public Task<ResourceAuthorizationResult> Authorize(
-        DocumentSecurityElements documentSecurityElements,
-        OperationType operationType,
-        TraceId traceId
-    ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
-}
-
-file sealed class MssqlOrphanedRefNoOpUpdateCascadeHandler : IUpdateCascadeHandler
-{
-    public UpdateCascadeResult Cascade(
-        System.Text.Json.JsonElement originalEdFiDoc,
-        ProjectName originalDocumentProjectName,
-        ResourceName originalDocumentResourceName,
-        JsonNode modifiedEdFiDoc,
-        JsonNode referencingEdFiDoc,
-        long referencingDocumentId,
-        short referencingDocumentPartitionKey,
-        Guid referencingDocumentUuid,
-        ProjectName referencingProjectName,
-        ResourceName referencingResourceName
-    ) =>
-        new(
-            OriginalEdFiDoc: referencingEdFiDoc,
-            ModifiedEdFiDoc: referencingEdFiDoc,
-            Id: referencingDocumentId,
-            DocumentPartitionKey: referencingDocumentPartitionKey,
-            DocumentUuid: referencingDocumentUuid,
-            ProjectName: referencingProjectName,
-            ResourceName: referencingResourceName,
-            isIdentityUpdate: false
-        );
-}
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -248,9 +213,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             ResourceName: resourceSchema.ResourceName,
             IsDescriptor: resourceSchema.IsDescriptor,
             ResourceVersion: projectSchema.ResourceVersion,
-            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: []
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates
         );
 
     private async Task SeedReferenceDataAsync()
@@ -321,11 +284,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-30-seed-school"),
-            DocumentUuid: SchoolDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlOrphanedRefAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: SchoolDocumentUuid
         );
 
         return await scope
@@ -351,11 +310,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("mssql-30-seed-academicweek"),
-            DocumentUuid: AcademicWeekDocumentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new MssqlOrphanedRefNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new MssqlOrphanedRefAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            DocumentUuid: AcademicWeekDocumentUuid
         );
 
         return await scope
@@ -373,7 +328,6 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             AuthorizationContext: new RelationalAuthorizationContext([]),
             MappingSet: _mappingSet,
             QueryElements: [],
-            AuthorizationSecurableInfo: _academicWeekResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: 25,

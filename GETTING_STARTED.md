@@ -51,7 +51,7 @@ diagrams in Code's built-in Markdown preview tool.
    derived from the effective schema, while Descriptors are stored in the
    shared `dms.Descriptor` table; see the [Relational Backend Developer
    Guide](./docs/RELATIONAL-BACKEND.md).
-3. There are also optional user interfaces for viewing data in Kafka.
+3. Relational DMS CDC/Kafka support is pending a separate implementation.
 
 ```mermaid
 C4Deployment
@@ -60,10 +60,6 @@ C4Deployment
             Container(keycloak, "Keycloak")
             Container(dms, "Data Management Service")
             Container(config, "Configuration Service")
-        }
-        Deployment_Node(odsapi_c, "Kafka Services") {
-            ContainerDb(kafka, "Kafka Server")
-            Container(source, "Kafka Source Connector")
         }
         Deployment_Node(db, "PostgreSQL Databases") {
             ContainerDb(dmsdb, "DMS")
@@ -74,8 +70,6 @@ C4Deployment
     Rel(config, configdb, "read/write")
     Rel(dms, keycloak, "discover")
     Rel(config, keycloak, "discover")
-    Rel(source, dmsdb, "read")
-    Rel(source, kafka, "replicate")
     UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="4")
 ```
 
@@ -96,7 +90,7 @@ following command. The .NET SDK is not required, as the build will occur inside
 a container.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI
+./start-local-dms.ps1 -EnableConfig
 ```
 
 This may take around a minute to startup. This script not only starts the
@@ -173,7 +167,7 @@ create the data store, and load the seed data. As of DMS-1153,
 load is invoked directly from `setup-database-template.psm1`:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI
+./start-local-dms.ps1 -EnableConfig
 ./configure-local-data-store.ps1
 Import-Module ./setup-database-template.psm1
 LoadSeedData -EnvironmentFile ./.env
@@ -188,12 +182,12 @@ When you are ready to stop the containers, append the `-d` ("down") flag to the
 command:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -d
+./start-local-dms.ps1 -EnableConfig -d
 ```
 
 And to shut down and delete all data, add the `-v` ("volumes") flag. This is
 useful when you need to start over with a clean slate.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -d -v
+./start-local-dms.ps1 -EnableConfig -d -v
 ```

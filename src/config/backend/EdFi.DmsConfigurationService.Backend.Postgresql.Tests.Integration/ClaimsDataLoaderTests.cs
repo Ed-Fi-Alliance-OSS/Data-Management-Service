@@ -30,6 +30,12 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     private IClaimsHierarchyManager _claimsHierarchyManager = null!;
     private IClaimsTableValidator _claimsTableValidator = null!;
     private IClaimsUploadService _claimsUploadService = null!;
+    private IResourceClaimMetadataRepository _resourceClaimMetadataRepository = null!;
+
+    // dmscs.ResourceClaim is a shared baseline that ClearClaimsTablesAsync does NOT clear (other
+    // fixtures' projection-integrity checks depend on it). Snapshot it at setup and restore at
+    // teardown so loader-path seeding tests never leak synthetic rows into that baseline.
+    private IReadOnlyList<string> _resourceClaimBaseline = [];
 
     // Derives the expected claim set count from the embedded Claims.json so additions
     // (e.g. SeedLoader) don't require touching every count assertion in this file.
@@ -40,7 +46,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     private static int LoadEmbeddedClaimSetCount()
     {
         var assembly = typeof(ClaimsProvider).Assembly;
-        var resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+        var resourceName = $"{assembly.GetName().Name}.Claims.Standards.ds52.Claims.json";
         using var stream =
             assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Could not load embedded resource '{resourceName}'.");
@@ -56,6 +62,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     {
         // Clear any existing data
         ClearClaimsTablesAsync().GetAwaiter().GetResult();
+        _resourceClaimBaseline = SnapshotResourceClaimNamesAsync().GetAwaiter().GetResult();
 
         // Set up dependencies
         var databaseOptions = Options.Create(Configuration.DatabaseOptions.Value);
@@ -97,6 +104,13 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             NullLogger<ClaimsDocumentRepository>.Instance
         );
 
+        // Wire the real ResourceClaimMetadataRepository so the loader's LoadInitialClaimsAsync /
+        // UpdateClaimsAsync paths exercise the production seeding behavior, not the no-op fallback.
+        _resourceClaimMetadataRepository = new ResourceClaimMetadataRepository(
+            databaseOptions,
+            NullLogger<ResourceClaimMetadataRepository>.Instance
+        );
+
         // Create ClaimsDataLoader first (without ClaimsProvider)
         _claimsDataLoader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
             null!, // Will be set after creating ClaimsProvider
@@ -115,14 +129,15 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             claimsFragmentComposer
         );
 
-        // Create the real ClaimsDataLoader with the ClaimsProvider
+        // Create the real ClaimsDataLoader with the ClaimsProvider and the resource-claim repository
         _claimsDataLoader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
             _claimsProvider,
             _claimSetRepository,
             _claimsHierarchyRepository,
             _claimsTableValidator,
             claimsDocumentRepository,
-            NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance
+            NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance,
+            _resourceClaimMetadataRepository
         );
 
         // Create ClaimsUploadService for upload/reload operations
@@ -131,6 +146,37 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             _claimsProvider,
             _claimsDataLoader,
             claimsValidator
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        // Restore the ResourceClaim baseline by removing only the rows seeded during the test, so
+        // loader-path seeding here never pollutes the shared baseline other fixtures rely on.
+        RestoreResourceClaimBaselineAsync().GetAwaiter().GetResult();
+    }
+
+    private async Task<IReadOnlyList<string>> SnapshotResourceClaimNamesAsync()
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        IEnumerable<string> names = await connection.QueryAsync<string>(
+            "SELECT ClaimName FROM dmscs.ResourceClaim"
+        );
+        return names.ToList();
+    }
+
+    private async Task RestoreResourceClaimBaselineAsync()
+    {
+        if (_resourceClaimBaseline.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "DELETE FROM dmscs.ResourceClaim WHERE ClaimName <> ALL(@Baseline)",
+            new { Baseline = _resourceClaimBaseline.ToArray() }
         );
     }
 
@@ -190,6 +236,129 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         var (claimSetCount, hierarchyCount) = await GetClaimsTableCountsAsync();
         Assert.That(claimSetCount, Is.GreaterThan(0));
         Assert.That(hierarchyCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Given_resource_claims_already_seeded_It_should_insert_only_missing_rows()
+    {
+        // Arrange - synthetic claim names absent from the static 0009 seed, cleared up front so the
+        // assertion is independent of prior runs against the shared test database.
+        const string testClaimPrefix = "http://ed-fi.org/identity/claims/test/";
+        var likeFilter = new { Prefix = $"{testClaimPrefix}%" };
+        await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
+        {
+            await arrangeConnection.ExecuteAsync(
+                "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+                likeFilter
+            );
+        }
+
+        var repository = new ResourceClaimMetadataRepository(
+            Options.Create(Configuration.DatabaseOptions.Value),
+            NullLogger<ResourceClaimMetadataRepository>.Instance
+        );
+        var seeds = new List<ResourceClaimMetadataSeed>
+        {
+            new("integrationSeedA", $"{testClaimPrefix}integrationSeedA"),
+            new("integrationSeedB", $"{testClaimPrefix}integrationSeedB"),
+        };
+
+        // Act - seed the same set twice.
+        var firstInserted = await repository.SeedResourceClaims(seeds);
+        var secondInserted = await repository.SeedResourceClaims(seeds);
+
+        // Assert - the first call inserts both rows; the second inserts none
+        // (ON CONFLICT (ClaimName) DO NOTHING), so existing rows are never duplicated.
+        Assert.That(firstInserted, Is.EqualTo(2));
+        Assert.That(secondInserted, Is.EqualTo(0));
+
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        var count = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            likeFilter
+        );
+        Assert.That(count, Is.EqualTo(2));
+
+        // Cleanup the synthetic rows so the shared test database is left clean.
+        await connection.ExecuteAsync(
+            "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            likeFilter
+        );
+    }
+
+    [Test]
+    public async Task Given_upload_introduces_a_new_claim_It_should_seed_resource_claim_metadata_through_the_loader()
+    {
+        // Exercises the production loader wiring and ordering: with the real
+        // ResourceClaimMetadataRepository injected, an upload that introduces a brand-new claim must
+        // seed the matching ResourceClaim row THROUGH ClaimsDataLoader.UpdateClaimsAsync (after the
+        // claims document is applied), not just via the repository in isolation.
+        const string newClaimName = "http://ed-fi.org/identity/claims/domains/loaderSeededTestDomain";
+
+        // Arrange - baseline load, then confirm the synthetic claim has no ResourceClaim row yet.
+        await _claimsDataLoader.LoadInitialClaimsAsync();
+
+        await using (var arrange = await DataSource!.OpenConnectionAsync())
+        {
+            bool alreadySeeded = await arrange.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS(SELECT 1 FROM dmscs.ResourceClaim WHERE ClaimName = @ClaimName)",
+                new { ClaimName = newClaimName }
+            );
+            Assert.That(
+                alreadySeeded,
+                Is.False,
+                "precondition: the synthetic claim must not be seeded before the upload"
+            );
+        }
+
+        var customClaimsJson = JsonNode.Parse(
+            $$"""
+            {
+              "claimSets": [
+                { "claimSetName": "LoaderSeedTestClaimSet", "isSystemReserved": false }
+              ],
+              "claimsHierarchy": [
+                {
+                  "name": "{{newClaimName}}",
+                  "defaultAuthorization": {
+                    "actions": [
+                      {
+                        "name": "Read",
+                        "authorizationStrategies": [ { "name": "NoFurtherAuthorizationRequired" } ]
+                      }
+                    ]
+                  },
+                  "claimSets": [
+                    { "name": "LoaderSeedTestClaimSet", "actions": [ { "name": "Read" } ] }
+                  ]
+                }
+              ]
+            }
+            """
+        )!;
+
+        // Act - routes through ClaimsUploadService -> ClaimsDataLoader.UpdateClaimsAsync.
+        var uploadResult = await _claimsUploadService.UploadClaimsAsync(customClaimsJson);
+
+        // Assert - upload succeeded and the loader seeded the new claim's ResourceClaim row.
+        Assert.That(
+            uploadResult.Success,
+            Is.True,
+            string.Join(", ", uploadResult.Failures.Select(f => $"{f.FailureType}: {f.Message}"))
+        );
+
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        string? seededResourceName = await connection.ExecuteScalarAsync<string?>(
+            "SELECT ResourceName FROM dmscs.ResourceClaim WHERE ClaimName = @ClaimName",
+            new { ClaimName = newClaimName }
+        );
+        Assert.That(
+            seededResourceName,
+            Is.EqualTo("loaderSeededTestDomain"),
+            "UpdateClaimsAsync must seed the new claim's ResourceClaim row through the wired repository"
+        );
+
+        // The synthetic ResourceClaim row is removed by TearDown's snapshot/restore.
     }
 
     [Test]

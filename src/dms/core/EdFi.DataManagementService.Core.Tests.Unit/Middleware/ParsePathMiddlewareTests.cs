@@ -115,12 +115,7 @@ public class ParsePathMiddlewareTests
         );
 
         var appSettingsOptions = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                MaskRequestBodyInLogs = false,
-                UseRelationalBackend = true,
-            }
+            new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
         );
 
         services.AddSingleton(appSettingsOptions);
@@ -140,12 +135,6 @@ public class ParsePathMiddlewareTests
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
-        services.AddTransient<ProfileFilteringMiddleware>();
-        services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
-        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
-            NullLogger<ProfileFilteringMiddleware>.Instance
-        );
-
         var serviceProvider = services.BuildServiceProvider();
 
         return new ApiService(
@@ -158,7 +147,6 @@ public class ParsePathMiddlewareTests
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
             appSettingsOptions,
-            A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,

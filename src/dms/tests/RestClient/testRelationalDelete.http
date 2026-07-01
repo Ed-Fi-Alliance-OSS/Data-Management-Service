@@ -4,7 +4,7 @@
 # (from src/dms/tests/.../Features/References/DeleteReferenceValidation.feature).
 #
 # Prereqs:
-#   /e2e start --relational          # dedicated edfi schema in edfi_datamanagementservice_relational
+#   /e2e start                       # dedicated edfi schema in edfi_datamanagementservice_e2e
 #   /e2e status                      # confirm ed-fi-api is healthy
 #
 # End-to-end self-contained: section 1 mints the Config-Service + DMS tokens so no manual
@@ -17,8 +17,8 @@
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=ValidClientSecret1234567890!Abcd
 
-# Relational DB + password match eng/docker-compose/.env.e2e.relational.
-@relationalDbName=edfi_datamanagementservice_relational
+# DMS E2E DB + password match eng/docker-compose/.env.e2e.
+@relationalDbName=edfi_datamanagementservice_e2e
 @postgresPassword=abcdefgh1!
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ Authorization: bearer {{configToken}}
 
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
 # The connection string MUST target the dedicated relational database provisioned by
-# provision-relational-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
+# provision-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
 # @name createDataStore
 POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
@@ -80,7 +80,7 @@ Authorization: bearer {{configToken}}
 @dataStoreId={{createDataStore.response.body.id}}
 
 ### 1.4 Create an application with the NoFurtherAuthorizationRequired claim set
-# (matches what the E2E relational-backend runs use — avoids namespace-authz noise while
+# (matches what the DMS E2E runs use — avoids namespace-authz noise while
 # demoing the 409 contract)
 # @name createApplication
 POST http://localhost:{{configPort}}/v3/applications
