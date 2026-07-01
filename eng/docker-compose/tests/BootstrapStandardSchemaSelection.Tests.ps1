@@ -42,6 +42,13 @@ Describe "DMS-1156 standard-mode schema selection" {
                     -Destination $dockerComposeRoot
             }
 
+            # schema-package-utility.psm1 lives at eng/ (a sibling of eng/docker-compose/), not inside
+            # eng/docker-compose/; -EnvironmentFile-driven staging imports it via a relative "../" path.
+            $engRoot = Join-Path $repoRoot "eng"
+            Copy-Item `
+                -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                -Destination $engRoot
+
             # Copy JsonSchemaForApiSchema.json so prepare-dms-schema.ps1 can stage it into the
             # workspace (required since DMS-1154 activates staged-workspace runtime loading).
             $jsonSchemaSourceDir = Join-Path $script:sourceRepoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema"
@@ -217,6 +224,32 @@ exit $ExitCode
             return $feedFolder
         }
 
+        function script:New-SchemaPackagesEnvironmentFile {
+            <#
+            .SYNOPSIS
+            Writes a docker-compose-style env file whose SCHEMA_PACKAGES value lists the supplied
+            package entries (name/version/feedUrl), matching the shape schema-package-utility.psm1's
+            Get-SchemaPackagesFromEnvironmentFile parses. feedUrl is a local folder path in these
+            fixtures (Resolve-StandardSchemaPackage treats a plain directory path as a local feed).
+            Returns the path to the written env file.
+            #>
+            param(
+                [Parameter(Mandatory)]
+                [string]
+                $Directory,
+
+                [Parameter(Mandatory)]
+                [object[]]
+                $Packages
+            )
+
+            $envFilePath = Join-Path $Directory ".env.fixture"
+            $packagesJson = $Packages | ConvertTo-Json -Depth 5 -AsArray
+            $content = "SCHEMA_PACKAGES='$packagesJson'`n"
+            Set-Content -LiteralPath $envFilePath -Value $content -Encoding utf8 -NoNewline
+            return $envFilePath
+        }
+
         function script:Invoke-PrepareStandard {
             <#
             .SYNOPSIS
@@ -363,6 +396,151 @@ exit $ExitCode
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json") |
+                Should -BeTrue
+        }
+    }
+
+    Context "Given_EnvironmentFile_DrivenStandardMode_DMS1238" {
+        It "It_stages_core_and_extension_from_SCHEMA_PACKAGES_when_EnvironmentFile_is_supplied" {
+            # DMS-1238: standard mode staged from -EnvironmentFile must resolve and stage the FULL
+            # SCHEMA_PACKAGES set (core plus any extensions), not the catalog core-only default, so the
+            # staged workspace's effective schema hash matches what the DMS container entrypoint
+            # resolves from the same SCHEMA_PACKAGES value at startup.
+            $packagesFeedFolder = script:New-TempDirectory
+            try {
+                script:New-FixtureNupkg `
+                    -FeedFolder $packagesFeedFolder `
+                    -PackageId "EdFi.DataStandard52.ApiSchema" `
+                    -Version "1.0.332" `
+                    -ProjectName "Ed-Fi" `
+                    -ProjectEndpointName "ed-fi" `
+                    -IsExtensionProject $false | Out-Null
+
+                script:New-FixtureNupkg `
+                    -FeedFolder $packagesFeedFolder `
+                    -PackageId "EdFi.DataStandard52.TPDM.ApiSchema" `
+                    -Version "1.0.332" `
+                    -ProjectName "TPDM" `
+                    -ProjectEndpointName "tpdm" `
+                    -IsExtensionProject $true | Out-Null
+
+                $environmentFilePath = script:New-SchemaPackagesEnvironmentFile `
+                    -Directory $script:repo.RepoRoot `
+                    -Packages @(
+                        [pscustomobject]@{
+                            name    = "EdFi.DataStandard52.ApiSchema"
+                            version = "1.0.332"
+                            feedUrl = $packagesFeedFolder
+                        },
+                        [pscustomobject]@{
+                            name    = "EdFi.DataStandard52.TPDM.ApiSchema"
+                            version = "1.0.332"
+                            feedUrl = $packagesFeedFolder
+                        }
+                    )
+
+                $tool = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+                & $script:repo.PrepareSchemaScript `
+                    -EnvironmentFile $environmentFilePath `
+                    -SchemaToolPath $tool | Out-Null
+
+                $manifest = script:Get-RootManifest
+                $manifest.schema.selectionMode | Should -Be "Standard"
+                @($manifest.schema.selectedExtensions) | Should -Contain "tpdm"
+
+                $apiSchemaManifest = script:Get-ApiSchemaManifest
+                $projectEndpoints = @($apiSchemaManifest.projects | ForEach-Object { $_.projectEndpointName })
+                $projectEndpoints | Should -Contain "ed-fi"
+                $projectEndpoints | Should -Contain "tpdm"
+
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
+                    Should -BeTrue
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/TPDM/ApiSchema.json") |
+                    Should -BeTrue
+            }
+            finally {
+                if (Test-Path -LiteralPath $packagesFeedFolder) {
+                    Remove-Item -LiteralPath $packagesFeedFolder -Recurse -Force
+                }
+            }
+        }
+
+        It "It_fails_fast_when_SCHEMA_PACKAGES_lists_no_core_package" {
+            # Guard rail: SCHEMA_PACKAGES must carry exactly one core package entry so the staged
+            # workspace always has a core project. A set containing only extensions must fail fast
+            # rather than silently staging an incomplete workspace.
+            $extensionOnlyFeedFolder = script:New-TempDirectory
+            try {
+                script:New-FixtureNupkg `
+                    -FeedFolder $extensionOnlyFeedFolder `
+                    -PackageId "EdFi.DataStandard52.TPDM.ApiSchema" `
+                    -Version "1.0.332" `
+                    -ProjectName "TPDM" `
+                    -ProjectEndpointName "tpdm" `
+                    -IsExtensionProject $true | Out-Null
+
+                $environmentFilePath = script:New-SchemaPackagesEnvironmentFile `
+                    -Directory $script:repo.RepoRoot `
+                    -Packages @(
+                        [pscustomobject]@{
+                            name    = "EdFi.DataStandard52.TPDM.ApiSchema"
+                            version = "1.0.332"
+                            feedUrl = $extensionOnlyFeedFolder
+                        }
+                    )
+
+                $tool = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+
+                {
+                    & $script:repo.PrepareSchemaScript `
+                        -EnvironmentFile $environmentFilePath `
+                        -SchemaToolPath $tool | Out-Null
+                } | Should -Throw -ExpectedMessage "*must list exactly one core package*"
+
+                Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema") |
+                    Should -BeFalse
+            }
+            finally {
+                if (Test-Path -LiteralPath $extensionOnlyFeedFolder) {
+                    Remove-Item -LiteralPath $extensionOnlyFeedFolder -Recurse -Force
+                }
+            }
+        }
+
+        It "It_falls_back_to_catalog_core_only_staging_when_EnvironmentFile_is_omitted_BackwardCompat" {
+            # Backward compatibility: direct invocation with no -EnvironmentFile (the pre-DMS-1238
+            # contract) must keep resolving the catalog-pinned core-only default, unaffected by this
+            # change.
+            $script:feedFolder = script:New-FixtureFeed
+
+            script:Invoke-PrepareStandard -FeedFolder $script:feedFolder
+
+            $manifest = script:Get-RootManifest
+            $manifest.schema.selectionMode | Should -Be "Standard"
+            $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
+                Should -BeTrue
+        }
+
+        It "It_falls_back_to_catalog_core_only_staging_when_EnvironmentFile_has_no_SCHEMA_PACKAGES_key" {
+            # An env file supplied via -EnvironmentFile but without a SCHEMA_PACKAGES key at all (e.g. a
+            # minimal or non-schema env file) must not throw; it degrades to the catalog core-only
+            # default rather than treating absence as an error.
+            $script:feedFolder = script:New-FixtureFeed
+
+            $environmentFilePath = Join-Path $script:repo.RepoRoot ".env.no-schema-packages"
+            "DMS_HTTP_PORTS=8080`n" | Set-Content -LiteralPath $environmentFilePath -Encoding utf8
+
+            $tool = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+            & $script:repo.PrepareSchemaScript `
+                -EnvironmentFile $environmentFilePath `
+                -PackageFeedUrl $script:feedFolder `
+                -SchemaToolPath $tool | Out-Null
+
+            $manifest = script:Get-RootManifest
+            $manifest.schema.selectionMode | Should -Be "Standard"
+            $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
         }
     }

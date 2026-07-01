@@ -683,7 +683,7 @@
           "Microsoft.AspNetCore.OpenApi": "[10.0.1, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.12.0, )",
           "Microsoft.IdentityModel.Protocols": "[8.12.0, )",
-          "Microsoft.OpenApi": "[2.0.0, )",
+          "Microsoft.OpenApi": "[2.7.5, )",
           "Serilog": "[4.0.2, )",
           "Serilog.Extensions.Logging": "[8.0.0, )",
           "Serilog.Settings.Configuration": "[8.0.2, )",
@@ -1010,9 +1010,9 @@
       },
       "Microsoft.OpenApi": {
         "type": "CentralTransitive",
-        "requested": "[2.0.0, )",
-        "resolved": "2.0.0",
-        "contentHash": "GGYLfzV/G/ct80OZ45JxnWP7NvMX1BCugn/lX7TH5o0lcVaviavsLMTxmFV2AybXWjbi3h6FF1vgZiTK6PXndw=="
+        "requested": "[2.7.5, )",
+        "resolved": "2.7.5",
+        "contentHash": "0FA67RSnRM4tcBKqiqVu/HPdZ9+QOKbmeRjxRUGTCjPU4C0bmUhd97Dso7Yild5P7nOV6GxJ2xrK0Kv/O9xp0w=="
       },
       "Npgsql": {
         "type": "CentralTransitive",

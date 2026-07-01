@@ -459,7 +459,11 @@ function Invoke-BootstrapWrapper {
         # before infrastructure starts.
         if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
             $global:LASTEXITCODE = 0
-            & $prepareSchemaScript
+            # Forward the same effective env file used by the other phases so standard-mode staging
+            # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
+            # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
+            # hash in sync with what the DMS container entrypoint resolves from the same env file.
+            & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                 throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
             }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 
@@ -65,6 +66,7 @@ public class DbHealthCheck(string connectionString, string providerName, ILogger
         return providerName.ToLower() switch
         {
             "postgresql" => new NpgsqlConnection(connectionString),
+            "mssql" => new SqlConnection(connectionString),
             _ => throw new ArgumentException($"Unsupported provider: {providerName}"),
         };
     }
