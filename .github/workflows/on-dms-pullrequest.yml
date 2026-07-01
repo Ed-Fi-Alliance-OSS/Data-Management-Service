@@ -1964,6 +1964,7 @@ jobs:
     needs:
       [
         run-e2e-tests,
+        run-e2e-tests-ds61,
         run-instance-management-e2e-tests,
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
