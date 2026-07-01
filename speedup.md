@@ -43,6 +43,17 @@ Preferred outcome:
 - Most test database leases are backup restores, snapshot restores, or simple data resets.
 - Full generated-DDL provisioning becomes rare and visible in timing artifacts.
 
+## Phase Advancement Rule
+
+Each phase must be verified independently before work begins on the next phase.
+
+Required gate for every phase:
+
+1. Push the phase changes to the branch.
+2. Let the real GitHub Actions workflow run for that pushed commit.
+3. Review the workflow result and timing artifacts.
+4. Move to the next phase only after the phase-specific validation passes in GitHub Actions.
+
 ## Current Code Paths
 
 PostgreSQL baseline flow:
