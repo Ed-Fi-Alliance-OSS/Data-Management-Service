@@ -37,6 +37,19 @@ public static class MssqlTestDatabaseHelper
         command.ExecuteNonQuery();
     }
 
+    public static async Task ExecuteAdminNonQueryAsync(string sql, int commandTimeoutSeconds = 300)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+
+        await using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
+        await connection.OpenAsync();
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = commandTimeoutSeconds;
+        await command.ExecuteNonQueryAsync();
+    }
+
     public static void DropDatabaseIfExists(string databaseName)
     {
         SqlConnection.ClearAllPools();
@@ -45,7 +58,7 @@ public static class MssqlTestDatabaseHelper
         connection.Open();
 
         using SqlCommand command = connection.CreateCommand();
-        var escapedDatabaseName = databaseName.Replace("'", "''");
+        var escapedDatabaseName = EscapeSqlLiteral(databaseName);
         var quotedDatabaseName = QuoteIdentifier(databaseName);
 
         command.CommandText = $"""
@@ -59,8 +72,51 @@ public static class MssqlTestDatabaseHelper
         command.ExecuteNonQuery();
     }
 
-    private static string QuoteIdentifier(string value)
+    public static string QuoteIdentifier(string value)
     {
-        return $"[{value.Replace("]", "]]")}]";
+        ArgumentNullException.ThrowIfNull(value);
+
+        return $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
+    }
+
+    public static string EscapeSqlLiteral(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return value.Replace("'", "''", StringComparison.Ordinal);
+    }
+
+    public static string BuildSiblingFilePath(string physicalName, string fileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(physicalName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+        var lastForwardSlashIndex = physicalName.LastIndexOf('/');
+        var lastBackslashIndex = physicalName.LastIndexOf('\\');
+        var lastSeparatorIndex = Math.Max(lastForwardSlashIndex, lastBackslashIndex);
+
+        if (lastSeparatorIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not determine the SQL Server-visible file directory from '{physicalName}'."
+            );
+        }
+
+        var separator = physicalName[lastSeparatorIndex];
+
+        return lastSeparatorIndex == 0
+            ? $"{separator}{fileName}"
+            : $"{physicalName[..lastSeparatorIndex]}{separator}{fileName}";
+    }
+
+    public static string SanitizeFileNamePart(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return new([
+            .. value.Select(character =>
+                char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'
+            ),
+        ]);
     }
 }

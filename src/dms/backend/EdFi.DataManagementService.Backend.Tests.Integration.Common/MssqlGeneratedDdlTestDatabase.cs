@@ -90,6 +90,31 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         return CreateEmptyAsync(context);
     }
 
+    internal static MssqlGeneratedDdlTestDatabase AttachExisting(
+        string databaseName,
+        string fixtureSignature = "",
+        string generatedDdlHash = "",
+        string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
+
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            throw new InvalidOperationException(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        return new(
+            databaseName,
+            MssqlTestDatabaseHelper.BuildConnectionString(databaseName),
+            fixtureSignature,
+            generatedDdlHash,
+            leaseStrategy
+        );
+    }
+
     private static Task<MssqlGeneratedDdlTestDatabase> CreateEmptyAsync(
         MssqlProvisioningTimingContext context
     )
