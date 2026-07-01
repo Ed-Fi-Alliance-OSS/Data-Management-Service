@@ -424,55 +424,11 @@ $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
 $fragments = [System.Collections.ArrayList]::new()
 $namespacePrefixes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $unmappedExtensionNames = [System.Collections.ArrayList]::new()
-$knownExtensionVerificationChecks = [System.Collections.ArrayList]::new()
-
-foreach ($extensionProject in $extensionProjects) {
-    $projectName = Get-ValueOrNull -Hashtable $extensionProject -Key "projectName"
-    if ([string]::IsNullOrWhiteSpace($projectName)) {
-        throw "Bootstrap ApiSchema manifest project entry is missing 'projectName'."
-    }
-
-    $knownExtension = Get-StandardKnownExtensionInfo -ProjectName $projectName
-    if ($null -ne $knownExtension) {
-        if ($knownExtension.ContainsKey("FragmentFileName")) {
-            $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
-            if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
-                throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafeText $fragmentPath)"
-            }
-
-            Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
-        }
-
-        if ($knownExtension.ContainsKey("NamespacePrefix")) {
-            $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
-        }
-
-        # Extensions whose claims are already covered by the embedded Claims.json (e.g. TPDM in
-        # DS 5.2) stage no fragment; their catalog-declared VerificationChecks are collected here
-        # and added to the readiness checks below so the claims-ready gate still confirms CMS
-        # composed those extension claims from the embedded base.
-        if ($knownExtension.ContainsKey("VerificationChecks")) {
-            foreach ($verificationCheck in @($knownExtension["VerificationChecks"])) {
-                $null = $knownExtensionVerificationChecks.Add($verificationCheck)
-            }
-        }
-    } else {
-        $null = $unmappedExtensionNames.Add($projectName)
-    }
-}
-
-$userFragmentFiles = @(Get-UserFragmentFile -Path $ClaimsDirectoryPath)
-if ($unmappedExtensionNames.Count -gt 0 -and $userFragmentFiles.Count -eq 0) {
-    throw "ClaimsDirectoryPath is required for unmapped extension project(s): $(Format-LogSafeText ($unmappedExtensionNames -join ', '))."
-}
-
-foreach ($userFragmentFile in $userFragmentFiles) {
-    Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $userFragmentFile
-}
-
-$effectiveClaimSetNames = Get-EffectiveClaimSetName
+# Readiness checks accumulate here across the baseline probe, known-extension entries, and fragment
+# extraction; Add-ExpectedVerificationCheck dedups on claimSet|resourceClaim|action.
 $expectedVerificationChecks = [System.Collections.ArrayList]::new()
 $seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
 # Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
 # that CMS applied the embedded base claims before checking staged extension entries.
 # The probe targets a LEAF resource claim: CMS /authorizationMetadata flattens the claims
@@ -486,17 +442,77 @@ Add-ExpectedVerificationCheck `
     -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
     -Action "Read"
 
-# Add readiness checks for known extensions covered by the embedded claims (no staged fragment).
-# These target leaf resource claims, so they are asserted directly against /authorizationMetadata
-# rather than deferred like parent-derived checks.
-foreach ($verificationCheck in $knownExtensionVerificationChecks) {
-    Add-ExpectedVerificationCheck `
-        -Seen $seenChecks `
-        -Checks $expectedVerificationChecks `
-        -ClaimSetName $verificationCheck["ClaimSetName"] `
-        -ResourceClaim $verificationCheck["ResourceClaim"] `
-        -Action $verificationCheck["Action"]
+foreach ($extensionProject in $extensionProjects) {
+    $projectName = Get-ValueOrNull -Hashtable $extensionProject -Key "projectName"
+    if ([string]::IsNullOrWhiteSpace($projectName)) {
+        throw "Bootstrap ApiSchema manifest project entry is missing 'projectName'."
+    }
+
+    $knownExtension = Get-StandardKnownExtensionInfo -ProjectName $projectName
+    if ($null -eq $knownExtension) {
+        $null = $unmappedExtensionNames.Add($projectName)
+        continue
+    }
+
+    # A known-extension entry must carry at least one actionable key. An entry with none (e.g. a
+    # misspelled key) would otherwise be silently treated as fully mapped: it would stage nothing,
+    # contribute no checks, and suppress the unmapped-extension guard - yielding runtime 403s the
+    # claims-ready gate cannot detect.
+    $recognizedKeys = @("FragmentFileName", "NamespacePrefix", "VerificationChecks")
+    if (@($recognizedKeys | Where-Object { $knownExtension.ContainsKey($_) }).Count -eq 0) {
+        throw "Known extension '$(Format-LogSafeText $projectName)' has a claims metadata entry with no recognized keys (expected one or more of: $($recognizedKeys -join ', ')). Check KnownExtensionClaimsMetadata for a misspelled key."
+    }
+
+    if ($knownExtension.ContainsKey("FragmentFileName")) {
+        $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
+        if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
+            throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafeText $fragmentPath)"
+        }
+
+        Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
+    }
+
+    if ($knownExtension.ContainsKey("NamespacePrefix")) {
+        $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
+    }
+
+    # Extensions whose claims are already covered by the embedded Claims.json (e.g. TPDM in DS 5.2)
+    # stage no fragment; their catalog-declared VerificationChecks are added to the readiness checks
+    # directly so the claims-ready gate still confirms CMS composed those extension claims from the
+    # embedded base. Each targets a leaf resource claim, so it is asserted directly against
+    # /authorizationMetadata rather than deferred like parent-derived checks. Malformed entries throw
+    # here rather than being silently dropped by Add-ExpectedVerificationCheck's whitespace guard.
+    if ($knownExtension.ContainsKey("VerificationChecks")) {
+        foreach ($verificationCheck in @($knownExtension["VerificationChecks"])) {
+            $checkClaimSet = [string]$verificationCheck["ClaimSetName"]
+            $checkResourceClaim = [string]$verificationCheck["ResourceClaim"]
+            $checkAction = [string]$verificationCheck["Action"]
+            if ([string]::IsNullOrWhiteSpace($checkClaimSet) -or
+                [string]::IsNullOrWhiteSpace($checkResourceClaim) -or
+                [string]::IsNullOrWhiteSpace($checkAction)) {
+                throw "Known extension '$(Format-LogSafeText $projectName)' has a malformed VerificationChecks entry (ClaimSetName, ResourceClaim, and Action are all required)."
+            }
+
+            Add-ExpectedVerificationCheck `
+                -Seen $seenChecks `
+                -Checks $expectedVerificationChecks `
+                -ClaimSetName $checkClaimSet `
+                -ResourceClaim $checkResourceClaim `
+                -Action $checkAction
+        }
+    }
 }
+
+$userFragmentFiles = @(Get-UserFragmentFile -Path $ClaimsDirectoryPath)
+if ($unmappedExtensionNames.Count -gt 0 -and $userFragmentFiles.Count -eq 0) {
+    throw "ClaimsDirectoryPath is required for unmapped extension project(s): $(Format-LogSafeText ($unmappedExtensionNames -join ', '))."
+}
+
+foreach ($userFragmentFile in $userFragmentFiles) {
+    Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $userFragmentFile
+}
+
+$effectiveClaimSetNames = Get-EffectiveClaimSetName
 
 foreach ($fragment in $fragments) {
     Assert-FragmentValidAndExtractCheck `

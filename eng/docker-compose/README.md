@@ -204,9 +204,10 @@ or in-repo schema directories that are not published as NuGet packages.
 
 ```pwsh
 # Stage schema and claims, then start DMS.
-# -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension; core plus the
-# built-in extensions (Sample, Homograph, TPDM) stage claims without it.
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+# -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension. Core plus the
+# built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
+# stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
+./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath $schemaToolExe
 ./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
 ./bootstrap-local-dms.ps1
 ```
@@ -233,14 +234,11 @@ the DMS container via `bootstrap-dms.yml`; staged claims are activated per
 `claims.mode` in the manifest. The staged workspace is runtime-authoritative in
 bootstrap mode.
 
-The full in-repo `EdFi.DataStandard52.ApiSchema` directory includes TPDM.
-Bootstrap maps the built-in Sample, Homograph, and TPDM extensions: Sample and
-Homograph stage claim fragments, while TPDM's security metadata is already
-carried by the embedded DS 5.2 claims, so no TPDM fragment is staged. The full
-in-repo DS 5.2 schema (core plus Sample, Homograph, and TPDM) therefore
-bootstraps without `-ClaimsDirectoryPath`; that argument is only needed for a
-custom extension outside the bootstrap map. Note this applies to Data Standard
-5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM into core.
+The full DS 5.2 ApiSchema set - core plus the Sample, Homograph, and TPDM
+extensions - is bootstrap-mapped end to end (see Expert mode above for how each
+is handled), so staging it needs no `-ClaimsDirectoryPath`. This applies to Data
+Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
+into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
 CDC/Kafka support is pending a separate implementation, so bootstrap startup
@@ -370,7 +368,7 @@ the health wait, then start DMS in the IDE between phases:
 
 ```pwsh
 cd eng/docker-compose
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
+./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath ...
 ./prepare-dms-claims.ps1
 ./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
 ./configure-local-data-store.ps1 -AddSmokeTestCredentials

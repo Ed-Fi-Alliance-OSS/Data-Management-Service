@@ -196,7 +196,9 @@ schema contract and claims-staging contract rather than introducing a second pat
   > `Claims.json` already carries the full TPDM claims hierarchy and its `EdFiSandbox` grants, the claims
   > phase recognizes TPDM without staging a fragment (Embedded mode) and no longer requires
   > `-ClaimsDirectoryPath`. It records leaf readiness checks so the claims-ready gate confirms CMS composed
-  > TPDM. `-ClaimsDirectoryPath` remains required only for extensions still outside the bootstrap map.
+  > TPDM, and records TPDM's descriptor seed namespace (`uri://tpdm.ed-fi.org`) so the `SeedLoader` credential
+  > can load TPDM descriptor seed data. `-ClaimsDirectoryPath` remains required only for extensions still
+  > outside the bootstrap map.
 
 ## Tasks
 
@@ -212,8 +214,9 @@ schema contract and claims-staging contract rather than introducing a second pat
    security-fragment fields. `load-dms-seed-data.ps1` owns the separate seed catalog lookup when seed delivery
    runs. `EdFiSandbox` coverage is required for every bootstrap-managed extension fragment and `SeedLoader`
    coverage is required only where a built-in seed package is advertised. Story 00's v1 mapped security
-   lookup covers Sample and Homograph only; TPDM and any other direct filesystem extension not in the lookup
-   are treated as unmapped and require `-ClaimsDirectoryPath`.
+   lookup covers Sample and Homograph only; any other direct filesystem extension not in the lookup
+   is treated as unmapped and requires `-ClaimsDirectoryPath` (TPDM later became bootstrap-mapped via the
+   embedded DS 5.2 claims - see the DMS-1247 update note above).
 3. Implement direct filesystem schema-materialization logic in `prepare-dms-schema.ps1`: normalize
    `-ApiSchemaPath` inputs into the staged workspace, normalize one core schema plus zero or more extension
    schemas into the staged ApiSchema asset workspace, copy optional schema-adjacent static content into

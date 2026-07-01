@@ -689,10 +689,12 @@ in `prepare-dms-claims.ps1`, and optional seed package metadata in `load-dms-see
 loading participates only when the seed phase has a concrete built-in seed package for the selected
 extension.
 
-Story 00's v1 direct-filesystem claims lookup is intentionally narrow. It maps only extension projects that
-have current shipped security fragments in the repo, such as Sample and Homograph. TPDM and any other direct
-filesystem extension outside that lookup are treated as unmapped: bootstrap requires `-ClaimsDirectoryPath`
-for caller-supplied fragments and does not silently substitute `sample`, `homograph`, or any default mapping.
+Story 00's v1 direct-filesystem claims lookup is intentionally narrow. It maps the built-in extensions
+bootstrap knows how to handle: Sample and Homograph stage shipped security fragments, and TPDM is covered by
+the embedded DS 5.2 `Claims.json` (no fragment staged) while recording its descriptor seed namespace
+`uri://tpdm.ed-fi.org`. Any other direct filesystem extension outside that lookup is treated as unmapped:
+bootstrap requires `-ClaimsDirectoryPath` for caller-supplied fragments and does not silently substitute
+`sample`, `homograph`, or any default mapping.
 
 The bootstrap logic is:
 
@@ -1557,8 +1559,10 @@ seed-catalog-driven (Story 02), and custom seed payloads flow through `-SeedData
 2. `prepare-dms-claims.ps1` consumes the bootstrap manifest schema section and the staged schema files. For
    each project in the staged set with a matching bootstrap-managed security fragment (Sample, Homograph),
    it stages the corresponding JSON file(s) into `eng/docker-compose/.bootstrap/claims/` and resolves the
-   claims section to Hybrid mode; for a project without a bootstrap-managed fragment (e.g. TPDM), it requires
-   caller-supplied `-ClaimsDirectoryPath` fragments. Config Service startup consumes that staged host claims
+   claims section to Hybrid mode; TPDM is bootstrap-mapped without a fragment (its claims ship in the
+   embedded DS 5.2 `Claims.json`), so it stays Embedded mode and records only its descriptor seed namespace;
+   a project with no bootstrap-managed mapping requires caller-supplied `-ClaimsDirectoryPath` fragments.
+   Config Service startup consumes that staged host claims
    workspace through the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json`. DMS gets
    claimsets from CMS authorization metadata, not from local fragment files, so DMS compose files do not
    mount the claims directory.
@@ -1632,8 +1636,10 @@ developer does not configure each separately:
 
 2. **Security fragments loaded (Section 4)** - When the extension has a bootstrap-managed security fragment
    (Sample, Homograph), the corresponding JSON file(s) are staged and the bootstrap manifest claims section
-   resolves to Hybrid mode automatically. An extension without a bootstrap-managed fragment (e.g. TPDM)
-   requires caller-supplied `-ClaimsDirectoryPath`. For built-in extension seed packages, those fragments
+   resolves to Hybrid mode automatically. TPDM is bootstrap-mapped without a fragment - its claims ship in
+   the embedded DS 5.2 `Claims.json`, so the claims section stays Embedded mode and only its descriptor seed
+   namespace (`uri://tpdm.ed-fi.org`) is recorded. An extension with no bootstrap-managed mapping requires
+   caller-supplied `-ClaimsDirectoryPath`. For built-in extension seed packages, those fragments
    must attach both `EdFiSandbox` and `SeedLoader` permissions to the extension resources they cover.
 
 3. **Extension seed data handling (Section 8.3)** - When seed delivery runs, bootstrap checks whether an

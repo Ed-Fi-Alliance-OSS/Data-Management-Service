@@ -47,11 +47,12 @@
     and stages it into the bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
-    Expert mode. Stages ApiSchema*.json files from the in-repo directory (which includes TPDM).
-    Use this path when you have a custom or in-repo schema directory not published as a NuGet package.
-    After staging, run prepare-dms-claims.ps1 with -ClaimsDirectoryPath if the schema includes
-    extensions whose claim fragments are not auto-staged (e.g. TPDM).
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath $schemaToolExe
+    Expert mode. Stages ApiSchema*.json files from a local directory (for example one containing the
+    DS 5.2 core plus the TPDM extension). Use this path for a custom or local schema directory not
+    published as a NuGet package. After staging, run prepare-dms-claims.ps1; -ClaimsDirectoryPath is
+    needed only for a custom extension outside the bootstrap map (core, Sample, Homograph, and TPDM
+    are handled without it).
 #>
 [CmdletBinding()]
 param(

@@ -121,23 +121,23 @@
     or validate the staged workspace before starting infrastructure.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
-    Expert mode (filesystem). Stage the in-repo ApiSchema directory (which includes TPDM
-    and other extensions) and claims workspaces manually, then start the local stack. The
-    in-repo directory requires -ClaimsDirectoryPath with a TPDM claim fragment unless
-    only core, Sample, and Homograph extensions are staged.
+    Expert mode (filesystem). Stage a local ApiSchema directory (which may include TPDM
+    and other extensions) and claims workspaces manually, then start the local stack.
+    -ClaimsDirectoryPath is needed only for a custom extension outside the bootstrap map;
+    core, Sample, Homograph, and TPDM are all handled without it.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Expert mode with seed loading. Prepare the bootstrap manifest, then start the stack and
     load developer-supplied XML interchange files.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory>
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -InfraOnly
     IDE pre-DMS stop: start infrastructure, configure the data store, provision the schema,
@@ -145,14 +145,14 @@
     provision-dms-schema.ps1 to configure appsettings.Development.json.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory>
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl http://localhost:8080
     IDE health-wait continuation: same pre-DMS phase, then waits for the IDE-hosted DMS at
     http://localhost:8080/health to return HTTP 200 (300-second timeout).
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory>
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl http://localhost:8080 -LoadSeedData -SeedDataPath ./my-seed-xml/
     IDE full workflow: pre-DMS phase, health-wait for IDE DMS, then load seed data against

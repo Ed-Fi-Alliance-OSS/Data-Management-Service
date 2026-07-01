@@ -77,7 +77,7 @@
     workspace is staged), then starts the published stack and provisions schemas. No seed loading.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory>
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-published-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Expert mode with seed loading. Stage an extension-containing or custom schema set via

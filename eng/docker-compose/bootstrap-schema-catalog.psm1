@@ -78,14 +78,22 @@ $script:KnownExtensionClaimsMetadata = @{
         FragmentFileName = "005-homograph-extension-claimset.json"
     }
     "TPDM" = @{
-        # No FragmentFileName and no NamespacePrefix by design. The DS 5.2 embedded Claims.json
-        # (Claims/Standards/ds52/Claims.json) already carries the complete TPDM claims hierarchy
-        # and its EdFiSandbox CRUD grants (domains/tpdm directly, TPDM descriptors via
-        # domains/systemDescriptors, tpdm/candidate via domains/people), so Embedded mode covers
-        # TPDM with no staged fragment - authoring one would only duplicate embedded claims and add
-        # nothing. TPDM resources use the core uri://ed-fi.org namespace (like Homograph), so no
-        # distinct seed namespace prefix is recorded. DS 6.1 folds TPDM into core and ships no TPDM
-        # extension package, so this entry is only ever reached by a DS 5.2 bootstrap.
+        # No FragmentFileName by design. The DS 5.2 embedded Claims.json
+        # (Claims/Standards/ds52/Claims.json) already carries the complete TPDM claims hierarchy and
+        # its EdFiSandbox CRUD grants - TPDM resources are reachable through several core domains
+        # (e.g. tpdm resources via domains/tpdm, TPDM descriptors via domains/systemDescriptors,
+        # tpdm/candidate via domains/people, and the survey-response associations via
+        # domains/relationshipBasedData/surveyDomain) - so Embedded mode covers TPDM with no staged
+        # fragment; authoring one would only duplicate embedded claims and add nothing. DS 6.1 folds
+        # TPDM into core and ships no TPDM extension package, so this entry is only ever reached by a
+        # DS 5.2 bootstrap.
+        #
+        # NamespacePrefix IS recorded: TPDM descriptor data uses the distinct uri://tpdm.ed-fi.org
+        # namespace (TpdmExtension.feature authorizes EdFiSandbox with "uri://ed-fi.org,
+        # uri://tpdm.ed-fi.org" and posts descriptors under uri://tpdm.ed-fi.org/...), so the
+        # SeedLoader credential must carry that vendor namespace to load TPDM descriptor seed data.
+        # This mirrors Sample; unlike Homograph, whose resources stay on the core namespace.
+        NamespacePrefix = "uri://tpdm.ed-fi.org"
         #
         # VerificationChecks make the claims-ready gate confirm CMS actually composed TPDM claims
         # into EdFiSandbox from the embedded claims. Both target leaf resource claims (never
@@ -141,9 +149,9 @@ function Get-StandardKnownExtensionInfo {
     Used by prepare-dms-claims.ps1 to resolve claims handling for extensions present in a staged
     schema set (notably expert -ApiSchemaPath schema sets that contain extensions). Known extensions
     return a hashtable describing how bootstrap handles their claims: a FragmentFileName to stage
-    (Sample, Homograph), an optional NamespacePrefix (Sample), and/or optional VerificationChecks.
-    TPDM records no FragmentFileName and no NamespacePrefix - the DS 5.2 embedded Claims.json already
-    covers TPDM - only VerificationChecks so the claims-ready gate confirms CMS composed TPDM claims.
+    (Sample, Homograph), an optional NamespacePrefix (Sample, TPDM), and/or optional
+    VerificationChecks. TPDM stages no FragmentFileName because its claims ship embedded; see the
+    KnownExtensionClaimsMetadata TPDM entry for the full rationale.
     Extensions absent from the known map return $null - this is by design and does not indicate an
     error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. Note that
     standard mode is package-backed core-only and does not select extensions; this lookup serves the
@@ -160,8 +168,13 @@ function Get-StandardKnownExtensionInfo {
         $ProjectName
     )
 
-    if ($script:KnownExtensionClaimsMetadata.ContainsKey($ProjectName)) {
-        return $script:KnownExtensionClaimsMetadata[$ProjectName]
+    # Case-sensitive match: the PowerShell @{} literal is case-insensitive, so a look-alike custom
+    # extension (e.g. "Tpdm") must not silently resolve to the built-in "TPDM" metadata and skip its
+    # required caller-supplied claims. Compare keys with -ceq to enforce the Title-cased contract.
+    foreach ($knownProjectName in $script:KnownExtensionClaimsMetadata.Keys) {
+        if ($knownProjectName -ceq $ProjectName) {
+            return $script:KnownExtensionClaimsMetadata[$knownProjectName]
+        }
     }
 
     return $null

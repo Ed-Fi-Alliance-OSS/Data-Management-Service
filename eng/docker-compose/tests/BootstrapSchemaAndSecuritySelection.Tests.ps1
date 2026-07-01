@@ -604,7 +604,8 @@ exit $ExitCode
         It "stages core + TPDM in Embedded claims mode from embedded claims without a caller fragment" {
             # TPDM is a bootstrap-mapped extension whose claims are already carried by the embedded
             # DS 5.2 Claims.json, so a core + TPDM schema set needs no caller fragment and stages no
-            # claim files - claims.mode stays Embedded and no distinct namespace prefix is recorded.
+            # claim files - claims.mode stays Embedded. TPDM descriptor data uses the distinct
+            # uri://tpdm.ed-fi.org namespace, so that prefix IS recorded for the SeedLoader credential.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
 
             { Invoke-PrepareClaim } | Should -Not -Throw
@@ -614,7 +615,7 @@ exit $ExitCode
             @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Count |
                 Should -Be 0
             $manifest.schema.selectedExtensions | Should -Contain "tpdm"
-            $manifest.seed.extensionNamespacePrefixes | Should -BeNullOrEmpty
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
         }
 
         It "records TPDM leaf verification checks so the claims-ready gate confirms CMS composed TPDM claims" {
@@ -654,6 +655,54 @@ exit $ExitCode
             @($manifest.claims.expectedVerificationChecks |
                 Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
                 Should -Be 1
+        }
+
+        It "stages the full built-in set (core + Sample + Homograph + TPDM) without a caller fragment" {
+            # The documented headline scenario: the full in-repo DS 5.2 set bootstraps with no
+            # -ClaimsDirectoryPath. Sample and Homograph stage fragments (Hybrid) and Sample and TPDM
+            # record their descriptor namespace prefixes; TPDM stages nothing but still contributes
+            # its embedded-claims readiness checks.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample", "Homograph", "TPDM"))
+
+            { Invoke-PrepareClaim } | Should -Not -Throw
+            $manifest = Get-RootManifest
+            $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
+
+            $manifest.claims.mode | Should -Be "Hybrid"
+            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
+            # Homograph resources stay on the core namespace, so it records no distinct prefix.
+            $manifest.seed.extensionNamespacePrefixes | Should -Not -Contain "uri://homograph.ed-fi.org"
+            @($manifest.claims.expectedVerificationChecks |
+                Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
+                Should -Be 1
+        }
+
+        It "resolves the TPDM catalog entry only for the exact Title-cased name (case-sensitive)" {
+            # A look-alike custom extension (e.g. "Tpdm") must not resolve to the built-in TPDM
+            # metadata and silently skip its required caller-supplied claims.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+
+            Get-StandardKnownExtensionInfo -ProjectName "TPDM" | Should -Not -BeNullOrEmpty
+            Get-StandardKnownExtensionInfo -ProjectName "Tpdm" | Should -BeNullOrEmpty
+            Get-StandardKnownExtensionInfo -ProjectName "tpdm" | Should -BeNullOrEmpty
+        }
+
+        It "anchors TPDM catalog verification checks to leaf claims present in the embedded DS 5.2 Claims.json" {
+            # The two TPDM check URIs are hand-authored literals; tie them to the embedded claims so a
+            # future rename surfaces here rather than as a confusing claims-ready gate failure at bootstrap.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+            $tpdm = Get-StandardKnownExtensionInfo -ProjectName "TPDM"
+            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+            $claimsText = Get-Content -LiteralPath $claimsPath -Raw
+
+            @($tpdm.VerificationChecks).Count | Should -BeGreaterThan 0
+            foreach ($check in $tpdm.VerificationChecks) {
+                # Match the quoted claim name so e.g. tpdm/evaluation does not match tpdm/evaluationObjective.
+                $claimsText | Should -Match ([regex]::Escape('"' + $check.ResourceClaim + '"'))
+            }
         }
 
         It "reuses an identical core + TPDM Embedded claims workspace on re-run" {
