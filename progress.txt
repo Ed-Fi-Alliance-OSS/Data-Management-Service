@@ -44,3 +44,8 @@ Follow-up for CI Speedup Phase 5 setup-inclusive MSSQL rebalance.
 Key decisions: used validation run 28489353628 setup CSVs to identify MSSQL shard 3 as the setup-inclusive slowest shard; moved the three descriptor-read MSSQL fixtures from shard 3 to shard 4. Observed setup rows moved about 225s from shard 3 to the shard with the most wall-clock headroom; projected wall times from that run are MSSQL 953/651/934/676s, with the max under 120% projected median.
 Verification: run 28489353628 passed before this adjustment and confirmed mssql-fixture-setup-timings.csv uploaded for all MSSQL shards; next PR run should validate the final setup-inclusive distribution.
 Blockers/next: push the descriptor-read shard move and re-run PR validation before posting the timing comment.
+
+2026-06-30 22:54 CDT
+Follow-up for CI Speedup Phase 2 rollback.
+Key decisions: reverted the cheap-check-summary gate behavior from the DMS and Config PR workflows because it did not achieve its goal; preserved later CI speedup dependencies such as build-integration-test-assemblies and build-ci-docker-images.
+Verification: actionlint passed for the edited PR workflows; yq parsed both workflows; rg found no remaining cheap-check-summary references; git diff --check passed.

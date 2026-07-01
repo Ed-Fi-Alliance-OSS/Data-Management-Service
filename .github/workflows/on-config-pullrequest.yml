@@ -198,43 +198,8 @@ jobs:
           path: |
             **/*.trx
 
-  cheap-check-summary:
-    name: Cheap Check Summary
-    runs-on: ubuntu-latest
-    needs:
-      [
-        scan-actions-bidi,
-        verify-lock-files,
-        run-parity-pester-tests,
-        run-unit-tests,
-      ]
-    if: always()
-    steps:
-      - name: Check Cheap Validation Results
-        shell: pwsh
-        run: |
-          $results = @(
-            @{ Name = "Scan Actions, scan all files for BIDI Trojan Attacks"; Result = "${{ needs.scan-actions-bidi.result }}" },
-            @{ Name = "Verify Config Lock Files"; Result = "${{ needs.verify-lock-files.result }}" },
-            @{ Name = "Run Lock File Parity Tests"; Result = "${{ needs.run-parity-pester-tests.result }}" },
-            @{ Name = "Run Unit Tests"; Result = "${{ needs.run-unit-tests.result }}" }
-          )
-
-          $failedJobs = @(
-            $results | Where-Object { $_.Result -ne "success" } | ForEach-Object {
-              "$($_.Name): $($_.Result)"
-            }
-          )
-
-          if ($failedJobs.Count -gt 0) {
-            throw "Cheap validation failed: $($failedJobs -join '; ')"
-          }
-
-          Write-Host "All cheap validation jobs passed."
-
   run-integration-tests:
     name: Run Integration Tests
-    needs: cheap-check-summary
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -286,7 +251,6 @@ jobs:
 
   run-e2e-tests:
     name: Run E2E Tests
-    needs: cheap-check-summary
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -362,7 +326,7 @@ jobs:
 
   fresh-rebuild-docker-image:
     name: Fresh Rebuild Config Docker Image
-    needs: [detect-fresh-build-changes, cheap-check-summary]
+    needs: detect-fresh-build-changes
     if: needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -383,7 +347,7 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [verify-lock-files, run-parity-pester-tests, run-unit-tests, cheap-check-summary, run-e2e-tests, run-integration-tests, fresh-rebuild-docker-image]
+    needs: [verify-lock-files, run-parity-pester-tests, run-unit-tests, run-e2e-tests, run-integration-tests, fresh-rebuild-docker-image]
     if: always()
     steps:
     - name: Upload

@@ -23,30 +23,6 @@
     "completed": true
   },
   {
-    "category": "CI Speedup Phase 2",
-    "description": "Gate Docker-heavy and database-heavy PR jobs behind cheap validation jobs so failing PRs stop before expensive work starts.",
-    "acceptance-criteria": [
-      "A cheap-check summary job depends on the cheap validation jobs and fails when any cheap validation fails.",
-      "Heavyweight DMS PR jobs depend on the cheap-check summary job.",
-      "Config integration, Config E2E, and fresh Config Docker rebuild jobs depend on the cheap-check summary job.",
-      "Summary and artifact/reporting jobs still run when needed after failures.",
-      "No changes from later CI speedup phases are included in this phase.",
-      "The phase changes are committed and pushed to GitHub.",
-      "A PR exists for the branch; create one if it does not already exist.",
-      "A real GitHub Actions PR run completes successfully and shows the intended speedup change: expensive jobs do not start until cheap checks have passed.",
-      "The validation run URL and a brief before/after check summary are recorded in a PR comment before the next phase starts."
-    ],
-    "steps-to-verify": [
-      "Run: `git diff -- .github/workflows/on-dms-pullrequest.yml .github/workflows/on-config-pullrequest.yml`",
-      "Push the phase branch and wait for the PR workflow to start.",
-      "Run: `gh pr view || gh pr create --fill`",
-      "Run: `gh run list --branch $(git branch --show-current) --limit 10`",
-      "Inspect the PR workflow graph and confirm E2E, database integration, OpenAPI, and fresh Docker rebuild jobs wait for the cheap-check summary job.",
-      "Add a PR comment with the validation run URL and the observed cheap-check gating behavior."
-    ],
-    "completed": true
-  },
-  {
     "category": "CI Speedup Phase 3",
     "description": "Build the CI Docker images required by each workflow once per workflow run and reuse them in downstream E2E, instance E2E, OpenAPI, and smoke jobs.",
     "acceptance-criteria": [
@@ -148,6 +124,6 @@
       "Confirm the two low-risk validation commits do not trigger DMS validation and the high-risk Claims commit does trigger DMS validation.",
       "Add a PR comment with the validation run URL and the observed workflow trigger list."
     ],
-    "completed": false
+    "completed": true
   }
 ]
