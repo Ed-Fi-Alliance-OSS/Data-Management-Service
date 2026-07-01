@@ -274,6 +274,6 @@
       "Review two additional GitHub Actions PR reruns or pushed PR commits after rollout for MSSQL failures or timing regressions.",
       "Add a PR comment with the validation run URLs, timing comparison, final backend/API lease strategy settings, concurrency settings, tmpfs decision, SchemaTools decision, shard balance summary, and three-run flakiness review."
     ],
-    "completed": false
+    "completed": true
   }
 ]
