@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Cleanup DMS CI GHCR Images
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 0-5" # Sunday-Friday at 8 AM UTC; matches Nightly Keycloak DMS E2E
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    name: Cleanup DMS CI GHCR Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep recent DMS CI images
+        uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
+        with:
+          owner: Ed-Fi-Alliance-OSS
+          package-name: data-management-service-ed-fi-api-ci
+          package-type: container
+          min-versions-to-keep: 100
+
+      - name: Keep recent Config CI images
+        uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
+        with:
+          owner: Ed-Fi-Alliance-OSS
+          package-name: data-management-service-ed-fi-api-config-ci
+          package-type: container
+          min-versions-to-keep: 100
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: cleanup
+    if: always()
+    steps:
+      - name: Notify Slack on success
+        if: needs.cleanup.result == 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {
+              "text": ":heavy_check_mark: DMS CI GHCR image cleanup passed"
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+
+      - name: Notify Slack on failure
+        if: needs.cleanup.result != 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {
+              "text": ":x: DMS CI GHCR image cleanup failed"
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook

@@ -235,6 +235,7 @@ function Get-CsvValue {
 }
 
 function ConvertTo-MssqlTimingDurationSeconds {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Mssql is a product acronym in the helper name, not a plural noun.')]
     param(
         [string]
         $Value
