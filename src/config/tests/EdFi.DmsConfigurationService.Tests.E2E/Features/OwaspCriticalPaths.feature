@@ -168,3 +168,20 @@ Feature: OWASP critical attack path protections
                   | contactEmailAddress | security@test.example |
                   | namespacePrefixes   | uri://ed-fi.org       |
              Then it should respond with 401 or 415
+
+        # The self-contained provider re-checks token status by jti on every request,
+        # so a revoked token is rejected on reuse even though it is still well-formed
+        # and unexpired. The two successful requests before revocation prove the token
+        # is reusable while valid (i.e. not one-time-use); only revocation causes the
+        # 401. Revocation is delegated to the IdP under keycloak, so this scenario only
+        # runs against the self-contained provider.
+        @SelfContainedOnly
+        Scenario: 18 A valid self-contained token is reusable until it is revoked
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 200
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 200
+             When the current token is revoked
+             Then it should respond with 200
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 401

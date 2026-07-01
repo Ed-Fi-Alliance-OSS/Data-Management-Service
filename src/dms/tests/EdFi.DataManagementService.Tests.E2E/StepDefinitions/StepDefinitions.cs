@@ -1479,6 +1479,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body.Should().NotContain(text);
         }
 
+        [Then("the response body should not contain {string} ignoring case")]
+        public async Task ThenTheResponseBodyShouldNotContainIgnoringCase(string text)
+        {
+            string body = await _apiResponse.TextAsync();
+            body.Should().NotContainEquivalentOf(text);
+        }
+
         // Use Regex to find all occurrences of {id} in the body
         private static readonly Regex _findIds = IdRegex();
 
