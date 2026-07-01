@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Net;
 using EdFi.DataManagementService.Core.External.Logging;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -133,10 +134,10 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
     {
         if (ReferenceEquals(requestInfo.FrontendResponse, No.FrontendResponse))
         {
-            return 500;
+            return (int)HttpStatusCode.InternalServerError;
         }
 
         var statusCode = requestInfo.FrontendResponse?.StatusCode ?? 0;
-        return statusCode == 0 ? 500 : statusCode;
+        return statusCode == 0 ? (int)HttpStatusCode.InternalServerError : statusCode;
     }
 }

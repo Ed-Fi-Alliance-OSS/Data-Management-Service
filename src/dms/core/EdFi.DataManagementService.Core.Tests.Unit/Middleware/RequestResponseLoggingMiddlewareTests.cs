@@ -249,6 +249,69 @@ public class Given_RequestResponseLoggingMiddleware
         json?["RenderedMessage"]?.GetValue<string>().Should().Contain("DMS request completed");
     }
 
+    [Test]
+    public void It_configures_dms_app_console_sink_with_serilog_json_formatter()
+    {
+        var appsettingsPath = FindRepositoryFile(
+            "src",
+            "dms",
+            "frontend",
+            "EdFi.DataManagementService.Frontend.AspNetCore",
+            "appsettings.json"
+        );
+        var json = JsonNode.Parse(File.ReadAllText(appsettingsPath));
+        var writeTo = json?["Serilog"]?["WriteTo"]?.AsArray();
+
+        writeTo.Should().NotBeNull();
+        writeTo!.Any(sink => IsConsoleJsonFormatterSink(sink)).Should().BeTrue();
+    }
+
+    private static string FindRepositoryFile(params string[] pathParts)
+    {
+        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(new[] { directory.FullName }.Concat(pathParts).ToArray());
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not find repository file.", Path.Combine(pathParts));
+    }
+
+    private static bool IsConsoleJsonFormatterSink(JsonNode? sink)
+    {
+        if (sink is null || sink["Name"]?.GetValue<string>() != "Console")
+        {
+            return false;
+        }
+
+        var formatter = sink["Args"]?["formatter"];
+        if (formatter is null)
+        {
+            return false;
+        }
+
+        if (formatter.GetValueKind() == System.Text.Json.JsonValueKind.String)
+        {
+            var formatterString = formatter.GetValue<string>();
+            return formatterString == "Serilog.Formatting.Json.JsonFormatter, Serilog";
+        }
+
+        if (formatter is JsonObject formatterObj)
+        {
+            var type = formatterObj["type"]?.GetValue<string>();
+            var renderMessage = formatterObj["renderMessage"]?.GetValue<bool>();
+            return type == "Serilog.Formatting.Json.JsonFormatter, Serilog" && renderMessage == true;
+        }
+
+        return false;
+    }
+
     private sealed class CapturingSerilogSink : ILogEventSink
     {
         private readonly List<LogEvent> _events = [];
