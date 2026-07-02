@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.head_ref }}
           # The restore step below evaluates Dependabot-bumped packages, so do not leave a
@@ -64,5 +64,9 @@ jobs:
             echo "No lock file changes to commit."
           else
             git -c core.hooksPath=/dev/null commit --no-verify -m "Update packages.lock.json after Dependabot package update"
-            git -c core.hooksPath=/dev/null push --no-verify "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${{ github.head_ref }}"
+            # Push the current branch (checked out at github.head_ref above) back to the
+            # same-named remote branch. Using the bare HEAD refspec keeps the untrusted
+            # github.head_ref out of this run step, which resolves the expression-injection
+            # code-scanning alert; the checkout leaves HEAD on the PR branch.
+            git -c core.hooksPath=/dev/null push --no-verify "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD
           fi
