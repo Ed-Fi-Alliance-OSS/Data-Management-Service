@@ -34,6 +34,7 @@ function New-AspNetPasswordHash {
     [OutputType([string])]
     [CmdletBinding()]
     [OutputType([string])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: computes and returns a password hash string; no system state changes and no -WhatIf surface.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$PlainTextSecret,
@@ -90,6 +91,7 @@ function New-OpenIddictKeyPair {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates a key pair in memory; callers decide whether to persist it.')]
     [OutputType([pscustomobject])]
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: creates an in-memory RSA key pair and returns it; no system state changes and no -WhatIf surface.')]
     param(
         [Parameter(Mandatory = $false)]
         [int]$KeySize = 2048
@@ -151,6 +153,7 @@ function New-OpenIddictKeyInsertSql {
     [OutputType([string])]
     [CmdletBinding()]
     [OutputType([string])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: builds and returns a SQL string without executing it; no system state changes and no -WhatIf surface.')]
     param(
         [Parameter(Mandatory = $false)]
         [string]$KeyId = [guid]::NewGuid().ToString(),
@@ -212,6 +215,7 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
 #>
 function New-OpenIddictKeyInsertCommand {
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: builds and returns SQL text and parameter values without executing them; no system state changes and no -WhatIf surface.')]
     param(
         [Parameter(Mandatory = $false)]
         [string]$KeyId = [guid]::NewGuid().ToString(),
@@ -288,6 +292,7 @@ function New-ClientSecretUpdateSql {
     [OutputType([string])]
     [CmdletBinding()]
     [OutputType([string])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: builds and returns a SQL string without executing it; no system state changes and no -WhatIf surface.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$ClientId,
