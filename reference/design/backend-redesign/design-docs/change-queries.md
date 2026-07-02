@@ -1164,9 +1164,9 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 - `CreatedAt` stores the tracked row insert timestamp as PostgreSQL `timestamp with time zone DEFAULT now()` / SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
 - `Discriminator` is present only for shared descriptor tracked-change tables and uses PostgreSQL `varchar(128)` / SQL Server `nvarchar(128)`.
 
-The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with the `Old_` and `New_` column name prefixes.
+The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with `Old` and `New` prefixes applied directly to the source column name, for example `OldSchoolId_Unified` and `NewStudent_DocumentId`.
 
-Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New_*` columns null; key-change rows populate the new values when present.
+Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
 If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for old and new row images. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition.
 
@@ -1176,7 +1176,7 @@ If the same canonical column has been included multiple times (because of key un
 
 For people `SecurableElements` paths, we will also store the Student, Contact, or Staff `DocumentId`. The corresponding `TrackedChangePersonJoinInfo` describes the resource-table join path needed to reach the person resource for old and new row images. The `TrackedChangeColumnInfo` entry references that table-level join by `PersonJoinName`; it does not duplicate the join definition.
 
-Some `SecurableElements` paths might result in nullable `Old_*` and `New_*` value columns because of overrides, such as the `StudentAssessment` override.
+Some `SecurableElements` paths might result in nullable `Old*` and `New*` value columns because of overrides, such as the `StudentAssessment` override.
 
 Apart from people `SecurableElements`, we do not need to store surrogate keys, such as DocumentIds or DescriptorIds.
 
@@ -1187,33 +1187,33 @@ MSSQL table definition example for the Grade resource:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
-    [Old_StudentSectionAssociation_BeginDate] date NOT NULL,
-    [Old_GradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [Old_GradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [Old_GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [Old_SchoolYear_Unified] integer NOT NULL,
-    [Old_StudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
-    [Old_SchoolId_Unified] bigint NOT NULL,
-    [Old_StudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
-    [Old_StudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
-    [Old_StudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
-    [Old_StudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
+    [OldStudentSectionAssociation_BeginDate] date NOT NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
+    [OldSchoolYear_Unified] integer NOT NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
+    [OldSchoolId_Unified] bigint NOT NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
+    [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     
-    [New_StudentSectionAssociation_BeginDate] date NULL,
-    [New_GradeTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [New_GradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
-    [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
-    [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
-    [New_GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
-    [New_SchoolYear_Unified] integer NULL,
-    [New_StudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
-    [New_SchoolId_Unified] bigint NULL,
-    [New_StudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
-    [New_StudentSectionAssociation_SessionName] nvarchar(60) NULL,
-    [New_StudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
-    [New_StudentSectionAssociation_Student_DocumentId] bigint NULL,
+    [NewStudentSectionAssociation_BeginDate] date NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
+    [NewSchoolYear_Unified] integer NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
+    [NewSchoolId_Unified] bigint NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
 
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -1231,11 +1231,11 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
   	[Discriminator] nvarchar(128) NOT NULL,
 
-    [Old_Namespace] nvarchar(255) NOT NULL,
-    [Old_CodeValue] nvarchar(50) NOT NULL,
+    [OldNamespace] nvarchar(255) NOT NULL,
+    [OldCodeValue] nvarchar(50) NOT NULL,
 
-    [New_Namespace] nvarchar(255) NULL,
-    [New_CodeValue] nvarchar(50) NULL,
+    [NewNamespace] nvarchar(255) NULL,
+    [NewCodeValue] nvarchar(50) NULL,
 
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -1383,32 +1383,32 @@ BEGIN
     BEGIN
         -- Store tombstone
         INSERT INTO [tracked_changes_edfi].[Grade] (
-            [Old_StudentSectionAssociation_BeginDate],
-            [Old_GradeTypeDescriptor_Namespace],
-            [Old_GradeTypeDescriptor_CodeValue],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodName],
-            [Old_SchoolYear_Unified],
-            [Old_StudentSectionAssociation_LocalCourseCode],
-            [Old_SchoolId_Unified],
-            [Old_StudentSectionAssociation_SectionIdentifier],
-            [Old_StudentSectionAssociation_SessionName],
-            [Old_StudentSectionAssociation_StudentUniqueId],
-            [Old_StudentSectionAssociation_Student_DocumentId],
-            [New_StudentSectionAssociation_BeginDate],
-            [New_GradeTypeDescriptor_Namespace],
-            [New_GradeTypeDescriptor_CodeValue],
-            [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [New_GradingPeriodGradingPeriod_GradingPeriodName],
-            [New_SchoolYear_Unified],
-            [New_StudentSectionAssociation_LocalCourseCode],
-            [New_SchoolId_Unified],
-            [New_StudentSectionAssociation_SectionIdentifier],
-            [New_StudentSectionAssociation_SessionName],
-            [New_StudentSectionAssociation_StudentUniqueId],
-            [New_StudentSectionAssociation_Student_DocumentId],
+            [OldStudentSectionAssociation_BeginDate],
+            [OldGradeTypeDescriptor_Namespace],
+            [OldGradeTypeDescriptor_CodeValue],
+            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+            [OldGradingPeriodGradingPeriod_GradingPeriodName],
+            [OldSchoolYear_Unified],
+            [OldStudentSectionAssociation_LocalCourseCode],
+            [OldSchoolId_Unified],
+            [OldStudentSectionAssociation_SectionIdentifier],
+            [OldStudentSectionAssociation_SessionName],
+            [OldStudentSectionAssociation_StudentUniqueId],
+            [OldStudentSectionAssociation_Student_DocumentId],
+            [NewStudentSectionAssociation_BeginDate],
+            [NewGradeTypeDescriptor_Namespace],
+            [NewGradeTypeDescriptor_CodeValue],
+            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+            [NewGradingPeriodGradingPeriod_GradingPeriodName],
+            [NewSchoolYear_Unified],
+            [NewStudentSectionAssociation_LocalCourseCode],
+            [NewSchoolId_Unified],
+            [NewStudentSectionAssociation_SectionIdentifier],
+            [NewStudentSectionAssociation_SessionName],
+            [NewStudentSectionAssociation_StudentUniqueId],
+            [NewStudentSectionAssociation_Student_DocumentId],
             [Id],
             [ChangeVersion]
         )
@@ -1461,32 +1461,32 @@ BEGIN
 
         -- Store key change
         INSERT INTO [tracked_changes_edfi].[Grade] (
-            [Old_StudentSectionAssociation_BeginDate],
-            [Old_GradeTypeDescriptor_Namespace],
-            [Old_GradeTypeDescriptor_CodeValue],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [Old_GradingPeriodGradingPeriod_GradingPeriodName],
-            [Old_SchoolYear_Unified],
-            [Old_StudentSectionAssociation_LocalCourseCode],
-            [Old_SchoolId_Unified],
-            [Old_StudentSectionAssociation_SectionIdentifier],
-            [Old_StudentSectionAssociation_SessionName],
-            [Old_StudentSectionAssociation_StudentUniqueId],
-            [Old_StudentSectionAssociation_Student_DocumentId],
-            [New_StudentSectionAssociation_BeginDate],
-            [New_GradeTypeDescriptor_Namespace],
-            [New_GradeTypeDescriptor_CodeValue],
-            [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
-            [New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
-            [New_GradingPeriodGradingPeriod_GradingPeriodName],
-            [New_SchoolYear_Unified],
-            [New_StudentSectionAssociation_LocalCourseCode],
-            [New_SchoolId_Unified],
-            [New_StudentSectionAssociation_SectionIdentifier],
-            [New_StudentSectionAssociation_SessionName],
-            [New_StudentSectionAssociation_StudentUniqueId],
-            [New_StudentSectionAssociation_Student_DocumentId],
+            [OldStudentSectionAssociation_BeginDate],
+            [OldGradeTypeDescriptor_Namespace],
+            [OldGradeTypeDescriptor_CodeValue],
+            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+            [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+            [OldGradingPeriodGradingPeriod_GradingPeriodName],
+            [OldSchoolYear_Unified],
+            [OldStudentSectionAssociation_LocalCourseCode],
+            [OldSchoolId_Unified],
+            [OldStudentSectionAssociation_SectionIdentifier],
+            [OldStudentSectionAssociation_SessionName],
+            [OldStudentSectionAssociation_StudentUniqueId],
+            [OldStudentSectionAssociation_Student_DocumentId],
+            [NewStudentSectionAssociation_BeginDate],
+            [NewGradeTypeDescriptor_Namespace],
+            [NewGradeTypeDescriptor_CodeValue],
+            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
+            [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
+            [NewGradingPeriodGradingPeriod_GradingPeriodName],
+            [NewSchoolYear_Unified],
+            [NewStudentSectionAssociation_LocalCourseCode],
+            [NewSchoolId_Unified],
+            [NewStudentSectionAssociation_SectionIdentifier],
+            [NewStudentSectionAssociation_SessionName],
+            [NewStudentSectionAssociation_StudentUniqueId],
+            [NewStudentSectionAssociation_Student_DocumentId],
             [Id],
             [ChangeVersion]
         )
@@ -1586,7 +1586,7 @@ Strategies that share a name across `Read` and `ReadChanges` (`NoFurtherAuthoriz
 
 Contrary to the live resources logic which computes the people auth subjects joining intermediate resources (to reach the person's DocumentId), the tracked-change tables denomalize people DocumentIds (initialized in in the `*_Stamp` triggers), meaning no entermediate joins are needed for people auth subjects.
 
-Additionally, the tracked-changes tables column names include the `Old_` and `New_` prefixes.
+Additionally, the tracked-changes table value-column names include `Old` and `New` prefixes without an underscore separator.
 
 #### Authorization views
 
@@ -1618,11 +1618,11 @@ UNION
 -- Current EdOrgHierarchy + Current StudentSchoolAssociation + Deleted/Key-changed StudentContactAssociation
 SELECT 
   edOrgs.SourceEducationOrganizationId, 
-  sca_tc.Old_Contact_DocumentId as Contact_DocumentId
+  sca_tc.OldContact_DocumentId as Contact_DocumentId
 FROM 
   auth.EducationOrganizationIdToEducationOrganizationId edOrgs 
   JOIN edfi.StudentSchoolAssociation ssa ON edOrgs.TargetEducationOrganizationId = ssa.SchoolId_Unified
-  JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa.Student_DocumentId = sca_tc.Old_Student_DocumentId 
+  JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa.Student_DocumentId = sca_tc.OldStudent_DocumentId
 UNION 
 -- Current EdOrgHierarchy + Deleted/Key-changed StudentSchoolAssociation + Current StudentContactAssociation
 SELECT 
@@ -1630,17 +1630,17 @@ SELECT
   sca.Contact_DocumentId 
 FROM 
   auth.EducationOrganizationIdToEducationOrganizationId edOrgs 
-  JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.Old_SchoolId_Unified 
-  JOIN edfi.StudentContactAssociation sca ON ssa_tc.Old_Student_DocumentId = sca.Student_DocumentId 
+  JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.OldSchoolId_Unified
+  JOIN edfi.StudentContactAssociation sca ON ssa_tc.OldStudent_DocumentId = sca.Student_DocumentId
 UNION 
 -- Current EdOrgHierarchy + Deleted/Key-changed StudentSchoolAssociation + Deleted/Key-changed StudentContactAssociation
 SELECT 
   edOrgs.SourceEducationOrganizationId, 
-  sca_tc.Old_Contact_DocumentId as Contact_DocumentId
+  sca_tc.OldContact_DocumentId as Contact_DocumentId
 FROM 
   auth.EducationOrganizationIdToEducationOrganizationId edOrgs 
-  JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.Old_SchoolId_Unified 
-  JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa_tc.Old_Student_DocumentId = sca_tc.Old_Student_DocumentId;
+  JOIN tracked_changes_edfi.StudentSchoolAssociation ssa_tc ON edOrgs.TargetEducationOrganizationId = ssa_tc.OldSchoolId_Unified
+  JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa_tc.OldStudent_DocumentId = sca_tc.OldStudent_DocumentId;
 ```
 
 The views are only emitted when all five PrimaryAssociation resources exist in the derived relational model — following the same guard described in [auth.md](auth.md) for the non-`IncludingDeletes` views — and their five `tracked_changes_edfi` association tables are present in the tracked-change inventory.
@@ -1652,9 +1652,9 @@ DMS deliberately preserves the three ODS authorization peculiarities described i
 ##### KeyChanges are always authorized based on the old values
 This peculiarity will be honored in DMS, except for one known edge case: cascading key changes.
 
-Let's assume that `StudentAssessmentRegistration` references `StudentSchoolAssociation` **as part of its identity**. Then someone changes the `StudentSchoolAssociation` student from A to B, so the cascading key change reaches the `StudentAssessmentRegistration`. The `_Stamp` trigger gets the Student's DocumentId by joining `StudentSchoolAssociation`; but at this point `StudentSchoolAssociation` only has the new value, so the `_Stamp` trigger will store the **new** Student's DocumentId in the `Old_` column.
+Let's assume that `StudentAssessmentRegistration` references `StudentSchoolAssociation` **as part of its identity**. Then someone changes the `StudentSchoolAssociation` student from A to B, so the cascading key change reaches the `StudentAssessmentRegistration`. The `_Stamp` trigger gets the Student's DocumentId by joining `StudentSchoolAssociation`; but at this point `StudentSchoolAssociation` only has the new value, so the `_Stamp` trigger will store the **new** Student's DocumentId in the old-value person DocumentId column.
 
-Note that `Old_StudentUniqueId_Unified` stores the correct value, since the unique id gets denormalized into the `StudentSchoolAssociation` table, meaning that the /keyChanges endpoint returns the correct old and new values, but the authorization check is done against the `Old_` column, which in this case has the new value.
+Note that `OldStudentUniqueId_Unified` stores the correct value, since the unique id gets denormalized into the `StudentSchoolAssociation` table, meaning that the /keyChanges endpoint returns the correct old and new values, but the authorization check is done against the old-value person DocumentId column, which in this case has the new value.
 
 This behavior is acceptable in the meantime as the scenario doesn't appear in the data standard (remember that `StudentAssessmentRegistration` does not reference `StudentSchoolAssociation` as part of its identity). However, there could be an extension that exposes this behavior.
 
@@ -1702,53 +1702,53 @@ SELECT
   c.Id, 
   c.ChangeVersion, 
 
-  c.Old_StudentSectionAssociation_BeginDate,                            
-  c.Old_GradeTypeDescriptor_CodeValue,         
-  c.Old_GradeTypeDescriptor_Namespace,         
-  c.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,     
-  c.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,     
-  c.Old_GradingPeriodGradingPeriod_GradingPeriodName,                    
-  c.Old_SchoolYear_Unified,              
-  c.Old_StudentSectionAssociation_LocalCourseCode,                      
-  c.Old_SchoolId_Unified,                             
-  c.Old_StudentSectionAssociation_SectionIdentifier,                    
-  c.Old_StudentSectionAssociation_SessionName,                          
-  c.Old_StudentSectionAssociation_StudentUniqueId
+  c.OldStudentSectionAssociation_BeginDate,
+  c.OldGradeTypeDescriptor_CodeValue,
+  c.OldGradeTypeDescriptor_Namespace,
+  c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,
+  c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
+  c.OldGradingPeriodGradingPeriod_GradingPeriodName,
+  c.OldSchoolYear_Unified,
+  c.OldStudentSectionAssociation_LocalCourseCode,
+  c.OldSchoolId_Unified,
+  c.OldStudentSectionAssociation_SectionIdentifier,
+  c.OldStudentSectionAssociation_SessionName,
+  c.OldStudentSectionAssociation_StudentUniqueId
 FROM 
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
     ON OldGradeTypeDescriptor.Discriminator = 'GradeTypeDescriptor'
-    AND OldGradeTypeDescriptor.CodeValue = c.Old_GradeTypeDescriptor_CodeValue
-    AND OldGradeTypeDescriptor.Namespace = c.Old_GradeTypeDescriptor_Namespace
+    AND OldGradeTypeDescriptor.CodeValue = c.OldGradeTypeDescriptor_CodeValue
+    AND OldGradeTypeDescriptor.Namespace = c.OldGradeTypeDescriptor_Namespace
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
     ON OldGradingPeriodDescriptor.Discriminator = 'GradingPeriodDescriptor'
-    AND OldGradingPeriodDescriptor.CodeValue = c.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue
-    AND OldGradingPeriodDescriptor.Namespace = c.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace
+    AND OldGradingPeriodDescriptor.CodeValue = c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue
+    AND OldGradingPeriodDescriptor.Namespace = c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace
 
   LEFT JOIN edfi.Grade AS src 
     ON OldGradeTypeDescriptor.DocumentId                    = src.GradeTypeDescriptor_DescriptorId 
     AND OldGradingPeriodDescriptor.DocumentId               = src.GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId 
-    AND c.Old_GradingPeriodGradingPeriod_GradingPeriodName  = src.GradingPeriodGradingPeriod_GradingPeriodName 
-    AND c.Old_SchoolId_Unified                              = src.SchoolId_Unified 
-    AND c.Old_SchoolYear_Unified                            = src.SchoolYear_Unified 
-    AND c.Old_StudentSectionAssociation_BeginDate           = src.StudentSectionAssociation_BeginDate 
-    AND c.Old_StudentSectionAssociation_LocalCourseCode     = src.StudentSectionAssociation_LocalCourseCode 
-    AND c.Old_StudentSectionAssociation_SectionIdentifier   = src.StudentSectionAssociation_SectionIdentifier 
-    AND c.Old_StudentSectionAssociation_SessionName         = src.StudentSectionAssociation_SessionName 
-    AND c.Old_StudentSectionAssociation_StudentUniqueId     = src.StudentSectionAssociation_StudentUniqueId
+    AND c.OldGradingPeriodGradingPeriod_GradingPeriodName  = src.GradingPeriodGradingPeriod_GradingPeriodName
+    AND c.OldSchoolId_Unified                              = src.SchoolId_Unified
+    AND c.OldSchoolYear_Unified                            = src.SchoolYear_Unified
+    AND c.OldStudentSectionAssociation_BeginDate           = src.StudentSectionAssociation_BeginDate
+    AND c.OldStudentSectionAssociation_LocalCourseCode     = src.StudentSectionAssociation_LocalCourseCode
+    AND c.OldStudentSectionAssociation_SectionIdentifier   = src.StudentSectionAssociation_SectionIdentifier
+    AND c.OldStudentSectionAssociation_SessionName         = src.StudentSectionAssociation_SessionName
+    AND c.OldStudentSectionAssociation_StudentUniqueId     = src.StudentSectionAssociation_StudentUniqueId
 WHERE 
   src.StudentSectionAssociation_BeginDate IS NULL -- Exclude entries that were recreated, use any identity column
-  AND c.New_StudentSectionAssociation_BeginDate IS NULL -- Exclude key changes, use any New_* identity column
+  AND c.NewStudentSectionAssociation_BeginDate IS NULL -- Exclude key changes, use any New* identity column
   AND (
       c.ChangeVersion >= @MinChangeVersion 
       AND c.ChangeVersion <= @MaxChangeVersion
   )
   AND (
       -- Auth check: Relationship with EdOrg:
-      c.Old_SchoolId_Unified IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
+      c.OldSchoolId_Unified IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
       -- Auth check: Relationship with People:
-      AND c.Old_StudentSectionAssociation_Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
+      AND c.OldStudentSectionAssociation_Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
   )
 ORDER BY 
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
@@ -1772,23 +1772,23 @@ An example generated SQL query used to fulfill the `GET crisisTypeDescriptors/de
 SELECT DISTINCT 
   c.Id, 
   c.ChangeVersion, 
-  c.Old_CodeValue,
-  c.Old_Namespace 
+  c.OldCodeValue,
+  c.OldNamespace
 FROM 
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
     ON src.Discriminator = 'CrisisTypeDescriptor'
-    AND src.CodeValue = c.Old_CodeValue
-    AND src.Namespace = c.Old_Namespace
+    AND src.CodeValue = c.OldCodeValue
+    AND src.Namespace = c.OldNamespace
 WHERE 
   c.Discriminator = 'CrisisTypeDescriptor'
   AND src.CodeValue IS NULL              -- Exclude entries that were recreated, use any identity column
-  AND c.New_CodeValue IS NULL            -- Exclude key changes, use any New_* identity column
+  AND c.NewCodeValue IS NULL            -- Exclude key changes, use any New* identity column
   AND (
     -- Namespace-based auth check
-    c.Old_Namespace LIKE @p1 
-    OR c.Old_Namespace LIKE @p2 
-    OR c.Old_Namespace LIKE @p3
+    c.OldNamespace LIKE @p1
+    OR c.OldNamespace LIKE @p2
+    OR c.OldNamespace LIKE @p3
   ) 
 ORDER BY 
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
@@ -1809,16 +1809,16 @@ WITH ChangeWindow AS (
     FROM 
       tracked_changes_edfi.Grade AS c 
     WHERE 
-      c.New_StudentSectionAssociation_BeginDate IS NOT NULL -- Exclude tombstones, use any New_* identity column
+      c.NewStudentSectionAssociation_BeginDate IS NOT NULL -- Exclude tombstones, use any New* identity column
       AND (
           c.ChangeVersion >= @MinChangeVersion 
           AND c.ChangeVersion <= @MaxChangeVersion
       )
       AND (
          -- Auth check: Relationship with EdOrg:
-         c.Old_SchoolId_Unified IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
+         c.OldSchoolId_Unified IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
          -- Auth check: Relationship with People:
-         AND c.Old_StudentSectionAssociation_Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
+         AND c.OldStudentSectionAssociation_Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes WHERE SourceEducationOrganizationId IN (SELECT Id FROM @TokenEducationOrganizationIds))
       )
     GROUP BY 
       c.Id
@@ -1827,31 +1827,31 @@ SELECT
   cw.Id, 
   cw.FinalChangeVersion AS ChangeVersion, 
   
-  c_old.Old_StudentSectionAssociation_BeginDate,                            
-  c_old.Old_GradeTypeDescriptor_CodeValue,         
-  c_old.Old_GradeTypeDescriptor_Namespace,         
-  c_old.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,     
-  c_old.Old_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,     
-  c_old.Old_GradingPeriodGradingPeriod_GradingPeriodName,                    
-  c_old.Old_SchoolYear_Unified,              
-  c_old.Old_StudentSectionAssociation_LocalCourseCode,                      
-  c_old.Old_SchoolId_Unified,                             
-  c_old.Old_StudentSectionAssociation_SectionIdentifier,                    
-  c_old.Old_StudentSectionAssociation_SessionName,                          
-  c_old.Old_StudentSectionAssociation_StudentUniqueId,   
+  c_old.OldStudentSectionAssociation_BeginDate,
+  c_old.OldGradeTypeDescriptor_CodeValue,
+  c_old.OldGradeTypeDescriptor_Namespace,
+  c_old.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,
+  c_old.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
+  c_old.OldGradingPeriodGradingPeriod_GradingPeriodName,
+  c_old.OldSchoolYear_Unified,
+  c_old.OldStudentSectionAssociation_LocalCourseCode,
+  c_old.OldSchoolId_Unified,
+  c_old.OldStudentSectionAssociation_SectionIdentifier,
+  c_old.OldStudentSectionAssociation_SessionName,
+  c_old.OldStudentSectionAssociation_StudentUniqueId,
 
-  c_new.New_StudentSectionAssociation_BeginDate,                            
-  c_new.New_GradeTypeDescriptor_CodeValue,         
-  c_new.New_GradeTypeDescriptor_Namespace,         
-  c_new.New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,     
-  c_new.New_GradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,     
-  c_new.New_GradingPeriodGradingPeriod_GradingPeriodName,                    
-  c_new.New_SchoolYear_Unified,              
-  c_new.New_StudentSectionAssociation_LocalCourseCode,                      
-  c_new.New_SchoolId_Unified,                             
-  c_new.New_StudentSectionAssociation_SectionIdentifier,                    
-  c_new.New_StudentSectionAssociation_SessionName,                          
-  c_new.New_StudentSectionAssociation_StudentUniqueId              
+  c_new.NewStudentSectionAssociation_BeginDate,
+  c_new.NewGradeTypeDescriptor_CodeValue,
+  c_new.NewGradeTypeDescriptor_Namespace,
+  c_new.NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue,
+  c_new.NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
+  c_new.NewGradingPeriodGradingPeriod_GradingPeriodName,
+  c_new.NewSchoolYear_Unified,
+  c_new.NewStudentSectionAssociation_LocalCourseCode,
+  c_new.NewSchoolId_Unified,
+  c_new.NewStudentSectionAssociation_SectionIdentifier,
+  c_new.NewStudentSectionAssociation_SessionName,
+  c_new.NewStudentSectionAssociation_StudentUniqueId
 FROM 
   ChangeWindow AS cw 
   INNER JOIN tracked_changes_edfi.Grade AS c_old ON cw.Id = c_old.Id AND cw.InitialChangeVersion = c_old.ChangeVersion 
@@ -1862,7 +1862,7 @@ ORDER BY
 
 #### Response field mapping
 
-To avoid introducing breaking changes, the `/deletes` and `/keyChanges` endpoints must return identifying field names exactly as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`. Physical tracked-change column names such as `Old_SchoolId_Unified`, `Old_StudentUniqueId_Unified`, and shortened PostgreSQL names are storage details and must not become response field names.
+To avoid introducing breaking changes, the `/deletes` and `/keyChanges` endpoints must return identifying field names exactly as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`. Physical tracked-change column names such as `OldSchoolId_Unified`, `OldStudentUniqueId_Unified`, and shortened PostgreSQL names are storage details and must not become response field names.
 
 Runtime response shaping maps the tracked-change value columns back to public fields from metadata, using the `ConcreteResourceModel`, `TrackedChangeTableInfo`, and the resource's query-field mappings:
 
@@ -1901,7 +1901,7 @@ The alias bridge recognizes two shapes:
 
 Both shapes require the candidate to be a local propagated identity binding: the candidate's `ReferenceJsonPath` must be the reference object path plus the identity leaf, and the public `queryFieldMapping` field name must match the role-adjusted identity leaf. These checks intentionally keep the bridge metadata-driven and prevent broad string-convention matching.
 
-For example, `studentAssessmentRegistrations` stores the tracked student unique id in `tracked_changes_edfi.StudentAssessmentRegistration.Old_StudentUniqueId_Unified` / `New_StudentUniqueId_Unified` with `SourceJsonPath = $.studentEducationOrganizationAssociationReference.studentUniqueId`. The public query field is not a direct path match:
+For example, `studentAssessmentRegistrations` stores the tracked student unique id in `tracked_changes_edfi.StudentAssessmentRegistration.OldStudentUniqueId_Unified` / `NewStudentUniqueId_Unified` with `SourceJsonPath = $.studentEducationOrganizationAssociationReference.studentUniqueId`. The public query field is not a direct path match:
 
 ```json
 "studentUniqueId": [
@@ -1912,14 +1912,14 @@ For example, `studentAssessmentRegistrations` stores the tracked student unique 
 ]
 ```
 
-The reference-alias rule resolves that generated query path back to the `StudentEducationOrganizationAssociation_StudentUniqueId` identity binding, whose canonical storage column is `StudentUniqueId_Unified`. The response field is therefore `studentUniqueId`, even though the tracked-change storage column is `Old_StudentUniqueId_Unified` / `New_StudentUniqueId_Unified`.
+The reference-alias rule resolves that generated query path back to the `StudentEducationOrganizationAssociation_StudentUniqueId` identity binding, whose canonical storage column is `StudentUniqueId_Unified`. The response field is therefore `studentUniqueId`, even though the tracked-change storage column is `OldStudentUniqueId_Unified` / `NewStudentUniqueId_Unified`.
 
 ### /availableChangeVersions endpoint
 
 DMS will introduce the hardcoded `/changeQueries/v1/availableChangeVersions` endpoint with the same request/response bodies and query strings as ODS. This endpoint is not derived from `ApiSchema.json` or OpenAPI metadata.
 The `oldestChangeVersion` remains hardcoded to `0`.
 
-One distinction is that `GetMaxChangeVersion()` function will reside in the `dms` schema instead of `changes` to be consistent with existing DMS schemas.
+One distinction is that the function resides in the `dms` schema instead of `changes` to be consistent with existing DMS schemas. PostgreSQL emits and calls `"dms"."GetMaxChangeVersion"()`, while SQL Server uses `[dms].[GetMaxChangeVersion]`.
 
 ### Filtering live resources and descriptors by ChangeVersion
 Live resource and descriptor GET-many endpoints support `?minChangeVersion=X&maxChangeVersion=Y`. 

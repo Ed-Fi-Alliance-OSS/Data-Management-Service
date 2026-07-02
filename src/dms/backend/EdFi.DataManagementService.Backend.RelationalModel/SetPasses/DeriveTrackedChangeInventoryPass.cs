@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// when any descriptor exists.
 /// </para>
 /// <para>
-/// Value columns combine the resource's identity paths and securable-element paths into <c>Old_</c>/<c>New_</c>
+/// Value columns combine the resource's identity paths and securable-element paths into <c>Old</c>/<c>New</c>
 /// pairs. Descriptor reference paths materialize <c>Namespace</c>/<c>CodeValue</c> and reference a table-level
 /// descriptor join; Student/Contact/Staff securable paths materialize the person <c>DocumentId</c> and
 /// reference a table-level person join. Key-unification canonical columns are de-duplicated, merging origin
@@ -35,8 +35,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </remarks>
 public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 {
-    private const string OldPrefix = "Old_";
-    private const string NewPrefix = "New_";
     private const string DocumentIdSuffix = "_DocumentId";
     private const string DescriptorIdSuffix = "_DescriptorId";
     private const string NamespaceSuffix = "_Namespace";
@@ -352,7 +350,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         // Array-nested securable paths (e.g. $.assessmentBatteryParts[*].assessmentBatteryPartReference
         // .namespace) are excluded: their source column lives on a child collection table with 0..N rows
         // per document, which a single-row-per-ChangeVersion tracked-change table cannot represent — a
-        // scalar Old_/New_ pair would silently keep one of N values, and a required-within-row child
+        // scalar Old/New pair would silently keep one of N values, and a required-within-row child
         // column would render NOT NULL while the collection itself can be empty (unsatisfiable tombstone
         // INSERT). Mirrors the array-nested person-path skip in AddPersonKindColumns and matches ODS
         // parity, where tracked changes capture only old identity values; identity-origin securable
@@ -511,7 +509,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             )
         );
 
-        // Descriptor identity/securable values are not null on the source row; tombstones leave New_* null.
+        // Descriptor identity/securable values are not null on the source row; tombstones leave New* null.
         // Resolve nullability against the table the edge declares as holding the FK column (always root for
         // current inputs — identity descriptors live on the root table — but the edge's own table is the
         // model's record of where the column lives).
@@ -736,7 +734,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Merges a value column into the accumulator by <c>Old_</c> name: combines origin flags and widens
+    /// Merges a value column into the accumulator by <c>Old</c> name: combines origin flags and widens
     /// nullability so a column reached via multiple paths (e.g. identity + securable) loses no information.
     /// </summary>
     private static void MergeOrAdd(
@@ -770,13 +768,14 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         TrackedChangeColumnOrigin origin
     )
     {
+        var sourceColumn = new DbColumnName(baseColumnName);
         return new TrackedChangeColumnInfo(
-            new DbColumnName(OldPrefix + baseColumnName),
-            new DbColumnName(NewPrefix + baseColumnName),
+            TrackedChangeNameConventions.OldValueColumn(sourceColumn),
+            TrackedChangeNameConventions.NewValueColumn(sourceColumn),
             sourcePath,
             CanonicalStorageColumn: null,
             IsOldColumnNullable: isOldNullable,
-            // New_* columns are populated only by key-change rows; tombstones leave them null.
+            // New* columns are populated only by key-change rows; tombstones leave them null.
             IsNewColumnNullable: true,
             scalarType,
             role,

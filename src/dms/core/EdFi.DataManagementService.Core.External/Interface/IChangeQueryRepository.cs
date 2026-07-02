@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.External.Interface;
 public interface IChangeQueryRepository
 {
     /// <summary>
-    /// Returns the current value of dms.ChangeVersionSequence via dms.GetMaxChangeVersion().
+    /// Returns the current backend change-version high-water mark.
     /// </summary>
     Task<long> GetNewestChangeVersion(CancellationToken cancellationToken = default);
 

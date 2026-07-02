@@ -10,9 +10,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// Verifies the emitted dms.GetMaxChangeVersion() function tracks dms.ChangeVersionSequence.
-/// Calls via the unquoted name 'dms.GetMaxChangeVersion()' so the case-folded catalog entry
-/// is exercised.
+/// Verifies the emitted "dms"."GetMaxChangeVersion"() function tracks dms.ChangeVersionSequence.
 /// </summary>
 public abstract class GetMaxChangeVersionTestBase
 {
@@ -21,7 +19,7 @@ public abstract class GetMaxChangeVersionTestBase
     public static async Task<long> CallFunction()
     {
         await using var connection = await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand("SELECT dms.GetMaxChangeVersion()", connection);
+        await using var cmd = new NpgsqlCommand("""SELECT "dms"."GetMaxChangeVersion"()""", connection);
         var result = await cmd.ExecuteScalarAsync();
         return (long)result!;
     }

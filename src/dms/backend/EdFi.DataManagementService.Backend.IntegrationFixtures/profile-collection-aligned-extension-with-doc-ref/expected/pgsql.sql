@@ -40,7 +40,7 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
 $GetMaxChangeVersion$
 DECLARE
     result bigint;
@@ -499,8 +499,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Sponsor"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ParentResource"
 (
-    "Old_ParentResourceId" integer NOT NULL,
-    "New_ParentResourceId" integer NULL,
+    "OldParentResourceId" integer NOT NULL,
+    "NewParentResourceId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -509,8 +509,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ParentResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Sponsor"
 (
-    "Old_SponsorName" varchar(30) NOT NULL,
-    "New_SponsorName" varchar(30) NULL,
+    "OldSponsorName" varchar(30) NOT NULL,
+    "NewSponsorName" varchar(30) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -681,7 +681,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ParentResource" (
-            "Old_ParentResourceId",
+            "OldParentResourceId",
             "Id",
             "ChangeVersion"
         )
@@ -716,8 +716,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ParentResource" (
-            "Old_ParentResourceId",
-            "New_ParentResourceId",
+            "OldParentResourceId",
+            "NewParentResourceId",
             "Id",
             "ChangeVersion"
         )
@@ -810,7 +810,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Sponsor" (
-            "Old_SponsorName",
+            "OldSponsorName",
             "Id",
             "ChangeVersion"
         )
@@ -845,8 +845,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Sponsor" (
-            "Old_SponsorName",
-            "New_SponsorName",
+            "OldSponsorName",
+            "NewSponsorName",
             "Id",
             "ChangeVersion"
         )

@@ -38,7 +38,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 bool isNewVendor = false;
                 // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
                 var sql =
-                    $"SELECT Id FROM dmscs.Vendor WHERE Company = @Company AND {TenantContext.TenantWhereClause()}";
+                    $"SELECT \"Id\" FROM \"dmscs\".\"Vendor\" WHERE \"Company\" = @Company AND {TenantContext.TenantWhereClause()}";
 
                 var existingVendorId = await connection.ExecuteScalarAsync<long?>(
                     sql,
@@ -48,10 +48,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 if (existingVendorId.HasValue)
                 {
                     sql = $"""
-                        UPDATE dmscs.Vendor
-                        SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
-                            LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                        WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                        UPDATE "dmscs"."Vendor"
+                        SET "ContactName"=@ContactName, "ContactEmailAddress"=@ContactEmailAddress,
+                            "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                        WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                         """;
 
                     await connection.ExecuteAsync(
@@ -67,16 +67,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         }
                     );
 
-                    sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
+                    sql = "DELETE FROM \"dmscs\".\"VendorNamespacePrefix\" WHERE \"VendorId\" = @VendorId";
                     await connection.ExecuteAsync(sql, new { VendorId = existingVendorId.Value });
                     id = existingVendorId.Value;
                 }
                 else
                 {
                     sql = """
-                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy, TenantId)
+                        INSERT INTO "dmscs"."Vendor" ("Company", "ContactName", "ContactEmailAddress", "CreatedBy", "TenantId")
                         VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId)
-                        RETURNING Id;
+                        RETURNING "Id";
                         """;
 
                     id = await connection.ExecuteScalarAsync<long>(
@@ -94,7 +94,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 }
 
                 sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix, CreatedBy)
+                    INSERT INTO "dmscs"."VendorNamespacePrefix" ("VendorId", "NamespacePrefix", "CreatedBy")
                     VALUES (@VendorId, @NamespacePrefix, @CreatedBy);
                     """;
 
@@ -116,7 +116,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
                 return new VendorInsertResult.Success(id, isNewVendor);
             }
-            catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_company"))
+            catch (PostgresException ex)
+                when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                    && ex.ConstraintName == "UX_Vendor_Company"
+                )
             {
                 logger.LogWarning(ex, "Company Name must be unique");
                 await transaction.RollbackAsync();
@@ -141,41 +144,39 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             ["contactEmailAddress"] = "ContactEmailAddress",
         };
 
-        private static string BuildOrderByClause(VendorQuery query)
+        private static string BuildOrderByClause(VendorQuery query, string? tableAlias = null)
         {
             if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
             {
-                return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+                return PostgresqlIdentifier.OrderBy(col, query.IsDescending, tableAlias);
             }
-            return "ORDER BY Id";
-        }
 
-        private static string ResolveOrderByColumn(VendorQuery query) =>
-            query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
+            return PostgresqlIdentifier.OrderBy("Id", isDescending: false, tableAlias);
+        }
 
         private static string BuildFilterClause(VendorQuery query)
         {
             var conditions = new List<string>();
             if (query.Id.HasValue)
             {
-                conditions.Add("Id = @Id");
+                conditions.Add("\"Id\" = @Id");
             }
             if (query.Company is not null)
             {
-                conditions.Add("Company = @Company");
+                conditions.Add("\"Company\" = @Company");
             }
             if (query.ContactName is not null)
             {
-                conditions.Add("ContactName = @ContactName");
+                conditions.Add("\"ContactName\" = @ContactName");
             }
             if (query.ContactEmailAddress is not null)
             {
-                conditions.Add("ContactEmailAddress = @ContactEmailAddress");
+                conditions.Add("\"ContactEmailAddress\" = @ContactEmailAddress");
             }
             if (query.NamespacePrefixes is not null)
             {
                 conditions.Add(
-                    "EXISTS (SELECT 1 FROM dmscs.VendorNamespacePrefix np WHERE np.VendorId = Id AND np.NamespacePrefix = @NamespacePrefixes)"
+                    "EXISTS (SELECT 1 FROM \"dmscs\".\"VendorNamespacePrefix\" np WHERE np.\"VendorId\" = \"Id\" AND np.\"NamespacePrefix\" = @NamespacePrefixes)"
                 );
             }
             return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
@@ -188,13 +189,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 string orderByClause = BuildOrderByClause(query);
                 string filterClause = BuildFilterClause(query);
-                string outerCol = ResolveOrderByColumn(query);
-                string direction = query.IsDescending ? "DESC" : "ASC";
+                string outerOrderByClause = BuildOrderByClause(query, "v");
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
-                    FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()}{filterClause} {orderByClause} {query.BuildPagingClause()}) AS v
-                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
-                    ORDER BY v.{outerCol} {direction};
+                    SELECT v."Id", v."Company", v."ContactName", v."ContactEmailAddress", v."TenantId", p."NamespacePrefix"
+                    FROM (SELECT * FROM "dmscs"."Vendor" WHERE {TenantContext.TenantWhereClause()}{filterClause} {orderByClause} {query.BuildPagingClause()}) AS v
+                    LEFT OUTER JOIN "dmscs"."VendorNamespacePrefix" p ON v."Id" = p."VendorId"
+                    {outerOrderByClause};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
@@ -241,9 +241,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
-                    FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
-                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
+                    SELECT v."Id", v."Company", v."ContactName", v."ContactEmailAddress", v."TenantId", p."NamespacePrefix"
+                    FROM "dmscs"."Vendor" v LEFT OUTER JOIN "dmscs"."VendorNamespacePrefix" p ON v."Id" = p."VendorId"
+                    WHERE v."Id" = @Id AND {TenantContext.TenantWhereClause("v")};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
@@ -282,10 +282,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
         public async Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command)
         {
             var sql = $"""
-                UPDATE dmscs.Vendor
-                SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
-                    LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                UPDATE "dmscs"."Vendor"
+                SET "Company"=@Company, "ContactName"=@ContactName, "ContactEmailAddress"=@ContactEmailAddress,
+                    "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -312,11 +312,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     return new VendorUpdateResult.FailureNotExists();
                 }
 
-                sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
+                sql = "DELETE FROM \"dmscs\".\"VendorNamespacePrefix\" WHERE \"VendorId\" = @VendorId";
                 await connection.ExecuteAsync(sql, new { VendorId = command.Id });
 
                 sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix, CreatedBy)
+                    INSERT INTO "dmscs"."VendorNamespacePrefix" ("VendorId", "NamespacePrefix", "CreatedBy")
                     VALUES (@VendorId, @NamespacePrefix, @CreatedBy);
                     """;
 
@@ -337,11 +337,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await transaction.CommitAsync();
 
                 var apiClientSql = """
-                    SELECT c.clientUuid
-                    FROM dmscs.apiclient c
-                    	INNER JOIN dmscs.application a ON a.id = c.applicationId
-                    	INNER JOIN dmscs.vendor v on v.id = a.vendorid
-                    WHERE v.id = @VendorId
+                    SELECT c."ClientUuid"
+                    FROM "dmscs"."ApiClient" c
+                        INNER JOIN "dmscs"."Application" a ON a."Id" = c."ApplicationId"
+                        INNER JOIN "dmscs"."Vendor" v ON v."Id" = a."VendorId"
+                    WHERE v."Id" = @VendorId
                     """;
 
                 var apiClientUuids = await connection.QueryAsync<Guid>(
@@ -364,10 +364,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId IN (
-                        SELECT Id FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
+                    DELETE FROM "dmscs"."VendorNamespacePrefix" WHERE "VendorId" IN (
+                        SELECT "Id" FROM "dmscs"."Vendor" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()}
                     );
-                    DELETE FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                    DELETE FROM "dmscs"."Vendor" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                     """;
 
                 var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
@@ -390,14 +390,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 // First get applications with edOrgs
                 string sqlEdOrgs = $"""
                     SELECT
-                        v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
+                        v."Id" AS "VendorId", a."Id", a."ApplicationName", a."ClaimSetName",
                         -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide)
-                        (SELECT COALESCE(BOOL_AND(ac.IsApproved), true) FROM dmscs.ApiClient ac WHERE ac.ApplicationId = a.Id) AS Enabled,
-                        eo.EducationOrganizationId
-                    FROM dmscs.vendor v
-                    LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
-                    LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
-                    WHERE v.Id = @VendorId AND {TenantContext.TenantWhereClause("v")};
+                        (SELECT COALESCE(BOOL_AND(ac."IsApproved"), true) FROM "dmscs"."ApiClient" ac WHERE ac."ApplicationId" = a."Id") AS "Enabled",
+                        eo."EducationOrganizationId"
+                    FROM "dmscs"."Vendor" v
+                    LEFT OUTER JOIN "dmscs"."Application" a ON v."Id" = a."VendorId"
+                    LEFT OUTER JOIN "dmscs"."ApplicationEducationOrganization" eo ON a."Id" = eo."ApplicationId"
+                    WHERE v."Id" = @VendorId AND {TenantContext.TenantWhereClause("v")};
                     """;
 
                 bool vendorExists = false;
@@ -416,14 +416,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
                         if (response.TryGetValue(application.Id, out ApplicationResponse? thisApplication))
                         {
-                            if (educationOrganizationId != null)
+                            if (educationOrganizationId is not null)
                             {
                                 thisApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
                             }
                         }
                         else
                         {
-                            if (educationOrganizationId != null)
+                            if (educationOrganizationId is not null)
                             {
                                 application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                             }
@@ -441,12 +441,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 {
                     string sqlDataStores = """
                             SELECT
-                                a.Id as ApplicationId,
-                                acdi.DataStoreId
-                            FROM dmscs.Application a
-                            INNER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                            INNER JOIN dmscs.ApiClientDataStore acdi ON ac.Id = acdi.ApiClientId
-                            WHERE a.VendorId = @VendorId;
+                                a."Id" AS "ApplicationId",
+                                acdi."DataStoreId"
+                            FROM "dmscs"."Application" a
+                            INNER JOIN "dmscs"."ApiClient" ac ON a."Id" = ac."ApplicationId"
+                            INNER JOIN "dmscs"."ApiClientDataStore" acdi ON ac."Id" = acdi."ApiClientId"
+                            WHERE a."VendorId" = @VendorId;
                         """;
 
                     await connection.QueryAsync<long, long, long>(
@@ -469,11 +469,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     // Get Profile IDs for each application
                     string sqlProfiles = """
                             SELECT
-                                ap.ApplicationId,
-                                ap.ProfileId
-                            FROM dmscs.ApplicationProfile ap
-                            INNER JOIN dmscs.Application a ON ap.ApplicationId = a.Id
-                            WHERE a.VendorId = @VendorId;
+                                ap."ApplicationId",
+                                ap."ProfileId"
+                            FROM "dmscs"."ApplicationProfile" ap
+                            INNER JOIN "dmscs"."Application" a ON ap."ApplicationId" = a."Id"
+                            WHERE a."VendorId" = @VendorId;
                         """;
 
                     await connection.QueryAsync<long, long, long>(

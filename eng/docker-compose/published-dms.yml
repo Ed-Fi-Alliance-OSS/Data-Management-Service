@@ -38,13 +38,16 @@ services:
       ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}
       ConfigurationServiceSettings__ClientSecret: ${CONFIG_SERVICE_CLIENT_SECRET}
       ConfigurationServiceSettings__EncryptionKey: ${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:-}
-      ConfigurationServiceSettings__CacheExpirationMinutes: ${CACHE_EXPIRATION_MINUTES:-10}
       AppSettings__MultiTenancy: ${DMS_MULTI_TENANCY:-false}
       AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
+      CacheSettings__ClaimSetsCacheExpirationSeconds: ${DMS_CLAIMSETS_CACHE_EXPIRATION_SECONDS:-600}
+      CacheSettings__ApplicationContextCacheExpirationSeconds: ${DMS_APPLICATION_CONTEXT_CACHE_EXPIRATION_SECONDS:-600}
+      CacheSettings__TokenCacheExpirationSeconds: ${DMS_TOKEN_CACHE_EXPIRATION_SECONDS:-1500}
+      CacheSettings__ProfileCacheExpirationSeconds: ${DMS_PROFILE_CACHE_EXPIRATION_SECONDS:-1800}
       CacheSettings__DataStoreCacheExpirationSeconds: ${DMS_DATASTORE_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__DataStoreCacheRefreshEnabled: ${DMS_DATASTORE_CACHE_REFRESH_ENABLED:-true}
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}

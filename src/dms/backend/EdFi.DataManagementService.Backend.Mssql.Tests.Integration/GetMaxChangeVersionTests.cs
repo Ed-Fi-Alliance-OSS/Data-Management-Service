@@ -10,7 +10,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// Verifies the emitted dms.GetMaxChangeVersion() function tracks dms.ChangeVersionSequence
+/// Verifies the emitted [dms].[GetMaxChangeVersion]() function tracks dms.ChangeVersionSequence
 /// via sys.sequences.current_value.
 /// </summary>
 public abstract class GetMaxChangeVersionTestBase
@@ -21,7 +21,7 @@ public abstract class GetMaxChangeVersionTestBase
     {
         await using SqlConnection connection = new(Uuidv5ParityTestBase.ConnectionString);
         await connection.OpenAsync();
-        await using SqlCommand cmd = new("SELECT dms.GetMaxChangeVersion()", connection);
+        await using SqlCommand cmd = new("SELECT [dms].[GetMaxChangeVersion]()", connection);
         var result = await cmd.ExecuteScalarAsync();
         return (long)result!;
     }

@@ -28,7 +28,8 @@ public class ClaimsHierarchyRepository(
         try
         {
             // Initial implementation assumes a basic implementation with single record.
-            string sql = "SELECT Id, Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
+            string sql =
+                "SELECT \"Id\", \"Hierarchy\", \"LastModifiedDate\" FROM \"dmscs\".\"ClaimsHierarchy\"";
 
             var hierarchyTuples = (
                 await connection.QueryAsync<(long id, string hierarchyJson, DateTime lastModifiedDate)>(
@@ -49,7 +50,7 @@ public class ClaimsHierarchyRepository(
 
             var hierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyTuples[0].hierarchyJson);
 
-            if (hierarchy == null)
+            if (hierarchy is null)
             {
                 return new ClaimsHierarchyGetResult.FailureUnknown(
                     "Unable to deserialize claim set hierarchy"
@@ -100,7 +101,7 @@ public class ClaimsHierarchyRepository(
         {
             string hierarchyJson = JsonSerializer.Serialize(claimsHierarchy);
 
-            const string SelectSql = "SELECT id, lastmodifieddate FROM dmscs.ClaimsHierarchy";
+            const string SelectSql = "SELECT \"Id\", \"LastModifiedDate\" FROM \"dmscs\".\"ClaimsHierarchy\"";
 
             var existingRecords = (
                 await connection.QueryAsync<(long Id, DateTime LastModifiedDate)>(
@@ -117,10 +118,10 @@ public class ClaimsHierarchyRepository(
 
             if (existingRecords.Count == 0)
             {
-                const string InsertSql =
-                    @"
-                    INSERT INTO dmscs.ClaimsHierarchy (hierarchy, lastmodifieddate, CreatedBy)
-                    VALUES (@Hierarchy::jsonb, now(), @CreatedBy);";
+                const string InsertSql = """
+                    INSERT INTO "dmscs"."ClaimsHierarchy" ("Hierarchy", "LastModifiedDate", "CreatedBy")
+                    VALUES (@Hierarchy::jsonb, now(), @CreatedBy);
+                    """;
 
                 await connection.ExecuteAsync(
                     InsertSql,
@@ -138,14 +139,14 @@ public class ClaimsHierarchyRepository(
                     return new ClaimsHierarchySaveResult.FailureMultiUserConflict();
                 }
 
-                const string UpdateSql =
-                    @"
-                    UPDATE dmscs.ClaimsHierarchy
-                    SET hierarchy = @Hierarchy::jsonb,
-                        lastmodifieddate = now(),
-                        LastModifiedAt = @LastModifiedAt,
-                        ModifiedBy = @ModifiedBy
-                    WHERE id = @Id AND lastmodifieddate = @LastModifiedDate;";
+                const string UpdateSql = """
+                    UPDATE "dmscs"."ClaimsHierarchy"
+                    SET "Hierarchy" = @Hierarchy::jsonb,
+                        "LastModifiedDate" = now(),
+                        "LastModifiedAt" = @LastModifiedAt,
+                        "ModifiedBy" = @ModifiedBy
+                    WHERE "Id" = @Id AND "LastModifiedDate" = @LastModifiedDate;
+                    """;
 
                 int affectedRows = await connection.ExecuteAsync(
                     UpdateSql,
@@ -197,7 +198,7 @@ public class ClaimsHierarchyRepository(
 
     private async Task<(DbConnection conn, bool shouldDispose)> GetConnectionAsync(DbTransaction? transaction)
     {
-        if (transaction?.Connection != null)
+        if (transaction?.Connection is not null)
         {
             return (transaction.Connection, shouldDispose: false);
         }

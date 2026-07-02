@@ -690,12 +690,12 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
             .ToList();
 
         var renamed = outputColumns.Single(column =>
-            column["column"]!.GetValue<string>() == "Old_Student_DocumentId"
+            column["column"]!.GetValue<string>() == "OldStudent_DocumentId"
         );
         renamed["output_name"]!.GetValue<string>().Should().Be("Student_DocumentId");
 
         outputColumns
-            .Where(column => column["column"]!.GetValue<string>() != "Old_Student_DocumentId")
+            .Where(column => column["column"]!.GetValue<string>() != "OldStudent_DocumentId")
             .Should()
             .OnlyContain(column => !column.ContainsKey("output_name"));
     }

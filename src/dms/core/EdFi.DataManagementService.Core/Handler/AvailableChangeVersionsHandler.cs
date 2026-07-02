@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 
 /// <summary>
 /// Handles GET /changeQueries/v1/availableChangeVersions, returning the ODS-compatible contract
-/// { "oldestChangeVersion": 0, "newestChangeVersion": &lt;dms.GetMaxChangeVersion()&gt; }.
+/// { "oldestChangeVersion": 0, "newestChangeVersion": &lt;backend high-water mark&gt; }.
 /// oldestChangeVersion is always 0; newestChangeVersion is read from the relational backend.
 /// </summary>
 internal sealed class AvailableChangeVersionsHandler(ILogger<AvailableChangeVersionsHandler> logger)

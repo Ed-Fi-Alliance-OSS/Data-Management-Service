@@ -14,8 +14,7 @@ namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
 /// Relational implementation of <see cref="IChangeQueryRepository"/>. Reads the newest change
-/// version from the dms.GetMaxChangeVersion() function, which is identical across PostgreSQL and
-/// SQL Server, so a single dialect-agnostic command serves both engines.
+/// version from the dialect-specific GetMaxChangeVersion function.
 /// </summary>
 public sealed class RelationalChangeQueryRepository(
     IRelationalCommandExecutor commandExecutor,
@@ -30,12 +29,12 @@ public sealed class RelationalChangeQueryRepository(
 
     public Task<long> GetNewestChangeVersion(CancellationToken cancellationToken = default) =>
         _commandExecutor.ExecuteReaderAsync(
-            new RelationalCommand("SELECT dms.GetMaxChangeVersion() AS \"NewestChangeVersion\""),
+            ChangeVersionSqlProvider.NewestChangeVersionCommand(_commandExecutor.Dialect),
             static async (reader, ct) =>
             {
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
-                    throw new InvalidOperationException("dms.GetMaxChangeVersion() returned no rows.");
+                    throw new InvalidOperationException("GetMaxChangeVersion returned no rows.");
                 }
 
                 return reader.GetRequiredFieldValue<long>("NewestChangeVersion");

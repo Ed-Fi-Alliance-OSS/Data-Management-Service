@@ -46,7 +46,7 @@ public sealed record AuthEdOrgTableDefinition(
 /// column name. Both fields are independently meaningful — the alias drives the SQL projection
 /// (<c>edOrg.SourceEducationOrganizationId</c>) and is recorded in the manifest verbatim.
 /// When <paramref name="OutputName"/> is set, the projection is renamed
-/// (<c>sca_tc.Old_Contact_DocumentId AS Contact_DocumentId</c>); when <c>null</c>, the column is
+/// (<c>sca_tc.OldContact_DocumentId AS Contact_DocumentId</c>); when <c>null</c>, the column is
 /// projected under its own name.
 /// </summary>
 public sealed record AuthViewOutputColumn(string Alias, DbColumnName Column, DbColumnName? OutputName = null);
@@ -485,8 +485,8 @@ public static class AuthObjectDefinitions
     /// <summary>
     /// Builds the four <c>ReadChanges</c> authorization view definitions. Each view unions a
     /// current/current arm (selecting from the corresponding people auth view) with tracked-change
-    /// arms joining <c>tracked_changes_edfi</c> association tables — via their <c>Old_*</c>
-    /// identity/securable columns — against the current EdOrg hierarchy. Arms use plain
+    /// arms joining <c>tracked_changes_edfi</c> association tables via their old-value
+    /// identity/securable columns against the current EdOrg hierarchy. Arms use plain
     /// <c>SELECT</c> with <c>UNION</c> (not <c>UNION ALL</c>) so duplicate authorization pairs
     /// across arms are eliminated. See <c>change-queries.md</c> ("Authorization views") for design.
     /// </summary>
@@ -505,14 +505,11 @@ public static class AuthObjectDefinitions
         var staffDocId = AuthNames.StaffDocumentId;
         const string edOrgAlias = "edOrg";
 
-        // Old_* tracked-change column names: "Old_" + the current-table column the tracked-change
-        // derivation captured (DeriveTrackedChangeInventoryPass), verified against the authoritative
-        // ds-5.2 tracked-change manifest.
-        var oldSchoolIdUnified = new DbColumnName("Old_" + AuthNames.SchoolIdUnified.Value);
-        var oldStudentDocId = new DbColumnName("Old_" + studentDocId.Value);
-        var oldContactDocId = new DbColumnName("Old_" + contactDocId.Value);
-        var oldStaffDocId = new DbColumnName("Old_" + staffDocId.Value);
-        var oldEdOrgEdOrgId = new DbColumnName("Old_" + AuthNames.EdOrgEdOrgId.Value);
+        var oldSchoolIdUnified = TrackedChangeNameConventions.OldValueColumn(AuthNames.SchoolIdUnified);
+        var oldStudentDocId = TrackedChangeNameConventions.OldValueColumn(studentDocId);
+        var oldContactDocId = TrackedChangeNameConventions.OldValueColumn(contactDocId);
+        var oldStaffDocId = TrackedChangeNameConventions.OldValueColumn(staffDocId);
+        var oldEdOrgEdOrgId = TrackedChangeNameConventions.OldValueColumn(AuthNames.EdOrgEdOrgId);
 
         var trackedSsa = new DbTableName(trackedChanges, "StudentSchoolAssociation");
         var trackedSca = new DbTableName(trackedChanges, "StudentContactAssociation");

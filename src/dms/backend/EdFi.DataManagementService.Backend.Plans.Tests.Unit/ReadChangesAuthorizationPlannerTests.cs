@@ -27,7 +27,7 @@ public class ReadChangesAuthorizationPlannerTests
     {
         var outcome = Plan(
             EdOrgResource(), // resource with one EdOrg securable (helper below)
-            EdOrgTrackedTable(), // tracked table with the Old_ EdOrg column (helper below)
+            EdOrgTrackedTable(), // tracked table with the OldX EdOrg column (helper below)
             new RelationalAuthorizationContext([1L], []),
             strategyName
         );
@@ -72,7 +72,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan;
         var subject = plan.RelationshipChecks.Single().Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("Old_SchoolId_Unified");
+        subject.TrackedOldColumn.Value.Should().Be("OldSchoolId_Unified");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToEducationOrganizationId");
         subject.AuthViewSubjectColumn.Value.Should().Be("TargetEducationOrganizationId"); // normal direction
         subject.AuthViewClaimColumn.Value.Should().Be("SourceEducationOrganizationId");
@@ -119,7 +119,7 @@ public class ReadChangesAuthorizationPlannerTests
     [Test]
     public void It_resolves_students_only_including_deletes_to_the_including_deletes_view()
     {
-        // StudentTrackedTable() has a PersonDocumentId column (PersonKind=Student, Old_Student_DocumentId).
+        // StudentTrackedTable() has a PersonDocumentId column (PersonKind=Student, OldStudent_DocumentId).
         var outcome = Plan(
             StudentResource(),
             StudentTrackedTable(),
@@ -132,7 +132,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan.RelationshipChecks.Single()
             .Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("Old_Student_DocumentId");
+        subject.TrackedOldColumn.Value.Should().Be("OldStudent_DocumentId");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
         subject.AuthViewSubjectColumn.Value.Should().Be("Student_DocumentId");
     }
@@ -152,7 +152,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan.RelationshipChecks.Single()
             .Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("Old_Student_DocumentId");
+        subject.TrackedOldColumn.Value.Should().Be("OldStudent_DocumentId");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
         subject.AuthViewSubjectColumn.Value.Should().Be("Student_DocumentId");
     }
@@ -181,7 +181,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan.RelationshipChecks.Single()
             .Subjects.Single();
-        subject.TrackedOldColumn.Value.Should().Be("Old_Student_DocumentId");
+        subject.TrackedOldColumn.Value.Should().Be("OldStudent_DocumentId");
         subject.AuthView.Name.Should().Be("EducationOrganizationIdToStudentDocumentIdIncludingDeletes");
         subject.AuthViewSubjectColumn.Value.Should().Be("Student_DocumentId");
     }
@@ -287,7 +287,7 @@ public class ReadChangesAuthorizationPlannerTests
             .Should()
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan;
-        plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("Old_Namespace");
+        plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("OldNamespace");
         plan.NamespaceParameterization.Should().NotBeNull();
     }
 
@@ -318,7 +318,7 @@ public class ReadChangesAuthorizationPlannerTests
             .Should()
             .BeOfType<ReadChangesAuthorizationPlanOutcome.Plan>()
             .Subject.AuthorizationPlan;
-        plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("Old_Namespace");
+        plan.NamespaceCheck!.TrackedOldNamespaceColumn.Value.Should().Be("OldNamespace");
         plan.NamespaceParameterization.Should().NotBeNull();
     }
 
@@ -768,7 +768,7 @@ public class ReadChangesAuthorizationPlannerTests
     // ---- Tracked-change builder (adapted from TrackedChangeQueryPlannerTests) -----------------------
 
     /// <summary>
-    /// A tracked-change table carrying the <c>Old_SchoolId_Unified</c> identity/securable column that
+    /// A tracked-change table carrying the <c>OldSchoolId_Unified</c> identity/securable column that
     /// mirrors the EdOrg securable element on <see cref="EdOrgResource"/>.
     /// </summary>
     private static TrackedChangeTableInfo EdOrgTrackedTable() =>
@@ -779,8 +779,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_SchoolId_Unified"),
-                    NewColumnName: new DbColumnName("New_SchoolId_Unified"),
+                    OldColumnName: new DbColumnName("OldSchoolId_Unified"),
+                    NewColumnName: new DbColumnName("NewSchoolId_Unified"),
                     SourceJsonPath: "$.schoolReference.schoolId",
                     CanonicalStorageColumn: new DbColumnName("SchoolId_Unified"),
                     IsOldColumnNullable: false,
@@ -820,7 +820,7 @@ public class ReadChangesAuthorizationPlannerTests
         );
 
     /// <summary>
-    /// A tracked-change table carrying a denormalized <c>Old_Student_DocumentId</c> person column
+    /// A tracked-change table carrying a denormalized <c>OldStudent_DocumentId</c> person column
     /// (<see cref="TrackedChangeColumnRole.PersonDocumentId"/>) reached through a
     /// <c>Student</c> person join, mirroring the Student securable element on <see cref="StudentResource"/>.
     /// </summary>
@@ -832,8 +832,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_Student_DocumentId"),
-                    NewColumnName: new DbColumnName("New_Student_DocumentId"),
+                    OldColumnName: new DbColumnName("OldStudent_DocumentId"),
+                    NewColumnName: new DbColumnName("NewStudent_DocumentId"),
                     SourceJsonPath: "$.studentReference.studentUniqueId",
                     CanonicalStorageColumn: null,
                     IsOldColumnNullable: false,
@@ -874,7 +874,7 @@ public class ReadChangesAuthorizationPlannerTests
         );
 
     /// <summary>
-    /// A tracked-change table carrying a direct self <c>Old_Student_DocumentId</c> person column for a
+    /// A tracked-change table carrying a direct self <c>OldStudent_DocumentId</c> person column for a
     /// top-level Student resource.
     /// </summary>
     private static TrackedChangeTableInfo TopLevelStudentTrackedTable() =>
@@ -885,8 +885,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_Student_DocumentId"),
-                    NewColumnName: new DbColumnName("New_Student_DocumentId"),
+                    OldColumnName: new DbColumnName("OldStudent_DocumentId"),
+                    NewColumnName: new DbColumnName("NewStudent_DocumentId"),
                     SourceJsonPath: "$.studentUniqueId",
                     CanonicalStorageColumn: new DbColumnName("DocumentId"),
                     IsOldColumnNullable: false,
@@ -914,8 +914,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_PrimaryStudent_DocumentId"),
-                    NewColumnName: new DbColumnName("New_PrimaryStudent_DocumentId"),
+                    OldColumnName: new DbColumnName("OldPrimaryStudent_DocumentId"),
+                    NewColumnName: new DbColumnName("NewPrimaryStudent_DocumentId"),
                     SourceJsonPath: "$.primaryStudentReference.studentUniqueId",
                     CanonicalStorageColumn: null,
                     IsOldColumnNullable: false,
@@ -933,7 +933,7 @@ public class ReadChangesAuthorizationPlannerTests
         );
 
     /// <summary>
-    /// A tracked-change table carrying the <c>Old_Namespace</c> securable column that mirrors the
+    /// A tracked-change table carrying the <c>OldNamespace</c> securable column that mirrors the
     /// Namespace securable element on <see cref="NamespaceResource"/>.
     /// </summary>
     private static TrackedChangeTableInfo NamespaceTrackedTable() =>
@@ -944,8 +944,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_Namespace"),
-                    NewColumnName: new DbColumnName("New_Namespace"),
+                    OldColumnName: new DbColumnName("OldNamespace"),
+                    NewColumnName: new DbColumnName("NewNamespace"),
                     SourceJsonPath: "$.namespace",
                     CanonicalStorageColumn: new DbColumnName("Namespace"),
                     IsOldColumnNullable: false,
@@ -963,7 +963,7 @@ public class ReadChangesAuthorizationPlannerTests
 
     /// <summary>
     /// A shared-descriptor tracked-change table (<see cref="TrackedChangeTableKind.SharedDescriptor"/>)
-    /// carrying the <c>Old_Namespace</c> column for the shared <c>dms.Descriptor</c> table, mirroring
+    /// carrying the <c>OldNamespace</c> column for the shared <c>dms.Descriptor</c> table, mirroring
     /// the descriptor column contract on <see cref="DescriptorNamespaceResource"/>.
     /// </summary>
     private static TrackedChangeTableInfo DescriptorNamespaceTrackedTable() =>
@@ -974,8 +974,8 @@ public class ReadChangesAuthorizationPlannerTests
             ValueColumnsInTableOrder:
             [
                 new TrackedChangeColumnInfo(
-                    OldColumnName: new DbColumnName("Old_Namespace"),
-                    NewColumnName: new DbColumnName("New_Namespace"),
+                    OldColumnName: new DbColumnName("OldNamespace"),
+                    NewColumnName: new DbColumnName("NewNamespace"),
                     SourceJsonPath: "$.namespace",
                     CanonicalStorageColumn: new DbColumnName("Namespace"),
                     IsOldColumnNullable: false,

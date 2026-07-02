@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -21,6 +22,19 @@ internal static class TrackedChangeDerivationTestHelpers
     /// </summary>
     internal static DerivedRelationalModelSet BuildSet(JsonObject coreProjectSchema)
     {
+        return BuildSet(coreProjectSchema, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// Builds a derived model set from a single core project schema using the canonical production pass
+    /// list and supplied SQL dialect, so dialect-specific manifest paths can be verified.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildSet(
+        JsonObject coreProjectSchema,
+        SqlDialect dialect,
+        ISqlDialectRules dialectRules
+    )
+    {
         var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             coreProjectSchema,
             isExtensionProject: false
@@ -28,7 +42,7 @@ internal static class TrackedChangeDerivationTestHelpers
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
 
-        return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        return builder.Build(schemaSet, dialect, dialectRules);
     }
 
     /// <summary>
@@ -66,7 +80,7 @@ internal static class TrackedChangeDerivationTestHelpers
     }
 
     /// <summary>
-    /// Returns the single value column on the supplied tracked-change table with the given <c>Old_</c> name.
+    /// Returns the single value column on the supplied tracked-change table with the given <c>Old</c> name.
     /// </summary>
     internal static TrackedChangeColumnInfo ValueColumnByOldName(
         TrackedChangeTableInfo table,
@@ -213,10 +227,10 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
 
         var schoolId = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             enrollment,
-            "Old_School_SchoolId"
+            "OldSchool_SchoolId"
         );
 
-        schoolId.NewColumnName.Value.Should().Be("New_School_SchoolId");
+        schoolId.NewColumnName.Value.Should().Be("NewSchool_SchoolId");
         schoolId.Role.Should().Be(TrackedChangeColumnRole.Scalar);
         schoolId.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.Identity);
         schoolId.ScalarType.Kind.Should().Be(ScalarKind.Int32);
@@ -224,7 +238,27 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should leave every New_ value column nullable so delete tombstones can omit them.
+    /// It should serialize SQL Server tracked-change value columns with the same Old/New prefix rule.
+    /// </summary>
+    [Test]
+    public void It_should_serialize_mssql_value_columns_without_the_prefix_separator()
+    {
+        var set = TrackedChangeDerivationTestHelpers.BuildSet(
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema(),
+            SqlDialect.Mssql,
+            new MssqlDialectRules()
+        );
+
+        var manifest = DerivedModelSetManifestEmitter.Emit(set);
+
+        manifest.Should().Contain("\"old_column\": \"OldSchool_SchoolId\"");
+        manifest.Should().Contain("\"new_column\": \"NewSchool_SchoolId\"");
+        manifest.Should().NotContain("\"old_column\": \"Old_School_SchoolId\"");
+        manifest.Should().NotContain("\"new_column\": \"New_School_SchoolId\"");
+    }
+
+    /// <summary>
+    /// It should leave every New value column nullable so delete tombstones can omit them.
     /// </summary>
     [Test]
     public void It_should_leave_every_new_value_column_nullable()
@@ -268,9 +302,9 @@ public class Given_Top_Level_Person_Resources_For_Tracked_Change_Derivation
     /// It should derive an authorization-only self person DocumentId value column for each core top-level
     /// person resource.
     /// </summary>
-    [TestCase("Student", "Old_Student_DocumentId", "New_Student_DocumentId", "$.studentUniqueId")]
-    [TestCase("Staff", "Old_Staff_DocumentId", "New_Staff_DocumentId", "$.staffUniqueId")]
-    [TestCase("Contact", "Old_Contact_DocumentId", "New_Contact_DocumentId", "$.contactUniqueId")]
+    [TestCase("Student", "OldStudent_DocumentId", "NewStudent_DocumentId", "$.studentUniqueId")]
+    [TestCase("Staff", "OldStaff_DocumentId", "NewStaff_DocumentId", "$.staffUniqueId")]
+    [TestCase("Contact", "OldContact_DocumentId", "NewContact_DocumentId", "$.contactUniqueId")]
     public void It_should_derive_self_person_document_id_columns(
         string sourceTableName,
         string oldColumnName,
@@ -386,14 +420,14 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
             table.Kind == TrackedChangeTableKind.SharedDescriptor
         );
 
-        var ns = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_Namespace");
-        ns.NewColumnName.Value.Should().Be("New_Namespace");
+        var ns = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "OldNamespace");
+        ns.NewColumnName.Value.Should().Be("NewNamespace");
         ns.Role.Should().Be(TrackedChangeColumnRole.Scalar);
         ns.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
         ns.SourceJsonPath.Should().Be("$.namespace");
 
-        var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_CodeValue");
-        codeValue.NewColumnName.Value.Should().Be("New_CodeValue");
+        var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "OldCodeValue");
+        codeValue.NewColumnName.Value.Should().Be("NewCodeValue");
         codeValue.Role.Should().Be(TrackedChangeColumnRole.Scalar);
         codeValue.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
         codeValue.SourceJsonPath.Should().Be("$.codeValue");
@@ -633,7 +667,7 @@ public class Given_Deterministic_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should never repeat an Old_ value-column name within a single tracked-change table.
+    /// It should never repeat an Old value-column name within a single tracked-change table.
     /// </summary>
     [Test]
     public void It_should_not_repeat_an_old_value_column_name_within_a_table()
@@ -647,9 +681,7 @@ public class Given_Deterministic_Tracked_Change_Derivation
             table
                 .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
                 .Should()
-                .OnlyHaveUniqueItems(
-                    $"table {table.Table.Name} must de-duplicate value columns by Old_ name"
-                );
+                .OnlyHaveUniqueItems($"table {table.Table.Name} must de-duplicate value columns by Old name");
         }
     }
 
@@ -670,11 +702,7 @@ public class Given_Deterministic_Tracked_Change_Derivation
         enrollment
             .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
             .Should()
-            .Equal(
-                "Old_School_SchoolId",
-                "Old_School_EducationOrganizationId",
-                "Old_Student_StudentUniqueId"
-            );
+            .Equal("OldSchool_SchoolId", "OldSchool_EducationOrganizationId", "OldStudent_StudentUniqueId");
     }
 }
 
@@ -1007,14 +1035,14 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
 
         var schoolId = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             academicWeek,
-            "Old_School_SchoolId"
+            "OldSchool_SchoolId"
         );
         schoolId.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.Identity);
         schoolId.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.SecurableElement);
 
         var weekIdentifier = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             academicWeek,
-            "Old_WeekIdentifier"
+            "OldWeekIdentifier"
         );
         weekIdentifier.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
     }
@@ -1046,14 +1074,14 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
         administration
             .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
             .Should()
-            .NotContain("Old_AssessmentBatteryPart_Namespace")
-            .And.Contain("Old_Assessment_Namespace");
+            .NotContain("OldAssessmentBatteryPart_Namespace")
+            .And.Contain("OldAssessment_Namespace");
 
         var graduationPlan = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "GraduationPlan");
         graduationPlan
             .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
             .Should()
-            .NotContain("Old_RequiredAssessmentAssessment_Namespace");
+            .NotContain("OldRequiredAssessmentAssessment_Namespace");
     }
 
     /// <summary>
@@ -1075,14 +1103,14 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
 
         var namespaceColumn = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             competencyObjective,
-            "Old_ObjectiveGradeLevelDescriptor_Namespace"
+            "OldObjectiveGradeLevelDescriptor_Namespace"
         );
         namespaceColumn.Role.Should().Be(TrackedChangeColumnRole.DescriptorNamespace);
         namespaceColumn.DescriptorJoinName.Should().Be("ObjectiveGradeLevelDescriptor");
 
         var codeValueColumn = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             competencyObjective,
-            "Old_ObjectiveGradeLevelDescriptor_CodeValue"
+            "OldObjectiveGradeLevelDescriptor_CodeValue"
         );
         codeValueColumn.Role.Should().Be(TrackedChangeColumnRole.DescriptorCodeValue);
         codeValueColumn.DescriptorJoinName.Should().Be("ObjectiveGradeLevelDescriptor");
@@ -1090,7 +1118,7 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
         competencyObjective
             .ValueColumnsInTableOrder.Should()
             .NotContain(column =>
-                column.OldColumnName.Value == "Old_ObjectiveGradeLevelDescriptor_DescriptorId"
+                column.OldColumnName.Value == "OldObjectiveGradeLevelDescriptor_DescriptorId"
             );
     }
 
@@ -1111,7 +1139,7 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
 
         var personColumn = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             association,
-            "Old_Student_DocumentId"
+            "OldStudent_DocumentId"
         );
         personColumn.Role.Should().Be(TrackedChangeColumnRole.PersonDocumentId);
         personColumn.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.SecurableElement);
@@ -1129,13 +1157,13 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
 
         var unified = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             courseOffering,
-            "Old_SchoolId_Unified"
+            "OldSchoolId_Unified"
         );
         unified.CanonicalStorageColumn.Should().Be(new DbColumnName("SchoolId_Unified"));
 
         var nonUnified = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
             courseOffering,
-            "Old_LocalCourseCode"
+            "OldLocalCourseCode"
         );
         nonUnified.CanonicalStorageColumn.Should().BeNull();
     }
@@ -1151,16 +1179,16 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
             table.Kind == TrackedChangeTableKind.SharedDescriptor
         );
 
-        var ns = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_Namespace");
+        var ns = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "OldNamespace");
         ns.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.Identity);
         ns.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.SecurableElement);
 
-        var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_CodeValue");
+        var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "OldCodeValue");
         codeValue.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
     }
 
     /// <summary>
-    /// It should never repeat an Old_ value-column name within any derived tracked-change table.
+    /// It should never repeat an Old value-column name within any derived tracked-change table.
     /// </summary>
     [Test]
     public void It_should_de_duplicate_value_columns_across_the_whole_set()
@@ -1170,9 +1198,7 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
             table
                 .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
                 .Should()
-                .OnlyHaveUniqueItems(
-                    $"table {table.Table.Name} must de-duplicate value columns by Old_ name"
-                );
+                .OnlyHaveUniqueItems($"table {table.Table.Name} must de-duplicate value columns by Old name");
         }
     }
 

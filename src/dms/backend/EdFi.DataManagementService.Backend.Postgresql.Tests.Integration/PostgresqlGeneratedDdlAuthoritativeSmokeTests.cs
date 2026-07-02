@@ -1007,20 +1007,20 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         Convert
             .ToInt64(
-                associationTrackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                associationTrackedRow["OldEducationOrganization_EducationOrganizationId"],
                 CultureInfo.InvariantCulture
             )
             .Should()
             .Be(100);
         Convert
             .ToInt64(
-                associationTrackedRow["New_EducationOrganization_EducationOrganizationId"],
+                associationTrackedRow["NewEducationOrganization_EducationOrganizationId"],
                 CultureInfo.InvariantCulture
             )
             .Should()
             .Be(101);
-        associationTrackedRow["Old_Student_StudentUniqueId"].Should().Be("10001");
-        associationTrackedRow["New_Student_StudentUniqueId"].Should().Be("10001");
+        associationTrackedRow["OldStudent_StudentUniqueId"].Should().Be("10001");
+        associationTrackedRow["NewStudent_StudentUniqueId"].Should().Be("10001");
         Convert
             .ToInt64(associationTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
@@ -1455,20 +1455,20 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
-                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                trackedRow["OldEducationOrganization_EducationOrganizationId"],
                 CultureInfo.InvariantCulture
             )
             .Should()
             .Be(seed.OriginalEducationOrganizationId);
         Convert
             .ToInt64(
-                trackedRow["New_EducationOrganization_EducationOrganizationId"],
+                trackedRow["NewEducationOrganization_EducationOrganizationId"],
                 CultureInfo.InvariantCulture
             )
             .Should()
             .Be(seed.ReplacementEducationOrganizationId);
-        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
-        trackedRow["New_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        trackedRow["OldStudent_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        trackedRow["NewStudent_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
     }
 
     [Test]
@@ -1496,11 +1496,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         Convert
-            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .ToInt64(trackedRow["OldStudent_DocumentId"], CultureInfo.InvariantCulture)
             .Should()
             .Be(seed.StudentDocumentId);
         Convert
-            .ToInt64(trackedRow["New_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .ToInt64(trackedRow["NewStudent_DocumentId"], CultureInfo.InvariantCulture)
             .Should()
             .Be(seed.StudentDocumentId);
     }
@@ -1661,17 +1661,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             .Should()
             .Be(secondAfter.ContentVersion);
 
-        firstTrackedRow["Old_GradingPeriodName"].Should().Be("First Grading Period");
-        firstTrackedRow["New_GradingPeriodName"].Should().Be("First Grading Period-renamed");
-        secondTrackedRow["Old_GradingPeriodName"].Should().Be("Second Grading Period");
-        secondTrackedRow["New_GradingPeriodName"].Should().Be("Second Grading Period-renamed");
+        firstTrackedRow["OldGradingPeriodName"].Should().Be("First Grading Period");
+        firstTrackedRow["NewGradingPeriodName"].Should().Be("First Grading Period-renamed");
+        secondTrackedRow["OldGradingPeriodName"].Should().Be("Second Grading Period");
+        secondTrackedRow["NewGradingPeriodName"].Should().Be("Second Grading Period-renamed");
 
         foreach (var trackedRow in new[] { firstTrackedRow, secondTrackedRow })
         {
-            trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
-            trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
-            trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
-            trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+            trackedRow["OldGradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["NewGradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["OldGradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+            trackedRow["NewGradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
         }
     }
 
@@ -1782,8 +1782,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             "GradingPeriod",
             changedDocumentUuid
         );
-        trackedRow["Old_GradingPeriodName"].Should().Be("Mixed Changed Period");
-        trackedRow["New_GradingPeriodName"].Should().Be("Mixed Changed Period-renamed");
+        trackedRow["OldGradingPeriodName"].Should().Be("Mixed Changed Period");
+        trackedRow["NewGradingPeriodName"].Should().Be("Mixed Changed Period-renamed");
         Convert
             .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
@@ -1794,8 +1794,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     public async Task It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change()
     {
         // The descriptor element of the identity actually CHANGES here, so the
-        // key-change row's Old_* descriptor projection must come from the deleted
-        // image and New_* from the inserted image — equal-value tests cannot tell.
+        // key-change row's OldX descriptor projection must come from the deleted
+        // image and NewX from the inserted image — equal-value tests cannot tell.
         const int SchoolYear = 2027;
         const string DescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
 
@@ -1887,12 +1887,12 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             "GradingPeriod",
             gradingPeriodDocumentUuid
         );
-        trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
-        trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
-        trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be("FourthSixWeeks");
-        trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be("FifthSixWeeks");
-        trackedRow["Old_GradingPeriodName"].Should().Be("Descriptor Swap Period");
-        trackedRow["New_GradingPeriodName"].Should().Be("Descriptor Swap Period");
+        trackedRow["OldGradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["NewGradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["OldGradingPeriodDescriptor_CodeValue"].Should().Be("FourthSixWeeks");
+        trackedRow["NewGradingPeriodDescriptor_CodeValue"].Should().Be("FifthSixWeeks");
+        trackedRow["OldGradingPeriodName"].Should().Be("Descriptor Swap Period");
+        trackedRow["NewGradingPeriodName"].Should().Be("Descriptor Swap Period");
         Convert
             .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
@@ -1988,15 +1988,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             "StudentAssessment",
             studentAssessmentDocumentUuid
         );
-        trackedRow["Old_StudentAssessmentIdentifier"].Should().Be("SA-001");
-        trackedRow["New_StudentAssessmentIdentifier"].Should().Be("SA-001-renamed");
-        trackedRow["Old_ReportedSchool_SchoolId"].Should().BeNull();
+        trackedRow["OldStudentAssessmentIdentifier"].Should().Be("SA-001");
+        trackedRow["NewStudentAssessmentIdentifier"].Should().Be("SA-001-renamed");
+        trackedRow["OldReportedSchool_SchoolId"].Should().BeNull();
         Convert
-            .ToInt64(trackedRow["New_ReportedSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .ToInt64(trackedRow["NewReportedSchool_SchoolId"], CultureInfo.InvariantCulture)
             .Should()
             .Be(seededSchoolId);
-        trackedRow["Old_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
-        trackedRow["New_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
+        trackedRow["OldStudent_StudentUniqueId"].Should().Be(StudentUniqueId);
+        trackedRow["NewStudent_StudentUniqueId"].Should().Be(StudentUniqueId);
         Convert
             .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
@@ -2092,12 +2092,12 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             .Should()
             .Be(afterDocument.ContentVersion);
         trackedRow["Id"].Should().Be(scoreRangeDocumentUuid);
-        trackedRow["Old_AssessmentIdentifier_Unified"].Should().Be(OriginalAssessmentIdentifier);
-        trackedRow["New_AssessmentIdentifier_Unified"].Should().Be(ReplacementAssessmentIdentifier);
-        trackedRow["Old_Namespace_Unified"].Should().Be(AssessmentNamespace);
-        trackedRow["New_Namespace_Unified"].Should().Be(AssessmentNamespace);
-        trackedRow["Old_ScoreRangeId"].Should().Be(ScoreRangeId);
-        trackedRow["New_ScoreRangeId"].Should().Be(ScoreRangeId);
+        trackedRow["OldAssessmentIdentifier_Unified"].Should().Be(OriginalAssessmentIdentifier);
+        trackedRow["NewAssessmentIdentifier_Unified"].Should().Be(ReplacementAssessmentIdentifier);
+        trackedRow["OldNamespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["NewNamespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["OldScoreRangeId"].Should().Be(ScoreRangeId);
+        trackedRow["NewScoreRangeId"].Should().Be(ScoreRangeId);
     }
 
     #endregion
@@ -2149,14 +2149,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
-                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                trackedRow["OldEducationOrganization_EducationOrganizationId"],
                 CultureInfo.InvariantCulture
             )
             .Should()
             .Be(seed.OriginalEducationOrganizationId);
-        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        trackedRow["OldStudent_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
         Convert
-            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .ToInt64(trackedRow["OldStudent_DocumentId"], CultureInfo.InvariantCulture)
             .Should()
             .Be(seed.StudentDocumentId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2236,8 +2236,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
-        trackedRow["Old_Namespace"].Should().Be(DescriptorNamespace);
-        trackedRow["Old_CodeValue"].Should().Be(DescriptorCodeValue);
+        trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
+        trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
 
         // Statement 2: delete the dms.Document row.
@@ -2300,7 +2300,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
-        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
 
         // Statement 2: delete the dms.Document row.
@@ -2584,7 +2584,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
-        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
         tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
 
@@ -3439,7 +3439,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     private static void AssertAllNewColumnsAreNull(IReadOnlyDictionary<string, object?> trackedRow)
     {
         var newColumns = trackedRow
-            .Keys.Where(columnName => columnName.StartsWith("New_", StringComparison.Ordinal))
+            .Keys.Where(columnName => columnName.StartsWith("New", StringComparison.Ordinal))
             .ToList();
 
         newColumns.Should().NotBeEmpty();
@@ -3472,7 +3472,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task<long> ReadMaxChangeVersionAsync()
     {
-        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+        return await _database.ExecuteScalarAsync<long>("""SELECT "dms"."GetMaxChangeVersion"();""");
     }
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)

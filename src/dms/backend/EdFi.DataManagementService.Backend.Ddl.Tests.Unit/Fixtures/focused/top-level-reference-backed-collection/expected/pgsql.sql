@@ -40,7 +40,7 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
 $GetMaxChangeVersion$
 DECLARE
     result bigint;
@@ -492,10 +492,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolProgram"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
 (
-    "Old_ProgramId" integer NOT NULL,
-    "New_ProgramId" integer NULL,
-    "Old_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramName" varchar(60) NULL,
+    "OldProgramId" integer NOT NULL,
+    "NewProgramId" integer NULL,
+    "OldProgramName" varchar(60) NOT NULL,
+    "NewProgramName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -504,8 +504,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 (
-    "Old_SchoolId" integer NOT NULL,
-    "New_SchoolId" integer NULL,
+    "OldSchoolId" integer NOT NULL,
+    "NewSchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -616,8 +616,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Program" (
-            "Old_ProgramId",
-            "Old_ProgramName",
+            "OldProgramId",
+            "OldProgramName",
             "Id",
             "ChangeVersion"
         )
@@ -653,10 +653,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Program" (
-            "Old_ProgramId",
-            "Old_ProgramName",
-            "New_ProgramId",
-            "New_ProgramName",
+            "OldProgramId",
+            "OldProgramName",
+            "NewProgramId",
+            "NewProgramName",
             "Id",
             "ChangeVersion"
         )
@@ -710,7 +710,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
+            "OldSchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -745,8 +745,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
-            "New_SchoolId",
+            "OldSchoolId",
+            "NewSchoolId",
             "Id",
             "ChangeVersion"
         )

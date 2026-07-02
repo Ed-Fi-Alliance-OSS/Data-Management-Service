@@ -36,7 +36,7 @@ The DDL generation utility is responsible for database objects derived from the 
 
 - Core `dms.*` objects required for correctness and update tracking:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
-  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.GetMaxChangeVersion()` function
+  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server)
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
@@ -153,7 +153,7 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
-  - `dms.GetMaxChangeVersion()` function (created after `dms.ChangeVersionSequence`)
+  - `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server; created after `dms.ChangeVersionSequence`)
 
 **Sequence**
 

@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
-    Generates a 2048-bit RSA key pair and outputs a SQL insert statement for dmscs.OpenIddictKey.
+    Generates a 2048-bit RSA key pair and outputs a SQL insert statement for "dmscs"."OpenIddictKey".
 .DESCRIPTION
-    This script creates a new RSA key pair, encodes them in base64, and prints a SQL statement to insert them into the OpenIddictKey table, following the format in 0021_Insert_OpenIdKeys_Seed.sql.
+    This script creates a new RSA key pair, encodes the keys in base64, and prints a SQL statement
+    to insert them into the "dmscs"."OpenIddictKey" table.
 #>
 
 param(
@@ -18,7 +19,7 @@ $privateKeyBase64 = [Convert]::ToBase64String($privateKey)
 $publicKeyBase64 = [Convert]::ToBase64String($publicKey)
 
 $sql = @"
-INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
 VALUES ('$KeyId', decode('$publicKeyBase64', 'base64'), pgp_sym_encrypt('$privateKeyBase64', '$EncryptionKey'), TRUE);
 "@
 

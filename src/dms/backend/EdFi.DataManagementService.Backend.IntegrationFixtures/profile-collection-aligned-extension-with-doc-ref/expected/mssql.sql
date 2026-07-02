@@ -489,8 +489,8 @@ CREATE TABLE [edfi].[Sponsor]
 IF OBJECT_ID(N'tracked_changes_edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ParentResource]
 (
-    [Old_ParentResourceId] int NOT NULL,
-    [New_ParentResourceId] int NULL,
+    [OldParentResourceId] int NOT NULL,
+    [NewParentResourceId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ParentResource_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -500,8 +500,8 @@ CREATE TABLE [tracked_changes_edfi].[ParentResource]
 IF OBJECT_ID(N'tracked_changes_edfi.Sponsor', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Sponsor]
 (
-    [Old_SponsorName] nvarchar(30) NOT NULL,
-    [New_SponsorName] nvarchar(30) NULL,
+    [OldSponsorName] nvarchar(30) NOT NULL,
+    [NewSponsorName] nvarchar(30) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Sponsor_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -709,7 +709,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[ParentResource] (
-            [Old_ParentResourceId],
+            [OldParentResourceId],
             [Id],
             [ChangeVersion]
         )
@@ -731,8 +731,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[ParentResourceId] <> del.[ParentResourceId] OR (i.[ParentResourceId] IS NULL AND del.[ParentResourceId] IS NOT NULL) OR (i.[ParentResourceId] IS NOT NULL AND del.[ParentResourceId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ParentResource] (
-            [Old_ParentResourceId],
-            [New_ParentResourceId],
+            [OldParentResourceId],
+            [NewParentResourceId],
             [Id],
             [ChangeVersion]
         )
@@ -862,7 +862,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Sponsor] (
-            [Old_SponsorName],
+            [OldSponsorName],
             [Id],
             [ChangeVersion]
         )
@@ -884,8 +884,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[SponsorName] AS varbinary(max)) <> CAST(del.[SponsorName] AS varbinary(max)) OR (i.[SponsorName] IS NULL AND del.[SponsorName] IS NOT NULL) OR (i.[SponsorName] IS NOT NULL AND del.[SponsorName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Sponsor] (
-            [Old_SponsorName],
-            [New_SponsorName],
+            [OldSponsorName],
+            [NewSponsorName],
             [Id],
             [ChangeVersion]
         )

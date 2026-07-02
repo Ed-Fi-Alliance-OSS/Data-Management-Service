@@ -12,11 +12,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 public static class ClaimsHierarchyTestHelper
 {
     private const string DeleteSql = """
-            DELETE FROM dmscs.claimshierarchy;
+            DELETE FROM "dmscs"."ClaimsHierarchy";
         """;
 
     private const string InsertSqlFormat = """
-           INSERT INTO dmscs.claimshierarchy(hierarchy)
+           INSERT INTO "dmscs"."ClaimsHierarchy"("Hierarchy")
            VALUES ('{0}'::jsonb);
         """;
 

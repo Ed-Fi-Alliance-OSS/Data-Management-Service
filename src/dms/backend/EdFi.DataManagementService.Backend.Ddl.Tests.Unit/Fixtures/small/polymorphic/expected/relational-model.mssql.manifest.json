@@ -595,8 +595,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_LocalEducationAgencyId",
-          "new_column": "New_LocalEducationAgencyId",
+          "old_column": "OldLocalEducationAgencyId",
+          "new_column": "NewLocalEducationAgencyId",
           "source_json_path": "$.localEducationAgencyId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -652,8 +652,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SchoolId",
-          "new_column": "New_SchoolId",
+          "old_column": "OldSchoolId",
+          "new_column": "NewSchoolId",
           "source_json_path": "$.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

@@ -176,7 +176,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_create_get_max_change_version_function()
     {
-        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".GetMaxChangeVersion() RETURNS bigint");
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"GetMaxChangeVersion\"() RETURNS bigint");
     }
 
     [Test]
@@ -186,7 +186,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
             "CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\"",
             StringComparison.Ordinal
         );
-        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var function = _ddl.IndexOf("\"dms\".\"GetMaxChangeVersion\"()", StringComparison.Ordinal);
 
         sequence.Should().BeGreaterThan(0);
         function.Should().BeGreaterThan(sequence);
@@ -195,7 +195,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_emit_get_max_change_version_before_phase_5_tables()
     {
-        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var function = _ddl.IndexOf("\"dms\".\"GetMaxChangeVersion\"()", StringComparison.Ordinal);
         var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
 
         function.Should().BeGreaterThan(0);
@@ -205,7 +205,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_emit_get_max_change_version_first_among_functions()
     {
-        var getMax = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var getMax = _ddl.IndexOf("\"dms\".\"GetMaxChangeVersion\"()", StringComparison.Ordinal);
         var throwError = _ddl.IndexOf("\"dms\".\"throw_error\"", StringComparison.Ordinal);
         var uuidv5 = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
 
@@ -1423,8 +1423,8 @@ internal static class SharedDescriptorTrackedChangeFixture
             DmsTableNames.Descriptor,
             [
                 new TrackedChangeColumnInfo(
-                    new DbColumnName("Old_Namespace"),
-                    new DbColumnName("New_Namespace"),
+                    new DbColumnName("OldNamespace"),
+                    new DbColumnName("NewNamespace"),
                     "$.namespace",
                     null,
                     IsOldColumnNullable: false,
@@ -1434,8 +1434,8 @@ internal static class SharedDescriptorTrackedChangeFixture
                     TrackedChangeColumnOrigin.Identity
                 ),
                 new TrackedChangeColumnInfo(
-                    new DbColumnName("Old_CodeValue"),
-                    new DbColumnName("New_CodeValue"),
+                    new DbColumnName("OldCodeValue"),
+                    new DbColumnName("NewCodeValue"),
                     "$.codeValue",
                     null,
                     IsOldColumnNullable: false,

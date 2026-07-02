@@ -40,10 +40,17 @@ if ($EnvironmentFile) {
 function New-OpenIddictRole {
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
-    $sqlInsert = "INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES ('$roleId', '$RoleName') ON CONFLICT (Name) DO NOTHING RETURNING Id;"
+    $sqlInsert = @"
+INSERT INTO "dmscs"."OpenIddictRole" ("Id", "Name")
+VALUES ('$roleId', '$RoleName')
+ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING
+RETURNING "Id";
+"@
     $result = Invoke-DbQuery $sqlInsert
 
-    $sqlSelect = "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = '$RoleName';"
+    $sqlSelect = @"
+SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
+"@
     $existing = Invoke-DbQuery $sqlSelect
     return $existing[2]
 }
@@ -51,9 +58,16 @@ function New-OpenIddictRole {
 function New-OpenIddictScope {
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
-    $sqlInsert = "INSERT INTO dmscs.OpenIddictScope (Id, Name, Description) VALUES ('$scopeId', '$ScopeName', '$Description') ON CONFLICT (Name) DO NOTHING RETURNING Id;"
+    $sqlInsert = @"
+INSERT INTO "dmscs"."OpenIddictScope" ("Id", "Name", "Description")
+VALUES ('$scopeId', '$ScopeName', '$Description')
+ON CONFLICT ON CONSTRAINT "UX_OpenIddictScope_Name" DO NOTHING
+RETURNING "Id";
+"@
     $result = Invoke-DbQuery $sqlInsert
-    $sqlSelect = "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName';"
+    $sqlSelect = @"
+SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
+"@
     $existing = Invoke-DbQuery $sqlSelect
     return $existing[2]
 }
@@ -64,10 +78,17 @@ function New-OpenIddictApplication {
     $iterations = [int32](Resolve-EnvValue $HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret -Iterations $iterations
-    $sqlInsert = "INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential') ON CONFLICT (ClientId) DO NOTHING RETURNING Id; "
+    $sqlInsert = @"
+INSERT INTO "dmscs"."OpenIddictApplication" ("Id", "ClientId", "ClientSecret", "DisplayName", "Type")
+VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')
+ON CONFLICT ON CONSTRAINT "UX_OpenIddictApplication_ClientId" DO NOTHING
+RETURNING "Id";
+"@
     $result = Invoke-DbQuery $sqlInsert
 
-    $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId';"
+    $sqlSelect = @"
+SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
+"@
     $existing = Invoke-DbQuery $sqlSelect
     return $existing[2]
 }
@@ -92,13 +113,21 @@ function Test-ClientSecretComplexity {
 
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
-    $sql = "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId') ON CONFLICT (ClientId, RoleId) DO NOTHING;"
+    $sql = @"
+INSERT INTO "dmscs"."OpenIddictClientRole" ("ClientId", "RoleId")
+VALUES ('$AppId', '$RoleId')
+ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
+"@
     Invoke-DbQuery $sql
 }
 
 function Add-OpenIddictApplicationScope {
     param([string]$AppId, [string]$ScopeId)
-    $sql = "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId') ON CONFLICT (ApplicationId, ScopeId) DO NOTHING;"
+    $sql = @"
+INSERT INTO "dmscs"."OpenIddictApplicationScope" ("ApplicationId", "ScopeId")
+VALUES ('$AppId', '$ScopeId')
+ON CONFLICT ON CONSTRAINT "PK_OpenIddictApplicationScope" DO NOTHING;
+"@
     Invoke-DbQuery $sql
 }
 
@@ -112,8 +141,8 @@ function Add-OpenIddictCustomClaim {
     # Use PostgreSQL jsonb_build functions to avoid shell escaping issues entirely
     # This builds the equivalent of [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
     $sql = @"
-UPDATE dmscs.OpenIddictApplication
-SET ProtocolMappers = COALESCE(ProtocolMappers, '[]'::jsonb) ||
+UPDATE "dmscs"."OpenIddictApplication"
+SET "ProtocolMappers" = COALESCE("ProtocolMappers", '[]'::jsonb) ||
     jsonb_build_array(
         jsonb_build_object(
             'claim.name', '$ClaimName',
@@ -121,7 +150,7 @@ SET ProtocolMappers = COALESCE(ProtocolMappers, '[]'::jsonb) ||
             'jsonType.label', 'String'
         )
     )
-WHERE Id = '$AppId';
+WHERE "Id" = '$AppId';
 "@
     Invoke-DbQuery -Sql $sql
 }
@@ -130,9 +159,9 @@ function Update-OpenIddictApplicationPermissions {
     param([string]$AppId, [string]$Scope)
     $permissionsString = "{$Scope}" -replace "'", "''"
     $sql = @"
-UPDATE dmscs.OpenIddictApplication
-SET Permissions = '$permissionsString'
-WHERE Id = '$AppId';
+UPDATE "dmscs"."OpenIddictApplication"
+SET "Permissions" = '$permissionsString'
+WHERE "Id" = '$AppId';
 "@
     Invoke-DbQuery $sql
 }
@@ -224,26 +253,27 @@ function Invoke-DbQuery {
             }
         }
         $dbHost = $params['Host']
+        $port = $params['Port']
         $db = $params['Database']
         $user = $params['Username']
 
-        # More robust SQL escaping for shell command
-        # 1. Escape double quotes for shell command
-        $escapedSql = $Sql.Replace('"', '\"')
-        # 2. Escape backticks for PowerShell
-        $escapedSql = $escapedSql.Replace('`', '``')
-        # 3. Escape dollar signs for PowerShell
-        $escapedSql = $escapedSql.Replace('$', '`$')
-
-        $execCmd = 'psql -U {0} -d {1} -c "{2}"' -f $user, $db, $escapedSql
-
         if (-not [string]::IsNullOrEmpty($PostgresContainerName)) {
-            # Run psql on the PostgreSQL container using docker exec
-            $execCmd = 'docker exec {0} {1}' -f $PostgresContainerName, $execCmd
+            Write-Verbose "Executing psql in container: $PostgresContainerName"
+            docker exec $PostgresContainerName psql -U $user -d $db -c $Sql
+        }
+        else {
+            Write-Verbose "Executing psql against host: $dbHost"
+            if ($port) {
+                psql -h $dbHost -p $port -U $user -d $db -c $Sql
+            }
+            else {
+                psql -h $dbHost -U $user -d $db -c $Sql
+            }
         }
 
-        Write-Verbose "Executing: $execCmd"
-        Invoke-Expression $execCmd
+        if ($LASTEXITCODE -ne 0) {
+            throw "PostgreSQL command failed with exit code $LASTEXITCODE."
+        }
     }
     elseif ($DbType -eq "MSSQL") {
         # Use sqlcmd or Invoke-Sqlcmd for MSSQL
@@ -260,23 +290,35 @@ function Invoke-InitDbScripts {
     # Run embedded SQL script contents
     Write-Host "Create schema if not exists: dmscs"
     Invoke-DbQuery @'
-CREATE SCHEMA IF NOT EXISTS dmscs;
+CREATE SCHEMA IF NOT EXISTS "dmscs";
 '@
 
-    Write-Host "Create table for OpenIddict keys if not exists: dmscs.OpenIddictKey"
+    Write-Host "Create table for OpenIddict keys if not exists: ""dmscs"".""OpenIddictKey"""
     Invoke-DbQuery @'
-CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
-    Id SERIAL PRIMARY KEY,
-    KeyId VARCHAR(64) NOT NULL,
-    PublicKey BYTEA NOT NULL, -- binary format for public key
-    PrivateKey TEXT NOT NULL, -- encrypted with pgcrypto
-    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
-    CreatedBy VARCHAR(256),
-    LastModifiedAt TIMESTAMP,
-    ModifiedBy VARCHAR(256),
-    ExpiresAt TIMESTAMP,
-    IsActive BOOLEAN NOT NULL DEFAULT TRUE
+CREATE TABLE IF NOT EXISTS "dmscs"."OpenIddictKey" (
+    "Id" SERIAL,
+    "KeyId" VARCHAR(64) NOT NULL,
+    "PublicKey" BYTEA NOT NULL, -- binary format for public key
+    "PrivateKey" TEXT NOT NULL, -- encrypted with pgcrypto
+    "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+    "CreatedBy" VARCHAR(256),
+    "LastModifiedAt" TIMESTAMP,
+    "ModifiedBy" VARCHAR(256),
+    "ExpiresAt" TIMESTAMP,
+    "IsActive" BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'PK_OpenIddictKey'
+          AND conrelid = '"dmscs"."OpenIddictKey"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."OpenIddictKey" ADD CONSTRAINT "PK_OpenIddictKey" PRIMARY KEY ("Id");
+    END IF;
+END$$;
 '@
 
     Write-Host "Create extension if not exists: pgcrypto"
@@ -287,7 +329,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
     Write-Host "Generating OpenIddictKey insert statement..."
     $encryptionKey = Resolve-EnvValue $EncryptionKey
     $keyInsertSql = New-OpenIddictKeyInsertSql -EncryptionKey $encryptionKey
-    Write-Host "Insert public and private keys into dmscs.OpenIddictKey"
+    Write-Host "Insert public and private keys into ""dmscs"".""OpenIddictKey"""
     Invoke-DbQuery $keyInsertSql
     Write-Host "Database initialization scripts completed."
 }

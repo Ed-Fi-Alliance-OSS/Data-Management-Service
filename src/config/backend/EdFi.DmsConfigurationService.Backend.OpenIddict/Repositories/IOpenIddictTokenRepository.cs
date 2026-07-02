@@ -25,15 +25,8 @@ public interface IOpenIddictTokenRepository
     /// <param name="tokenId">The unique identifier for the token.</param>
     /// <param name="applicationId">The application ID associated with the token.</param>
     /// <param name="subject">The subject of the token.</param>
-    /// <param name="payload">The token payload.</param>
     /// <param name="expiration">The token expiration date.</param>
-    Task StoreTokenAsync(
-        Guid tokenId,
-        Guid applicationId,
-        string subject,
-        string payload,
-        DateTimeOffset expiration
-    );
+    Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, DateTimeOffset expiration);
 
     /// <summary>
     /// Gets the status of a token by its ID.

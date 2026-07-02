@@ -117,14 +117,15 @@ function New-OpenIddictKeyPair {
     Generates a SQL INSERT statement for OpenIddict keys.
 
 .DESCRIPTION
-    Creates a SQL statement to insert RSA key pairs into the dmscs.OpenIddictKey table.
+    Creates a SQL statement to insert RSA key pairs into the "dmscs"."OpenIddictKey" table.
     The private key is encrypted using PostgreSQL's pgcrypto extension.
 
 .PARAMETER KeyId
     Unique identifier for the key. If not provided, a random key ID will be generated.
+    The value is UTF-8 base64 encoded before being emitted, preserving existing seeded JWT kid behavior.
 
 .PARAMETER EncryptionKey
-    Key used to encrypt the private key in the database.
+    Key used to encrypt the private key in the database. Defaults to an empty string for the standalone generator.
 
 .PARAMETER KeySize
     Size of the RSA key in bits. Default is 2048.
@@ -142,8 +143,8 @@ function New-OpenIddictKeyInsertSql {
         [Parameter(Mandatory = $false)]
         [string]$KeyId = [guid]::NewGuid().ToString(),
 
-        [Parameter(Mandatory = $true)]
-        [string]$EncryptionKey,
+        [Parameter(Mandatory = $false)]
+        [string]$EncryptionKey = "",
 
         [Parameter(Mandatory = $false)]
         [int]$KeySize = 2048
@@ -155,7 +156,7 @@ function New-OpenIddictKeyInsertSql {
         $encodedKey = [Convert]::ToBase64String($bytes)
 
         $sql = @"
-INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
 VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
 "@
 
@@ -173,7 +174,7 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
 
 .DESCRIPTION
     Generates a properly hashed client secret and creates a SQL UPDATE statement
-    to update the ClientSecret field in the dmscs.OpenIddictApplication table.
+    to update the ClientSecret field in the "dmscs"."OpenIddictApplication" table.
 
 .PARAMETER ClientId
     The ClientId of the application to update.
@@ -202,9 +203,9 @@ function New-ClientSecretUpdateSql {
         $hashedSecret = New-AspNetPasswordHash -Password $PlainTextSecret
 
         $sql = @"
-UPDATE dmscs.OpenIddictApplication
-SET ClientSecret = '$hashedSecret'
-WHERE ClientId = '$ClientId';
+UPDATE "dmscs"."OpenIddictApplication"
+SET "ClientSecret" = '$hashedSecret'
+WHERE "ClientId" = '$ClientId';
 "@
 
         return $sql

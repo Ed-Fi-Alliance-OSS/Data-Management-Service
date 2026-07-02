@@ -270,8 +270,8 @@ A workflow that:
      - the resource root's `ContentVersion` mirror equals `dms.Document.ContentVersion`,
      - no `tracked_changes_*` rows are emitted for the insert (tracked rows are written only for deletes and key-changes).
    - update a non-identifying column and assert `dms.Document.ContentVersion` and the resource root's mirror are both bumped (mirror equals `dms.Document.ContentVersion`), and no `tracked_changes_*` rows are emitted.
-   - update an identifying column and assert a `tracked_changes_*` row is emitted with `Old_*` and `New_*` values populated.
-   - delete the resource row (the resource root first, then `dms.Document` — the cascade-ordering requirement from `change-queries.md`) and assert a tombstone row exists in `tracked_changes_*` (with `New_*` columns NULL).
+   - update an identifying column and assert a `tracked_changes_*` row is emitted with `OldX` and `NewX` value columns populated. Internal source-name underscores are preserved, for example `OldStudent_DocumentId` and `NewSchoolId_Unified`.
+   - delete the resource row (the resource root first, then `dms.Document` — the cascade-ordering requirement from `change-queries.md`) and assert a tombstone row exists in `tracked_changes_*` (with `NewX` value columns NULL).
 4. Runs engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,

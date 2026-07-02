@@ -140,8 +140,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_PersonId",
-          "new_column": "New_PersonId",
+          "old_column": "OldPersonId",
+          "new_column": "NewPersonId",
           "source_json_path": "$.personId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

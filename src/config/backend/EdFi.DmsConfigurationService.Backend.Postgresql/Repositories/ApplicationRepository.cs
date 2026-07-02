@@ -31,9 +31,9 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName, CreatedBy)
+                INSERT INTO "dmscs"."Application" ("ApplicationName", "VendorId", "ClaimSetName", "CreatedBy")
                 VALUES (@ApplicationName, @VendorId, @ClaimSetName, @CreatedBy)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             long id = await connection.ExecuteScalarAsync<long>(
@@ -48,7 +48,7 @@ public class ApplicationRepository(
             );
 
             sql = """
-                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
+                INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
                 VALUES (@ApplicationId, @EducationOrganizationId, @CreatedBy);
                 """;
 
@@ -63,9 +63,9 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
                 VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             long apiClientId = await connection.ExecuteScalarAsync<long>(
@@ -84,7 +84,7 @@ public class ApplicationRepository(
             if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
@@ -101,7 +101,7 @@ public class ApplicationRepository(
             if (command.ProfileIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApplicationProfile (ApplicationId, ProfileId, CreatedBy)
+                    INSERT INTO "dmscs"."ApplicationProfile" ("ApplicationId", "ProfileId", "CreatedBy")
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
                     """;
 
@@ -120,27 +120,37 @@ public class ApplicationRepository(
             await transaction.CommitAsync();
             return new ApplicationInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_Application_Vendor"
+            )
         {
             logger.LogWarning(ex, "Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(ex, "Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Application_VendorId_ApplicationName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -169,35 +179,32 @@ public class ApplicationRepository(
         ["claimSetName"] = "ClaimSetName",
     };
 
-    private static string ResolveOrderByColumn(ApplicationQuery query) =>
+    private static string ResolveOrderByColumnName(ApplicationQuery query) =>
         query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col)
             ? col
             : "ApplicationName";
 
-    private static string BuildOrderByClause(ApplicationQuery query)
-    {
-        string col = ResolveOrderByColumn(query);
-        return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
-    }
+    private static string BuildOrderByClause(ApplicationQuery query, string? tableAlias = null) =>
+        PostgresqlIdentifier.OrderBy(ResolveOrderByColumnName(query), query.IsDescending, tableAlias);
 
     private static string BuildFilterClause(ApplicationQuery query, int[] parsedIds)
     {
         var conditions = new List<string>();
         if (query.Id.HasValue)
         {
-            conditions.Add("Id = @Id");
+            conditions.Add("\"Id\" = @Id");
         }
         if (query.ApplicationName is not null)
         {
-            conditions.Add("ApplicationName = @ApplicationName");
+            conditions.Add("\"ApplicationName\" = @ApplicationName");
         }
         if (query.ClaimSetName is not null)
         {
-            conditions.Add("ClaimSetName = @ClaimSetName");
+            conditions.Add("\"ClaimSetName\" = @ClaimSetName");
         }
         if (parsedIds.Length > 0)
         {
-            conditions.Add("Id = ANY(@ParsedIds)");
+            conditions.Add("\"Id\" = ANY(@ParsedIds)");
         }
         return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -217,21 +224,19 @@ public class ApplicationRepository(
                 : [];
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query, parsedIds);
-            string outerCol = ResolveOrderByColumn(query);
-            // Direction mirrors BuildOrderByClause() — must stay consistent.
-            string direction = query.IsDescending ? "DESC" : "ASC";
+            string outerOrderByClause = BuildOrderByClause(query, "a");
             string sql = $"""
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
-                        FROM dmscs.ApiClient ac2
-                        WHERE ac2.ApplicationId = a.Id) AS Enabled,
-                       e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
-                FROM (SELECT * FROM dmscs.Application {filterClause} {orderByClause} {query.BuildPagingClause()}) AS a
-                LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
-                ORDER BY a.{outerCol} {direction};
+                SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                        FROM "dmscs"."ApiClient" ac2
+                        WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
+                       e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"
+                FROM (SELECT * FROM "dmscs"."Application" {filterClause} {orderByClause} {query.BuildPagingClause()}) AS a
+                LEFT OUTER JOIN "dmscs"."ApplicationEducationOrganization" e ON a."Id" = e."ApplicationId"
+                LEFT OUTER JOIN "dmscs"."ApiClient" ac ON a."Id" = ac."ApplicationId"
+                LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
+                LEFT OUTER JOIN "dmscs"."ApplicationProfile" ap ON a."Id" = ap."ApplicationId"
+                {outerOrderByClause};
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
@@ -243,15 +248,15 @@ public class ApplicationRepository(
                 sql,
                 (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
-                    if (educationOrganizationId != null)
+                    if (educationOrganizationId is not null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         application.DataStoreIds.Add(dataStoreId.Value);
                     }
-                    if (profileId != null)
+                    if (profileId is not null)
                     {
                         application.ProfileIds.Add(profileId.Value);
                     }
@@ -299,17 +304,17 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
-                        FROM dmscs.ApiClient ac2
-                        WHERE ac2.ApplicationId = a.Id) AS Enabled,
-                       e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
-                FROM dmscs.Application a
-                LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
-                WHERE a.Id = @Id;
+                SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                        FROM "dmscs"."ApiClient" ac2
+                        WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
+                       e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"
+                FROM "dmscs"."Application" a
+                LEFT OUTER JOIN "dmscs"."ApplicationEducationOrganization" e ON a."Id" = e."ApplicationId"
+                LEFT OUTER JOIN "dmscs"."ApiClient" ac ON a."Id" = ac."ApplicationId"
+                LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
+                LEFT OUTER JOIN "dmscs"."ApplicationProfile" ap ON a."Id" = ap."ApplicationId"
+                WHERE a."Id" = @Id;
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
@@ -321,15 +326,15 @@ public class ApplicationRepository(
                 sql,
                 (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
-                    if (educationOrganizationId != null)
+                    if (educationOrganizationId is not null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         application.DataStoreIds.Add(dataStoreId.Value);
                     }
-                    if (profileId != null)
+                    if (profileId is not null)
                     {
                         application.ProfileIds.Add(profileId.Value);
                     }
@@ -353,7 +358,7 @@ public class ApplicationRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApplication != null
+            return returnApplication is not null
                 ? new ApplicationGetResult.Success(returnApplication)
                 : new ApplicationGetResult.FailureNotFound();
         }
@@ -375,10 +380,10 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                UPDATE dmscs.Application
-                SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName,
-                    LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE Id = @Id;
+                UPDATE "dmscs"."Application"
+                SET "ApplicationName"=@ApplicationName, "VendorId"=@VendorId, "ClaimSetName"=@ClaimSetName,
+                    "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                WHERE "Id" = @Id;
                 """;
             int affectedRows = await connection.ExecuteAsync(
                 sql,
@@ -398,11 +403,12 @@ public class ApplicationRepository(
                 return new ApplicationUpdateResult.FailureNotExists();
             }
 
-            sql = "DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @ApplicationId";
+            sql =
+                "DELETE FROM \"dmscs\".\"ApplicationEducationOrganization\" WHERE \"ApplicationId\" = @ApplicationId";
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
 
             sql = """
-                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
+                INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
                 VALUES (@ApplicationId, @EducationOrganizationId, @CreatedBy);
                 """;
 
@@ -417,9 +423,9 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             string updateApiClientsql = """
-                UPDATE dmscs.ApiClient
-                SET ClientUuid=@ClientUuid, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE ClientId = @ClientId;
+                UPDATE "dmscs"."ApiClient"
+                SET "ClientUuid"=@ClientUuid, "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                WHERE "ClientId" = @ClientId;
                 """;
 
             await connection.ExecuteAsync(
@@ -434,18 +440,18 @@ public class ApplicationRepository(
             );
 
             // Get ApiClient Id for DataStore relationship update
-            sql = "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;";
+            sql = "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ClientId\" = @ClientId;";
             long apiClientId = await connection.ExecuteScalarAsync<long>(sql, new { clientCommand.ClientId });
 
             // Delete existing DataStore relationship
-            sql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @ApiClientId";
+            sql = "DELETE FROM \"dmscs\".\"ApiClientDataStore\" WHERE \"ApiClientId\" = @ApiClientId";
             await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId });
 
             // Insert new DataStore relationships if provided
             if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
@@ -460,14 +466,14 @@ public class ApplicationRepository(
             }
 
             // Delete existing Profile relationships
-            sql = "DELETE FROM dmscs.ApplicationProfile WHERE ApplicationId = @ApplicationId";
+            sql = "DELETE FROM \"dmscs\".\"ApplicationProfile\" WHERE \"ApplicationId\" = @ApplicationId";
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
 
             // Insert new Profile relationships if provided
             if (command.ProfileIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApplicationProfile (ApplicationId, ProfileId, CreatedBy)
+                    INSERT INTO "dmscs"."ApplicationProfile" ("ApplicationId", "ProfileId", "CreatedBy")
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
                     """;
 
@@ -487,27 +493,37 @@ public class ApplicationRepository(
 
             return new ApplicationUpdateResult.Success();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_Application_Vendor"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Application_VendorId_ApplicationName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -531,7 +547,7 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                DELETE FROM dmscs.Application where Id = @Id;
+                DELETE FROM "dmscs"."Application" where "Id" = @Id;
                 """;
 
             int affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
@@ -552,10 +568,10 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                SELECT ClientId, ClientUuid, IsApproved
-                FROM dmscs.ApiClient
-                WHERE ApplicationId = @Id
-                ORDER BY Id
+                SELECT "ClientId", "ClientUuid", "IsApproved"
+                FROM "dmscs"."ApiClient"
+                WHERE "ApplicationId" = @Id
+                ORDER BY "Id"
                 """;
 
             var clients = await connection.QueryAsync<ApiClient>(sql, new { Id = @id });

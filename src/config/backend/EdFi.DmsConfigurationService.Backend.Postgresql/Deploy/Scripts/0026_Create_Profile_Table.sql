@@ -7,29 +7,37 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'dmscs') THEN
-        EXECUTE 'CREATE SCHEMA dmscs';
+        EXECUTE 'CREATE SCHEMA "dmscs"';
     END IF;
 END$$;
 
-CREATE TABLE IF NOT EXISTS dmscs.Profile (
-    Id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ProfileName VARCHAR(500) NOT NULL,
-    Definition TEXT NOT NULL,
-    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
-    CreatedBy VARCHAR(256),
-    LastModifiedAt TIMESTAMP,
-    ModifiedBy VARCHAR(256),
-    CONSTRAINT uq_profile_name UNIQUE (ProfileName)
+CREATE TABLE IF NOT EXISTS "dmscs"."Profile" (
+    "Id" BIGINT GENERATED ALWAYS AS IDENTITY,
+    "ProfileName" VARCHAR(500) NOT NULL,
+    "Definition" TEXT NOT NULL,
+    "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+    "CreatedBy" VARCHAR(256),
+    "LastModifiedAt" TIMESTAMP,
+    "ModifiedBy" VARCHAR(256)
 );
 
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relname = 'ix_profile_name' AND n.nspname = 'dmscs'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'PK_Profile'
+          AND conrelid = '"dmscs"."Profile"'::regclass
     ) THEN
-        EXECUTE 'CREATE INDEX ix_profile_name ON dmscs.Profile (ProfileName)';
+        ALTER TABLE "dmscs"."Profile" ADD CONSTRAINT "PK_Profile" PRIMARY KEY ("Id");
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'UX_Profile_ProfileName'
+          AND conrelid = '"dmscs"."Profile"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."Profile" ADD CONSTRAINT "UX_Profile_ProfileName" UNIQUE ("ProfileName");
     END IF;
 END$$;
-

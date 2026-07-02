@@ -318,8 +318,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_ProgramId",
-          "new_column": "New_ProgramId",
+          "old_column": "OldProgramId",
+          "new_column": "NewProgramId",
           "source_json_path": "$.programId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -330,8 +330,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_ProgramName",
-          "new_column": "New_ProgramName",
+          "old_column": "OldProgramName",
+          "new_column": "NewProgramName",
           "source_json_path": "$.programName",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -388,8 +388,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SchoolId",
-          "new_column": "New_SchoolId",
+          "old_column": "OldSchoolId",
+          "new_column": "NewSchoolId",
           "source_json_path": "$.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

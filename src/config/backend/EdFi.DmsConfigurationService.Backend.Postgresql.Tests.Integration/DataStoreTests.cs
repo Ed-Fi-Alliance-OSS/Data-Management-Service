@@ -609,10 +609,7 @@ public class DataStoreTests : DatabaseTest
         [Test]
         public async Task It_should_retrieve_applications_by_data_store()
         {
-            var queryResult = await _repository.QueryApplicationByDataStore(
-                _dataStoreId1,
-                new PagingQuery()
-            );
+            var queryResult = await _repository.QueryApplicationByDataStore(_dataStoreId1, new PagingQuery());
             queryResult.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
             ((ApplicationByDataStoreQueryResult.Success)queryResult)
                 .ApplicationResponse.Count()

@@ -426,6 +426,10 @@ coveragereport
 **/*.Tests.Integration/appsettings.Test.json
 **/*.Frontend.AspNetCore/appsettings.Development.json
 
+# Development tracking artifacts
+/tasks.json
+/progress.txt
+
 # Bulk load related
 .packages/
 .working/

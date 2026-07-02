@@ -28,7 +28,7 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) VALUES (@Name, @Definition, @CreatedBy) RETURNING Id;";
+                @"INSERT INTO ""dmscs"".""Profile"" (""ProfileName"", ""Definition"", ""CreatedBy"") VALUES (@Name, @Definition, @CreatedBy) RETURNING ""Id"";";
             var id = await connection.ExecuteScalarAsync<long>(
                 sql,
                 new
@@ -40,7 +40,10 @@ public class ProfileRepository(
             );
             return new ProfileInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Profile_ProfileName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -67,7 +70,7 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"UPDATE dmscs.Profile SET ProfileName=@Name, Definition=@Definition, LastModifiedAt=NOW(), ModifiedBy=@ModifiedBy WHERE Id=@Id;";
+                @"UPDATE ""dmscs"".""Profile"" SET ""ProfileName""=@Name, ""Definition""=@Definition, ""LastModifiedAt""=NOW(), ""ModifiedBy""=@ModifiedBy WHERE ""Id""=@Id;";
             int affected = await connection.ExecuteAsync(
                 sql,
                 new
@@ -84,7 +87,10 @@ public class ProfileRepository(
             }
             return new ProfileUpdateResult.Success();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Profile_ProfileName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -111,9 +117,10 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"SELECT Id, ProfileName AS Name, Definition FROM dmscs.Profile WHERE Id=@Id;";
+            string sql =
+                @"SELECT ""Id"", ""ProfileName"" AS ""Name"", ""Definition"" FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id;";
             var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
-            if (profile == null)
+            if (profile is null)
             {
                 return new ProfileGetResult.FailureNotFound();
             }
@@ -131,12 +138,12 @@ public class ProfileRepository(
         var conditions = new List<string>();
         if (query.Id.HasValue)
         {
-            conditions.Add("Id = @Id");
+            conditions.Add("\"Id\" = @Id");
         }
 
         if (query.Name is not null)
         {
-            conditions.Add("ProfileName = @Name");
+            conditions.Add("\"ProfileName\" = @Name");
         }
 
         return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
@@ -187,8 +194,8 @@ public class ProfileRepository(
         {
             string filterClause = BuildFilterClause(query);
             string sql = $"""
-                SELECT Id, ProfileName AS Name, Definition
-                FROM dmscs.Profile
+                SELECT "Id", "ProfileName" AS "Name", "Definition"
+                FROM "dmscs"."Profile"
                 {filterClause}
                 """;
             var profiles = await connection.QueryAsync<ProfileResponse>(sql, new { query.Id, query.Name });
@@ -224,7 +231,7 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"DELETE FROM dmscs.Profile WHERE Id=@Id;";
+            string sql = @"DELETE FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id;";
             int affected = await connection.ExecuteAsync(sql, new { Id = id });
             if (affected == 0)
             {
@@ -233,7 +240,9 @@ public class ProfileRepository(
             return new ProfileDeleteResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(
                 ex,

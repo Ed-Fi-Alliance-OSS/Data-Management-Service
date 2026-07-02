@@ -51,10 +51,10 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" integer NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" integer NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" integer NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -63,10 +63,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAss
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" integer NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" integer NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" integer NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -75,10 +75,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmp
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
 (
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
-    "Old_Contact_DocumentId" bigint NOT NULL,
-    "New_Contact_DocumentId" bigint NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
+    "OldContact_DocumentId" bigint NOT NULL,
+    "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -87,10 +87,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" integer NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" integer NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" integer NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -99,10 +99,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationR
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 (
-    "Old_SchoolId_Unified" integer NOT NULL,
-    "New_SchoolId_Unified" integer NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldSchoolId_Unified" integer NOT NULL,
+    "NewSchoolId_Unified" integer NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -158,24 +158,24 @@ FROM "auth"."EducationOrganizationIdToContactDocumentId" edOrgToContact
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+    sca_tc."OldContact_DocumentId" AS "Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
 INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
-INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa."Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa."Student_DocumentId" = sca_tc."OldStudent_DocumentId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
     sca."Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
-INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa_tc."Old_Student_DocumentId" = sca."Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
+INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa_tc."OldStudent_DocumentId" = sca."Student_DocumentId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+    sca_tc."OldContact_DocumentId" AS "Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
-INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa_tc."Old_Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa_tc."OldStudent_DocumentId" = sca_tc."OldStudent_DocumentId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStaffDocumentIdIncludingDeletes" AS
@@ -186,15 +186,15 @@ FROM "auth"."EducationOrganizationIdToStaffDocumentId" edOrgToStaff
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seoaa_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+    seoaa_tc."OldStaff_DocumentId" AS "Staff_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa_tc ON edOrg."TargetEducationOrganizationId" = seoaa_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa_tc ON edOrg."TargetEducationOrganizationId" = seoaa_tc."OldEducationOrganization_EducationOrganizationId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seoea_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+    seoea_tc."OldStaff_DocumentId" AS "Staff_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" seoea_tc ON edOrg."TargetEducationOrganizationId" = seoea_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" seoea_tc ON edOrg."TargetEducationOrganizationId" = seoea_tc."OldEducationOrganization_EducationOrganizationId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdDeletedResponsibility" AS
@@ -205,9 +205,9 @@ FROM "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" ed
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seora_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+    seora_tc."OldStudent_DocumentId" AS "Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" seora_tc ON edOrg."TargetEducationOrganizationId" = seora_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" seora_tc ON edOrg."TargetEducationOrganizationId" = seora_tc."OldEducationOrganization_EducationOrganizationId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdIncludingDeletes" AS
@@ -218,8 +218,8 @@ FROM "auth"."EducationOrganizationIdToStudentDocumentId" edOrgToStudent
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    ssa_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+    ssa_tc."OldStudent_DocumentId" AS "Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
 ;
 

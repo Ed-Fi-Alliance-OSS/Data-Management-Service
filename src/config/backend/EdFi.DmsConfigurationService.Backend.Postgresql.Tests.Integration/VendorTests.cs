@@ -349,6 +349,20 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                 result.Should().BeOfType<VendorQueryResult.Success>();
                 ((VendorQueryResult.Success)result).VendorResponses.Should().HaveCount(5);
             }
+
+            [Test]
+            public async Task Should_use_default_ascending_order_when_no_order_by_is_provided()
+            {
+                var result = await _repository.QueryVendor(new VendorQuery { Direction = "DESC", Limit = 5 });
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                var companies = ((VendorQueryResult.Success)result)
+                    .VendorResponses.Select(vendor => vendor.Company)
+                    .ToList();
+
+                companies
+                    .Should()
+                    .ContainInOrder("Vendor-01", "Vendor-02", "Vendor-03", "Vendor-04", "Vendor-05");
+            }
         }
 
         [TestFixture]

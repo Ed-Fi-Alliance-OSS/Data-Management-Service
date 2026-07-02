@@ -32,12 +32,12 @@ public class ResourceClaimMetadataRepository(
                 """
                 WITH input AS (
                     SELECT *
-                    FROM unnest(@ResourceNames::text[], @ClaimNames::text[]) AS x(ResourceName, ClaimName)
+                    FROM unnest(@ResourceNames::text[], @ClaimNames::text[]) AS x("ResourceName", "ClaimName")
                 )
-                INSERT INTO dmscs.ResourceClaim (ResourceName, ClaimName)
-                SELECT ResourceName, ClaimName
+                INSERT INTO "dmscs"."ResourceClaim" ("ResourceName", "ClaimName")
+                SELECT "ResourceName", "ClaimName"
                 FROM input
-                ON CONFLICT (ClaimName) DO NOTHING
+                ON CONFLICT ON CONSTRAINT "UX_ResourceClaim_ClaimName" DO NOTHING
                 RETURNING 1;
                 """,
                 new

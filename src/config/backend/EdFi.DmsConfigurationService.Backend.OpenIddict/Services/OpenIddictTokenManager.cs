@@ -344,13 +344,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             );
 
             // Store token in database
-            await _tokenRepository.StoreTokenAsync(
-                tokenId,
-                applicationInfo.Id,
-                clientId,
-                tokenString,
-                expiration
-            );
+            await _tokenRepository.StoreTokenAsync(tokenId, applicationInfo.Id, clientId, expiration);
 
             return tokenString;
         }

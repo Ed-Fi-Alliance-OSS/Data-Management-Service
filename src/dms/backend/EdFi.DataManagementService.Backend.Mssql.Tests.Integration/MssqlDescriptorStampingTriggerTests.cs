@@ -166,7 +166,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
     private async Task<long> ReadMaxChangeVersionAsync()
     {
-        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+        return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
     }
 
     private async Task DelayForDistinctTimestampsAsync()

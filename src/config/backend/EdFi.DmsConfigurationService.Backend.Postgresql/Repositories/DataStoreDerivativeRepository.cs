@@ -36,10 +36,10 @@ public class DataStoreDerivativeRepository(
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            return PostgresqlIdentifier.OrderBy(col, query.IsDescending);
         }
 
-        return "ORDER BY Id";
+        return PostgresqlIdentifier.OrderBy("Id", isDescending: false);
     }
 
     public async Task<DataStoreDerivativeInsertResult> InsertDataStoreDerivative(
@@ -50,9 +50,9 @@ public class DataStoreDerivativeRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.DataStoreDerivative (DataStoreId, DerivativeType, ConnectionString, CreatedBy)
+                INSERT INTO "dmscs"."DataStoreDerivative" ("DataStoreId", "DerivativeType", "ConnectionString", "CreatedBy")
                 VALUES (@DataStoreId, @DerivativeType, @ConnectionString, @CreatedBy)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             var parameters = new
@@ -67,7 +67,9 @@ public class DataStoreDerivativeRepository(
             return new DataStoreDerivativeInsertResult.Success(id);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastorederivative_datastore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_DataStoreDerivative_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
@@ -86,8 +88,8 @@ public class DataStoreDerivativeRepository(
         {
             string orderByClause = BuildOrderByClause(query);
             var sql = $"""
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
+                SELECT "Id", "DataStoreId", "DerivativeType", "ConnectionString"
+                FROM "dmscs"."DataStoreDerivative"
                 {orderByClause}
                 {query.BuildPagingClause()};
                 """;
@@ -124,9 +126,9 @@ public class DataStoreDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE Id = @Id;
+                SELECT "Id", "DataStoreId", "DerivativeType", "ConnectionString"
+                FROM "dmscs"."DataStoreDerivative"
+                WHERE "Id" = @Id;
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
@@ -136,7 +138,7 @@ public class DataStoreDerivativeRepository(
                 byte[]? ConnectionString
             )?>(sql, new { Id = id });
 
-            if (result == null)
+            if (result is null)
             {
                 return new DataStoreDerivativeGetResult.FailureNotFound();
             }
@@ -168,10 +170,10 @@ public class DataStoreDerivativeRepository(
         try
         {
             var sql = """
-                UPDATE dmscs.DataStoreDerivative
-                SET DataStoreId = @DataStoreId, DerivativeType = @DerivativeType, ConnectionString = @ConnectionString,
-                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id;
+                UPDATE "dmscs"."DataStoreDerivative"
+                SET "DataStoreId" = @DataStoreId, "DerivativeType" = @DerivativeType, "ConnectionString" = @ConnectionString,
+                    "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
+                WHERE "Id" = @Id;
                 """;
 
             var parameters = new
@@ -193,7 +195,9 @@ public class DataStoreDerivativeRepository(
             return new DataStoreDerivativeUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastorederivative_datastore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_DataStoreDerivative_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation();
@@ -210,7 +214,7 @@ public class DataStoreDerivativeRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = "DELETE FROM dmscs.DataStoreDerivative WHERE Id = @Id;";
+            var sql = "DELETE FROM \"dmscs\".\"DataStoreDerivative\" WHERE \"Id\" = @Id;";
             var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
 
             if (affectedRows > 0)
@@ -235,10 +239,10 @@ public class DataStoreDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE DataStoreId = @DataStoreId
-                ORDER BY Id;
+                SELECT "Id", "DataStoreId", "DerivativeType", "ConnectionString"
+                FROM "dmscs"."DataStoreDerivative"
+                WHERE "DataStoreId" = @DataStoreId
+                ORDER BY "Id";
                 """;
 
             var results = await connection.QueryAsync<(
@@ -275,10 +279,10 @@ public class DataStoreDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE DataStoreId = ANY(@DataStoreIds)
-                ORDER BY DataStoreId, Id;
+                SELECT "Id", "DataStoreId", "DerivativeType", "ConnectionString"
+                FROM "dmscs"."DataStoreDerivative"
+                WHERE "DataStoreId" = ANY(@DataStoreIds)
+                ORDER BY "DataStoreId", "Id";
                 """;
 
             var results = await connection.QueryAsync<(
