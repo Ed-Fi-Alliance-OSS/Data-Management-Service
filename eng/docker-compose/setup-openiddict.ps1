@@ -14,8 +14,8 @@ param (
     [string] $PostgresContainerName = "dms-postgresql",
     [string] $MssqlContainerName = "dms-mssql",
     [string] $DbPassword = "ENV:MSSQL_SA_PASSWORD",
-    [string] $DbHost = "localhost",
-    [string] $DbPort = "ENV:POSTGRES_PORT",
+    [string] $DbHost = "",
+    [string] $DbPort = "",
     [string] $DbName = "ENV:POSTGRES_DB_NAME",
     [string] $DbUser = "postgres",
     [string] $NewClientId = "DmsConfigurationService",
@@ -55,6 +55,43 @@ $envValues = $null
 if ($EnvironmentFile) {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
 }
+
+function Resolve-DbPort {
+    param(
+        [string]$DbPort,
+        [string]$DbType
+    )
+
+    if ($DbPort) {
+        return $DbPort
+    }
+
+    if ($DbType -eq "MSSQL") {
+        return "ENV:MSSQL_PORT"
+    }
+
+    return "ENV:POSTGRES_PORT"
+}
+
+function Resolve-DbHost {
+    param(
+        [string]$DbHost,
+        [string]$DbType
+    )
+
+    if ($DbHost) {
+        return $DbHost
+    }
+
+    if ($DbType -eq "MSSQL") {
+        return "127.0.0.1"
+    }
+
+    return "localhost"
+}
+
+$DbPort = Resolve-DbPort -DbPort $DbPort -DbType $DbType
+$DbHost = Resolve-DbHost -DbHost $DbHost -DbType $DbType
 
 function Get-ScalarResult {
     param($Result)
@@ -400,6 +437,58 @@ function Invoke-DbQuery {
     }
 }
 
+function Add-MssqlOpenIddictKeyParameters {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Data.SqlClient.SqlCommand]$Command,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Parameters
+    )
+
+    $keyIdParameter = $Command.Parameters.Add("@KeyId", [System.Data.SqlDbType]::NVarChar, 64)
+    $keyIdParameter.Value = $Parameters.KeyId
+
+    $publicKeyParameter = $Command.Parameters.Add("@PublicKey", [System.Data.SqlDbType]::VarBinary, -1)
+    $publicKeyParameter.Value = $Parameters.PublicKey
+
+    $privateKeyParameter = $Command.Parameters.Add("@PrivateKey", [System.Data.SqlDbType]::VarChar, -1)
+    $privateKeyParameter.Value = $Parameters.PrivateKey
+
+    $encryptionKeyParameter = $Command.Parameters.Add("@EncryptionKey", [System.Data.SqlDbType]::NVarChar, -1)
+    $encryptionKeyParameter.Value = $Parameters.EncryptionKey
+}
+
+function Invoke-MssqlParameterizedQuery {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Sql,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Parameters
+    )
+
+    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
+    $connectionStringBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($effectiveConnectionString)
+    $connectionStringBuilder.Password = Resolve-EnvValue $DbPassword
+    $connectionStringBuilder.TrustServerCertificate = $true
+
+    $connection = [System.Data.SqlClient.SqlConnection]::new($connectionStringBuilder.ConnectionString)
+    try {
+        $connection.Open()
+        $command = $connection.CreateCommand()
+        $command.CommandText = $Sql
+
+        Add-MssqlOpenIddictKeyParameters -Command $command -Parameters $Parameters
+
+        $command.ExecuteNonQuery()
+    }
+    finally {
+        if ($command -is [System.IDisposable]) { $command.Dispose() }
+        $connection.Dispose()
+    }
+}
+
 # Main logic
 function Invoke-InitDbScripts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
@@ -437,9 +526,9 @@ END;
         # Generate and output OpenIddictKey insert SQL
         Write-Host "Generating OpenIddictKey insert statement..."
         $encryptionKey = Resolve-EnvValue $EncryptionKey
-        $keyInsertSql = New-OpenIddictKeyInsertSql -EncryptionKey $encryptionKey -DbType $DbType
+        $keyInsertCommand = New-OpenIddictKeyInsertCommand -EncryptionKey $encryptionKey -DbType $DbType
         Write-Host "Insert public and private keys into dmscs.OpenIddictKey"
-        Invoke-DbQuery $keyInsertSql
+        Invoke-MssqlParameterizedQuery -Sql $keyInsertCommand.Sql -Parameters $keyInsertCommand.Parameters
         Write-Host "Database initialization scripts completed."
         return
     }

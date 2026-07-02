@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -686,6 +687,83 @@ public class DataStoreTests : DatabaseTest
             );
             queryResult.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
             ((ApplicationByDataStoreQueryResult.Success)queryResult).ApplicationResponse.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_query_applications_by_unassigned_data_store_in_multitenant_context : DataStoreTests
+    {
+        private IDataStoreRepository _multitenantRepository = null!;
+        private long _dataStoreId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tenantName = $"DMS1243-DataStoreApplications-Tenant-{Guid.NewGuid()}";
+            var tenantRepository = new TenantRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            var tenantResult = await tenantRepository.InsertTenant(
+                new TenantInsertCommand { Name = tenantName }
+            );
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+            var tenantId = ((TenantInsertResult.Success)tenantResult).Id;
+
+            var tenantContextProvider = new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(tenantId, tenantName),
+            };
+
+            var contextRepository = new DataStoreContextRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<DataStoreContextRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+            var derivativeRepository = new DataStoreDerivativeRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<DataStoreDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                new TestAuditContext()
+            );
+
+            _multitenantRepository = new DataStoreRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                contextRepository,
+                derivativeRepository,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+            var insertResult = await _multitenantRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = "Multitenant Empty Data Store",
+                    ConnectionString = "Server=tenant;Database=TenantDb;",
+                }
+            );
+
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStoreId = ((DataStoreInsertResult.Success)insertResult).Id;
+        }
+
+        [Test]
+        public async Task It_should_return_empty_success_instead_of_unknown_failure()
+        {
+            var result = await _multitenantRepository.QueryApplicationByDataStore(
+                _dataStoreId,
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+
+            result.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            ((ApplicationByDataStoreQueryResult.Success)result).ApplicationResponse.Should().BeEmpty();
         }
     }
 

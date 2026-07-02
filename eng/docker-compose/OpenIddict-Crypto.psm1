@@ -165,21 +165,14 @@ function New-OpenIddictKeyInsertSql {
         [string]$DbType = "Postgresql"
     )
 
+    if ($DbType -eq "MSSQL") {
+        throw "New-OpenIddictKeyInsertSql does not support MSSQL because it would embed secrets in SQL text. Use New-OpenIddictKeyInsertCommand instead."
+    }
+
     try {
         $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
         $encodedKey = [Convert]::ToBase64String($bytes)
-
-        if ($DbType -eq "MSSQL") {
-            $sql = @"
-INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
-SELECT '$encodedKey',
-       CAST('' AS XML).value('xs:base64Binary("$($keyPair.PublicKey)")', 'VARBINARY(MAX)'),
-       ENCRYPTBYPASSPHRASE(N'$EncryptionKey', '$($keyPair.PrivateKey)'),
-       1;
-"@
-            return $sql
-        }
 
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
@@ -190,6 +183,81 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
     }
     catch {
         Write-Error "Failed to generate OpenIddict key insert SQL: $($_.Exception.Message)"
+        throw
+    }
+}
+
+<#
+.SYNOPSIS
+    Generates a SQL INSERT command for OpenIddict keys.
+
+.DESCRIPTION
+    Creates SQL text and parameter values for database-specific OpenIddict key insertion.
+    SQL Server uses parameters so the encryption key is not embedded in generated SQL.
+
+.PARAMETER KeyId
+    Unique identifier for the key. If not provided, a random key ID will be generated.
+
+.PARAMETER EncryptionKey
+    Key used to encrypt the private key in the database.
+
+.PARAMETER KeySize
+    Size of the RSA key in bits. Default is 2048.
+
+.PARAMETER DbType
+    Target database engine: "Postgresql" (default) or "MSSQL".
+
+.OUTPUTS
+    System.Management.Automation.PSCustomObject with Sql and Parameters properties.
+#>
+function New-OpenIddictKeyInsertCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$KeyId = [guid]::NewGuid().ToString(),
+
+        [Parameter(Mandatory = $true)]
+        [string]$EncryptionKey,
+
+        [Parameter(Mandatory = $false)]
+        [int]$KeySize = 2048,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DbType = "Postgresql"
+    )
+
+    try {
+        if ($DbType -ne "MSSQL") {
+            return [PSCustomObject]@{
+                Sql = New-OpenIddictKeyInsertSql -KeyId $KeyId -EncryptionKey $EncryptionKey -KeySize $KeySize -DbType $DbType
+                Parameters = @{}
+            }
+        }
+
+        $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
+        $encodedKey = [Convert]::ToBase64String($bytes)
+
+        $sql = @'
+INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+SELECT @KeyId,
+       @PublicKey,
+       ENCRYPTBYPASSPHRASE(@EncryptionKey, @PrivateKey),
+       1;
+'@
+
+        return [PSCustomObject]@{
+            Sql = $sql
+            Parameters = [PSCustomObject]@{
+                KeyId = $encodedKey
+                PublicKey = [Convert]::FromBase64String($keyPair.PublicKey)
+                PrivateKey = $keyPair.PrivateKey
+                EncryptionKey = $EncryptionKey
+            }
+        }
+    }
+    catch {
+        Write-Error "Failed to generate OpenIddict key insert command: $($_.Exception.Message)"
         throw
     }
 }
@@ -246,4 +314,4 @@ WHERE "ClientId" = '$ClientId';
 }
 
 # Export module functions
-Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-ClientSecretUpdateSql
+Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-OpenIddictKeyInsertCommand, New-ClientSecretUpdateSql

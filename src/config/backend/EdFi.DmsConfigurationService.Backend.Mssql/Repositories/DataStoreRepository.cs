@@ -456,7 +456,7 @@ public class DataStoreRepository(
             {
                 var dataStoreExists = await connection.ExecuteScalarAsync<bool>(
                     $"SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dmscs.DataStore WHERE Id = @dataStoreId AND {TenantContext.TenantWhereClause()}) THEN 1 ELSE 0 END AS BIT)",
-                    new { dataStoreId }
+                    new { dataStoreId, TenantId }
                 );
 
                 if (!dataStoreExists)
