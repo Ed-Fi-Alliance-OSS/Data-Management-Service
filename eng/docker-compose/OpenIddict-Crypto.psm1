@@ -122,7 +122,7 @@ function New-OpenIddictKeyPair {
 
 .PARAMETER KeyId
     Unique identifier for the key. If not provided, a random key ID will be generated.
-    The value is emitted as provided.
+    The value is UTF-8 base64 encoded before being emitted, preserving existing seeded JWT kid behavior.
 
 .PARAMETER EncryptionKey
     Key used to encrypt the private key in the database. Defaults to an empty string for the standalone generator.
@@ -152,10 +152,12 @@ function New-OpenIddictKeyInsertSql {
 
     try {
         $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
+        $encodedKey = [Convert]::ToBase64String($bytes)
 
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
-VALUES ('$KeyId', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
+VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
 "@
 
         return $sql
