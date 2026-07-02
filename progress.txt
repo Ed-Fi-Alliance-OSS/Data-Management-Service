@@ -1,8 +1,8 @@
 DMS-1244 - completed dmscs identifier/naming inventory task.
-- Key decisions: use DMS PK/FK/UX/IX/CK naming; tenant-owned logical UX includes TenantId for Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim; nullable TenantId needs PostgreSQL NULLS NOT DISTINCT to preserve non-multitenant uniqueness.
+- Key decisions: use DMS PK/FK/UX/IX/CK naming; existing Vendor, ClaimSet, AuthorizationStrategy, and ResourceClaim logical UX remains global on original key columns; TenantId is FK/lookup only.
 - Files changed: dmscs-identifier-and-naming-inventory.md, tasks.json, progress.txt.
 - Verification: ran deploy-script identifier/constraint search, repository duplicate/tenant/order search, reviewed ConstraintNaming.cs.
-- Notes: later tasks must update ON CONFLICT ClaimSetName/ClaimName to new tenant-aware UX constraints; progress.txt was missing and created in this iteration.
+- Notes: later tasks must update ON CONFLICT ClaimSetName/ClaimName to quoted global UX constraints; progress.txt was missing and created in this iteration.
 
 DMS-1244 - completed tracked-change value-column derivation prefix task.
 - Key decisions: derive physical tracked-change value columns as OldX/NewX by changing only the derivation prefix; keep source-name internal underscores, e.g. OldStudent_DocumentId and OldSchoolId_Unified.
@@ -29,7 +29,7 @@ DMS-1244 - completed tracked-change query planning/runtime OldX task.
 - Notes: task's integration filter FullyQualifiedName~RelationalChangeQueryRepositoryTests matched no tests because classes omit the Tests suffix; used FullyQualifiedName~RelationalChangeQueryRepository.
 
 DMS-1244 - completed core CMS PostgreSQL create-table quoted identifier task.
-- Key decisions: core scripts now create quoted "dmscs"."PascalCase" tables/columns; PK/FK/UX moved to guarded pg_constraint blocks; tenant-owned core tables include nullable TenantId so UX_TenantId_* uses NULLS NOT DISTINCT; redundant unique indexes removed, remaining DataStoreDerivative lookup is IX_* non-unique.
+- Key decisions: core scripts now create quoted "dmscs"."PascalCase" tables/columns; PK/FK/UX moved to guarded pg_constraint blocks; TenantId stays FK/lookup only for existing global logical UX; redundant unique indexes removed, remaining DataStoreDerivative lookup is IX_* non-unique.
 - Files changed: core CMS deploy scripts 0000-0007, 0021, 0022 ApiClientDataStore/DataStoreContext, 0023, 0024, 0026, 0027; tasks.json; progress.txt.
 - Verification: touched core-script unquoted/lowercase constraint guards clean; psql temp db applied core scripts twice on localhost:5435 and produced 16 PascalCase tables/34 PK/FK/UX constraints; git diff --check clean; broad all-script guards still match seed/tenant-alter/OpenIddict future tasks; full script probe fails first at 0008 unquoted AuthorizationStrategy; dotnet TenantTests deploy rolls back and Respawn reports no tables for same downstream script gap.
 - Notes: next seed/tenant task should quote 0008/0009/0025, change ON CONFLICT to new UX constraint names, and add tenant FKs/indexes with quoted identifiers.
@@ -86,7 +86,7 @@ DMS-1244 - completed final verification task.
 - Key decisions: keep broad Old_/New_ guard results as reviewed false positives for non-tracked-change test names and America/New_York; fix stale relational-model manifest assertion to expect OldStudent_DocumentId; remove noisy Old_ explanatory comment text.
 - Files changed: DerivedModelSetManifestEmitterTests.cs, DerivedModelSetManifestEmitter.cs, csharpier-only DataStoreTests.cs and ChangeQueryStepDefinitions.cs, tasks.json, progress.txt.
 - Verification: csharpier src/config src/dms; CMS/PostgreSQL/GetMax/docs/cache guards clean except reviewed broad New_ false positives; git diff --check clean; CMS backend unit 321/321; CMS PostgreSQL integration 241/241; RelationalModel unit 865/865; DDL unit 970/971 with known skip; Backend ChangeQueries 67/67.
-- Notes: all tasks in tasks.json now complete.
+- Notes: all then-open tasks in tasks.json were complete before later follow-up tasks were added.
 
 DMS-1244 - completed CMS application/API client tenant-scope repository task.
 - Key decisions: scope Application/ApiClient reads and mutations through Vendor tenant ownership; treat tenant-hidden rows as existing not-found result variants; validate DataStore mappings against current tenant before insert/update.
@@ -122,4 +122,10 @@ DMS-1244 - completed read-changes auth view null-equality cleanup task.
 - Key decisions: use LINQ Where with `OutputName is not null` then assert empty because FluentAssertions OnlyContain expression trees cannot compile `is null` patterns.
 - Files changed: ReadChangesAuthViewDefinitionTests.cs, tasks.json, progress.txt.
 - Verification: csharpier touched test; OutputName null equality guard clean; Given_ReadChanges_Student_View_Definition focused DDL test passed 3/3.
-- Notes: all tasks in tasks.json now complete.
+- Notes: all then-open tasks in tasks.json were complete before later follow-up tasks were added.
+
+DMS-1244 - completed CMS PostgreSQL global uniqueness restore task.
+- Key decisions: restore original global UX scope for Vendor Company, ClaimSetName, AuthorizationStrategyName, and ResourceClaim ClaimName; keep TenantId as FK/lookup only.
+- Files changed: CMS PostgreSQL core scripts, repository constraint checks/ON CONFLICT paths, DatabaseShapeTests, dmscs inventory, tasks.json, progress.txt.
+- Verification: csharpier changed C#; old tenant-scoped UX and NULLS NOT DISTINCT guards no matches; restored UX name guard found expected scripts/repository paths; focused CMS PostgreSQL integration passed 102/102 after resetting stale local edfi_configurationservice DbUp database; git diff --check clean.
+- Notes: remaining open follow-up tasks are application/API-client tenant-isolation cleanup and docs/RELATIONAL-BACKEND.md cleanup.

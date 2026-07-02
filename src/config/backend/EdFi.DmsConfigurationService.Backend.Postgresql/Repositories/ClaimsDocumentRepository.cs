@@ -237,7 +237,7 @@ public class ClaimsDocumentRepository(
         const string InsertSql = """
             INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved")
             VALUES (@ClaimSetName, @IsSystemReserved)
-            ON CONFLICT ON CONSTRAINT "UX_ClaimSet_TenantId_ClaimSetName" DO NOTHING
+            ON CONFLICT ON CONSTRAINT "UX_ClaimSet_ClaimSetName" DO NOTHING
             RETURNING "Id"
             """;
 

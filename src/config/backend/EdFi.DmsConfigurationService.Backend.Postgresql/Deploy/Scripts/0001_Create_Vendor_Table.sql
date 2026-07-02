@@ -39,10 +39,10 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'UX_Vendor_TenantId_Company'
+        WHERE conname = 'UX_Vendor_Company'
           AND conrelid = '"dmscs"."Vendor"'::regclass
     ) THEN
-        ALTER TABLE "dmscs"."Vendor" ADD CONSTRAINT "UX_Vendor_TenantId_Company" UNIQUE NULLS NOT DISTINCT ("TenantId", "Company");
+        ALTER TABLE "dmscs"."Vendor" ADD CONSTRAINT "UX_Vendor_Company" UNIQUE ("Company");
     END IF;
 END$$;
 

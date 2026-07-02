@@ -112,7 +112,7 @@
       "Integration tests assert dmscs tables and columns exist with PascalCase names and do not exist only as folded lowercase names after a fresh install.",
       "Integration tests assert PK_*, FK_*, UX_*, IX_*, and CK_* names for representative core, tenant-owned, and OpenIddict tables.",
       "Integration tests assert logical uniqueness is represented by UX_* constraints and redundant unique IX_* indexes are absent.",
-      "Integration tests cover tenant-scoped uniqueness where repository behavior is tenant-scoped and global uniqueness where the domain is global.",
+      "Integration tests cover representative logical uniqueness with the original global scope where the domain is global.",
       "Integration tests verify the install scripts can be run twice against the same fresh quoted database."
     ],
     "steps-to-verify": [
@@ -364,5 +364,57 @@
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Repository|FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Vendor|FullyQualifiedName~Tenant|FullyQualifiedName~Profile\""
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "High: Restore original global CMS PostgreSQL uniqueness scope while keeping DMS-style quoted constraint names.",
+    "acceptance-criteria": [
+      "\"Vendor\" has a quoted unique constraint named \"UX_Vendor_Company\" over \"Company\" only, with no \"TenantId\" column in that logical key.",
+      "\"ClaimSet\" has a quoted unique constraint named \"UX_ClaimSet_ClaimSetName\" over \"ClaimSetName\" only, with no \"TenantId\" column in that logical key.",
+      "\"AuthorizationStrategy\" has a quoted unique constraint named \"UX_AuthorizationStrategy_AuthorizationStrategyName\" over \"AuthorizationStrategyName\" only, with no \"TenantId\" column in that logical key.",
+      "\"ResourceClaim\" has a quoted unique constraint named \"UX_ResourceClaim_ClaimName\" over \"ClaimName\" only, with no \"TenantId\" column in that logical key.",
+      "CMS PostgreSQL repositories, OpenIddict setup code, and database-shape tests reference the restored UX_* names and preserve existing duplicate-key API behavior.",
+      "dmscs-identifier-and-naming-inventory.md and progress.txt no longer describe Vendor, ClaimSet, AuthorizationStrategy, or ResourceClaim logical uniqueness as tenant-scoped.",
+      "No DMS-1244 code, tests, inventory notes, progress notes, or task text tenant-scopes an existing CMS unique constraint unless that tenant scope already existed before the branch."
+    ],
+    "steps-to-verify": [
+      "rg -n 'UX_(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim)_TenantId' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql dmscs-identifier-and-naming-inventory.md progress.txt tasks.json",
+      "rg -n 'UNIQUE NULLS NOT DISTINCT \\(\"TenantId\", \"(Company|ClaimSetName|AuthorizationStrategyName|ClaimName)\"\\)' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "rg -n 'UX_Vendor_Company|UX_ClaimSet_ClaimSetName|UX_AuthorizationStrategy_AuthorizationStrategyName|UX_ResourceClaim_ClaimName' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~DatabaseShape|FullyQualifiedName~Vendor|FullyQualifiedName~ClaimSet|FullyQualifiedName~AuthorizationStrategy|FullyQualifiedName~ResourceClaim\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Medium: Remove Application and API client tenant-isolation behavior changes from the DMS-1244 identifier-naming branch.",
+    "acceptance-criteria": [
+      "ApplicationRepository and ApiClientRepository changes for DMS-1244 are limited to quoted PascalCase dmscs identifiers and renamed constraint checks.",
+      "Application and API client query, get, insert, update, delete, and relationship-mapping behavior matches the pre-DMS-1244 repository visibility and mutation semantics except where quoting renamed database identifiers require mechanical SQL updates.",
+      "ApplicationApiClientTenantIsolationTests.cs is removed from this branch or moved to a separate Jira-scoped change outside DMS-1244.",
+      "No DMS-1244 task, progress note, or test asserts tenant isolation behavior that the Jira story lists as a non-goal."
+    ],
+    "steps-to-verify": [
+      "git diff $(git merge-base HEAD origin/main)...HEAD -- src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApplicationRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApiClientRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/ApplicationApiClientTenantIsolationTests.cs",
+      "Review the diff to confirm remaining repository changes are mechanical quoting, constraint-name matching, or identifier-naming fallout only.",
+      "rg -n 'ApplicationApiClientTenantIsolation|cross_tenant|TenantContext\\.TenantWhereClause\\(\"v\"\\)|AreDataStoresVisible|IsApplicationVisible|IsApiClientVisible|IsVendorVisible' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration progress.txt tasks.json",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "documentation",
+    "description": "Low: Update stale relational backend docs for DMS-1244 tracked-change and GetMaxChangeVersion naming.",
+    "acceptance-criteria": [
+      "docs/RELATIONAL-BACKEND.md no longer describes current tracked-change value columns as Old_*/New_* and instead uses OldX/NewX terminology while preserving internal source-name underscores where relevant.",
+      "docs/RELATIONAL-BACKEND.md no longer describes the relational newest-change-version query as SELECT dms.GetMaxChangeVersion(); PostgreSQL guidance uses the quoted function name or avoids a dialect-specific current SQL snippet.",
+      "Any remaining Old_/New_ prefix or unquoted PostgreSQL GetMaxChangeVersion references in docs/RELATIONAL-BACKEND.md are explicitly historical examples and not current DMS guidance."
+    ],
+    "steps-to-verify": [
+      "rg -n 'Old_\\*|New_\\*|Old_|New_|SELECT dms\\.GetMaxChangeVersion\\(\\)|\"dms\"\\.GetMaxChangeVersion' docs/RELATIONAL-BACKEND.md",
+      "Review any remaining matches in docs/RELATIONAL-BACKEND.md and confirm they are historical or explicitly explain the DMS-1244 rename.",
+      "git diff -- docs/RELATIONAL-BACKEND.md"
+    ],
+    "completed": false
   }
 ]

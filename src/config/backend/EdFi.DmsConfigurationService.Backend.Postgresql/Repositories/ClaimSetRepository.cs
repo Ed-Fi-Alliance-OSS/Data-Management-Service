@@ -149,7 +149,7 @@ public class ClaimSetRepository(
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+                && ex.ConstraintName == "UX_ClaimSet_ClaimSetName"
             )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
@@ -435,7 +435,7 @@ public class ClaimSetRepository(
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+                && ex.ConstraintName == "UX_ClaimSet_ClaimSetName"
             )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
@@ -703,7 +703,7 @@ public class ClaimSetRepository(
             string insertSql = """
                 INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved", "CreatedBy", "TenantId")
                 VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
-                ON CONFLICT ON CONSTRAINT "UX_ClaimSet_TenantId_ClaimSetName" DO NOTHING
+                ON CONFLICT ON CONSTRAINT "UX_ClaimSet_ClaimSetName" DO NOTHING
                 RETURNING "Id", "IsSystemReserved", "TenantId";
                 """;
 
@@ -885,7 +885,7 @@ public class ClaimSetRepository(
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+                && ex.ConstraintName == "UX_ClaimSet_ClaimSetName"
             )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
@@ -980,7 +980,7 @@ public class ClaimSetRepository(
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+                && ex.ConstraintName == "UX_ClaimSet_ClaimSetName"
             )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");

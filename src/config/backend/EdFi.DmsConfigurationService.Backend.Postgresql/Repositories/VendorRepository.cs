@@ -118,7 +118,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (PostgresException ex)
                 when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                    && ex.ConstraintName == "UX_Vendor_TenantId_Company"
+                    && ex.ConstraintName == "UX_Vendor_Company"
                 )
             {
                 logger.LogWarning(ex, "Company Name must be unique");

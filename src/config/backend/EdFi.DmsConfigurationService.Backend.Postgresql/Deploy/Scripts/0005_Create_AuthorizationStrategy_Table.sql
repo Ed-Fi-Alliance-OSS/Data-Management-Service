@@ -28,10 +28,10 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName'
+        WHERE conname = 'UX_AuthorizationStrategy_AuthorizationStrategyName'
           AND conrelid = '"dmscs"."AuthorizationStrategy"'::regclass
     ) THEN
-        ALTER TABLE "dmscs"."AuthorizationStrategy" ADD CONSTRAINT "UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName" UNIQUE NULLS NOT DISTINCT ("TenantId", "AuthorizationStrategyName");
+        ALTER TABLE "dmscs"."AuthorizationStrategy" ADD CONSTRAINT "UX_AuthorizationStrategy_AuthorizationStrategyName" UNIQUE ("AuthorizationStrategyName");
     END IF;
 END$$;
 

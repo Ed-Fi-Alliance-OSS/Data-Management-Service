@@ -37,7 +37,7 @@ public class ResourceClaimMetadataRepository(
                 INSERT INTO "dmscs"."ResourceClaim" ("ResourceName", "ClaimName")
                 SELECT "ResourceName", "ClaimName"
                 FROM input
-                ON CONFLICT ON CONSTRAINT "UX_ResourceClaim_TenantId_ClaimName" DO NOTHING
+                ON CONFLICT ON CONSTRAINT "UX_ResourceClaim_ClaimName" DO NOTHING
                 RETURNING 1;
                 """,
                 new

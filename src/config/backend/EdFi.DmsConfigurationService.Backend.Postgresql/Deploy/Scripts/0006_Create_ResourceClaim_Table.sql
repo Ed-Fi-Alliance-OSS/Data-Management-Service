@@ -28,10 +28,10 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'UX_ResourceClaim_TenantId_ClaimName'
+        WHERE conname = 'UX_ResourceClaim_ClaimName'
           AND conrelid = '"dmscs"."ResourceClaim"'::regclass
     ) THEN
-        ALTER TABLE "dmscs"."ResourceClaim" ADD CONSTRAINT "UX_ResourceClaim_TenantId_ClaimName" UNIQUE NULLS NOT DISTINCT ("TenantId", "ClaimName");
+        ALTER TABLE "dmscs"."ResourceClaim" ADD CONSTRAINT "UX_ResourceClaim_ClaimName" UNIQUE ("ClaimName");
     END IF;
 END$$;
 

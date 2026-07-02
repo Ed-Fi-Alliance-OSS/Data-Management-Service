@@ -65,17 +65,17 @@ public class Given_CMS_PostgreSQL_database_shape
             ["VendorId", "ApplicationName"],
             false
         ),
-        new("UX_Vendor_TenantId_Company", "Vendor", "u", ["TenantId", "Company"], true),
+        new("UX_Vendor_Company", "Vendor", "u", ["Company"], false),
         new("FK_Vendor_Tenant", "Vendor", "f", ["TenantId"], false),
-        new("UX_ClaimSet_TenantId_ClaimSetName", "ClaimSet", "u", ["TenantId", "ClaimSetName"], true),
+        new("UX_ClaimSet_ClaimSetName", "ClaimSet", "u", ["ClaimSetName"], false),
         new(
-            "UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName",
+            "UX_AuthorizationStrategy_AuthorizationStrategyName",
             "AuthorizationStrategy",
             "u",
-            ["TenantId", "AuthorizationStrategyName"],
-            true
+            ["AuthorizationStrategyName"],
+            false
         ),
-        new("UX_ResourceClaim_TenantId_ClaimName", "ResourceClaim", "u", ["TenantId", "ClaimName"], true),
+        new("UX_ResourceClaim_ClaimName", "ResourceClaim", "u", ["ClaimName"], false),
         new("UX_Tenant_Name", "Tenant", "u", ["Name"], false),
         new("UX_Profile_ProfileName", "Profile", "u", ["ProfileName"], false),
         new(
@@ -224,30 +224,14 @@ public class Given_CMS_PostgreSQL_database_shape
     }
 
     [Test]
-    public void It_should_model_tenant_scoped_and_global_logical_uniqueness_as_UX_constraints()
+    public void It_should_model_global_logical_uniqueness_as_UX_constraints()
     {
-        string[] tenantScopedUniqueNames =
-        [
-            "UX_Vendor_TenantId_Company",
-            "UX_ClaimSet_TenantId_ClaimSetName",
-            "UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName",
-            "UX_ResourceClaim_TenantId_ClaimName",
-        ];
-
-        foreach (string constraintName in tenantScopedUniqueNames)
-        {
-            ConstraintShape actual = _constraints
-                .Should()
-                .ContainSingle(constraint => constraint.Name == constraintName)
-                .Which;
-
-            actual.ConstraintType.Should().Be("u");
-            ColumnsFor(actual).Should().StartWith("TenantId");
-            actual.NullsNotDistinct.Should().BeTrue();
-        }
-
         string[] globalUniqueNames =
         [
+            "UX_Vendor_Company",
+            "UX_ClaimSet_ClaimSetName",
+            "UX_AuthorizationStrategy_AuthorizationStrategyName",
+            "UX_ResourceClaim_ClaimName",
             "UX_Tenant_Name",
             "UX_Profile_ProfileName",
             "UX_OpenIddictApplication_ClientId",

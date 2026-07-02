@@ -47,7 +47,7 @@ Use guarded `ALTER TABLE ... ADD CONSTRAINT` blocks for PK, FK, UX, and CK objec
 | Table | Current object | Current columns | Target object | Kind | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `Vendor` | implicit primary key | `Id` | `PK_Vendor` | PK | Move from inline PK to guarded named constraint. |
-| `Vendor` | `uq_Company` | `Company` | `UX_Vendor_TenantId_Company` | UX | Tenant-owned logical uniqueness; use `NULLS NOT DISTINCT` so non-multitenant `TenantId IS NULL` stays unique. |
+| `Vendor` | `uq_Company` | `Company` | `UX_Vendor_Company` | UX | Preserve original global company uniqueness; `TenantId` remains FK/lookup only. |
 | `Vendor` | `idx_Company` | `Company` | remove | redundant unique index | Covered by the new UX; no separate lookup need found. |
 | `VendorNamespacePrefix` | `pk_VendorNamespacePrefix` | `VendorId`, `NamespacePrefix` | `PK_VendorNamespacePrefix` | PK | Logical uniqueness per vendor. |
 | `VendorNamespacePrefix` | `fk_vendor_NamespacePrefix` | `VendorId` -> `Vendor.Id` | `FK_VendorNamespacePrefix_Vendor` | FK | Keep `ON DELETE CASCADE`. |
@@ -59,11 +59,11 @@ Use guarded `ALTER TABLE ... ADD CONSTRAINT` blocks for PK, FK, UX, and CK objec
 | `ApiClient` | implicit primary key | `Id` | `PK_ApiClient` | PK | Move from inline PK to guarded named constraint. |
 | `ApiClient` | `fk_apiclient_application` | `ApplicationId` -> `Application.Id` | `FK_ApiClient_Application` | FK | Keep `ON DELETE CASCADE`. |
 | `ClaimSet` | `claimset_pkey` | `Id` | `PK_ClaimSet` | PK | Current constraint references folded `id`; move to quoted `Id`. |
-| `ClaimSet` | `idx_ClaimSetName` | `ClaimSetName` | `UX_ClaimSet_TenantId_ClaimSetName` | UX | Tenant-owned logical uniqueness; use `NULLS NOT DISTINCT`. Repository `ON CONFLICT (ClaimSetName)` must later change to the constraint name. |
+| `ClaimSet` | `idx_ClaimSetName` | `ClaimSetName` | `UX_ClaimSet_ClaimSetName` | UX | Preserve original global claim set name uniqueness. Repository `ON CONFLICT (ClaimSetName)` must later change to the constraint name. |
 | `AuthorizationStrategy` | implicit primary key | `Id` | `PK_AuthorizationStrategy` | PK | Move from inline PK to guarded named constraint. |
-| `AuthorizationStrategy` | `uq_AuthorizationStrategyName` | `AuthorizationStrategyName` | `UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName` | UX | Tenant-owned logical uniqueness; use `NULLS NOT DISTINCT`. |
+| `AuthorizationStrategy` | `uq_AuthorizationStrategyName` | `AuthorizationStrategyName` | `UX_AuthorizationStrategy_AuthorizationStrategyName` | UX | Preserve original global authorization strategy name uniqueness. |
 | `ResourceClaim` | implicit primary key | `Id` | `PK_ResourceClaim` | PK | Move from inline PK to guarded named constraint. |
-| `ResourceClaim` | `uq_ClaimName` | `ClaimName` | `UX_ResourceClaim_TenantId_ClaimName` | UX | Tenant-owned logical uniqueness; use `NULLS NOT DISTINCT`. Seed and loader `ON CONFLICT (ClaimName)` must later change to the constraint name. |
+| `ResourceClaim` | `uq_ClaimName` | `ClaimName` | `UX_ResourceClaim_ClaimName` | UX | Preserve original global claim name uniqueness. Seed and loader `ON CONFLICT (ClaimName)` must later change to the constraint name. |
 | `ClaimsHierarchy` | implicit primary key | `Id` | `PK_ClaimsHierarchy` | PK | No UX, FK, CK, or IX currently present. |
 | `OpenIddictApplication` | implicit primary key | `Id` | `PK_OpenIddictApplication` | PK | OpenIddict implicit object. |
 | `OpenIddictApplication` | implicit unique constraint | `ClientId` | `UX_OpenIddictApplication_ClientId` | UX | Global OpenIddict uniqueness; no tenant scope. |
@@ -116,25 +116,24 @@ Use guarded `ALTER TABLE ... ADD CONSTRAINT` blocks for PK, FK, UX, and CK objec
 
 No current `CHECK` constraints were found in the deploy scripts.
 
-## Tenant-owned logical uniqueness
+## Tenant ownership and logical uniqueness
 
 The tenant-alter script adds `TenantId` to `Vendor`, `ClaimSet`, `AuthorizationStrategy`, `ResourceClaim`, and
 `DataStore`. Repository behavior uses `TenantContext.TenantWhereClause()` for `Vendor`, `ClaimSet`,
 `AuthorizationStrategy` reads through `ClaimSetRepository`, `ResourceClaim` global seed reads, and `DataStore`.
 
-Logical UX constraints that must include `TenantId`:
+Existing logical UX constraints for these tables remain global and do not include `TenantId`; DMS-1244 only renames
+and quotes the identifiers. Tenant ownership for these tables is represented by `FK_*_Tenant` constraints and
+non-unique `IX_*_TenantId` lookup indexes.
 
 | Table | Logical key | Target UX |
 | --- | --- | --- |
-| `Vendor` | tenant + company | `UX_Vendor_TenantId_Company` |
-| `ClaimSet` | tenant + claim set name | `UX_ClaimSet_TenantId_ClaimSetName` |
-| `AuthorizationStrategy` | tenant + authorization strategy name | `UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName` |
-| `ResourceClaim` | tenant + claim name | `UX_ResourceClaim_TenantId_ClaimName` |
+| `Vendor` | company | `UX_Vendor_Company` |
+| `ClaimSet` | claim set name | `UX_ClaimSet_ClaimSetName` |
+| `AuthorizationStrategy` | authorization strategy name | `UX_AuthorizationStrategy_AuthorizationStrategyName` |
+| `ResourceClaim` | claim name | `UX_ResourceClaim_ClaimName` |
 
-Because `TenantId` is nullable when multi-tenancy is disabled, these PostgreSQL UX constraints should use
-`NULLS NOT DISTINCT`; otherwise multiple `TenantId IS NULL` rows with the same logical key would bypass the unique
-constraint. `DataStore` is tenant-owned but has no existing duplicate result or current logical unique constraint to
-rename.
+`DataStore` is tenant-owned but has no existing duplicate result or current logical unique constraint to rename.
 
 Child tables such as `VendorNamespacePrefix`, `Application`, `DataStoreContext`, and `DataStoreDerivative` inherit
 tenant ownership through their parent relationships. Current logical uniqueness there uses parent identifiers, not a
@@ -146,10 +145,10 @@ Later repository work must update duplicate and FK handling from current names t
 
 | Current repository check | Target name |
 | --- | --- |
-| `uq_company` / `uq_Company` | `UX_Vendor_TenantId_Company` |
-| `idx_claimsetname` / `idx_ClaimSetName` | `UX_ClaimSet_TenantId_ClaimSetName` |
-| `uq_authorizationstrategyname` / `uq_AuthorizationStrategyName` | `UX_AuthorizationStrategy_TenantId_AuthorizationStrategyName` |
-| `uq_claimname` / `uq_ClaimName` | `UX_ResourceClaim_TenantId_ClaimName` |
+| `uq_company` / `uq_Company` | `UX_Vendor_Company` |
+| `idx_claimsetname` / `idx_ClaimSetName` | `UX_ClaimSet_ClaimSetName` |
+| `uq_authorizationstrategyname` / `uq_AuthorizationStrategyName` | `UX_AuthorizationStrategy_AuthorizationStrategyName` |
+| `uq_claimname` / `uq_ClaimName` | `UX_ResourceClaim_ClaimName` |
 | `idx_vendor_applicationname` | `UX_Application_VendorId_ApplicationName` |
 | `idx_datastore_context_unique` | `UX_DataStoreContext_DataStoreId_ContextKey` |
 | `uq_tenant_name` | `UX_Tenant_Name` |
@@ -160,13 +159,13 @@ Later repository work must update duplicate and FK handling from current names t
 | `fk_applicationprofile_profile` | `FK_ApplicationProfile_Profile` |
 | `fk_datastorederivative_datastore` | `FK_DataStoreDerivative_DataStore` |
 
-`ON CONFLICT (ClaimSetName)` and `ON CONFLICT (ClaimName)` sites will not match tenant-scoped composite UX constraints;
-they should use `ON CONFLICT ON CONSTRAINT` with the new UX names or equivalent tenant-aware logic.
+`ON CONFLICT (ClaimSetName)` and `ON CONFLICT (ClaimName)` sites should use `ON CONFLICT ON CONSTRAINT` with the new
+quoted UX names.
 
 ## Redundant unique/index cleanup
 
 - Remove `idx_Company`; it duplicates the current vendor UX and should not survive after
-  `UX_Vendor_TenantId_Company`.
+  `UX_Vendor_Company`.
 - Replace `idx_ClaimSetName`, `idx_vendor_applicationname`, and `idx_datastore_context_unique` with UX constraints.
 - Remove `ix_profile_name`; it is a redundant non-unique lookup index over a globally unique profile name.
 - Keep `idx_OpenIddictToken_*`, `idx_datastorederivative_datastoreid`, and tenant-id indexes as non-unique `IX_*`
