@@ -724,12 +724,12 @@ public class ClaimSetRepository(
                 string existingSql = $"""
                     SELECT "Id", "IsSystemReserved", "TenantId"
                     FROM "dmscs"."ClaimSet"
-                    WHERE "ClaimSetName" = @ClaimSetName AND {TenantContext.TenantWhereClause()};
+                    WHERE "ClaimSetName" = @ClaimSetName;
                     """;
 
                 claimSet = await connection.QuerySingleOrDefaultAsync<ClaimSetImportLookupResult>(
                     existingSql,
-                    new { ClaimSetName = command.Name, TenantId },
+                    new { ClaimSetName = command.Name },
                     transaction
                 );
             }

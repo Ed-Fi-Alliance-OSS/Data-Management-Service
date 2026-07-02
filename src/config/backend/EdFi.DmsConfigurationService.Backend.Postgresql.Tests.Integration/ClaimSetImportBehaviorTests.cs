@@ -6,6 +6,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -19,18 +20,41 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class ClaimSetImportBehaviorTests : DatabaseTest
 {
-    private readonly IClaimSetRepository _repository = new ClaimSetRepository(
-        Configuration.DatabaseOptions,
-        Microsoft.Extensions.Logging.Abstractions.NullLogger<ClaimSetRepository>.Instance,
-        new ClaimsHierarchyRepository(
+    private readonly IClaimSetRepository _repository = CreateRepository();
+
+    private static IClaimSetRepository CreateRepository(TenantContext? tenantContext = null)
+    {
+        var tenantContextProvider = new TenantContextProvider();
+        if (tenantContext is not null)
+        {
+            tenantContextProvider.Context = tenantContext;
+        }
+
+        return new ClaimSetRepository(
             Configuration.DatabaseOptions,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<ClaimsHierarchyRepository>.Instance,
-            new TestAuditContext()
-        ),
-        new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.ClaimsHierarchyManager(),
-        new TestAuditContext(),
-        new TenantContextProvider()
-    );
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ClaimSetRepository>.Instance,
+            new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            ),
+            new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.ClaimsHierarchyManager(),
+            new TestAuditContext(),
+            tenantContextProvider
+        );
+    }
+
+    private async Task<long> InsertTenant()
+    {
+        return await Connection!.ExecuteScalarAsync<long>(
+            """
+            INSERT INTO "dmscs"."Tenant" ("Name")
+            VALUES (@Name)
+            RETURNING "Id";
+            """,
+            new { Name = $"ClaimSetImportBehavior-{System.Guid.NewGuid():N}" }
+        );
+    }
 
     protected async Task EnsureClaimsDataLoadedInternal()
     {
@@ -147,6 +171,42 @@ public class ClaimSetImportBehaviorTests : DatabaseTest
         var success = result as ClaimSetImportResult.Success;
         var warnings = success!.Warnings ?? Enumerable.Empty<string>();
         warnings.Should().Contain("http://example.org/nonexistent/Claim");
+    }
+
+    [Test]
+    public async Task Import_should_return_duplicate_when_global_name_conflict_belongs_to_another_tenant()
+    {
+        var existingTenantId = await InsertTenant();
+        var importingTenantId = await InsertTenant();
+        var claimSetName = $"Test-Import-Cross-Tenant-{System.Guid.NewGuid():N}";
+
+        try
+        {
+            await Connection!.ExecuteAsync(
+                """
+                INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved", "TenantId")
+                VALUES (@ClaimSetName, false, @TenantId);
+                """,
+                new { ClaimSetName = claimSetName, TenantId = existingTenantId }
+            );
+
+            var repository = CreateRepository(new TenantContext.Multitenant(importingTenantId, "importing"));
+            var result = await repository.Import(
+                new ClaimSetImportCommand { Name = claimSetName, ResourceClaims = [] }
+            );
+
+            result.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
+        }
+        finally
+        {
+            await Connection!.ExecuteAsync(
+                """
+                DELETE FROM "dmscs"."Tenant"
+                WHERE "Id" = ANY(@TenantIds);
+                """,
+                new { TenantIds = new[] { existingTenantId, importingTenantId } }
+            );
+        }
     }
 
     [Test]

@@ -413,5 +413,84 @@
       "git diff -- docs/RELATIONAL-BACKEND.md"
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Medium: Preserve standalone OpenIddict key insert generator KeyId behavior while keeping quoted OpenIddictKey SQL.",
+    "acceptance-criteria": [
+      "eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 still emits an insert for \"dmscs\".\"OpenIddictKey\" with quoted PascalCase column names.",
+      "Running the standalone generator with -KeyId test-key emits test-key as the inserted \"KeyId\" value, matching the pre-DMS-1244 standalone script behavior unless an intentional behavior change is moved to a separate Jira-scoped change.",
+      "The shared OpenIddict-Crypto.psm1 helper refactor does not silently base64-encode caller-supplied standalone KeyId values.",
+      "Any change to the standalone script's EncryptionKey mandatory/default behavior is either restored to pre-DMS-1244 behavior or explicitly documented as a separate non-DMS-1244 behavior change."
+    ],
+    "steps-to-verify": [
+      "git diff $(git merge-base HEAD origin/main)...HEAD -- eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 eng/docker-compose/OpenIddict-Crypto.psm1",
+      "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg \"VALUES \\\\('test-key',\"",
+      "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg 'INSERT INTO \"dmscs\"\\.\"OpenIddictKey\" \\(\"KeyId\", \"PublicKey\", \"PrivateKey\", \"IsActive\"\\)'"
+    ],
+    "completed": false
+  },
+  {
+    "category": "documentation",
+    "description": "Low: Make remaining core change-version comments dialect-neutral after PostgreSQL GetMaxChangeVersion quoting.",
+    "acceptance-criteria": [
+      "src/dms/core comments no longer present dms.GetMaxChangeVersion() as the single current database call for newest change version.",
+      "Comments either avoid dialect-specific SQL or mention the PostgreSQL quoted form \"dms\".\"GetMaxChangeVersion\"() and SQL Server [dms].[GetMaxChangeVersion]() separately.",
+      "The change is documentation-only and does not modify change-query runtime behavior."
+    ],
+    "steps-to-verify": [
+      "rg -n 'dms\\.GetMaxChangeVersion\\(\\)|\"dms\"\\.GetMaxChangeVersion' src/dms/core src/dms/backend -g'*.cs'",
+      "Review remaining matches and confirm they are historical examples, test names unrelated to SQL, or dialect-specific comments that include the quoted PostgreSQL function name."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Medium: Preserve ClaimSet import conflict handling after restoring the global UX_ClaimSet_ClaimSetName constraint.",
+    "acceptance-criteria": [
+      "ClaimSetRepository.Import keeps quoted PascalCase SQL and uses ON CONFLICT ON CONSTRAINT \"UX_ClaimSet_ClaimSetName\" DO NOTHING for the insert path.",
+      "When the insert returns no row, the follow-up lookup searches by \"ClaimSetName\" without tenant filtering so the globally conflicting ClaimSet row is found.",
+      "A conflict with a system-reserved claim set still returns ClaimSetImportResult.FailureSystemReserved.",
+      "A conflict with a non-system-reserved claim set owned by another tenant or by the global null-tenant scope returns ClaimSetImportResult.FailureDuplicateClaimSetName rather than FailureUnknown.",
+      "Focused coverage exercises at least one conflict path where TenantContext.TenantWhereClause() would exclude the conflicting row."
+    ],
+    "steps-to-verify": [
+      "git diff $(git merge-base HEAD origin/main)...HEAD -- src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ClaimSetRepository.cs",
+      "rg -n 'ON CONFLICT ON CONSTRAINT \"UX_ClaimSet_ClaimSetName\"|WHERE \"ClaimSetName\" = @ClaimSetName' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ClaimSetRepository.cs",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~ClaimSet\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove or split the OpenIddict token payload persistence change from the DMS-1244 identifier-naming branch.",
+    "acceptance-criteria": [
+      "OpenIddictDataRepository.StoreTokenAsync changes in DMS-1244 are limited to quoted PascalCase dmscs identifiers unless token payload persistence is moved to a separate Jira-scoped change.",
+      "The DMS-1244 branch does not add \"Payload\" to the OpenIddictToken insert column list or @Payload to the values list as part of the identifier rename.",
+      "If persisting token payload is intentionally kept, it is documented and tested under a separate non-DMS-1244 work item.",
+      "The remaining OpenIddictToken SQL still works against fresh quoted-schema installs."
+    ],
+    "steps-to-verify": [
+      "git diff $(git merge-base HEAD origin/main)...HEAD -- src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs",
+      "rg -n 'INSERT INTO \"\"dmscs\"\"\\.\"\"OpenIddictToken\"\"|\"\"Payload\"\"|@Payload' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs",
+      "Review the StoreTokenAsync diff and confirm any non-identifier behavior change is absent from DMS-1244 or tracked separately."
+    ],
+    "completed": false
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Consolidate CMS TenantId column creation in the tenant-alter install script.",
+    "acceptance-criteria": [
+      "The base create-table scripts for Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim, and DataStore no longer define or comment the TenantId column directly.",
+      "0025_Add_TenantId_To_Tables.sql is the sole deploy script that adds TenantId columns, tenant foreign keys, TenantId comments, and TenantId lookup indexes for those tables.",
+      "A fresh quoted CMS PostgreSQL install still creates TenantId columns, FK_*_Tenant constraints, and IX_*_TenantId indexes for Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim, and DataStore.",
+      "Repository behavior and tenant filtering SQL are unchanged by the cleanup."
+    ],
+    "steps-to-verify": [
+      "rg -n '\"TenantId\" BIGINT|COMMENT ON COLUMN \"dmscs\"\\.\"(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim|DataStore)\"\\.\"TenantId\"' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0001_Create_Vendor_Table.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0004_Create_ClaimSet_Table.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0005_Create_AuthorizationStrategy_Table.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0006_Create_ResourceClaim_Table.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0021_Create_DataStore_Table.sql",
+      "rg -n 'ADD COLUMN \"TenantId\"|FK_(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim|DataStore)_Tenant|IX_(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim|DataStore)_TenantId' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0025_Add_TenantId_To_Tables.sql",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_CMS_PostgreSQL_database_shape\""
+    ],
+    "completed": false
   }
 ]

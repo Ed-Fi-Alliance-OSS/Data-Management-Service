@@ -141,3 +141,9 @@ DMS-1244 - completed relational backend docs naming cleanup task.
 - Files changed: docs/RELATIONAL-BACKEND.md, tasks.json, progress.txt.
 - Verification: task docs guard clean; reviewed doc diff; git diff --check clean.
 - Notes: all tasks in tasks.json now complete.
+
+DMS-1244 - completed ClaimSet import global conflict handling task.
+- Key decisions: after UX_ClaimSet_ClaimSetName conflict, lookup ClaimSet by global ClaimSetName without tenant filter; preserve system-reserved failure first and tenant mismatch duplicate-name failure.
+- Files changed: ClaimSetRepository.cs, ClaimSetImportBehaviorTests.cs, tasks.json, progress.txt.
+- Verification: csharpier changed C#; ClaimSetRepository conflict guard found ON CONFLICT and unfiltered ClaimSetName lookup; CMS PostgreSQL ClaimSet integration passed 44/44; git diff --check clean.
+- Notes: remaining open follow-up tasks are standalone OpenIddict key generator, change-version comments, OpenIddict token payload cleanup, and TenantId script consolidation.
