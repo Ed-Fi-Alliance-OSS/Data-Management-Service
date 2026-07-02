@@ -121,7 +121,7 @@
       "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1",
       "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
