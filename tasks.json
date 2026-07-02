@@ -224,7 +224,7 @@
       "Review remaining matches to confirm they are explanatory historical references rather than current generated identifier guidance.",
       "git diff -- reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/change-queries.md reference/design/backend-redesign/design-docs/ddl-generation.md reference/design/backend-redesign/design-docs/update-tracking.md"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "tests",

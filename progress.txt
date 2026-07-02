@@ -75,3 +75,9 @@ DMS-1244 - completed DMS integration test tracked-change/GetMax quoting task.
 - Files changed: PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs, MssqlGeneratedDdlAuthoritativeSmokeTests.cs, tasks.json, progress.txt.
 - Verification: csharpier changed smoke tests; old-name/function guard clean; PostgreSQL literal task filter passed 8/8; effective PostgreSQL class filter passed 67/67; effective MSSQL class filter passed 66/66 with temp localhost,1434 container; API integration Category=PostgresqlIntegration|MssqlIntegration passed 102/102.
 - Notes: literal task filter misses Generated_Ddl/RelationalChangeQueryRepository classes due NUnit class names, so exact class filters were used for real smoke/repository coverage; temp MSSQL container stopped.
+
+DMS-1244 - completed backend redesign docs naming update task.
+- Key decisions: document current OldX/NewX tracked-change storage names with internal underscores preserved; describe GetMaxChangeVersion as PostgreSQL quoted "dms"."GetMaxChangeVersion"() and SQL Server [dms].[GetMaxChangeVersion].
+- Files changed: summary.md, change-queries.md, ddl-generation.md, update-tracking.md, tasks.json, progress.txt.
+- Verification: docs Old_/New_/GetMax guard clean; git diff --check clean for touched docs.
+- Notes: remaining open task is final DMS-1244 verification.
