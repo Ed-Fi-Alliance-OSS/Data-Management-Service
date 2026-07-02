@@ -200,13 +200,28 @@ function Add-ExpectedVerificationCheck {
         # observable in CMS /authorizationMetadata (which serializes leaf resource claims
         # only), so the claims-ready gate defers these instead of asserting them.
         [switch]
-        $IsParent
+        $IsParent,
+
+        # When set, an empty ClaimSetName/ResourceClaim/Action throws instead of being silently
+        # skipped. The catalog loop passes this so a malformed static KnownExtensionClaimsMetadata
+        # entry fails fast at prepare time; fragment-derived checks leave it off (default) because a
+        # fragment's own structural validation already owns those errors.
+        [switch]
+        $ThrowOnInvalid,
+
+        # Optional context surfaced in the -ThrowOnInvalid error message (e.g. the extension name).
+        [string]
+        $Source = ""
 
     )
 
     if ([string]::IsNullOrWhiteSpace($ClaimSetName) -or
         [string]::IsNullOrWhiteSpace($ResourceClaim) -or
         [string]::IsNullOrWhiteSpace($Action)) {
+        if ($ThrowOnInvalid) {
+            $sourceSuffix = if ([string]::IsNullOrWhiteSpace($Source)) { "" } else { " for $(Format-LogSafeText $Source)" }
+            throw "Malformed verification check$sourceSuffix (ClaimSetName, ResourceClaim, and Action are all required)."
+        }
         return
     }
 
@@ -424,6 +439,23 @@ $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
 $fragments = [System.Collections.ArrayList]::new()
 $namespacePrefixes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $unmappedExtensionNames = [System.Collections.ArrayList]::new()
+# Readiness checks accumulate here across the baseline probe, known-extension entries, and fragment
+# extraction; Add-ExpectedVerificationCheck dedups on claimSet|resourceClaim|action.
+$expectedVerificationChecks = [System.Collections.ArrayList]::new()
+$seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+# Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
+# that CMS applied the embedded base claims before checking staged extension entries.
+# The probe targets a LEAF resource claim: CMS /authorizationMetadata flattens the claims
+# hierarchy to leaf resource claims only (verified live — domain parents such as
+# domains/edFiTypes are never serialized in claims[].name). schoolYearType is the
+# edFiTypes domain's child in the embedded Claims.json and carries Read for EdFiSandbox.
+Add-ExpectedVerificationCheck `
+    -Seen $seenChecks `
+    -Checks $expectedVerificationChecks `
+    -ClaimSetName "EdFiSandbox" `
+    -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
+    -Action "Read"
 
 foreach ($extensionProject in $extensionProjects) {
     $projectName = Get-ValueOrNull -Hashtable $extensionProject -Key "projectName"
@@ -432,21 +464,57 @@ foreach ($extensionProject in $extensionProjects) {
     }
 
     $knownExtension = Get-StandardKnownExtensionInfo -ProjectName $projectName
-    if ($null -ne $knownExtension) {
-        if ($knownExtension.ContainsKey("FragmentFileName")) {
-            $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
-            if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
-                throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafeText $fragmentPath)"
-            }
-
-            Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
-        }
-
-        if ($knownExtension.ContainsKey("NamespacePrefix")) {
-            $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
-        }
-    } else {
+    if ($null -eq $knownExtension) {
         $null = $unmappedExtensionNames.Add($projectName)
+        continue
+    }
+
+    # A known-extension entry must contribute at least one piece of security metadata. An entry that
+    # contributes nothing - no fragment, no namespace prefix, and no (or an empty) VerificationChecks
+    # list - would otherwise be silently treated as fully mapped: it would stage nothing, suppress the
+    # unmapped-extension guard, and yield runtime 403s the claims-ready gate cannot detect. Checking
+    # for non-empty *values* (not just key presence) also catches a misspelled key and an empty
+    # VerificationChecks = @() no-op.
+    $hasFragment = $knownExtension.ContainsKey("FragmentFileName") -and
+        -not [string]::IsNullOrWhiteSpace([string]$knownExtension["FragmentFileName"])
+    $hasNamespacePrefix = $knownExtension.ContainsKey("NamespacePrefix") -and
+        -not [string]::IsNullOrWhiteSpace([string]$knownExtension["NamespacePrefix"])
+    $hasVerificationChecks = $knownExtension.ContainsKey("VerificationChecks") -and
+        @($knownExtension["VerificationChecks"]).Count -gt 0
+    if (-not ($hasFragment -or $hasNamespacePrefix -or $hasVerificationChecks)) {
+        throw "Known extension '$(Format-LogSafeText $projectName)' has a claims metadata entry that contributes no security metadata (expected a non-empty FragmentFileName, NamespacePrefix, or VerificationChecks). Check KnownExtensionClaimsMetadata for a misspelled or empty entry."
+    }
+
+    if ($knownExtension.ContainsKey("FragmentFileName")) {
+        $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
+        if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
+            throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafeText $fragmentPath)"
+        }
+
+        Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
+    }
+
+    if ($knownExtension.ContainsKey("NamespacePrefix")) {
+        $null = $namespacePrefixes.Add($knownExtension["NamespacePrefix"])
+    }
+
+    # Extensions whose claims are already covered by the embedded Claims.json (e.g. TPDM in DS 5.2)
+    # stage no fragment; their catalog-declared VerificationChecks are added to the readiness checks
+    # directly so the claims-ready gate still confirms CMS composed those extension claims from the
+    # embedded base. Each targets a leaf resource claim, so it is asserted directly against
+    # /authorizationMetadata rather than deferred like parent-derived checks. -ThrowOnInvalid makes a
+    # malformed static entry fail fast here (the sink owns the required-fields predicate, single source).
+    if ($knownExtension.ContainsKey("VerificationChecks")) {
+        foreach ($verificationCheck in @($knownExtension["VerificationChecks"])) {
+            Add-ExpectedVerificationCheck `
+                -Seen $seenChecks `
+                -Checks $expectedVerificationChecks `
+                -ClaimSetName ([string]$verificationCheck["ClaimSetName"]) `
+                -ResourceClaim ([string]$verificationCheck["ResourceClaim"]) `
+                -Action ([string]$verificationCheck["Action"]) `
+                -ThrowOnInvalid `
+                -Source "known extension '$projectName'"
+        }
     }
 }
 
@@ -460,20 +528,6 @@ foreach ($userFragmentFile in $userFragmentFiles) {
 }
 
 $effectiveClaimSetNames = Get-EffectiveClaimSetName
-$expectedVerificationChecks = [System.Collections.ArrayList]::new()
-$seenChecks = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-# Keep the core baseline probe even in Embedded mode; startup readiness owns verifying
-# that CMS applied the embedded base claims before checking staged extension entries.
-# The probe targets a LEAF resource claim: CMS /authorizationMetadata flattens the claims
-# hierarchy to leaf resource claims only (verified live — domain parents such as
-# domains/edFiTypes are never serialized in claims[].name). schoolYearType is the
-# edFiTypes domain's child in the embedded Claims.json and carries Read for EdFiSandbox.
-Add-ExpectedVerificationCheck `
-    -Seen $seenChecks `
-    -Checks $expectedVerificationChecks `
-    -ClaimSetName "EdFiSandbox" `
-    -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
-    -Action "Read"
 
 foreach ($fragment in $fragments) {
     Assert-FragmentValidAndExtractCheck `

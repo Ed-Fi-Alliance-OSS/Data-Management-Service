@@ -849,8 +849,8 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_h3_missing | Should -Not -BeNullOrEmpty
         }
 
-        It "queries /authorizationMetadata for the baseline and user-staged leaf checks" {
-            $script:authMetadataCalls_h3_missing | Should -Be 2
+        It "fetches /authorizationMetadata once for both EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_h3_missing | Should -Be 1
         }
 
         It "error message reports the missing user-staged resource claim" {
@@ -902,8 +902,8 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_h3_present | Should -BeNullOrEmpty
         }
 
-        It "queries /authorizationMetadata for both leaf checks" {
-            $script:authMetadataCalls_h3_present | Should -Be 2
+        It "fetches /authorizationMetadata once for both EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_h3_present | Should -Be 1
         }
     }
 
@@ -1030,6 +1030,112 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         It "does not send a Tenant header" {
             $script:capturedHeaders_i2 | Should -Not -BeNullOrEmpty
             $script:capturedHeaders_i2.ContainsKey("Tenant") | Should -Be $false
+        }
+    }
+
+    # ===========================================================================
+    # Scenario (j): TPDM embedded-claims load verification (DMS-1247). A core + TPDM
+    # bootstrap stages Embedded mode with NO fragment, but the manifest still records
+    # the two TPDM leaf checks so this gate proves CMS actually composed the TPDM
+    # claims from the embedded DS 5.2 Claims.json into EdFiSandbox - i.e. it exercises
+    # CMS load verification against /authorizationMetadata, not just the manifest.
+    # ===========================================================================
+    Context "Scenario (j) - gate passes when CMS composed the TPDM leaf claims into EdFiSandbox" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_j1 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction },
+                    @{ claimSetName = "EdFiSandbox"; resourceClaim = "http://ed-fi.org/identity/claims/tpdm/credentialStatusDescriptor"; action = "Read" },
+                    @{ claimSetName = "EdFiSandbox"; resourceClaim = "http://ed-fi.org/identity/claims/tpdm/evaluation"; action = "Read" }
+                ) `
+                -FileName "manifest-j1.json"
+
+            $script:authMetadataCalls_j1 = 0
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    $script:authMetadataCalls_j1++
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") },
+                            @{ name = "http://ed-fi.org/identity/claims/tpdm/credentialStatusDescriptor"; actions = @("Read") },
+                            @{ name = "http://ed-fi.org/identity/claims/tpdm/evaluation"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_j1 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_j1
+            }
+            catch {
+                $script:error_j1 = $_.Exception.Message
+            }
+        }
+
+        It "does not throw when CMS serves both TPDM leaf claims for EdFiSandbox" {
+            $script:error_j1 | Should -BeNullOrEmpty
+        }
+
+        It "fetches /authorizationMetadata once for the three EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_j1 | Should -Be 1
+        }
+    }
+
+    Context "Scenario (j) - gate fails when CMS did not compose a TPDM leaf claim" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_j2 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction },
+                    @{ claimSetName = "EdFiSandbox"; resourceClaim = "http://ed-fi.org/identity/claims/tpdm/evaluation"; action = "Read" }
+                ) `
+                -FileName "manifest-j2.json"
+
+            # CMS serves EdFiSandbox with the baseline claim but WITHOUT the TPDM claim - e.g. a
+            # stale Config image whose embedded DS 5.2 Claims.json lacks TPDM. The gate must catch
+            # this rather than pass on /health or claim-set-name presence alone.
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_j2 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_j2
+            }
+            catch {
+                $script:error_j2 = $_.Exception.Message
+            }
+        }
+
+        It "throws because the TPDM leaf claim is absent from CMS authorization metadata" {
+            $script:error_j2 | Should -Not -BeNullOrEmpty
+        }
+
+        It "error message reports the missing TPDM resource claim" {
+            $script:error_j2 | Should -Match "tpdm/evaluation"
         }
     }
 }

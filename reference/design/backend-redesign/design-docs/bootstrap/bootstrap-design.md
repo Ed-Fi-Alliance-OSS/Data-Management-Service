@@ -567,13 +567,15 @@ only the metadata it owns: schema package fields in `prepare-dms-schema.ps1`, se
 - Standard mode (core-only): the schema and claims phase commands resolve their owned artifact types for the
   core package. The seed phase resolves seed artifacts from its seed catalog. If the core package cannot be
   resolved, schema staging fails before starting containers.
-- When `-ApiSchemaPath` is used (expert mode), including extension-containing schema sets: each project in
-  the staged set has its security fragment resolved by the claims phase (auto-staged when a bootstrap-managed
-  fragment exists, e.g. Sample/Homograph; otherwise `-ClaimsDirectoryPath` is required). Schema hashing and DDL validation still work because bootstrap
-  stages and hashes the exact files. What is disabled is bootstrap-managed seed-package selection, not
-  automatic base security selection from the claims inputs available for the run. If the staged set needs
-  additional non-core claims metadata, `-ClaimsDirectoryPath` is required and bootstrap validates those
-  fragments only structurally. Bootstrap emits a warning indicating that compatibility with custom claimset
+- When `-ApiSchemaPath` is used (expert mode), including extension-containing schema sets: the claims phase
+  resolves security metadata for each project in the staged set. Sample and Homograph auto-stage their claim
+  fragments, TPDM is covered by the embedded DS 5.2 claims (no fragment staged, no `-ClaimsDirectoryPath`),
+  and any project with no bootstrap-managed mapping requires `-ClaimsDirectoryPath`. Schema hashing and DDL
+  validation still work because bootstrap stages and hashes the exact files. What is disabled is
+  bootstrap-managed seed-package selection, not automatic base security selection from the claims inputs
+  available for the run. If the staged set includes an unmapped extension needing additional non-core claims
+  metadata, `-ClaimsDirectoryPath` is required and bootstrap validates those fragments only structurally.
+  Bootstrap emits a warning indicating that compatibility with custom claimset
   fragments and custom seed data is validated against the explicit companion inputs for this run. The exact
   warning text is an implementation detail.
 - When `-ApiSchemaPath` is used (expert mode): The staged directory must normalize to exactly one
@@ -689,10 +691,12 @@ in `prepare-dms-claims.ps1`, and optional seed package metadata in `load-dms-see
 loading participates only when the seed phase has a concrete built-in seed package for the selected
 extension.
 
-Story 00's v1 direct-filesystem claims lookup is intentionally narrow. It maps only extension projects that
-have current shipped security fragments in the repo, such as Sample and Homograph. TPDM and any other direct
-filesystem extension outside that lookup are treated as unmapped: bootstrap requires `-ClaimsDirectoryPath`
-for caller-supplied fragments and does not silently substitute `sample`, `homograph`, or any default mapping.
+Story 00's v1 direct-filesystem claims lookup is intentionally narrow. It maps the built-in extensions
+bootstrap knows how to handle: Sample and Homograph stage shipped security fragments, and TPDM is covered by
+the embedded DS 5.2 `Claims.json` (no fragment staged) while recording its descriptor seed namespace
+`uri://tpdm.ed-fi.org`. Any other direct filesystem extension outside that lookup is treated as unmapped:
+bootstrap requires `-ClaimsDirectoryPath` for caller-supplied fragments and does not silently substitute
+`sample`, `homograph`, or any default mapping.
 
 The bootstrap logic is:
 
@@ -1556,9 +1560,13 @@ seed-catalog-driven (Story 02), and custom seed payloads flow through `-SeedData
    `EffectiveSchemaHash`, and writes the schema section of the bootstrap manifest for downstream phases.
 2. `prepare-dms-claims.ps1` consumes the bootstrap manifest schema section and the staged schema files. For
    each project in the staged set with a matching bootstrap-managed security fragment (Sample, Homograph),
-   it stages the corresponding JSON file(s) into `eng/docker-compose/.bootstrap/claims/` and resolves the
-   claims section to Hybrid mode; for a project without a bootstrap-managed fragment (e.g. TPDM), it requires
-   caller-supplied `-ClaimsDirectoryPath` fragments. Config Service startup consumes that staged host claims
+   it stages the corresponding JSON file(s) into `eng/docker-compose/.bootstrap/claims/`. TPDM is
+   bootstrap-mapped without a fragment (its claims ship in the embedded DS 5.2 `Claims.json`), so it stages
+   nothing but records its descriptor seed namespace (`uri://tpdm.ed-fi.org`) and its leaf readiness checks;
+   a project with no bootstrap-managed mapping requires caller-supplied `-ClaimsDirectoryPath` fragments. The
+   claims section resolves to Embedded mode when no fragment is staged (e.g. core + TPDM) and Hybrid mode when
+   one or more are (e.g. Sample + TPDM, or a custom fragment).
+   Config Service startup consumes that staged host claims
    workspace through the claims section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json`. DMS gets
    claimsets from CMS authorization metadata, not from local fragment files, so DMS compose files do not
    mount the claims directory.
@@ -1631,10 +1639,13 @@ developer does not configure each separately:
    later hashed and mounted/read by DMS.
 
 2. **Security fragments loaded (Section 4)** - When the extension has a bootstrap-managed security fragment
-   (Sample, Homograph), the corresponding JSON file(s) are staged and the bootstrap manifest claims section
-   resolves to Hybrid mode automatically. An extension without a bootstrap-managed fragment (e.g. TPDM)
-   requires caller-supplied `-ClaimsDirectoryPath`. For built-in extension seed packages, those fragments
-   must attach both `EdFiSandbox` and `SeedLoader` permissions to the extension resources they cover.
+   (Sample, Homograph), the corresponding JSON file(s) are staged. TPDM is bootstrap-mapped without a
+   fragment - its claims ship in the embedded DS 5.2 `Claims.json`, so it stages nothing but records its
+   descriptor seed namespace (`uri://tpdm.ed-fi.org`) and its leaf readiness checks. An extension with no
+   bootstrap-managed mapping requires caller-supplied `-ClaimsDirectoryPath`. The claims section resolves to
+   Hybrid mode when one or more fragments are staged and Embedded mode when none are. For built-in extension
+   seed packages, those fragments must attach both `EdFiSandbox` and `SeedLoader` permissions to the
+   extension resources they cover.
 
 3. **Extension seed data handling (Section 8.3)** - When seed delivery runs, bootstrap checks whether an
    extension recorded in the manifest has a built-in seed package in the seed catalog. If none does, the seed

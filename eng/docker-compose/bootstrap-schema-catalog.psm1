@@ -56,7 +56,10 @@ $script:StandardCoreEndpointName = "ed-fi"
 $script:StandardPackageVersion = "1.0.329"
 
 # Known extension claims metadata keyed by Title-cased project name (matching the projectName
-# field in bootstrap-api-schema-manifest.json, which sources its value from ApiSchema.json).
+# field in bootstrap-api-schema-manifest.json, which sources its value from ApiSchema.json). The map
+# is backed by an Ordinal (case-sensitive) comparer so the Title-cased contract holds through EVERY
+# access path - not just Get-StandardKnownExtensionInfo. A look-alike custom extension (e.g. "Tpdm")
+# never resolves to a built-in entry (a case-insensitive default @{} would let it silently map).
 #
 # NamespacePrefix is recorded ONLY for extensions whose resources carry a DISTINCT seed namespace,
 # which becomes an authorized vendor namespace on the SeedLoader credential. Per
@@ -66,17 +69,55 @@ $script:StandardPackageVersion = "1.0.329"
 # Homograph resources use the core uri://ed-fi.org namespace (HomographExtension.feature authorizes
 # Homograph with "uri://ed-fi.org" only) and its claims use NoFurtherAuthorizationRequired, so
 # Homograph intentionally records NO distinct namespace prefix.
-$script:KnownExtensionClaimsMetadata = @{
-    "Sample" = @{
-        FragmentFileName = "004-sample-extension-claimset.json"
-        NamespacePrefix  = "uri://sample.ed-fi.org"
-    }
-    "Homograph" = @{
-        # No NamespacePrefix by design: Homograph resources use the core uri://ed-fi.org namespace
-        # (see the block comment above). Recording uri://homograph.ed-fi.org would authorize a
-        # namespace no Homograph resource uses and would violate the "must not infer prefixes" rule.
-        FragmentFileName = "005-homograph-extension-claimset.json"
-    }
+$script:KnownExtensionClaimsMetadata = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
+
+$script:KnownExtensionClaimsMetadata["Sample"] = @{
+    FragmentFileName = "004-sample-extension-claimset.json"
+    NamespacePrefix  = "uri://sample.ed-fi.org"
+}
+
+$script:KnownExtensionClaimsMetadata["Homograph"] = @{
+    # No NamespacePrefix by design: Homograph resources use the core uri://ed-fi.org namespace
+    # (see the block comment above). Recording uri://homograph.ed-fi.org would authorize a
+    # namespace no Homograph resource uses and would violate the "must not infer prefixes" rule.
+    FragmentFileName = "005-homograph-extension-claimset.json"
+}
+
+$script:KnownExtensionClaimsMetadata["TPDM"] = @{
+    # No FragmentFileName by design. The DS 5.2 embedded Claims.json
+    # (Claims/Standards/ds52/Claims.json) already carries the complete TPDM claims hierarchy and
+    # its EdFiSandbox CRUD grants - TPDM resources are reachable through several core domains
+    # (e.g. tpdm resources via domains/tpdm, TPDM descriptors via domains/systemDescriptors,
+    # tpdm/candidate via domains/people, and the survey-response associations via
+    # domains/relationshipBasedData/surveyDomain) - so Embedded mode covers TPDM with no staged
+    # fragment; authoring one would only duplicate embedded claims and add nothing. DS 6.1 folds
+    # TPDM into core and ships no TPDM extension package, so this entry is only ever reached by a
+    # DS 5.2 bootstrap.
+    #
+    # NamespacePrefix IS recorded: TPDM descriptor data uses the distinct uri://tpdm.ed-fi.org
+    # namespace (TpdmExtension.feature authorizes EdFiSandbox with "uri://ed-fi.org,
+    # uri://tpdm.ed-fi.org" and posts descriptors under uri://tpdm.ed-fi.org/...), so the
+    # SeedLoader credential must carry that vendor namespace to load TPDM descriptor seed data.
+    # This mirrors Sample; unlike Homograph, whose resources stay on the core namespace.
+    NamespacePrefix = "uri://tpdm.ed-fi.org"
+    #
+    # VerificationChecks make the claims-ready gate confirm CMS actually composed TPDM claims
+    # into EdFiSandbox from the embedded claims. Both target leaf resource claims (never
+    # parents), so the gate asserts them directly against /authorizationMetadata: one TPDM
+    # descriptor leaf (reachable via domains/systemDescriptors) and one TPDM resource leaf
+    # (reachable via domains/tpdm).
+    VerificationChecks = @(
+        @{
+            ClaimSetName  = "EdFiSandbox"
+            ResourceClaim = "http://ed-fi.org/identity/claims/tpdm/credentialStatusDescriptor"
+            Action        = "Read"
+        },
+        @{
+            ClaimSetName  = "EdFiSandbox"
+            ResourceClaim = "http://ed-fi.org/identity/claims/tpdm/evaluation"
+            Action        = "Read"
+        }
+    )
 }
 
 function Get-StandardSchemaFeed {
@@ -110,9 +151,12 @@ function Get-StandardKnownExtensionInfo {
     extensions that don't have known metadata.
 
     .DESCRIPTION
-    Used by prepare-dms-claims.ps1 to auto-stage claim fragments for extensions present in a staged
+    Used by prepare-dms-claims.ps1 to resolve claims handling for extensions present in a staged
     schema set (notably expert -ApiSchemaPath schema sets that contain extensions). Known extensions
-    (Sample, Homograph) return a hashtable with FragmentFileName and optionally NamespacePrefix.
+    return a hashtable describing how bootstrap handles their claims: a FragmentFileName to stage
+    (Sample, Homograph), an optional NamespacePrefix (Sample, TPDM), and/or optional
+    VerificationChecks. TPDM stages no FragmentFileName because its claims ship embedded; see the
+    KnownExtensionClaimsMetadata TPDM entry for the full rationale.
     Extensions absent from the known map return $null - this is by design and does not indicate an
     error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. Note that
     standard mode is package-backed core-only and does not select extensions; this lookup serves the
@@ -129,6 +173,9 @@ function Get-StandardKnownExtensionInfo {
         $ProjectName
     )
 
+    # The metadata map is backed by an Ordinal (case-sensitive) comparer, so ContainsKey/indexing
+    # enforce the Title-cased contract directly: a look-alike custom extension (e.g. "Tpdm") does not
+    # resolve to a built-in entry and correctly falls through to the caller-supplied claims path.
     if ($script:KnownExtensionClaimsMetadata.ContainsKey($ProjectName)) {
         return $script:KnownExtensionClaimsMetadata[$ProjectName]
     }

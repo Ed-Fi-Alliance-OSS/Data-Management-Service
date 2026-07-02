@@ -124,10 +124,10 @@
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
-    Expert mode (filesystem). Stage the in-repo ApiSchema directory (which includes TPDM
-    and other extensions) and claims workspaces manually, then start the local stack. The
-    in-repo directory requires -ClaimsDirectoryPath with a TPDM claim fragment unless
-    only core, Sample, and Homograph extensions are staged.
+    Expert mode (filesystem). Stage a local ApiSchema directory (which may include TPDM
+    and other extensions) and claims workspaces manually, then start the local stack.
+    -ClaimsDirectoryPath is needed only for a custom extension outside the bootstrap map;
+    core, Sample, Homograph, and TPDM are all handled without it.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
