@@ -158,6 +158,7 @@ jobs:
             "eng/docker-compose/tests/ResolveIdentityClientSecrets.Tests.ps1",
             "eng/docker-compose/tests/LockFileParity.Tests.ps1",
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
+            "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
