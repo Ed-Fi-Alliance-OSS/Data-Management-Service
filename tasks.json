@@ -428,7 +428,7 @@
       "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg \"VALUES \\\\('test-key',\"",
       "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg 'INSERT INTO \"dmscs\"\\.\"OpenIddictKey\" \\(\"KeyId\", \"PublicKey\", \"PrivateKey\", \"IsActive\"\\)'"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation",

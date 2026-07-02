@@ -147,3 +147,9 @@ DMS-1244 - completed ClaimSet import global conflict handling task.
 - Files changed: ClaimSetRepository.cs, ClaimSetImportBehaviorTests.cs, tasks.json, progress.txt.
 - Verification: csharpier changed C#; ClaimSetRepository conflict guard found ON CONFLICT and unfiltered ClaimSetName lookup; CMS PostgreSQL ClaimSet integration passed 44/44; git diff --check clean.
 - Notes: remaining open follow-up tasks are standalone OpenIddict key generator, change-version comments, OpenIddict token payload cleanup, and TenantId script consolidation.
+
+DMS-1244 - completed standalone OpenIddict key generator KeyId preservation task.
+- Key decisions: shared key insert helper now emits caller-supplied KeyId literally instead of base64 encoding; standalone generator EncryptionKey is optional empty string again to match pre-DMS-1244 behavior.
+- Files changed: Generate-OpenIddictKey-Insert.ps1, OpenIddict-Crypto.psm1, tasks.json, progress.txt.
+- Verification: generator emitted VALUES ('test-key', ...) with and without -EncryptionKey; quoted "dmscs"."OpenIddictKey" insert guard passed.
+- Notes: remaining open follow-up tasks are change-version comments, OpenIddict token payload cleanup, and TenantId script consolidation.

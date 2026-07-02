@@ -122,9 +122,10 @@ function New-OpenIddictKeyPair {
 
 .PARAMETER KeyId
     Unique identifier for the key. If not provided, a random key ID will be generated.
+    The value is emitted as provided.
 
 .PARAMETER EncryptionKey
-    Key used to encrypt the private key in the database.
+    Key used to encrypt the private key in the database. Defaults to an empty string for the standalone generator.
 
 .PARAMETER KeySize
     Size of the RSA key in bits. Default is 2048.
@@ -142,8 +143,8 @@ function New-OpenIddictKeyInsertSql {
         [Parameter(Mandatory = $false)]
         [string]$KeyId = [guid]::NewGuid().ToString(),
 
-        [Parameter(Mandatory = $true)]
-        [string]$EncryptionKey,
+        [Parameter(Mandatory = $false)]
+        [string]$EncryptionKey = "",
 
         [Parameter(Mandatory = $false)]
         [int]$KeySize = 2048
@@ -151,12 +152,10 @@ function New-OpenIddictKeyInsertSql {
 
     try {
         $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
-        $encodedKey = [Convert]::ToBase64String($bytes)
 
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
-VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
+VALUES ('$KeyId', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
 "@
 
         return $sql

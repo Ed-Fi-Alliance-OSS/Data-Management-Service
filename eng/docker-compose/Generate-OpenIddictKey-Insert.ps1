@@ -7,8 +7,7 @@
 
 param(
     [string]$KeyId = "key-$(Get-Random)",
-    [Parameter(Mandatory = $true)]
-    [string]$EncryptionKey
+    [string]$EncryptionKey = ""
 )
 
 $modulePath = Join-Path $PSScriptRoot "OpenIddict-Crypto.psm1"
