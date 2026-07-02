@@ -475,7 +475,7 @@
       "rg -n 'INSERT INTO \"\"dmscs\"\"\\.\"\"OpenIddictToken\"\"|\"\"Payload\"\"|@Payload' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs",
       "Review the StoreTokenAsync diff and confirm any non-identifier behavior change is absent from DMS-1244 or tracked separately."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cleanup",

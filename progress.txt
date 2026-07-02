@@ -153,3 +153,9 @@ DMS-1244 - completed standalone OpenIddict key generator KeyId preservation task
 - Files changed: Generate-OpenIddictKey-Insert.ps1, OpenIddict-Crypto.psm1, tasks.json, progress.txt.
 - Verification: generator emitted VALUES ('test-key', ...) with and without -EncryptionKey; quoted "dmscs"."OpenIddictKey" insert guard passed.
 - Notes: remaining open follow-up tasks are change-version comments, OpenIddict token payload cleanup, and TenantId script consolidation.
+
+DMS-1244 - completed OpenIddict token payload persistence cleanup task.
+- Key decisions: keep quoted "dmscs"."OpenIddictToken" SQL but restore pre-DMS-1244 StoreTokenAsync insert shape by not persisting Payload as part of identifier rename.
+- Files changed: OpenIddictDataRepository.cs, tasks.json, progress.txt.
+- Verification: csharpier touched repository; prohibited @Payload/insert-column guard clean; PostgreSQL integration OpenIddict|Token filter passed 1/1.
+- Notes: remaining open follow-up tasks are change-version comments and TenantId script consolidation.
