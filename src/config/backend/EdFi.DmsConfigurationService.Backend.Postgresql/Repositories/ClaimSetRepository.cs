@@ -169,18 +169,18 @@ public class ClaimSetRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "c.\"Id\"",
-        ["name"] = "c.\"ClaimSetName\"",
-        ["claimSetName"] = "c.\"ClaimSetName\"",
+        ["id"] = "Id",
+        ["name"] = "ClaimSetName",
+        ["claimSetName"] = "ClaimSetName",
     };
 
     private static string BuildOrderByClause(ClaimSetQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            return PostgresqlIdentifier.OrderBy(col, query.IsDescending, "c");
         }
-        return "ORDER BY c.\"Id\"";
+        return PostgresqlIdentifier.OrderBy("Id", isDescending: false, "c");
     }
 
     private static string BuildFilterClause(ClaimSetQuery query)

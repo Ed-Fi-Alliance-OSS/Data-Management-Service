@@ -27,19 +27,19 @@ public class DataStoreDerivativeRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "\"Id\"",
-        ["dataStoreId"] = "\"DataStoreId\"",
-        ["derivativeType"] = "\"DerivativeType\"",
+        ["id"] = "Id",
+        ["dataStoreId"] = "DataStoreId",
+        ["derivativeType"] = "DerivativeType",
     };
 
     private static string BuildOrderByClause(PagingQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            return PostgresqlIdentifier.OrderBy(col, query.IsDescending);
         }
 
-        return "ORDER BY \"Id\"";
+        return PostgresqlIdentifier.OrderBy("Id", isDescending: false);
     }
 
     public async Task<DataStoreDerivativeInsertResult> InsertDataStoreDerivative(

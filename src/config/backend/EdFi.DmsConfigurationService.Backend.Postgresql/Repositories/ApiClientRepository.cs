@@ -103,19 +103,16 @@ public class ApiClientRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "\"Id\"",
-        ["applicationId"] = "\"ApplicationId\"",
-        ["name"] = "\"Name\"",
+        ["id"] = "Id",
+        ["applicationId"] = "ApplicationId",
+        ["name"] = "Name",
     };
 
-    private static string ResolveOrderByColumn(ApiClientQuery query) =>
-        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "\"Id\"";
+    private static string ResolveOrderByColumnName(ApiClientQuery query) =>
+        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
 
-    private static string BuildOrderByClause(ApiClientQuery query)
-    {
-        string col = ResolveOrderByColumn(query);
-        return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
-    }
+    private static string BuildOrderByClause(ApiClientQuery query, string? tableAlias = null) =>
+        PostgresqlIdentifier.OrderBy(ResolveOrderByColumnName(query), query.IsDescending, tableAlias);
 
     private static string BuildFilterClause(ApiClientQuery query)
     {
@@ -135,14 +132,13 @@ public class ApiClientRepository(
         {
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query);
-            string outerCol = ResolveOrderByColumn(query);
-            string direction = query.IsDescending ? "DESC" : "ASC";
+            string outerOrderByClause = BuildOrderByClause(query, "ac");
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
                        acd."DataStoreId"
                 FROM (SELECT * FROM "dmscs"."ApiClient" {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
-                ORDER BY ac.{outerCol} {direction};
+                {outerOrderByClause};
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(

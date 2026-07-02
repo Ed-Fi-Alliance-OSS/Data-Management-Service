@@ -65,18 +65,18 @@ public class DataStoreRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "\"Id\"",
-        ["dataStoreType"] = "\"DataStoreType\"",
-        ["name"] = "\"Name\"",
+        ["id"] = "Id",
+        ["dataStoreType"] = "DataStoreType",
+        ["name"] = "Name",
     };
 
     private static string BuildOrderByClause(DataStoreQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            return PostgresqlIdentifier.OrderBy(col, query.IsDescending);
         }
-        return "ORDER BY \"Id\"";
+        return PostgresqlIdentifier.OrderBy("Id", isDescending: false);
     }
 
     private static string BuildFilterClause(DataStoreQuery query)

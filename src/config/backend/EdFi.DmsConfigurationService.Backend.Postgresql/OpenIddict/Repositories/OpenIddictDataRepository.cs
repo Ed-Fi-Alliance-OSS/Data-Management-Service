@@ -379,7 +379,6 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     ApplicationId = applicationId,
                     Subject = subject,
                     Type = "access_token",
-                    Payload = payload,
                     CreationDate = DateTimeOffset.UtcNow,
                     ExpirationDate = expiration,
                     Status = "valid",

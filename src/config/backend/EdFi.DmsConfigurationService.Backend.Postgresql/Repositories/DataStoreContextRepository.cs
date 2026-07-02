@@ -27,20 +27,20 @@ public class DataStoreContextRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "\"Id\"",
-        ["dataStoreId"] = "\"DataStoreId\"",
-        ["contextKey"] = "\"ContextKey\"",
-        ["contextValue"] = "\"ContextValue\"",
+        ["id"] = "Id",
+        ["dataStoreId"] = "DataStoreId",
+        ["contextKey"] = "ContextKey",
+        ["contextValue"] = "ContextValue",
     };
 
     private static string BuildOrderByClause(PagingQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            return PostgresqlIdentifier.OrderBy(col, query.IsDescending, "rc");
         }
 
-        return "ORDER BY \"Id\"";
+        return PostgresqlIdentifier.OrderBy("Id", isDescending: false, "rc");
     }
 
     private TenantContext TenantContext => tenantContextProvider.Context;

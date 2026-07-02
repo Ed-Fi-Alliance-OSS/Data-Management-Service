@@ -173,22 +173,19 @@ public class ApplicationRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "\"Id\"",
-        ["applicationName"] = "\"ApplicationName\"",
-        ["vendorId"] = "\"VendorId\"",
-        ["claimSetName"] = "\"ClaimSetName\"",
+        ["id"] = "Id",
+        ["applicationName"] = "ApplicationName",
+        ["vendorId"] = "VendorId",
+        ["claimSetName"] = "ClaimSetName",
     };
 
-    private static string ResolveOrderByColumn(ApplicationQuery query) =>
+    private static string ResolveOrderByColumnName(ApplicationQuery query) =>
         query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col)
             ? col
-            : "\"ApplicationName\"";
+            : "ApplicationName";
 
-    private static string BuildOrderByClause(ApplicationQuery query)
-    {
-        string col = ResolveOrderByColumn(query);
-        return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
-    }
+    private static string BuildOrderByClause(ApplicationQuery query, string? tableAlias = null) =>
+        PostgresqlIdentifier.OrderBy(ResolveOrderByColumnName(query), query.IsDescending, tableAlias);
 
     private static string BuildFilterClause(ApplicationQuery query, int[] parsedIds)
     {
@@ -227,9 +224,7 @@ public class ApplicationRepository(
                 : [];
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query, parsedIds);
-            string outerCol = ResolveOrderByColumn(query);
-            // Direction mirrors BuildOrderByClause() - must stay consistent.
-            string direction = query.IsDescending ? "DESC" : "ASC";
+            string outerOrderByClause = BuildOrderByClause(query, "a");
             string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
                        (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
@@ -241,7 +236,7 @@ public class ApplicationRepository(
                 LEFT OUTER JOIN "dmscs"."ApiClient" ac ON a."Id" = ac."ApplicationId"
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 LEFT OUTER JOIN "dmscs"."ApplicationProfile" ap ON a."Id" = ap."ApplicationId"
-                ORDER BY a.{outerCol} {direction};
+                {outerOrderByClause};
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,

@@ -138,25 +138,25 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             string
         >(StringComparer.OrdinalIgnoreCase)
         {
-            ["id"] = "\"Id\"",
-            ["company"] = "\"Company\"",
-            ["contactName"] = "\"ContactName\"",
-            ["contactEmailAddress"] = "\"ContactEmailAddress\"",
+            ["id"] = "Id",
+            ["company"] = "Company",
+            ["contactName"] = "ContactName",
+            ["contactEmailAddress"] = "ContactEmailAddress",
         };
 
-        private static string BuildOrderByClause(VendorQuery query)
+        private static string BuildOrderByClause(VendorQuery query, string? tableAlias = null)
         {
             if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
             {
-                return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+                return PostgresqlIdentifier.OrderBy(col, query.IsDescending, tableAlias);
             }
-            return "ORDER BY \"Id\"";
-        }
 
-        private static string ResolveOrderByColumn(VendorQuery query) =>
-            query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col)
-                ? col
-                : "\"Id\"";
+            return PostgresqlIdentifier.OrderBy(
+                "Id",
+                isDescending: tableAlias is not null && query.IsDescending,
+                tableAlias
+            );
+        }
 
         private static string BuildFilterClause(VendorQuery query)
         {
@@ -193,13 +193,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 string orderByClause = BuildOrderByClause(query);
                 string filterClause = BuildFilterClause(query);
-                string outerCol = ResolveOrderByColumn(query);
-                string direction = query.IsDescending ? "DESC" : "ASC";
+                string outerOrderByClause = BuildOrderByClause(query, "v");
                 var sql = $"""
                     SELECT v."Id", v."Company", v."ContactName", v."ContactEmailAddress", v."TenantId", p."NamespacePrefix"
                     FROM (SELECT * FROM "dmscs"."Vendor" WHERE {TenantContext.TenantWhereClause()}{filterClause} {orderByClause} {query.BuildPagingClause()}) AS v
                     LEFT OUTER JOIN "dmscs"."VendorNamespacePrefix" p ON v."Id" = p."VendorId"
-                    ORDER BY v.{outerCol} {direction};
+                    {outerOrderByClause};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
