@@ -333,19 +333,16 @@
     "completed": true
   },
   {
-    "category": "implementation",
-    "description": "High: Tenant-scope CMS PostgreSQL application and API client repository operations before returning or mutating application-owned data.",
+    "category": "cleanup",
+    "description": "Superseded: Do not include Application/API client tenant-visibility behavior changes in DMS-1244.",
     "acceptance-criteria": [
-      "ApplicationRepository and ApiClientRepository receive the current TenantContext and apply TenantWhereClause through joins to Vendor for application ownership.",
-      "Query, get-by-id, update, delete, reset-credential support, and application-client lookup paths return not found for records owned by another tenant.",
-      "Application updates cannot move an application to a VendorId outside the current tenant, and API client inserts or updates cannot attach to an application outside the current tenant.",
-      "ApiClientDataStore mappings created or replaced by application and API client operations are limited to DataStore rows visible to the current tenant.",
-      "Integration or E2E coverage proves tenant A cannot list, read, update, delete, or reset credentials for tenant B's applications or API clients."
+      "The earlier follow-up task is treated as outside DMS-1244 because the Jira story is limited to identifier naming and quoting consistency.",
+      "ApplicationRepository and ApiClientRepository must preserve pre-DMS-1244 visibility and mutation behavior except for quoted identifiers and renamed constraint checks.",
+      "Any future tenant-visibility fix for Application or API client repositories must be tracked by a separate Jira-scoped change."
     ],
     "steps-to-verify": [
-      "rg -n 'ITenantContextProvider|TenantWhereClause|TenantId|JOIN \"dmscs\"\\.\"Vendor\"' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApplicationRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApiClientRepository.cs",
-      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Tenant\"",
-      "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Tenant\""
+      "Review the DMS-1244 Jira non-goals before adding repository behavior changes.",
+      "Keep Application/API client repository diffs limited to quoted identifiers, DMS-style constraint names, and direct fallout from those renames."
     ],
     "completed": true
   },
@@ -387,20 +384,20 @@
   },
   {
     "category": "cleanup",
-    "description": "Medium: Remove Application and API client tenant-isolation behavior changes from the DMS-1244 identifier-naming branch.",
+    "description": "Medium: Remove non-goal Application and API client repository behavior changes from the DMS-1244 identifier-naming branch.",
     "acceptance-criteria": [
       "ApplicationRepository and ApiClientRepository changes for DMS-1244 are limited to quoted PascalCase dmscs identifiers and renamed constraint checks.",
       "Application and API client query, get, insert, update, delete, and relationship-mapping behavior matches the pre-DMS-1244 repository visibility and mutation semantics except where quoting renamed database identifiers require mechanical SQL updates.",
-      "ApplicationApiClientTenantIsolationTests.cs is removed from this branch or moved to a separate Jira-scoped change outside DMS-1244.",
-      "No DMS-1244 task, progress note, or test asserts tenant isolation behavior that the Jira story lists as a non-goal."
+      "The added CMS integration test for the out-of-scope behavior is removed from this branch or moved to a separate Jira-scoped change outside DMS-1244.",
+      "No DMS-1244 task, progress note, or test presents tenant-visibility behavior changes as required by this Jira story."
     ],
     "steps-to-verify": [
-      "git diff $(git merge-base HEAD origin/main)...HEAD -- src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApplicationRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApiClientRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/ApplicationApiClientTenantIsolationTests.cs",
+      "git diff $(git merge-base HEAD origin/main)...HEAD -- src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApplicationRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApiClientRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration",
       "Review the diff to confirm remaining repository changes are mechanical quoting, constraint-name matching, or identifier-naming fallout only.",
-      "rg -n 'ApplicationApiClientTenantIsolation|cross_tenant|TenantContext\\.TenantWhereClause\\(\"v\"\\)|AreDataStoresVisible|IsApplicationVisible|IsApiClientVisible|IsVendorVisible' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration progress.txt tasks.json",
+      "Run a static guard for removed helper and test identifiers across repositories, integration tests, progress notes, and task metadata.",
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation",

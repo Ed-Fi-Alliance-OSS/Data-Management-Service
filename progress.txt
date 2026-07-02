@@ -88,11 +88,11 @@ DMS-1244 - completed final verification task.
 - Verification: csharpier src/config src/dms; CMS/PostgreSQL/GetMax/docs/cache guards clean except reviewed broad New_ false positives; git diff --check clean; CMS backend unit 321/321; CMS PostgreSQL integration 241/241; RelationalModel unit 865/865; DDL unit 970/971 with known skip; Backend ChangeQueries 67/67.
 - Notes: all then-open tasks in tasks.json were complete before later follow-up tasks were added.
 
-DMS-1244 - completed CMS application/API client tenant-scope repository task.
-- Key decisions: scope Application/ApiClient reads and mutations through Vendor tenant ownership; treat tenant-hidden rows as existing not-found result variants; validate DataStore mappings against current tenant before insert/update.
-- Files changed: ApplicationRepository.cs, ApiClientRepository.cs, ApplicationApiClientTenantIsolationTests.cs, tasks.json, progress.txt.
-- Verification: csharpier changed C#; repository tenant guard clean; CMS PostgreSQL integration Application|ApiClient|Tenant passed 41/41; CMS teardown/setup completed; env -u NODE_OPTIONS CMS E2E Application|ApiClient|Tenant passed 55/55.
-- Notes: left other follow-up tasks open; existing three-argument repository constructors kept as NotMultitenant compatibility path for direct tests/manual construction.
+DMS-1244 - superseded CMS application/API client tenant-visibility follow-up.
+- Key decisions: later cleanup removed this behavior change because DMS-1244 is identifier/naming only and must preserve repository visibility/mutation semantics.
+- Files changed then: ApplicationRepository.cs, ApiClientRepository.cs, added CMS tenant-visibility integration test, tasks.json, progress.txt.
+- Verification then: superseded; see later cleanup entry for removal.
+- Notes: tenant-visibility behavior belongs in a separate Jira-scoped change if needed.
 
 DMS-1244 - completed standalone OpenIddict key insert generator task.
 - Key decisions: delegate Generate-OpenIddictKey-Insert.ps1 to shared OpenIddict-Crypto.psm1 helper so quoted "dmscs"."OpenIddictKey" SQL has one source; make EncryptionKey required because helper requires it for pgp_sym_encrypt.
@@ -129,3 +129,9 @@ DMS-1244 - completed CMS PostgreSQL global uniqueness restore task.
 - Files changed: CMS PostgreSQL core scripts, repository constraint checks/ON CONFLICT paths, DatabaseShapeTests, dmscs inventory, tasks.json, progress.txt.
 - Verification: csharpier changed C#; old tenant-scoped UX and NULLS NOT DISTINCT guards no matches; restored UX name guard found expected scripts/repository paths; focused CMS PostgreSQL integration passed 102/102 after resetting stale local edfi_configurationservice DbUp database; git diff --check clean.
 - Notes: remaining open follow-up tasks are application/API-client tenant-isolation cleanup and docs/RELATIONAL-BACKEND.md cleanup.
+
+DMS-1244 - completed Application/API client non-goal cleanup task.
+- Key decisions: removed tenant-visibility repository behavior from DMS-1244; kept quoted PascalCase SQL and ConstraintName checks; prior task metadata marked superseded.
+- Files changed: ApplicationRepository.cs, ApiClientRepository.cs, removed added CMS tenant-visibility integration test, tasks.json, progress.txt.
+- Verification: csharpier two repositories; helper/test guard clean; target repository Vendor-predicate guard clean; git diff --check clean; CMS PostgreSQL integration Application|ApiClient passed 36/36.
+- Notes: broader tenant-predicate search still finds pre-existing Vendor/ClaimSet repository filtering outside this task; remaining open task is docs/RELATIONAL-BACKEND.md.
