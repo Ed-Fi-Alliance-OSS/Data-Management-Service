@@ -41,7 +41,9 @@ public class ProfileRepository(
             return new ProfileInsertResult.Success(id);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_Profile_ProfileName"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Profile_ProfileName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -86,7 +88,9 @@ public class ProfileRepository(
             return new ProfileUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_Profile_ProfileName"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Profile_ProfileName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -236,7 +240,9 @@ public class ProfileRepository(
             return new ProfileDeleteResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApplicationProfile_Profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(
                 ex,

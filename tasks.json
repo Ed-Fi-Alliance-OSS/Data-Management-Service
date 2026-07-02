@@ -363,6 +363,6 @@
       "rg -n 'ConstraintName == \"(FK_|UX_|PK_|CK_)' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories",
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Repository|FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Vendor|FullyQualifiedName~Tenant|FullyQualifiedName~Profile\""
     ],
-    "completed": false
+    "completed": true
   }
 ]

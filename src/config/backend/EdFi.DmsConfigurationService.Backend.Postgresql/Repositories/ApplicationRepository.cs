@@ -226,28 +226,36 @@ public class ApplicationRepository(
             return new ApplicationInsertResult.Success(id.Value);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_Application_Vendor"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_Application_Vendor"
+            )
         {
             logger.LogWarning(ex, "Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApplicationProfile_Profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(ex, "Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_Application_VendorId_ApplicationName"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Application_VendorId_ApplicationName"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -640,28 +648,36 @@ public class ApplicationRepository(
             return new ApplicationUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_Application_Vendor"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_Application_Vendor"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApplicationProfile_Profile"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApplicationProfile_Profile"
+            )
         {
             logger.LogWarning(ex, "Update application failure: Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_Application_VendorId_ApplicationName"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_Application_VendorId_ApplicationName"
+            )
         {
             logger.LogWarning(
                 ex,

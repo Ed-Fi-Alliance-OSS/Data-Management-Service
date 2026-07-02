@@ -39,7 +39,8 @@ public class TenantRepository(
             );
             return new TenantInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("UX_Tenant_Name"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation && ex.ConstraintName == "UX_Tenant_Name")
         {
             logger.LogWarning(ex, "Tenant name must be unique");
             return new TenantInsertResult.FailureDuplicateName();

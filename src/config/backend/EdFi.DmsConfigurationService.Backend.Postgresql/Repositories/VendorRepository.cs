@@ -117,7 +117,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 return new VendorInsertResult.Success(id, isNewVendor);
             }
             catch (PostgresException ex)
-                when (ex.SqlState == "23505" && ex.Message.Contains("UX_Vendor_TenantId_Company"))
+                when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                    && ex.ConstraintName == "UX_Vendor_TenantId_Company"
+                )
             {
                 logger.LogWarning(ex, "Company Name must be unique");
                 await transaction.RollbackAsync();

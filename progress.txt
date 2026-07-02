@@ -105,3 +105,9 @@ DMS-1244 - completed schema-tools provisioned-schema golden manifest refresh tas
 - Files changed: provisioned-schema.pgsql.manifest.json, provisioned-schema.mssql.manifest.json, tasks.json, progress.txt.
 - Verification: UPDATE_GOLDENS=1 Pgsql provisioned-schema test passed 1/1; UPDATE_GOLDENS=1 Mssql provisioned-schema test passed 1/1; Old_/New_ column-name guard clean; non-updating Pgsql|Mssql provisioned-schema filter passed 2/2.
 - Notes: host sqlcmd absent, so used cached mcr.microsoft.com/mssql-tools image via temporary .tmp shim and removed it before commit; remaining follow-up tasks still open in tasks.json.
+
+DMS-1244 - completed CMS PostgreSQL repository constraint-name matching task.
+- Key decisions: replace localized Message.Contains constraint checks with PostgresException.ConstraintName plus PostgresErrorCodes, matching ClaimSetRepository style and preserving existing result mappings.
+- Files changed: CMS PostgreSQL Application, ApiClient, DataStoreContext, DataStoreDerivative, Profile, Tenant, Vendor repositories; tasks.json; progress.txt.
+- Verification: csharpier changed repositories; named constraint Message.Contains guard clean; ConstraintName guard shows expected FK/UX checks; CMS PostgreSQL integration Repository|Application|ApiClient|Vendor|Tenant|Profile passed 104/104; git diff --check clean.
+- Notes: two low-priority follow-up tasks remain open in tasks.json.

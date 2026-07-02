@@ -85,7 +85,9 @@ public class DataStoreContextRepository(
             return new DataStoreContextInsertResult.Success(id.Value);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_DataStoreContext_DataStoreId_ContextKey"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_DataStoreContext_DataStoreId_ContextKey"
+            )
         {
             logger.LogWarning(
                 ex,
@@ -218,7 +220,9 @@ public class DataStoreContextRepository(
             return new DataStoreContextUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("UX_DataStoreContext_DataStoreId_ContextKey"))
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_DataStoreContext_DataStoreId_ContextKey"
+            )
         {
             logger.LogWarning(
                 ex,

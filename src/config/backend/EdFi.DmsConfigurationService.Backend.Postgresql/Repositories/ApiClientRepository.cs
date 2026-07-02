@@ -178,14 +178,18 @@ public class ApiClientRepository(
             return new ApiClientInsertResult.Success(apiClientId.Value);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClient_Application"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClient_Application"
+            )
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureApplicationNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
@@ -478,14 +482,18 @@ public class ApiClientRepository(
             return new ApiClientUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClient_Application"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClient_Application"
+            )
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientUpdateResult.FailureApplicationNotFound();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_ApiClientDataStore_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();

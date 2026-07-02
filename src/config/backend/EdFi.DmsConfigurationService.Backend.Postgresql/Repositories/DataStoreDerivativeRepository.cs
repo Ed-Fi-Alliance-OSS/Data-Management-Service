@@ -67,7 +67,9 @@ public class DataStoreDerivativeRepository(
             return new DataStoreDerivativeInsertResult.Success(id);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_DataStoreDerivative_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_DataStoreDerivative_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
@@ -193,7 +195,9 @@ public class DataStoreDerivativeRepository(
             return new DataStoreDerivativeUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("FK_DataStoreDerivative_DataStore"))
+            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && ex.ConstraintName == "FK_DataStoreDerivative_DataStore"
+            )
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation();
