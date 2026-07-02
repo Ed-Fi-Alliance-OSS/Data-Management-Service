@@ -269,5 +269,100 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ChangeQueries\""
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Medium: Update or remove the standalone OpenIddict key insert generator so it cannot emit stale unquoted dmscs SQL.",
+    "acceptance-criteria": [
+      "eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 emits an insert for \"dmscs\".\"OpenIddictKey\" with quoted PascalCase column names, or delegates to the existing OpenIddict-Crypto.psm1 key insert SQL helper.",
+      "The script comments no longer describe the target table as unquoted dmscs.OpenIddictKey.",
+      "Duplicate OpenIddictKey insert-generation logic is removed or reduced enough that future identifier naming changes have a single source of truth.",
+      "A static search of executable eng/docker-compose OpenIddict SQL helpers no longer finds unquoted dmscs.OpenIddictKey or INSERT INTO dmscs OpenIddictKey output."
+    ],
+    "steps-to-verify": [
+      "rg -n 'dmscs\\.OpenIddictKey|INSERT INTO dmscs|OpenIddictKey \\(KeyId' eng/docker-compose",
+      "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg 'INSERT INTO \"dmscs\"\\.\"OpenIddictKey\" \\(\"KeyId\", \"PublicKey\", \"PrivateKey\", \"IsActive\"\\)'",
+      "rg -n 'New-OpenIddictKeyInsertSql|OpenIddictKey' eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 eng/docker-compose/OpenIddict-Crypto.psm1"
+    ],
+    "completed": false
+  },
+  {
+    "category": "fixtures",
+    "description": "Medium: Refresh schema-tools provisioned-schema golden manifests after the tracked-change Old/New column rename.",
+    "acceptance-criteria": [
+      "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.pgsql.manifest.json reflects the current DDL emitter's OldX/NewX tracked-change column names.",
+      "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.mssql.manifest.json reflects the current DDL emitter's OldX/NewX tracked-change column names.",
+      "Neither schema-tools provisioned-schema golden manifest contains tracked-change column names with the removed Old_/New_ prefix separator.",
+      "The provisioned-schema golden tests compare against manifests regenerated from the current PostgreSQL and SQL Server generated DDL."
+    ],
+    "steps-to-verify": [
+      "UPDATE_GOLDENS=1 dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_Provisioned_Pgsql_Database_When_Introspecting_Schema\"",
+      "UPDATE_GOLDENS=1 dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_Provisioned_Mssql_Database_When_Introspecting_Schema\"",
+      "rg -n '\"column_name\": \"(Old|New)_' src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.pgsql.manifest.json src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.mssql.manifest.json",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_Provisioned_Pgsql_Database_When_Introspecting_Schema|FullyQualifiedName~Given_Provisioned_Mssql_Database_When_Introspecting_Schema\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "tests",
+    "description": "Low: Replace the remaining null equality check in the changed read-changes auth view unit test.",
+    "acceptance-criteria": [
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/ReadChangesAuthViewDefinitionTests.cs uses `is null` or `is not null` for the OutputName assertion instead of `== null` or `!= null`.",
+      "The assertion behavior remains unchanged: the current-arm output columns must all have no renamed output name.",
+      "No new null equality checks are introduced in the changed read-changes auth view unit test."
+    ],
+    "steps-to-verify": [
+      "rg -n 'OutputName\\s*(==|!=)\\s*null' src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/ReadChangesAuthViewDefinitionTests.cs",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadChanges_Student_View_Definition\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "documentation",
+    "description": "Low: Update remaining backend redesign docs that still present Old_/New_ tracked-change columns as current guidance.",
+    "acceptance-criteria": [
+      "reference/design/backend-redesign/design-docs/compiled-mapping-set.md describes tracked-change new-value nullability using OldX/NewX terminology rather than New_*.",
+      "reference/design/backend-redesign/design-docs/ddl-generator-testing.md describes tracked-change smoke assertions using OldX/NewX storage column names and explicitly notes that internal source-name underscores are preserved.",
+      "Any remaining Old_/New_ references in those two files are explicitly historical examples or wildcard table-name references such as tracked_changes_* rather than current value-column naming guidance."
+    ],
+    "steps-to-verify": [
+      "rg -n 'Old_\\*|New_\\*|Old_|New_' reference/design/backend-redesign/design-docs/compiled-mapping-set.md reference/design/backend-redesign/design-docs/ddl-generator-testing.md",
+      "Review any remaining matches to confirm they are historical explanations or table-name wildcards, not current tracked-change value-column guidance.",
+      "git diff -- reference/design/backend-redesign/design-docs/compiled-mapping-set.md reference/design/backend-redesign/design-docs/ddl-generator-testing.md"
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "High: Tenant-scope CMS PostgreSQL application and API client repository operations before returning or mutating application-owned data.",
+    "acceptance-criteria": [
+      "ApplicationRepository and ApiClientRepository receive the current TenantContext and apply TenantWhereClause through joins to Vendor for application ownership.",
+      "Query, get-by-id, update, delete, reset-credential support, and application-client lookup paths return not found for records owned by another tenant.",
+      "Application updates cannot move an application to a VendorId outside the current tenant, and API client inserts or updates cannot attach to an application outside the current tenant.",
+      "ApiClientDataStore mappings created or replaced by application and API client operations are limited to DataStore rows visible to the current tenant.",
+      "Integration or E2E coverage proves tenant A cannot list, read, update, delete, or reset credentials for tenant B's applications or API clients."
+    ],
+    "steps-to-verify": [
+      "rg -n 'ITenantContextProvider|TenantWhereClause|TenantId|JOIN \"dmscs\"\\.\"Vendor\"' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApplicationRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/ApiClientRepository.cs",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Tenant\"",
+      "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj --filter \"FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Tenant\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Replace PostgreSQL constraint error matching by message text with direct ConstraintName checks in CMS repositories.",
+    "acceptance-criteria": [
+      "CMS PostgreSQL repository catch filters that translate named 23503 and 23505 constraint failures use PostgresException.ConstraintName rather than Message.Contains.",
+      "Existing API error behavior is preserved for duplicate application, vendor, tenant, profile, datastore context, datastore derivative, and API client foreign-key failures.",
+      "Constraint matching style is consistent with ClaimSetRepository's existing ConstraintName checks.",
+      "No CMS PostgreSQL repository catch filter still depends on localized or provider-formatted exception message text for a named constraint."
+    ],
+    "steps-to-verify": [
+      "rg -n 'Message\\.Contains\\(\"(PK_|FK_|UX_|IX_|CK_)' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories",
+      "rg -n 'ConstraintName == \"(FK_|UX_|PK_|CK_)' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Repository|FullyQualifiedName~Application|FullyQualifiedName~ApiClient|FullyQualifiedName~Vendor|FullyQualifiedName~Tenant|FullyQualifiedName~Profile\""
+    ],
+    "completed": false
   }
 ]

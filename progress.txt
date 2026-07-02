@@ -87,3 +87,9 @@ DMS-1244 - completed final verification task.
 - Files changed: DerivedModelSetManifestEmitterTests.cs, DerivedModelSetManifestEmitter.cs, csharpier-only DataStoreTests.cs and ChangeQueryStepDefinitions.cs, tasks.json, progress.txt.
 - Verification: csharpier src/config src/dms; CMS/PostgreSQL/GetMax/docs/cache guards clean except reviewed broad New_ false positives; git diff --check clean; CMS backend unit 321/321; CMS PostgreSQL integration 241/241; RelationalModel unit 865/865; DDL unit 970/971 with known skip; Backend ChangeQueries 67/67.
 - Notes: all tasks in tasks.json now complete.
+
+DMS-1244 - completed CMS application/API client tenant-scope repository task.
+- Key decisions: scope Application/ApiClient reads and mutations through Vendor tenant ownership; treat tenant-hidden rows as existing not-found result variants; validate DataStore mappings against current tenant before insert/update.
+- Files changed: ApplicationRepository.cs, ApiClientRepository.cs, ApplicationApiClientTenantIsolationTests.cs, tasks.json, progress.txt.
+- Verification: csharpier changed C#; repository tenant guard clean; CMS PostgreSQL integration Application|ApiClient|Tenant passed 41/41; CMS teardown/setup completed; env -u NODE_OPTIONS CMS E2E Application|ApiClient|Tenant passed 55/55.
+- Notes: left other follow-up tasks open; existing three-argument repository constructors kept as NotMultitenant compatibility path for direct tests/manual construction.
