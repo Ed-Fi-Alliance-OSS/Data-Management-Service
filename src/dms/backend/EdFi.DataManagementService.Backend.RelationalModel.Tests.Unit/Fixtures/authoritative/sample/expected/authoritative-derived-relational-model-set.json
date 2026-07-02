@@ -72441,7 +72441,7 @@
               },
               {
                 "alias": "sca_tc",
-                "column": "Old_Contact_DocumentId",
+                "column": "OldContact_DocumentId",
                 "output_name": "Contact_DocumentId"
               }
             ],
@@ -72472,7 +72472,7 @@
                     "left_alias": "ssa",
                     "left_column": "Student_DocumentId",
                     "right_alias": "sca_tc",
-                    "right_column": "Old_Student_DocumentId"
+                    "right_column": "OldStudent_DocumentId"
                   }
                 ]
               }
@@ -72509,7 +72509,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "ssa_tc",
-                    "right_column": "Old_SchoolId_Unified"
+                    "right_column": "OldSchoolId_Unified"
                   }
                 ]
               },
@@ -72522,7 +72522,7 @@
                 "on": [
                   {
                     "left_alias": "ssa_tc",
-                    "left_column": "Old_Student_DocumentId",
+                    "left_column": "OldStudent_DocumentId",
                     "right_alias": "sca",
                     "right_column": "Student_DocumentId"
                   }
@@ -72546,7 +72546,7 @@
               },
               {
                 "alias": "sca_tc",
-                "column": "Old_Contact_DocumentId",
+                "column": "OldContact_DocumentId",
                 "output_name": "Contact_DocumentId"
               }
             ],
@@ -72562,7 +72562,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "ssa_tc",
-                    "right_column": "Old_SchoolId_Unified"
+                    "right_column": "OldSchoolId_Unified"
                   }
                 ]
               },
@@ -72575,9 +72575,9 @@
                 "on": [
                   {
                     "left_alias": "ssa_tc",
-                    "left_column": "Old_Student_DocumentId",
+                    "left_column": "OldStudent_DocumentId",
                     "right_alias": "sca_tc",
-                    "right_column": "Old_Student_DocumentId"
+                    "right_column": "OldStudent_DocumentId"
                   }
                 ]
               }
@@ -72629,7 +72629,7 @@
               },
               {
                 "alias": "seoaa_tc",
-                "column": "Old_Staff_DocumentId",
+                "column": "OldStaff_DocumentId",
                 "output_name": "Staff_DocumentId"
               }
             ],
@@ -72645,7 +72645,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "seoaa_tc",
-                    "right_column": "Old_EducationOrganization_EducationOrganizationId"
+                    "right_column": "OldEducationOrganization_EducationOrganizationId"
                   }
                 ]
               }
@@ -72667,7 +72667,7 @@
               },
               {
                 "alias": "seoea_tc",
-                "column": "Old_Staff_DocumentId",
+                "column": "OldStaff_DocumentId",
                 "output_name": "Staff_DocumentId"
               }
             ],
@@ -72683,7 +72683,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "seoea_tc",
-                    "right_column": "Old_EducationOrganization_EducationOrganizationId"
+                    "right_column": "OldEducationOrganization_EducationOrganizationId"
                   }
                 ]
               }
@@ -72735,7 +72735,7 @@
               },
               {
                 "alias": "seora_tc",
-                "column": "Old_Student_DocumentId",
+                "column": "OldStudent_DocumentId",
                 "output_name": "Student_DocumentId"
               }
             ],
@@ -72751,7 +72751,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "seora_tc",
-                    "right_column": "Old_EducationOrganization_EducationOrganizationId"
+                    "right_column": "OldEducationOrganization_EducationOrganizationId"
                   }
                 ]
               }
@@ -72803,7 +72803,7 @@
               },
               {
                 "alias": "ssa_tc",
-                "column": "Old_Student_DocumentId",
+                "column": "OldStudent_DocumentId",
                 "output_name": "Student_DocumentId"
               }
             ],
@@ -72819,7 +72819,7 @@
                     "left_alias": "edOrg",
                     "left_column": "TargetEducationOrganizationId",
                     "right_alias": "ssa_tc",
-                    "right_column": "Old_SchoolId_Unified"
+                    "right_column": "OldSchoolId_Unified"
                   }
                 ]
               }

@@ -63,3 +63,9 @@ DMS-1244 - completed CMS PostgreSQL database-shape integration tests task.
 - Files changed: DatabaseShapeTests.cs, tasks.json, progress.txt.
 - Verification: csharpier new test; focused database-shape filter passed 6/6; full CMS PostgreSQL integration passed 241/241; CMS teardown/setup completed; env -u NODE_OPTIONS full CMS E2E passed 192/192.
 - Notes: PostgreSQL exposes NOT NULL catalog rows as pg_constraint contype n on this runtime, so shape assertions filter to PK/FK/UX/CK constraint families required by story.
+
+DMS-1244 - completed DMS generated fixture artifact refresh task.
+- Key decisions: refresh only the authoritative sample expected relational-model manifest read-change auth mappings still using Old_ tracked-change columns; leave authoritative input goldens untouched.
+- Files changed: authoritative-derived-relational-model-set.json, tasks.json, progress.txt.
+- Verification: DDL golden/fixture/authoritative filter passed 178/178; RelationalModel golden/authoritative filter passed 20/20; Plans golden/manifest filter passed 52/52; scoped fixture diff showed no DDL/integration fixture changes; authoritative input diff guard clean.
+- Notes: initial parallel dotnet test attempt hit a build output file lock; reran sequentially for signal.
