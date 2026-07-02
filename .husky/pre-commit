@@ -2,8 +2,12 @@
 
 . "$(dirname "$0")/_/husky.sh"
 
-echo 'Formatting Code'
+echo 'Formatting C# code'
 
 dotnet husky run --name dotnet-format-staged-files
 
-echo 'Completed pre-commit changes'
+echo 'Analyzing PowerShell scripts'
+
+dotnet husky run --name powershell-analyze-staged-files
+
+echo 'Completed pre-commit checks'
