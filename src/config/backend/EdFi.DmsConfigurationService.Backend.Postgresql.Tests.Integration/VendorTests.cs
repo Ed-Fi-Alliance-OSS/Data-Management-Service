@@ -351,7 +351,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             }
 
             [Test]
-            public async Task Should_apply_descending_default_order_before_paging()
+            public async Task Should_use_default_ascending_order_when_no_order_by_is_provided()
             {
                 var result = await _repository.QueryVendor(new VendorQuery { Direction = "DESC", Limit = 5 });
                 result.Should().BeOfType<VendorQueryResult.Success>();
@@ -361,7 +361,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
 
                 companies
                     .Should()
-                    .ContainInOrder("Vendor-15", "Vendor-14", "Vendor-13", "Vendor-12", "Vendor-11");
+                    .ContainInOrder("Vendor-01", "Vendor-02", "Vendor-03", "Vendor-04", "Vendor-05");
             }
         }
 
