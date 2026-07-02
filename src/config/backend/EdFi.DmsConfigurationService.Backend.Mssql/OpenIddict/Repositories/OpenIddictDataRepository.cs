@@ -395,7 +395,6 @@ UPDATE dmscs.OpenIddictApplication
             Guid tokenId,
             Guid applicationId,
             string subject,
-            string payload,
             DateTimeOffset expiration
         )
         {
@@ -416,7 +415,6 @@ UPDATE dmscs.OpenIddictApplication
                     ApplicationId = applicationId,
                     Subject = subject,
                     Type = "access_token",
-                    Payload = payload,
                     CreationDate = DateTime.UtcNow,
                     ExpirationDate = expiration.UtcDateTime,
                     Status = "valid",
