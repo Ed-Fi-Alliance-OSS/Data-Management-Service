@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -22,12 +24,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_RelationalCommittedRepresentationReader
 {
+    private const long StampedContentVersion = 91L;
+
     [Test]
-    public async Task It_composes_the_committed_etag_from_content_version_and_variant_key()
+    public async Task It_composes_the_committed_etag_from_the_stamped_content_version()
     {
-        var sessionDocumentHydrator = A.Fake<ISessionDocumentHydrator>();
         var sut = new RelationalCommittedRepresentationReader(
-            sessionDocumentHydrator,
             new EtagComposer(),
             Options.Create(new ResourceLinksOptions())
         );
@@ -37,36 +39,15 @@ public class Given_RelationalCommittedRepresentationReader
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         const long documentId = 345L;
-        var request = CreateRequest(
-            mappingSet,
-            writePlan,
-            readPlan,
-            documentUuid,
-            documentId,
-            new WritePrecondition.None()
-        );
+        var request = CreateRequest(mappingSet, writePlan, readPlan, documentUuid, documentId);
         var persistedTarget = new RelationalWritePersistResult(documentId, documentUuid);
-        var writeSession = CreateWriteSession();
-        var hydratedPage = CreateHydratedPage(documentId, documentUuid);
-
-        A.CallTo(() =>
-                sessionDocumentHydrator.HydrateAsync(
-                    writeSession.Connection,
-                    writeSession.Transaction,
-                    readPlan,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(hydratedPage);
+        var writeSession = CreateWriteSession(StampedContentVersion);
 
         var result = await sut.ReadAsync(request, persistedTarget, writeSession);
 
-        // ContentVersion 91 (from the hydrated metadata), no write profile ("_"), links enabled ("l"),
-        // JSON format ("j"), and the mapping set's schema epoch.
+        // No profile ("_"), links enabled ("l"), JSON ("j"), and the mapping set's schema epoch.
         var expectedEtag = new EtagComposer().Compose(
-            91L,
+            StampedContentVersion,
             VariantKeyFactory.Create(
                 mappingSet.Key.EffectiveSchemaHash,
                 ResponseFormat.Json,
@@ -76,21 +57,6 @@ public class Given_RelationalCommittedRepresentationReader
         );
         result.Should().BeOfType<JsonObject>();
         result["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
-        A.CallTo(() =>
-                sessionDocumentHydrator.HydrateAsync(
-                    writeSession.Connection,
-                    writeSession.Transaction,
-                    readPlan,
-                    new PageKeysetSpec.Single(documentId),
-                    A<HydrationExecutionOptions>.That.Matches(options =>
-                        options.IncludeDescriptorProjection
-                        && !options.IncludeDocumentReferenceLookup
-                        && options.UseSingleDocumentFastPath
-                    ),
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
@@ -98,8 +64,7 @@ public class Given_RelationalCommittedRepresentationReader
         ResourceWritePlan writePlan,
         ResourceReadPlan readPlan,
         DocumentUuid documentUuid,
-        long documentId,
-        WritePrecondition writePrecondition
+        long documentId
     ) =>
         new(
             mappingSet,
@@ -117,32 +82,122 @@ public class Given_RelationalCommittedRepresentationReader
                 DescriptorReferences: []
             ),
             new RelationalWriteTargetContext.ExistingDocument(documentId, documentUuid, 44L),
-            writePrecondition: writePrecondition
+            writePrecondition: new WritePrecondition.None()
         );
 
-    private static HydratedPage CreateHydratedPage(long documentId, DocumentUuid documentUuid) =>
-        new(
-            TotalCount: null,
-            DocumentMetadata:
-            [
-                new DocumentMetadataRow(
-                    documentId,
-                    documentUuid.Value,
-                    91L,
-                    91L,
-                    new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero),
-                    new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero)
-                ),
-            ],
-            TableRowsInDependencyOrder: [],
-            DescriptorRowsInPlanOrder: []
-        );
-
-    private static IRelationalWriteSession CreateWriteSession()
+    private static IRelationalWriteSession CreateWriteSession(long contentVersion)
     {
         var writeSession = A.Fake<IRelationalWriteSession>();
         A.CallTo(() => writeSession.Connection).Returns(A.Fake<DbConnection>());
         A.CallTo(() => writeSession.Transaction).Returns(A.Fake<DbTransaction>());
+        A.CallTo(() => writeSession.CreateCommand(A<RelationalCommand>._))
+            .Returns(new ScalarResultDbCommand(contentVersion));
         return writeSession;
+    }
+
+    private sealed class ScalarResultDbCommand(object? scalarResult) : DbCommand
+    {
+        protected override DbConnection? DbConnection { get; set; }
+
+        protected override DbParameterCollection DbParameterCollection { get; } =
+            new StubDbParameterCollection();
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        [AllowNull]
+        public override string CommandText { get; set; } = string.Empty;
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; }
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+
+        public override void Cancel() { }
+
+        public override int ExecuteNonQuery() => throw new NotSupportedException();
+
+        public override object? ExecuteScalar() => scalarResult;
+
+        public override void Prepare() { }
+
+        protected override DbParameter CreateDbParameter() => new StubDbParameter();
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+            throw new NotSupportedException();
+
+        public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(scalarResult);
+        }
+    }
+
+    private sealed class StubDbParameterCollection : DbParameterCollection
+    {
+        public override int Count => 0;
+
+        public override object SyncRoot => this;
+
+        public override int Add(object value) => 0;
+
+        public override void AddRange(Array values) { }
+
+        public override void Clear() { }
+
+        public override bool Contains(object value) => false;
+
+        public override bool Contains(string value) => false;
+
+        public override void CopyTo(Array array, int index) { }
+
+        public override System.Collections.IEnumerator GetEnumerator() =>
+            Array.Empty<object>().GetEnumerator();
+
+        protected override DbParameter GetParameter(int index) => throw new IndexOutOfRangeException();
+
+        protected override DbParameter GetParameter(string parameterName) =>
+            throw new IndexOutOfRangeException();
+
+        public override int IndexOf(object value) => -1;
+
+        public override int IndexOf(string parameterName) => -1;
+
+        public override void Insert(int index, object value) { }
+
+        public override void Remove(object value) { }
+
+        public override void RemoveAt(int index) { }
+
+        public override void RemoveAt(string parameterName) { }
+
+        protected override void SetParameter(int index, DbParameter value) { }
+
+        protected override void SetParameter(string parameterName, DbParameter value) { }
+    }
+
+    private sealed class StubDbParameter : DbParameter
+    {
+        public override DbType DbType { get; set; }
+
+        public override ParameterDirection Direction { get; set; }
+
+        public override bool IsNullable { get; set; }
+
+        [AllowNull]
+        public override string ParameterName { get; set; } = string.Empty;
+
+        [AllowNull]
+        public override string SourceColumn { get; set; } = string.Empty;
+
+        public override object? Value { get; set; }
+
+        public override bool SourceColumnNullMapping { get; set; }
+
+        public override int Size { get; set; }
+
+        public override void ResetDbType() { }
     }
 }
