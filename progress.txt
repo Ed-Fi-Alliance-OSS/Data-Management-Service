@@ -165,3 +165,9 @@ DMS-1244 - completed CMS TenantId install-script consolidation task.
 - Files changed: CMS PostgreSQL base create scripts 0001, 0004, 0005, 0006, 0021; tasks.json; progress.txt.
 - Verification: base-script TenantId guard returned no matches; 0025 TenantId/FK/IX guard found expected additions; database-shape integration passed 6/6; git diff --check clean.
 - Notes: remaining open task is change-version comments.
+
+DMS-1244 - completed core change-version comment cleanup task.
+- Key decisions: make core comments dialect-neutral rather than documenting PostgreSQL/SQL Server function-call syntax in core contracts.
+- Files changed: IChangeQueryRepository.cs, AvailableChangeVersionsHandler.cs, tasks.json, progress.txt.
+- Verification: csharpier touched files; GetMaxChangeVersion stale-comment guard clean; AvailableChangeVersionsHandler focused core unit tests passed 3/3.
+- Notes: no runtime change; all tasks in tasks.json now complete.

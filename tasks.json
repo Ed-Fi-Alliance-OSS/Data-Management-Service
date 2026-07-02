@@ -442,7 +442,7 @@
       "rg -n 'dms\\.GetMaxChangeVersion\\(\\)|\"dms\"\\.GetMaxChangeVersion' src/dms/core src/dms/backend -g'*.cs'",
       "Review remaining matches and confirm they are historical examples, test names unrelated to SQL, or dialect-specific comments that include the quoted PostgreSQL function name."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
