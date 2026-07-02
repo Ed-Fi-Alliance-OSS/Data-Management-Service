@@ -374,6 +374,7 @@ else {
     }
 
     function Wait-MssqlReady {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
         param(
             [Parameter(Mandatory)]
             [string]
