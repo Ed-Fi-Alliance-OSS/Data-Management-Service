@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -40,7 +41,8 @@ public class DataStoreDerivativeTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DataStoreDerivativeRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         _instanceRepository = new DataStoreRepository(
@@ -663,6 +665,220 @@ public class DataStoreDerivativeTests : DatabaseTest
                 (DataStoreDerivativeQueryResult.Success)queryResult
             ).DataStoreDerivativeResponses;
             derivatives.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_derivative_operations_from_another_tenant : DataStoreDerivativeTests
+    {
+        private IDataStoreDerivativeRepository _tenantARepository = null!;
+        private IDataStoreDerivativeRepository _tenantBRepository = null!;
+        private long _tenantADataStoreId;
+        private long _tenantADerivativeId;
+        private long _tenantBDerivativeId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tenantRepository = new TenantRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            var tenantAProvider = await CreateTenantProvider(tenantRepository, "A");
+            var tenantBProvider = await CreateTenantProvider(tenantRepository, "B");
+
+            _tenantARepository = CreateDerivativeRepository(tenantAProvider);
+            _tenantBRepository = CreateDerivativeRepository(tenantBProvider);
+
+            (_tenantADataStoreId, _tenantADerivativeId) = await InsertDataStoreWithDerivative(
+                tenantAProvider,
+                _tenantARepository,
+                "Tenant A Data Store"
+            );
+            (_, _tenantBDerivativeId) = await InsertDataStoreWithDerivative(
+                tenantBProvider,
+                _tenantBRepository,
+                "Tenant B Data Store"
+            );
+        }
+
+        private static async Task<TenantContextProvider> CreateTenantProvider(
+            TenantRepository tenantRepository,
+            string suffix
+        )
+        {
+            var tenantName = $"DerivativeTenant{suffix}-{Guid.NewGuid()}";
+            var tenantResult = await tenantRepository.InsertTenant(
+                new TenantInsertCommand { Name = tenantName }
+            );
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+            return new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(
+                    ((TenantInsertResult.Success)tenantResult).Id,
+                    tenantName
+                ),
+            };
+        }
+
+        private static DataStoreDerivativeRepository CreateDerivativeRepository(
+            TenantContextProvider tenantContextProvider
+        ) =>
+            new(
+                Configuration.DatabaseOptions,
+                NullLogger<DataStoreDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+        private static async Task<(long DataStoreId, long DerivativeId)> InsertDataStoreWithDerivative(
+            TenantContextProvider tenantContextProvider,
+            IDataStoreDerivativeRepository derivativeRepository,
+            string dataStoreName
+        )
+        {
+            var dataStoreRepository = new DataStoreRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new DataStoreContextRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreContextRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                derivativeRepository,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+            var dataStoreResult = await dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = dataStoreName,
+                    ConnectionString = "Server=tenant;Database=TenantDb;",
+                }
+            );
+            dataStoreResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            var dataStoreId = ((DataStoreInsertResult.Success)dataStoreResult).Id;
+
+            var derivativeResult = await derivativeRepository.InsertDataStoreDerivative(
+                new DataStoreDerivativeInsertCommand
+                {
+                    DataStoreId = dataStoreId,
+                    DerivativeType = "ReadReplica",
+                    ConnectionString = "Server=tenantReplica;Database=TenantReplicaDb;",
+                }
+            );
+            derivativeResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+            return (dataStoreId, ((DataStoreDerivativeInsertResult.Success)derivativeResult).Id);
+        }
+
+        [Test]
+        public async Task It_should_not_get_another_tenants_derivative()
+        {
+            var result = await _tenantBRepository.GetDataStoreDerivative(_tenantADerivativeId);
+            result.Should().BeOfType<DataStoreDerivativeGetResult.FailureNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_list_another_tenants_derivative_in_query()
+        {
+            var result = await _tenantBRepository.QueryDataStoreDerivative(
+                new PagingQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<DataStoreDerivativeQueryResult.Success>();
+            ((DataStoreDerivativeQueryResult.Success)result)
+                .DataStoreDerivativeResponses.Should()
+                .NotContain(derivative => derivative.Id == _tenantADerivativeId);
+        }
+
+        [Test]
+        public async Task It_should_not_update_another_tenants_derivative()
+        {
+            var result = await _tenantBRepository.UpdateDataStoreDerivative(
+                new DataStoreDerivativeUpdateCommand
+                {
+                    Id = _tenantADerivativeId,
+                    DataStoreId = _tenantADataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=other;Database=OtherDb;",
+                }
+            );
+            result.Should().BeOfType<DataStoreDerivativeUpdateResult.FailureNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_move_a_derivative_to_another_tenants_data_store()
+        {
+            var result = await _tenantBRepository.UpdateDataStoreDerivative(
+                new DataStoreDerivativeUpdateCommand
+                {
+                    Id = _tenantBDerivativeId,
+                    DataStoreId = _tenantADataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=other;Database=OtherDb;",
+                }
+            );
+            result.Should().BeOfType<DataStoreDerivativeUpdateResult.FailureForeignKeyViolation>();
+        }
+
+        [Test]
+        public async Task It_should_not_delete_another_tenants_derivative()
+        {
+            var result = await _tenantBRepository.DeleteDataStoreDerivative(_tenantADerivativeId);
+            result.Should().BeOfType<DataStoreDerivativeDeleteResult.FailureNotFound>();
+
+            var stillThere = await _tenantARepository.GetDataStoreDerivative(_tenantADerivativeId);
+            stillThere.Should().BeOfType<DataStoreDerivativeGetResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_not_list_another_tenants_derivatives_by_data_store()
+        {
+            var result = await _tenantBRepository.GetDataStoreDerivativesByDataStore(_tenantADataStoreId);
+            result.Should().BeOfType<DataStoreDerivativeQueryByDataStoreResult.Success>();
+            ((DataStoreDerivativeQueryByDataStoreResult.Success)result)
+                .DataStoreDerivativeResponses.Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_not_list_another_tenants_derivatives_by_data_store_ids()
+        {
+            var result = await _tenantBRepository.GetDataStoreDerivativesByDataStoreIds([
+                _tenantADataStoreId,
+            ]);
+            result.Should().BeOfType<DataStoreDerivativeQueryByDataStoreIdsResult.Success>();
+            ((DataStoreDerivativeQueryByDataStoreIdsResult.Success)result)
+                .DataStoreDerivativeResponses.Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_not_insert_a_derivative_under_another_tenants_data_store()
+        {
+            var result = await _tenantBRepository.InsertDataStoreDerivative(
+                new DataStoreDerivativeInsertCommand
+                {
+                    DataStoreId = _tenantADataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=other;Database=OtherDb;",
+                }
+            );
+            result.Should().BeOfType<DataStoreDerivativeInsertResult.FailureForeignKeyViolation>();
+        }
+
+        [Test]
+        public async Task It_should_not_expose_tenant_scoped_derivatives_in_single_tenant_context()
+        {
+            var singleTenantRepository = CreateDerivativeRepository(new TenantContextProvider());
+            var result = await singleTenantRepository.GetDataStoreDerivative(_tenantADerivativeId);
+            result.Should().BeOfType<DataStoreDerivativeGetResult.FailureNotFound>();
         }
     }
 }

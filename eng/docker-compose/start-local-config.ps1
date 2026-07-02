@@ -94,6 +94,10 @@ else {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
     }
 
+    # Database readiness is enforced by the compose healthcheck (the config service
+    # depends_on the db with condition service_healthy, and `docker compose up`
+    # does not return until that dependency is satisfied). This sleep only covers
+    # Keycloak and config-service warmup before the setup scripts run.
     Start-Sleep 25
     if($IdentityProvider -eq "keycloak")
     {

@@ -37,7 +37,8 @@ public class DataStoreTests : DatabaseTest
         MssqlTestConfiguration.DatabaseOptions,
         NullLogger<DataStoreDerivativeRepository>.Instance,
         new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     private readonly IDataStoreRepository _repository;
@@ -728,7 +729,8 @@ public class DataStoreTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
-                new TestAuditContext()
+                new TestAuditContext(),
+                tenantContextProvider
             );
 
             _multitenantRepository = new DataStoreRepository(

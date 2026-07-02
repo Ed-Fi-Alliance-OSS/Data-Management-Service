@@ -13,14 +13,24 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Hooks;
 [Binding]
 public static class SetupHooks
 {
+    // The docker-compose stack publishes the database with values from the active
+    // environment file; build-config.ps1 propagates those variables into this test
+    // process. The fallbacks match the checked-in .env.config*.e2e files so a bare
+    // `dotnet test` against a standard stack still cleans the right database.
     private const string PgAdminUser = "postgres";
-    private const string PgAdminPassword = "abcdefgh1!";
-    private const ushort DbPortExternal = 5435;
-    private const string DatabaseName = "edfi_configurationservice";
+    private static string PgAdminPassword => EnvOrDefault("POSTGRES_PASSWORD", "abcdefgh1!");
+    private static string DbPortExternal => EnvOrDefault("POSTGRES_PORT", "5435");
+
+    // The CMS database name is driven by POSTGRES_DB_NAME for both engines (the
+    // MSSQL connection string in the env files interpolates it too).
+    private static string DatabaseName => EnvOrDefault("POSTGRES_DB_NAME", "edfi_configurationservice");
 
     private const string MssqlSaUser = "sa";
-    private const string MssqlSaPassword = "abcdefgh1!";
-    private const ushort MssqlDbPortExternal = 1435;
+    private static string MssqlSaPassword => EnvOrDefault("MSSQL_SA_PASSWORD", "abcdefgh1!");
+    private static string MssqlDbPortExternal => EnvOrDefault("MSSQL_PORT", "1435");
+
+    private static string EnvOrDefault(string name, string fallback) =>
+        Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
     private static bool UseMssql =>
         string.Equals(
@@ -159,9 +169,11 @@ public static class SetupHooks
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // intentionally swallow — best-effort test cleanup
+            // Best-effort cleanup: never fail a scenario over it, but surface the
+            // problem so a misconfigured connection doesn't hide stale test data.
+            Console.WriteLine($"Warning: E2E test-data cleanup failed: {ex.Message}");
         }
     }
 

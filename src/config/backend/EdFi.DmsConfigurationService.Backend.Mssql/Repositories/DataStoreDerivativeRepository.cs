@@ -19,9 +19,14 @@ public class DataStoreDerivativeRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DataStoreDerivativeRepository> logger,
     IConnectionStringEncryptionService encryptionService,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IDataStoreDerivativeRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
     private static readonly IReadOnlyDictionary<string, string> OrderByColumns = new Dictionary<
         string,
         string
@@ -49,10 +54,14 @@ public class DataStoreDerivativeRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            var sql = $"""
                 INSERT INTO dmscs.DataStoreDerivative (DataStoreId, DerivativeType, ConnectionString, CreatedBy)
                 OUTPUT INSERTED.Id
-                VALUES (@DataStoreId, @DerivativeType, @ConnectionString, @CreatedBy);
+                SELECT @DataStoreId, @DerivativeType, @ConnectionString, @CreatedBy
+                WHERE EXISTS (
+                    SELECT 1 FROM dmscs.DataStore
+                    WHERE Id = @DataStoreId AND {TenantContext.TenantWhereClause()}
+                );
                 """;
 
             var parameters = new
@@ -61,10 +70,16 @@ public class DataStoreDerivativeRepository(
                 command.DerivativeType,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
                 CreatedBy = auditContext.GetCurrentUser(),
+                TenantId,
             };
 
-            var id = await connection.ExecuteScalarAsync<long>(sql, parameters);
-            return new DataStoreDerivativeInsertResult.Success(id);
+            var id = await connection.ExecuteScalarAsync<long?>(sql, parameters);
+            if (id == null)
+            {
+                return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
+            }
+
+            return new DataStoreDerivativeInsertResult.Success(id.Value);
         }
         catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastorederivative_datastore"))
         {
@@ -85,8 +100,10 @@ public class DataStoreDerivativeRepository(
         {
             string orderByClause = BuildOrderByClause(query);
             var sql = $"""
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
+                SELECT dd.Id, dd.DataStoreId, dd.DerivativeType, dd.ConnectionString
+                FROM dmscs.DataStoreDerivative dd
+                JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+                WHERE {TenantContext.TenantWhereClause("ds")}
                 {orderByClause}
                 {query.BuildSqlServerPagingClause()};
                 """;
@@ -96,7 +113,15 @@ public class DataStoreDerivativeRepository(
                 long DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
-            )>(sql, query);
+            )>(
+                sql,
+                new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                }
+            );
 
             var derivatives = results.Select(row => new DataStoreDerivativeResponse
             {
@@ -122,10 +147,11 @@ public class DataStoreDerivativeRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE Id = @Id;
+            var sql = $"""
+                SELECT dd.Id, dd.DataStoreId, dd.DerivativeType, dd.ConnectionString
+                FROM dmscs.DataStoreDerivative dd
+                JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+                WHERE dd.Id = @Id AND {TenantContext.TenantWhereClause("ds")};
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
@@ -133,7 +159,7 @@ public class DataStoreDerivativeRepository(
                 long DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
-            )?>(sql, new { Id = id });
+            )?>(sql, new { Id = id, TenantId });
 
             if (result == null)
             {
@@ -164,13 +190,21 @@ public class DataStoreDerivativeRepository(
     )
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
         try
         {
-            var sql = """
-                UPDATE dmscs.DataStoreDerivative
+            var sql = $"""
+                UPDATE dd
                 SET DataStoreId = @DataStoreId, DerivativeType = @DerivativeType, ConnectionString = @ConnectionString,
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id;
+                FROM dmscs.DataStoreDerivative dd
+                INNER JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+                WHERE dd.Id = @Id
+                  AND {TenantContext.TenantWhereClause("ds")}
+                  AND EXISTS (
+                      SELECT 1 FROM dmscs.DataStore
+                      WHERE Id = @DataStoreId AND {TenantContext.TenantWhereClause()}
+                  );
                 """;
 
             var parameters = new
@@ -181,12 +215,19 @@ public class DataStoreDerivativeRepository(
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
                 LastModifiedAt = auditContext.GetCurrentTimestamp(),
                 ModifiedBy = auditContext.GetCurrentUser(),
+                TenantId,
             };
 
             var affectedRows = await connection.ExecuteAsync(sql, parameters);
             if (affectedRows == 0)
             {
-                return new DataStoreDerivativeUpdateResult.FailureNotFound();
+                var derivativeExists = await DerivativeExistsForTenant(connection, command.Id);
+                if (!derivativeExists)
+                {
+                    return new DataStoreDerivativeUpdateResult.FailureNotFound();
+                }
+
+                return new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation();
             }
 
             return new DataStoreDerivativeUpdateResult.Success();
@@ -208,8 +249,14 @@ public class DataStoreDerivativeRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = "DELETE FROM dmscs.DataStoreDerivative WHERE Id = @Id;";
-            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            var sql = $"""
+                DELETE FROM dmscs.DataStoreDerivative
+                WHERE Id = @Id
+                  AND DataStoreId IN (
+                      SELECT Id FROM dmscs.DataStore WHERE {TenantContext.TenantWhereClause()}
+                  );
+                """;
+            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
 
             if (affectedRows > 0)
             {
@@ -232,11 +279,12 @@ public class DataStoreDerivativeRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE DataStoreId = @DataStoreId
-                ORDER BY Id;
+            var sql = $"""
+                SELECT dd.Id, dd.DataStoreId, dd.DerivativeType, dd.ConnectionString
+                FROM dmscs.DataStoreDerivative dd
+                JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+                WHERE dd.DataStoreId = @DataStoreId AND {TenantContext.TenantWhereClause("ds")}
+                ORDER BY dd.Id;
                 """;
 
             var results = await connection.QueryAsync<(
@@ -244,7 +292,7 @@ public class DataStoreDerivativeRepository(
                 long DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
-            )>(sql, new { DataStoreId = dataStoreId });
+            )>(sql, new { DataStoreId = dataStoreId, TenantId });
 
             var derivatives = results.Select(row => new DataStoreDerivativeResponse
             {
@@ -272,11 +320,12 @@ public class DataStoreDerivativeRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
-                SELECT Id, DataStoreId, DerivativeType, ConnectionString
-                FROM dmscs.DataStoreDerivative
-                WHERE DataStoreId IN @DataStoreIds
-                ORDER BY DataStoreId, Id;
+            var sql = $"""
+                SELECT dd.Id, dd.DataStoreId, dd.DerivativeType, dd.ConnectionString
+                FROM dmscs.DataStoreDerivative dd
+                JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+                WHERE dd.DataStoreId IN @DataStoreIds AND {TenantContext.TenantWhereClause("ds")}
+                ORDER BY dd.DataStoreId, dd.Id;
                 """;
 
             var results = await connection.QueryAsync<(
@@ -284,7 +333,7 @@ public class DataStoreDerivativeRepository(
                 long DataStoreId,
                 string DerivativeType,
                 byte[]? ConnectionString
-            )>(sql, new { DataStoreIds = dataStoreIds });
+            )>(sql, new { DataStoreIds = dataStoreIds, TenantId });
 
             var derivatives = results.Select(row => new DataStoreDerivativeResponse
             {
@@ -303,5 +352,16 @@ public class DataStoreDerivativeRepository(
             logger.LogError(ex, "Get data store derivatives by data store IDs failure");
             return new DataStoreDerivativeQueryByDataStoreIdsResult.FailureUnknown(ex.Message);
         }
+    }
+
+    private async Task<bool> DerivativeExistsForTenant(SqlConnection connection, long id)
+    {
+        var sql = $"""
+            SELECT COUNT(1) FROM dmscs.DataStoreDerivative dd
+            JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
+            WHERE dd.Id = @Id AND {TenantContext.TenantWhereClause("ds")};
+            """;
+
+        return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }) > 0;
     }
 }

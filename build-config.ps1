@@ -323,6 +323,15 @@ function E2ETests {
             # Assign unconditionally so an env file without the key clears any stale
             # value instead of leaving the scenarios enabled against a single-tenant stack.
             $env:DMS_CONFIG_MULTI_TENANCY = $envValues["DMS_CONFIG_MULTI_TENANCY"]
+            # The E2E test-data cleanup connects to the stack's database using these
+            # values (falling back to the standard .env.config*.e2e defaults when unset).
+            # Assign unconditionally so keys absent from the env file clear stale values
+            # and cleanup targets the same database the compose stack published.
+            $env:POSTGRES_PASSWORD = $envValues["POSTGRES_PASSWORD"]
+            $env:POSTGRES_PORT = $envValues["POSTGRES_PORT"]
+            $env:POSTGRES_DB_NAME = $envValues["POSTGRES_DB_NAME"]
+            $env:MSSQL_SA_PASSWORD = $envValues["MSSQL_SA_PASSWORD"]
+            $env:MSSQL_PORT = $envValues["MSSQL_PORT"]
         }
         finally {
             Pop-Location

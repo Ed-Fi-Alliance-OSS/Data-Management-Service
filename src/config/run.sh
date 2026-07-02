@@ -22,7 +22,19 @@ if [ "$datastore" = "postgresql" ]; then
 
   echo "PostgreSQL is ready."
 else
-  echo "Datastore is '$datastore'; skipping the PostgreSQL readiness check."
+  # sqlcmd is not available in this image, so wait for the SQL Server TCP endpoint
+  # (parsed from "Server=host[,port];...") to accept connections before starting.
+  server=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eio "server=([^;]+)" | head -1 | awk -F= '{print $2}')
+  host=$(echo ${server} | awk -F, '{print $1}')
+  port=$(echo ${server} | awk -F, '{print $2}')
+  port=${port:-1433}
+
+  until (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null; do
+    echo "Waiting for SQL Server to start..."
+    sleep 2
+  done
+
+  echo "SQL Server is accepting TCP connections."
 fi
 
 echo "Running EdFi.DmsConfigurationService.Frontend.AspNetCore..."
