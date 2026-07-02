@@ -46,7 +46,7 @@ Under `src/dms/backend/EdFi.DataManagementService.Backend/Etag/`:
 ## Test status
 - **Unit — all green:** backend `1844`, core `2558`, frontend `192`.
 - **PostgreSQL integration: PG-side etag caller updates DONE** (commit `0312d17e`). `RelationalGetIntegrationTestHelper` is now etag-agnostic (`AssertComposedEtag` shape check; `_etag` dropped from canonical body comparison). Verified passing against the running container: the 2 `..._with_readable_profile_projection` smoke tests, 14 affected fixtures (PostAsUpdate/ResourceLinksFlag/ProfileIfMatch/IfMatchCascade/propagated-identity), and 7 descriptor read tests. A partial full-suite run showed 488 passes / 0 assertion failures (only `DROP DATABASE` teardown timeouts from container saturation — infra, not test logic). **Do not run the whole suite at once — target affected tests via `--filter`.**
-- **MSSQL integration: NOT run** (needs a SQL Server container). MSSQL mirror-tests still need the same updates as the PG ones.
+- **MSSQL integration: mirror DONE** (commit `ebe5e3b6`). Same composed-etag updates applied to the 4 MSSQL test files (SSA smoke, DS52 survey cascade smoke, ProfileIfMatch, ResourceLinksFlag); SSA link-bearing If-Match now uses `FlipLinkFlag` (dead `CreateLinkBearingResponse`/`AddReferenceLink` removed). Verified passing against a local SQL Server 2022 container (`dms-mssql-etag`) with targeted `--filter` runs: profile (20), SSA smoke (4), DS52 + ResourceLinks (5), and unchanged-but-etag-consuming cascade/caller-agnostic/descriptor tests (10). Descriptor path still hashes (Phase 6). **Target affected tests via `--filter`; do not run the whole suite.**
 
 ### Note on the readable-profile-projection smoke tests (fixed in `0312d17e`)
 The two `..._with_readable_profile_projection` smoke tests previously asserted the profiled read's
@@ -58,7 +58,7 @@ only for a **null** name; empty string is hashed — so backend-direct tests mus
 
 ## Remaining work (ordered)
 1. ~~**Fix `RelationalGetIntegrationTestHelper`** etag handling; re-run PG suite to catch all callers.~~ **DONE** (`0312d17e`).
-2. **Mirror all integration-test updates to MSSQL** (`*.Mssql.Tests.Integration`): profile If-Match/etag tests, the smoke tests, and any `CreateExpectedEtag`-based assertions. Needs a SQL Server container; run the MSSQL suite.
+2. ~~**Mirror all integration-test updates to MSSQL** (`*.Mssql.Tests.Integration`).~~ **DONE** (`ebe5e3b6`).
 3. **Phase 5 — HTTP quoting:** serve `ETag` header quoted via `EtagValue.ToHeaderValue`; make `WritePreconditionFactory` (`src/dms/core/.../Backend/WritePreconditionFactory.cs`, reads `If-Match`) quote-tolerant via `EtagValue.TryParseHeaderValue`. Update `AspNetCoreFrontendResponseHeaderTests`. (Header is currently emitted **unquoted** — pre-existing non-conformance.)
 4. **Phase 6 — descriptors + dead code:** convert the descriptor etag path (currently still hashes via `RelationalApiMetadataFormatter.FormatEtag(ExtractedDescriptorBody)` — separate handlers, self-consistent) to composed; then remove `ResourceEtagFormatter` / `RelationalApiMetadataFormatter` and the materializer hash fallback once no callers remain. Check `CanonicalJsonSerializer` for non-etag callers before removing.
 5. **Phase 7 — E2E + docs:** review `etag.feature` (E2E); apply the companion design-doc edits to `reference/design/backend-redesign/design-docs/{update-tracking,transactions-and-concurrency,flattening-reconstitution}.md`; flip ADR status to Accepted on team sign-off.
@@ -78,6 +78,9 @@ only for a **null** name; empty string is hashed — so backend-direct tests mus
 - **PG integration container** (throwaway, trust auth) currently running as `dms-pg-etag`:
   `docker run -d --name dms-pg-etag -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=postgres postgres:16-alpine -c max_locks_per_transaction=256`
   The integration `DatabaseSetupFixture` auto-provisions the DB/schema; the appsettings connection string uses no password (trust).
+- **MSSQL integration container** (throwaway) running as `dms-mssql-etag`, matching the test appsettings connection (`Server=localhost,1433;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;`):
+  `docker run -d --name dms-mssql-etag -p 1433:1433 -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=abcdefgh1!" mcr.microsoft.com/mssql/server:2022-latest`
+  The MSSQL fixtures auto-provision per-test databases (`dmsfp<guid>`) and drop them in teardown.
 - Test commands (from `D:\tanager\DMS-etag-content-version`):
   - `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit`
   - `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit`
