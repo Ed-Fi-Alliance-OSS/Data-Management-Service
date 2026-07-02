@@ -50,6 +50,29 @@ public class LoggingMiddleware(RequestDelegate next)
                 );
             }
         }
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
+            when (ex.StatusCode == Microsoft.AspNetCore.Http.StatusCodes.Status413PayloadTooLarge)
+        {
+            stopwatch.Stop();
+            logger.LogWarning(
+                ex,
+                "Request rejected because the payload was too large: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
+                sanitizedMethod.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Method)
+                    : sanitizedMethod,
+                sanitizedPath.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
+                    : sanitizedPath,
+                stopwatch.ElapsedMilliseconds,
+                context.TraceIdentifier
+            );
+
+            var response = context.Response;
+            if (!response.HasStarted)
+            {
+                response.StatusCode = Microsoft.AspNetCore.Http.StatusCodes.Status413PayloadTooLarge;
+            }
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();

@@ -9,8 +9,13 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 
 public class AppSettings
 {
+    public const int BytesPerMegabyte = 1024 * 1024;
+    public const int DefaultMaxRequestBodySizeMegabytes = 10;
+    public const int DefaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeMegabytes * BytesPerMegabyte;
+
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
+    public int MaxRequestBodySizeBytes { get; set; }
     public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
@@ -55,6 +60,13 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value Datastore must be one of: postgresql, mssql"
+            );
+        }
+
+        if (options.MaxRequestBodySizeBytes <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value MaxRequestBodySizeBytes must be greater than 0"
             );
         }
 

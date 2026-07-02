@@ -9,7 +9,9 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -117,6 +119,116 @@ public class ConfigurationTests
                     .Be(nameof(OptionsValidationException));
                 startupStatus["ErrorMessage"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
             }
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Configuration_With_Default_Max_Request_Body_Size
+    {
+        private WebApplicationFactory<Program>? _factory;
+
+        [SetUp]
+        public void Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory!.Dispose();
+        }
+
+        [Test]
+        public void It_uses_the_configured_default_request_body_size_for_host_limits()
+        {
+            using var client = _factory!.CreateClient();
+
+            var formOptions = _factory.Services.GetRequiredService<IOptions<FormOptions>>().Value;
+            var kestrelOptions = _factory.Services.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
+            var appSettings = _factory.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+
+            appSettings.MaxRequestBodySizeBytes.Should().BeGreaterThan(0);
+            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(formOptions.ValueLengthLimit);
+            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(formOptions.MultipartBodyLengthLimit);
+            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(kestrelOptions.Limits.MaxRequestBodySize);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Configuration_With_Invalid_Max_Request_Body_Size
+    {
+        private WebApplicationFactory<Program>? _factory;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:AuthenticationService"] = "http://localhost:5126/connect/token",
+                                ["AppSettings:MaxRequestBodySizeBytes"] = "0",
+                                ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        // Add validators to trigger ReportInvalidConfigurationMiddleware
+                        collection.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
+                    }
+                );
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factory!.Dispose();
+
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_when_max_request_body_size_is_invalid()
+        {
+            // Arrange
+            using var client = _factory!.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            content.Should().Be(string.Empty);
+            File.Exists(_statusFilePath).Should().BeTrue();
+
+            var startupStatus = JsonNode.Parse(await File.ReadAllTextAsync(_statusFilePath))!.AsObject();
+
+            startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
+            startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("MaxRequestBodySizeBytes");
         }
     }
 

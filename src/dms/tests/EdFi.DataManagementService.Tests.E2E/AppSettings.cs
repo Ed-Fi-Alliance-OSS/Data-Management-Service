@@ -10,6 +10,9 @@ namespace EdFi.DataManagementService.Tests.E2E;
 public static class AppSettings
 {
     public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
+    public const int BytesPerMegabyte = 1024 * 1024;
+    public const int DefaultMaxRequestBodySizeMegabytes = 10;
+    public const int DefaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeMegabytes * BytesPerMegabyte;
 
     private const string DefaultDmsPort = "8080";
     private const string DefaultConfigServicePort = "8081";
@@ -22,6 +25,7 @@ public static class AppSettings
     public static string ConfigServicePort => _settings.ConfigServicePort;
     public static string AuthenticationService => _settings.AuthenticationService;
     public static string DataStoreDatabaseName => _settings.DataStoreDatabaseName;
+    public static int MaxRequestBodySizeBytes => _settings.MaxRequestBodySizeBytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
     {
@@ -29,7 +33,8 @@ public static class AppSettings
             GetString(configuration, nameof(DmsPort), DefaultDmsPort),
             GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
             GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
-            GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName)
+            GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName),
+            GetInt(configuration, nameof(MaxRequestBodySizeBytes), DefaultMaxRequestBodySizeBytes)
         );
     }
 
@@ -49,11 +54,18 @@ public static class AppSettings
         string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
         return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
     }
+
+    private static int GetInt(IConfiguration configuration, string key, int defaultValue)
+    {
+        string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
+        return int.TryParse(value, out int parsedValue) ? parsedValue : defaultValue;
+    }
 }
 
 internal sealed record AppSettingsValues(
     string DmsPort,
     string ConfigServicePort,
     string AuthenticationService,
-    string DataStoreDatabaseName
+    string DataStoreDatabaseName,
+    int MaxRequestBodySizeBytes
 );
