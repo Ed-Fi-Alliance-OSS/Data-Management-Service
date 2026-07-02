@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -21,13 +23,18 @@ internal interface IRelationalCommittedRepresentationReader
 
 internal sealed class RelationalCommittedRepresentationReader(
     ISessionDocumentHydrator sessionDocumentHydrator,
-    IRelationalReadMaterializer readMaterializer
+    IEtagComposer etagComposer,
+    IOptions<ResourceLinksOptions> linksOptions
 ) : IRelationalCommittedRepresentationReader
 {
+    private const string EtagPropertyName = "_etag";
+
     private readonly ISessionDocumentHydrator _sessionDocumentHydrator =
         sessionDocumentHydrator ?? throw new ArgumentNullException(nameof(sessionDocumentHydrator));
-    private readonly IRelationalReadMaterializer _readMaterializer =
-        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IEtagComposer _etagComposer =
+        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly ResourceLinksOptions _linksOptions =
+        linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
 
     public async Task<JsonNode> ReadAsync(
         RelationalWriteExecutorRequest request,
@@ -85,16 +92,16 @@ internal sealed class RelationalCommittedRepresentationReader(
             );
         }
 
-        var committedResponse = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                readPlan,
-                documentMetadata,
-                hydratedPage.TableRowsInDependencyOrder,
-                hydratedPage.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
-            )
+        // The write response carries only the _etag header; it is composed from the persisted
+        // ContentVersion and the request's representation variant (no hashing, no materialization).
+        var variantKey = VariantKeyFactory.Create(
+            request.MappingSet.Key.EffectiveSchemaHash,
+            ResponseFormat.Json,
+            ProfileVariantCode.Of(request.ProfileWriteContext?.ProfileName),
+            _linksOptions.Enabled
         );
+        var etag = _etagComposer.Compose(documentMetadata.ContentVersion, variantKey);
 
-        return committedResponse;
+        return new JsonObject { [EtagPropertyName] = etag };
     }
 }

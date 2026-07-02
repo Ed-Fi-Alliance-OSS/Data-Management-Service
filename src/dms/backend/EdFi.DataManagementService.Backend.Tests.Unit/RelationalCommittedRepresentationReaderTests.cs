@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -21,11 +23,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalCommittedRepresentationReader
 {
     [Test]
-    public async Task It_returns_the_full_committed_response_as_materialized()
+    public async Task It_composes_the_committed_etag_from_content_version_and_variant_key()
     {
         var sessionDocumentHydrator = A.Fake<ISessionDocumentHydrator>();
-        var readMaterializer = A.Fake<IRelationalReadMaterializer>();
-        var sut = new RelationalCommittedRepresentationReader(sessionDocumentHydrator, readMaterializer);
+        var sut = new RelationalCommittedRepresentationReader(
+            sessionDocumentHydrator,
+            new EtagComposer(),
+            Options.Create(new ResourceLinksOptions())
+        );
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
         var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
@@ -43,17 +48,6 @@ public class Given_RelationalCommittedRepresentationReader
         var persistedTarget = new RelationalWritePersistResult(documentId, documentUuid);
         var writeSession = CreateWriteSession();
         var hydratedPage = CreateHydratedPage(documentId, documentUuid);
-        var materializedResponse = JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High",
-              "_etag": "\"91\"",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
 
         A.CallTo(() =>
                 sessionDocumentHydrator.HydrateAsync(
@@ -66,12 +60,22 @@ public class Given_RelationalCommittedRepresentationReader
                 )
             )
             .Returns(hydratedPage);
-        A.CallTo(() => readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Returns(materializedResponse);
 
         var result = await sut.ReadAsync(request, persistedTarget, writeSession);
 
-        result.Should().BeSameAs(materializedResponse);
+        // ContentVersion 91 (from the hydrated metadata), no write profile ("_"), links enabled ("l"),
+        // JSON format ("j"), and the mapping set's schema epoch.
+        var expectedEtag = new EtagComposer().Compose(
+            91L,
+            VariantKeyFactory.Create(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(null),
+                linksEnabled: true
+            )
+        );
+        result.Should().BeOfType<JsonObject>();
+        result["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
         A.CallTo(() =>
                 sessionDocumentHydrator.HydrateAsync(
                     writeSession.Connection,

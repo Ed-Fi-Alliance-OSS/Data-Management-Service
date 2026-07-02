@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -13,7 +14,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IRelationalReadMaterializer readMaterializer
+    IEtagComposer etagComposer
 )
 {
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
@@ -26,8 +27,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         currentEtagPreconditionChecker
         ?? throw new ArgumentNullException(nameof(currentEtagPreconditionChecker));
 
-    private readonly IRelationalReadMaterializer _readMaterializer =
-        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IEtagComposer _etagComposer =
+        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
 
     public static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
@@ -120,8 +121,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             );
         }
 
-        var readPlan = request.ExistingDocumentReadPlan;
-        if (readPlan is null)
+        if (request.ExistingDocumentReadPlan is null)
         {
             return RelationalWriteExecutorResults.BuildMissingExistingDocumentReadPlanResult(request);
         }
@@ -140,18 +140,24 @@ internal sealed class RelationalWriteExecutionStateResolver(
             };
         }
 
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                readPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
+        // If-Match compares the state-significant projection of the composed etag (ContentVersion,
+        // schemaEpoch, profileCode). format and linkFlag are projected out, so the values passed for
+        // them here are not significant.
+        var currentEtag = _etagComposer.Compose(
+            currentState.DocumentMetadata.ContentVersion,
+            VariantKeyFactory.Create(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(request.ProfileWriteContext?.ProfileName),
+                linksEnabled: true
             )
         );
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
 
-        return string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal)
+        return string.Equals(
+            EtagMatchProjection.Of(ifMatch.Value),
+            EtagMatchProjection.Of(currentEtag),
+            StringComparison.Ordinal
+        )
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }

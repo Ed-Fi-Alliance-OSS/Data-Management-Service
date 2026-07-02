@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
@@ -76,7 +77,8 @@ public class Given_Default_Relational_Write_Executor
             _noProfilePersister,
             _writeExceptionClassifier,
             _writeConstraintResolver,
-            _readMaterializer
+            _readMaterializer,
+            new EtagComposer()
         );
     }
 
@@ -664,6 +666,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
+            new EtagComposer(),
             parameterConfigurator
         );
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -747,6 +750,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
+            new EtagComposer(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
@@ -803,6 +807,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
+            new EtagComposer(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
         );
@@ -1517,7 +1522,8 @@ public class Given_Default_Relational_Write_Executor
             _noProfilePersister,
             _writeExceptionClassifier,
             _writeConstraintResolver,
-            _readMaterializer
+            _readMaterializer,
+            new EtagComposer()
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -5736,6 +5742,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
+            new EtagComposer(),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 providerMessage
@@ -6045,7 +6052,8 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _readMaterializer.MaterializeCallCount.Should().Be(1);
+        // If-Match now composes the current etag from ContentVersion; it no longer materializes.
+        _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -6129,7 +6137,8 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _readMaterializer.MaterializeCallCount.Should().Be(1);
+        // If-Match now composes the current etag from ContentVersion; it no longer materializes.
+        _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
@@ -6225,14 +6234,15 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_checks_guarded_no_op_only_after_proposed_relationship_authorization_and_matching_if_match()
     {
-        var currentRepresentation = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfMatch(
-                ExpectedCommittedResponseEtag(currentRepresentation)
-            )
-        );
-        _readMaterializer.ResultToReturn = currentRepresentation;
+        const long currentContentVersion = 44L;
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, currentContentVersion);
+        request = request with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(
+                ComposedCurrentEtag(request, currentContentVersion)
+            ),
+        };
 
         var result = await _sut.ExecuteAsync(
             request with
@@ -6256,7 +6266,8 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _readMaterializer.MaterializeCallCount.Should().Be(1);
+        // If-Match now composes the current etag from ContentVersion; it no longer materializes.
+        _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(1);
@@ -7307,6 +7318,20 @@ public class Given_Default_Relational_Write_Executor
 
     private static string ExpectedCommittedResponseEtag(JsonNode committedResponse) =>
         RelationalApiMetadataFormatter.FormatEtag(committedResponse);
+
+    // The composed current etag the write If-Match path produces for a request at a given
+    // ContentVersion: schema epoch from the mapping set, JSON format, the write profile (or none),
+    // and links-on. format/linkFlag are projected out of the If-Match comparison.
+    private static string ComposedCurrentEtag(RelationalWriteExecutorRequest request, long contentVersion) =>
+        new EtagComposer().Compose(
+            contentVersion,
+            VariantKeyFactory.Create(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(request.ProfileWriteContext?.ProfileName),
+                linksEnabled: true
+            )
+        );
 
     private static JsonNode CreateCommittedExternalResponse(
         RelationalWritePersistResult persistedTarget,
