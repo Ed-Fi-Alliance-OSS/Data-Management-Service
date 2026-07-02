@@ -23,4 +23,8 @@
     <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
+    <ItemGroup>
+        <None Remove="ClaimsHierarchyMetadata.json" />
+        <EmbeddedResource Include="ClaimsHierarchyMetadata.json" />
+    </ItemGroup>
 </Project>

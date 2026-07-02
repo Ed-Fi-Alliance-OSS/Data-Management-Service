@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql;
@@ -26,6 +28,16 @@ public static class MssqlServiceExtensions
         services.AddTransient<IDataStoreDerivativeRepository, DataStoreDerivativeRepository>();
         services.AddTransient<IDataStoreContextRepository, DataStoreContextRepository>();
         services.AddTransient<IDataStoreRepository, DataStoreRepository>();
+        services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
+        services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
+        services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
+        services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
+        services.AddTransient<IClaimsTableValidator, ClaimsDataLoader.ClaimsTableValidator>();
+        services.AddTransient<
+            IResourceClaimMetadataRepository,
+            ClaimsDataLoader.ResourceClaimMetadataRepository
+        >();
+        services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         return services;
     }
 }

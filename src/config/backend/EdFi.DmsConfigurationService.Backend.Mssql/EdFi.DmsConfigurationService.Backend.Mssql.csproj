@@ -10,6 +10,8 @@
         <PackageReference Include="dbup-sqlserver" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+        <PackageReference Include="Polly" />
+        <PackageReference Include="Polly.Extensions" />
     </ItemGroup>
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />

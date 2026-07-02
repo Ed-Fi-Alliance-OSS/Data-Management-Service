@@ -724,6 +724,8 @@
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Polly": "[8.5.2, )",
+          "Polly.Extensions": "[8.4.2, )",
           "dbup-core": "[5.0.87, )",
           "dbup-sqlserver": "[5.0.40, )"
         }
