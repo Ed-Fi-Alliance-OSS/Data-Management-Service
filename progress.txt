@@ -39,3 +39,9 @@ DMS-1244 - completed CMS PostgreSQL seed and tenant-alter quoted identifier task
 - Files changed: 0008_Insert_AuthorizationStrategy.sql, 0009_Insert_ResourceClaim.sql, 0025_Add_TenantId_To_Tables.sql, tasks.json, progress.txt.
 - Verification: task guard for lowercase table/column checks and old pk/fk/uq/idx names clean; psql throwaway db applied all deploy scripts twice and found five FK_*_Tenant constraints/five IX_*_TenantId indexes; setup-local-cms teardown/setup/setup commands completed after clearing dms-local container-name conflict; git diff --check clean.
 - Notes: config service container restarts after setup because ClaimsTableValidator still queries dmscs.claimset unquoted; that is repository SQL task, not seed/tenant script work.
+
+DMS-1244 - completed CMS PostgreSQL OpenIddict install-script quoted identifier task.
+- Key decisions: preserve existing OpenIddict FK behavior; quote all OpenIddict tables/columns/comments; move PK/UX/FK definitions to guarded pg_constraint blocks; keep token lookup indexes non-unique IX_*.
+- Files changed: OpenIddict deploy scripts 0012-0019, tasks.json, progress.txt.
+- Verification: old OpenIddict lowercase/old-name guard clean; psql throwaway db on localhost:5435 applied all deploy scripts twice and found 8 OpenIddict tables plus expected PK/UX/FK and IX_OpenIddictToken_* objects; exact task dotnet test filter ran but matched no tests; git diff --check clean.
+- Notes: OpenIddict repository SQL still uses unquoted dmscs.OpenIddict* names and remains the next OpenIddict-specific repository task.
