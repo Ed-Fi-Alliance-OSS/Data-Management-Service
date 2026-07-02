@@ -20,11 +20,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             Guid tokenId,
             Guid applicationId,
             string subject,
-            string payload,
             DateTimeOffset expiration
         )
         {
-            await dataRepository.StoreTokenAsync(tokenId, applicationId, subject, payload, expiration);
+            await dataRepository.StoreTokenAsync(tokenId, applicationId, subject, expiration);
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)

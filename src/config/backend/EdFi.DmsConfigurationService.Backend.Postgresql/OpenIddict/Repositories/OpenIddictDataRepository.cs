@@ -358,7 +358,6 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             Guid tokenId,
             Guid applicationId,
             string subject,
-            string payload,
             DateTimeOffset expiration
         )
         {

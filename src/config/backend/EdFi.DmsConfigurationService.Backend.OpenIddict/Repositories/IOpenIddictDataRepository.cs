@@ -117,13 +117,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         // Token operations
         Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 
-        Task StoreTokenAsync(
-            Guid tokenId,
-            Guid applicationId,
-            string subject,
-            string payload,
-            DateTimeOffset expiration
-        );
+        Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, DateTimeOffset expiration);
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);
 
