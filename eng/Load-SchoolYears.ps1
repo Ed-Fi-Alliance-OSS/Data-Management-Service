@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
@@ -54,6 +54,7 @@
     - The DMS service must be running and accessible for data loading
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Standalone loader script intentionally writes operator progress and status output to the console.')]
 param(
     [int]$StartYear = 1991,
     [int]$EndYear = 2037,

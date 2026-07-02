@@ -5,6 +5,7 @@
 
 #Requires -Version 7
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Smoke-test entry script intentionally writes operator progress to the console.')]
 param(
   [string]
   $Key = "sampleKey",

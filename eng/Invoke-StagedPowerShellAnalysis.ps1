@@ -8,9 +8,10 @@
 Runs PSScriptAnalyzer against staged PowerShell files.
 
 .DESCRIPTION
-Filters staged paths down to existing PowerShell script, module, and data files, then runs
-PSScriptAnalyzer. The script exits with a non-zero status when analyzer findings are found
-so it can be used from a Git pre-commit hook.
+Filters staged paths down to existing PowerShell script, module, and data files outside
+generated bin/ and obj/ output directories, then runs PSScriptAnalyzer. The script exits
+with a non-zero status when analyzer findings are found so it can be used from a Git
+pre-commit hook.
 #>
 
 [CmdletBinding()]
@@ -51,6 +52,21 @@ function ConvertTo-RelativeDisplayPath {
     return $relativePath.Replace([System.IO.Path]::DirectorySeparatorChar, '/')
 }
 
+function Test-IsGeneratedBuildOutputPath {
+    [OutputType([bool])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Value
+    )
+
+    $resolvedPath = Resolve-Path -LiteralPath $Value
+    $relativePath = [System.IO.Path]::GetRelativePath($repositoryRoot, $resolvedPath.Path)
+    $pathSegments = $relativePath -split '[\\/]'
+
+    return $pathSegments -contains 'bin' -or $pathSegments -contains 'obj'
+}
+
 if ($null -eq (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
     throw "PSScriptAnalyzer is not installed. Run ./setup-dev-environment.ps1 to restore required PowerShell resources."
 }
@@ -70,7 +86,12 @@ $analysisPaths = @(
                     continue
                 }
 
-                (Resolve-Path -LiteralPath $candidatePath).Path
+                $resolvedCandidatePath = (Resolve-Path -LiteralPath $candidatePath).Path
+                if (Test-IsGeneratedBuildOutputPath -Value $resolvedCandidatePath) {
+                    continue
+                }
+
+                $resolvedCandidatePath
             }
         }
     ) | Sort-Object -Unique

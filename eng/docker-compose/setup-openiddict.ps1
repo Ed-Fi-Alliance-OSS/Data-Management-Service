@@ -3,6 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Bootstrap script intentionally writes operator progress and SQL diagnostics to the console.')]
 [CmdletBinding()]
 param (
     [string] $DbType = "Postgresql", # or "MSSQL"
@@ -32,12 +33,27 @@ param (
 Import-Module ./env-utility.psm1
 Import-Module ./OpenIddict-Crypto.psm1
 
+$script:DbType = $DbType
+$script:ConnectionString = $ConnectionString
+$script:PostgresContainerName = $PostgresContainerName
+$script:DbHost = $DbHost
+$script:DbPort = $DbPort
+$script:DbName = $DbName
+$script:DbUser = $DbUser
+$script:ClientSecretMinimumLength = $ClientSecretMinimumLength
+$script:ClientSecretMaximumLength = $ClientSecretMaximumLength
+$script:EncryptionKey = $EncryptionKey
+$script:HashIterations = $HashIterations
+
+Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
+
 $envValues = $null
 if ($EnvironmentFile) {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
 }
 
 function New-OpenIddictRole {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
     $sqlInsert = @"
@@ -46,7 +62,7 @@ VALUES ('$roleId', '$RoleName')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING
 RETURNING "Id";
 "@
-    $result = Invoke-DbQuery $sqlInsert
+    Invoke-DbQuery $sqlInsert | Out-Null
 
     $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
@@ -56,6 +72,7 @@ SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
 }
 
 function New-OpenIddictScope {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
     $sqlInsert = @"
@@ -64,7 +81,7 @@ VALUES ('$scopeId', '$ScopeName', '$Description')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictScope_Name" DO NOTHING
 RETURNING "Id";
 "@
-    $result = Invoke-DbQuery $sqlInsert
+    Invoke-DbQuery $sqlInsert | Out-Null
     $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
 "@
@@ -73,9 +90,10 @@ SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
 }
 
 function New-OpenIddictApplication {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ClientId, [string]$ClientName, [string]$ClientSecret)
     $appId = [guid]::NewGuid().ToString()
-    $iterations = [int32](Resolve-EnvValue $HashIterations)
+    $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret -Iterations $iterations
     $sqlInsert = @"
@@ -84,7 +102,7 @@ VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictApplication_ClientId" DO NOTHING
 RETURNING "Id";
 "@
-    $result = Invoke-DbQuery $sqlInsert
+    Invoke-DbQuery $sqlInsert | Out-Null
 
     $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
@@ -96,18 +114,18 @@ SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
 function Test-ClientSecretLength {
     param([string]$ClientSecret)
 
-    if ($ClientSecret.Length -lt $ClientSecretMinimumLength -or $ClientSecret.Length -gt $ClientSecretMaximumLength) {
-        throw "NewClientSecret must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+    if ($ClientSecret.Length -lt $script:ClientSecretMinimumLength -or $ClientSecret.Length -gt $script:ClientSecretMaximumLength) {
+        throw "NewClientSecret must be between $($script:ClientSecretMinimumLength) and $($script:ClientSecretMaximumLength) characters long."
     }
 }
 
 function Test-ClientSecretComplexity {
     param([string]$ClientSecret)
 
-    $complexityPattern = '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=\+\[\]{}:;,.?]).{' + $ClientSecretMinimumLength + ',' + $ClientSecretMaximumLength + '}$'
+    $complexityPattern = '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=\+\[\]{}:;,.?]).{' + $script:ClientSecretMinimumLength + ',' + $script:ClientSecretMaximumLength + '}$'
 
     if ($ClientSecret -notmatch $complexityPattern) {
-        throw "NewClientSecret must contain at least one lowercase letter, one uppercase letter, one number, and one special character from !@#$%^&*()-_=+[]{}:;,.? and must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+        throw "NewClientSecret must contain at least one lowercase letter, one uppercase letter, one number, and one special character from !@#$%^&*()-_=+[]{}:;,.? and must be between $($script:ClientSecretMinimumLength) and $($script:ClientSecretMaximumLength) characters long."
     }
 }
 
@@ -156,6 +174,8 @@ WHERE "Id" = '$AppId';
 }
 
 function Update-OpenIddictApplicationPermissions {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function updates the OpenIddict permissions collection column.')]
     param([string]$AppId, [string]$Scope)
     $permissionsString = "{$Scope}" -replace "'", "''"
     $sql = @"
@@ -242,8 +262,8 @@ function Invoke-DbQuery {
         Write-Host $Sql -ForegroundColor Gray
     }
 
-    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
-    if ($DbType -eq "Postgresql") {
+    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
+    if ($script:DbType -eq "Postgresql") {
         # Parse semicolon-separated connection string
         $params = @{}
         foreach ($pair in $effectiveConnectionString -split ';') {
@@ -257,9 +277,9 @@ function Invoke-DbQuery {
         $db = $params['Database']
         $user = $params['Username']
 
-        if (-not [string]::IsNullOrEmpty($PostgresContainerName)) {
-            Write-Verbose "Executing psql in container: $PostgresContainerName"
-            docker exec $PostgresContainerName psql -U $user -d $db -c $Sql
+        if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
+            Write-Verbose "Executing psql in container: $($script:PostgresContainerName)"
+            docker exec $script:PostgresContainerName psql -U $user -d $db -c $Sql
         }
         else {
             Write-Verbose "Executing psql against host: $dbHost"
@@ -275,17 +295,20 @@ function Invoke-DbQuery {
             throw "PostgreSQL command failed with exit code $LASTEXITCODE."
         }
     }
-    elseif ($DbType -eq "MSSQL") {
+    elseif ($script:DbType -eq "MSSQL") {
         # Use sqlcmd or Invoke-Sqlcmd for MSSQL
         Write-Error "MSSQL not implemented yet."
     }
     else {
-        Write-Error "Unsupported database type: $DbType"
+        Write-Error "Unsupported database type: $($script:DbType)"
     }
 }
 
 # Main logic
 function Invoke-InitDbScripts {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
+    param()
+
     Write-Host "InitDb specified: running database initialization scripts..."
     # Run embedded SQL script contents
     Write-Host "Create schema if not exists: dmscs"
@@ -327,7 +350,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 '@
     # Generate and output OpenIddictKey insert SQL
     Write-Host "Generating OpenIddictKey insert statement..."
-    $encryptionKey = Resolve-EnvValue $EncryptionKey
+    $encryptionKey = Resolve-EnvValue $script:EncryptionKey
     $keyInsertSql = New-OpenIddictKeyInsertSql -EncryptionKey $encryptionKey
     Write-Host "Insert public and private keys into ""dmscs"".""OpenIddictKey"""
     Invoke-DbQuery $keyInsertSql

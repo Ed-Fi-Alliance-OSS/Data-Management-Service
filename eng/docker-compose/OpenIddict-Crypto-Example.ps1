@@ -14,6 +14,9 @@
     - Generating SQL statements for database operations
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Example script intentionally writes formatted demonstration output to the console.')]
+param()
+
 # Import the module
 Import-Module ./OpenIddict-Crypto.psm1
 

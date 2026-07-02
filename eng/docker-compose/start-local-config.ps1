@@ -56,7 +56,7 @@ else {
     $upArgs = @(
         "--detach"
     )
-    if ($r) { 
+    if ($r) {
         Write-Output "Building images with no cache (this may take a few minutes)..."
         docker compose $files --env-file $EnvironmentFile -p cs-local build --no-cache
         if ($LASTEXITCODE -ne 0) {

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -28,6 +28,7 @@ Import-Module ../SchoolYear-Loader.psm1 -Force -Global
     Hashtable containing paths to the bulk loader executable, XSD directory, and working directory.
 #>
 function Initialize-BulkLoad {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console; the function returns path metadata, so Write-Output would corrupt the pipeline result.')]
     param(
         [string]
         $BulkLoadVersion = ''
@@ -193,6 +194,7 @@ function Get-KeySecret() {
         Invoke-BulkLoad -BaseUrl "http://api.local" -Key "abc" -Secret "123" -SampleDataDirectory "C:\Data" -Paths $paths -ForceReloadMetadata -SkipXmlValidation
 #>
 function Invoke-BulkLoad {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -383,6 +385,7 @@ function Get-BulkLoadFailureClassification {
     Filename to use for the backup.
 #>
 function Invoke-DatabaseDump {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
         [string]$ContainerName = "dms-postgresql",
         [string]$DatabaseName = "edfi_datamanagementservice",
@@ -427,6 +430,8 @@ function Invoke-DatabaseDump {
     The directory containing the backup file and where the project will be created.
 #>
 function New-DatabaseTemplateCsproj {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Template build helper is invoked non-interactively and writes into a controlled temporary package workspace.')]
     param (
         [hashtable]$Config,
         [string]$BackupDirectory
@@ -472,6 +477,7 @@ function New-DatabaseTemplateCsproj {
     Directory where the .csproj and output package exist.
 #>
 function Build-NuGetPackage {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
         [string]$PackageVersion,
         [hashtable]$Config,
@@ -569,6 +575,7 @@ function Resolve-DataStoreIdForTemplate {
     database has no user schemas, which indicates it was never provisioned.
 #>
 function Get-UserSchemaNames {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function intentionally returns a collection of discovered database schema names.')]
     param (
         [string]$ContainerName = "dms-postgresql",
 

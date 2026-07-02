@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -13,6 +13,7 @@
 # closes the gate owns this module's removal.
 
 function LoadSeedData {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Database template bootstrap helper intentionally writes operator progress and container diagnostics to the console.')]
     param (
         [string]$EnvironmentFile
     )
@@ -53,7 +54,7 @@ function LoadSeedData {
 
     do {
         Write-Host "Attempt $($attempt + 1)/$maxAttempts`: Checking PostgreSQL connection..."
-        
+
         # Check if container is running first
         $containerStatus = docker ps --filter "name=dms-postgresql" --format "{{.Status}}"
         if ([string]::IsNullOrWhiteSpace($containerStatus)) {
@@ -65,21 +66,21 @@ function LoadSeedData {
 
         # Test database connection
         docker exec dms-postgresql psql -U $User -d $Database -c "SELECT 1;" 2>$null
-        
+
         if ($LASTEXITCODE -eq 0) {
             Write-Host -ForegroundColor Green "✅ PostgreSQL is ready!"
             $isReady = $true
             break
         } else {
             Write-Host -ForegroundColor Yellow "PostgreSQL not ready yet (exit code: $LASTEXITCODE)"
-            
+
             # Show container logs for debugging on first attempt and every 10th attempt
             if ($attempt -eq 0 -or $attempt % 10 -eq 0) {
                 Write-Host -ForegroundColor Cyan "Recent PostgreSQL logs:"
                 docker logs --tail 5 dms-postgresql 2>$null
             }
         }
-        
+
         if ($attempt -lt ($maxAttempts - 1)) {
             Write-Host "Waiting 10 seconds before next attempt..."
             Start-Sleep -Seconds 10
@@ -107,13 +108,13 @@ function LoadSeedData {
     } else {
         Write-Error "PostgreSQL server failed to become ready after $maxAttempts attempts (5 minutes total)"
         Write-Host -ForegroundColor Red "Expected container: dms-postgresql, Database: $Database, User: $User"
-        
+
         Write-Host -ForegroundColor Cyan "Current PostgreSQL containers:"
         docker ps -a --filter "name=postgresql" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-        
+
         Write-Host -ForegroundColor Cyan "Recent container logs:"
         docker logs --tail 15 dms-postgresql 2>$null
-        
+
         throw "PostgreSQL connection failed - check container status and logs above"
     }
 }

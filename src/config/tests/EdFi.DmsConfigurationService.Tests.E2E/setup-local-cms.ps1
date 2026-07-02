@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -10,11 +10,12 @@
     This script is a convenience wrapper that runs start-local-config.ps1 with the standard
     E2E testing configuration. It uses the isolated cs-local Docker stack (not dms-local)
     to match CI/CD behavior and avoid database contamination.
-    
+
     The script runs:
     ./start-local-config.ps1 -EnvironmentFile ./.env.config.e2e -r
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param()
 
@@ -53,7 +54,7 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
 try {
     Set-Location $dockerComposeDir
-    
+
     Write-Host "Starting CMS environment with E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Docker Stack: cs-local (isolated from dms-local)" -ForegroundColor Gray

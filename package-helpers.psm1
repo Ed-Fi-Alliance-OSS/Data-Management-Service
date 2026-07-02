@@ -121,20 +121,20 @@ function InstallCredentialHandler {
     $downloadPath = Join-Path ([IO.Path]::GetTempPath()) 'cred-provider.zip'
 
     $credProviderUrl = 'https://github.com/microsoft/artifacts-credprovider/releases/download/v1.4.1/Microsoft.Net6.NuGet.CredentialProvider.zip'
-    Write-Host "Downloading artifacts-credprovider from $credProviderUrl ..."
+    Write-Information "Downloading artifacts-credprovider from $credProviderUrl ..." -InformationAction Continue
     $webClient = New-Object System.Net.WebClient
     $webClient.DownloadFile($credProviderUrl, $downloadPath)
 
-    Write-Host "Download complete."
+    Write-Information "Download complete." -InformationAction Continue
 
     if (-not (Test-Path $downloadPath)) {
         throw "'$downloadPath' not found."
     }
 
     # The provider should be installed in the path: ~/.nuget/plugins/netcore/CredentialProvider.Microsoft/<binaries>
-    Write-Host "Extracting $downloadPath ..."
+    Write-Information "Extracting $downloadPath ..." -InformationAction Continue
     Expand-Archive -Force -Path $downloadPath -DestinationPath '~/.nuget/'
-    Write-Host "The artifacts-credprovider was successfully installed" -ForegroundColor Green
+    Write-Information "The artifacts-credprovider was successfully installed" -InformationAction Continue
 }
 
 <#
