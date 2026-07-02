@@ -87,10 +87,7 @@ public static class RelationalGetIntegrationTestHelper
         success.LastModifiedTraceId.Should().BeNull();
         success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(expectedDocumentUuid.Value.ToString());
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(expectedDocument["_etag"]!.GetValue<string>());
+        AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
         success.EdfiDoc["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()
@@ -108,6 +105,20 @@ public static class RelationalGetIntegrationTestHelper
             .Should()
             .Equal(expectedEducationPlanDescriptors);
         CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
+    }
+
+    /// <summary>
+    /// The composed strong-validator etag wire shape: "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}".
+    /// ContentVersion is digits; schemaEpoch is up to 8 lowercase hex; format is a single lowercase letter (j today);
+    /// profileCode is "_" (no profile) or an 8-hex SHA-256 prefix; linkFlag is l/n. The exact ContentVersion is not
+    /// asserted here because it is not derivable from the request body — callers assert monotonicity/parity separately.
+    /// </summary>
+    private const string ComposedEtagPattern = @"^\d+-[0-9a-f]{1,8}\.[a-z]\.(_|[0-9a-f]{8})\.[ln]$";
+
+    public static void AssertComposedEtag(string? etag)
+    {
+        etag.Should().NotBeNullOrEmpty();
+        etag.Should().MatchRegex(ComposedEtagPattern);
     }
 
     public static void AssertWriteResultEtagParity(UpsertResult writeResult, GetResult getResult) =>
@@ -175,7 +186,14 @@ public static class RelationalGetIntegrationTestHelper
     {
         JsonObject normalized = [];
 
-        foreach (var property in jsonObject.OrderBy(static property => property.Key, StringComparer.Ordinal))
+        // Body comparisons are etag-agnostic: the composed _etag derives from ContentVersion (not the
+        // body), so it cannot be reconstructed from an expected request body. Drop it here so callers
+        // compare the resource state and assert the _etag shape separately via AssertComposedEtag.
+        foreach (
+            var property in jsonObject
+                .Where(static property => !string.Equals(property.Key, "_etag", StringComparison.Ordinal))
+                .OrderBy(static property => property.Key, StringComparer.Ordinal)
+        )
         {
             normalized[property.Key] = NormalizeJsonNode(property.Value);
         }
