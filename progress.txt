@@ -57,3 +57,9 @@ DMS-1244 - completed CMS PostgreSQL OpenIddict repository quoted identifier task
 - Files changed: OpenIddictDataRepository.cs, setup-openiddict.ps1, OpenIddict-Crypto.psm1, CMS E2E SetupHooks.cs, tasks.json, progress.txt.
 - Verification: csharpier changed C#; OpenIddict/setup unquoted and old-name guards clean; PostgreSQL integration task filter matched no tests, effective GetApplicationByClientId passed 1/1; full PostgreSQL integration passed 235/235; teardown/setup-local-cms completed; env -u NODE_OPTIONS CMS E2E Token|Connect passed 12/12.
 - Notes: direct E2E command fails before API calls when NODE_OPTIONS contains --experimental-strip-types; clear NODE_OPTIONS for this suite.
+
+DMS-1244 - completed CMS PostgreSQL database-shape integration tests task.
+- Key decisions: use isolated throwaway database per fixture; deploy with DbUp, replay embedded deploy scripts manually, then deploy again to cover fresh-install shape plus script idempotency without stale shared DB state.
+- Files changed: DatabaseShapeTests.cs, tasks.json, progress.txt.
+- Verification: csharpier new test; focused database-shape filter passed 6/6; full CMS PostgreSQL integration passed 241/241; CMS teardown/setup completed; env -u NODE_OPTIONS full CMS E2E passed 192/192.
+- Notes: PostgreSQL exposes NOT NULL catalog rows as pg_constraint contype n on this runtime, so shape assertions filter to PK/FK/UX/CK constraint families required by story.
