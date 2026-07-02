@@ -319,6 +319,10 @@ function E2ETests {
             if ($envValues["DMS_CONFIG_DATASTORE"]) {
                 $env:DMS_CONFIG_DATASTORE = $envValues["DMS_CONFIG_DATASTORE"]
             }
+            # The E2E harness skips @MultitenantOnly scenarios unless this is true.
+            # Assign unconditionally so an env file without the key clears any stale
+            # value instead of leaving the scenarios enabled against a single-tenant stack.
+            $env:DMS_CONFIG_MULTI_TENANCY = $envValues["DMS_CONFIG_MULTI_TENANCY"]
         }
         finally {
             Pop-Location

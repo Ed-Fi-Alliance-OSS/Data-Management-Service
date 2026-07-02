@@ -47,6 +47,22 @@ public static class SetupHooks
         }
     }
 
+    // Tenant endpoints are only mapped when multi-tenancy is enabled, so scenarios
+    // tagged @MultitenantOnly would get 404s against a single-tenant stack. Skip them
+    // unless the environment explicitly enables multi-tenancy.
+    [BeforeScenario("MultitenantOnly")]
+    public static void SkipUnlessMultiTenancyEnabled()
+    {
+        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        if (!string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Ignore(
+                "Requires a multi-tenant CMS (tenant endpoints are only mapped when multi-tenancy is enabled); "
+                    + $"DMS_CONFIG_MULTI_TENANCY is '{multiTenancy ?? "unset"}'."
+            );
+        }
+    }
+
     [BeforeFeature]
     public static async Task BeforeFeature(PlaywrightContext context)
     {
