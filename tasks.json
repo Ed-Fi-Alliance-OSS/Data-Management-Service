@@ -301,7 +301,7 @@
       "rg -n '\"column_name\": \"(Old|New)_' src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.pgsql.manifest.json src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.mssql.manifest.json",
       "dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_Provisioned_Pgsql_Database_When_Introspecting_Schema|FullyQualifiedName~Given_Provisioned_Mssql_Database_When_Introspecting_Schema\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "tests",

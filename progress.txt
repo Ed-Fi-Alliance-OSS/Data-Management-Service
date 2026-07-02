@@ -99,3 +99,9 @@ DMS-1244 - completed standalone OpenIddict key insert generator task.
 - Files changed: Generate-OpenIddictKey-Insert.ps1, tasks.json, progress.txt.
 - Verification: old unquoted generator guard returned no matches; script output matched quoted "dmscs"."OpenIddictKey" insert; helper delegation guard clean; git diff --check clean.
 - Notes: remaining follow-up tasks still open in tasks.json.
+
+DMS-1244 - completed schema-tools provisioned-schema golden manifest refresh task.
+- Key decisions: regenerate pgsql/mssql provisioned-schema expected manifests from current DDL emitter instead of hand-editing; use local dms-postgresql on 5435 and existing metaed-mssql on 1433 with temporary containerized sqlcmd shim only for test execution.
+- Files changed: provisioned-schema.pgsql.manifest.json, provisioned-schema.mssql.manifest.json, tasks.json, progress.txt.
+- Verification: UPDATE_GOLDENS=1 Pgsql provisioned-schema test passed 1/1; UPDATE_GOLDENS=1 Mssql provisioned-schema test passed 1/1; Old_/New_ column-name guard clean; non-updating Pgsql|Mssql provisioned-schema filter passed 2/2.
+- Notes: host sqlcmd absent, so used cached mcr.microsoft.com/mssql-tools image via temporary .tmp shim and removed it before commit; remaining follow-up tasks still open in tasks.json.
