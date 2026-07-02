@@ -151,11 +151,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 return PostgresqlIdentifier.OrderBy(col, query.IsDescending, tableAlias);
             }
 
-            return PostgresqlIdentifier.OrderBy(
-                "Id",
-                isDescending: tableAlias is not null && query.IsDescending,
-                tableAlias
-            );
+            return PostgresqlIdentifier.OrderBy("Id", isDescending: query.IsDescending, tableAlias);
         }
 
         private static string BuildFilterClause(VendorQuery query)
