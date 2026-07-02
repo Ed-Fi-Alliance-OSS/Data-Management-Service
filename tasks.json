@@ -103,7 +103,7 @@
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OpenIddict|FullyQualifiedName~Token\"",
       "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj --filter \"Category=Token|FullyQualifiedName~Connect\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "tests",
