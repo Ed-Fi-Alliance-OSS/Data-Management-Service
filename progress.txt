@@ -93,3 +93,9 @@ DMS-1244 - completed CMS application/API client tenant-scope repository task.
 - Files changed: ApplicationRepository.cs, ApiClientRepository.cs, ApplicationApiClientTenantIsolationTests.cs, tasks.json, progress.txt.
 - Verification: csharpier changed C#; repository tenant guard clean; CMS PostgreSQL integration Application|ApiClient|Tenant passed 41/41; CMS teardown/setup completed; env -u NODE_OPTIONS CMS E2E Application|ApiClient|Tenant passed 55/55.
 - Notes: left other follow-up tasks open; existing three-argument repository constructors kept as NotMultitenant compatibility path for direct tests/manual construction.
+
+DMS-1244 - completed standalone OpenIddict key insert generator task.
+- Key decisions: delegate Generate-OpenIddictKey-Insert.ps1 to shared OpenIddict-Crypto.psm1 helper so quoted "dmscs"."OpenIddictKey" SQL has one source; make EncryptionKey required because helper requires it for pgp_sym_encrypt.
+- Files changed: Generate-OpenIddictKey-Insert.ps1, tasks.json, progress.txt.
+- Verification: old unquoted generator guard returned no matches; script output matched quoted "dmscs"."OpenIddictKey" insert; helper delegation guard clean; git diff --check clean.
+- Notes: remaining follow-up tasks still open in tasks.json.

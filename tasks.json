@@ -284,7 +284,7 @@
       "pwsh eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 -KeyId test-key -EncryptionKey test | rg 'INSERT INTO \"dmscs\"\\.\"OpenIddictKey\" \\(\"KeyId\", \"PublicKey\", \"PrivateKey\", \"IsActive\"\\)'",
       "rg -n 'New-OpenIddictKeyInsertSql|OpenIddictKey' eng/docker-compose/Generate-OpenIddictKey-Insert.ps1 eng/docker-compose/OpenIddict-Crypto.psm1"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "fixtures",
