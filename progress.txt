@@ -135,3 +135,9 @@ DMS-1244 - completed Application/API client non-goal cleanup task.
 - Files changed: ApplicationRepository.cs, ApiClientRepository.cs, removed added CMS tenant-visibility integration test, tasks.json, progress.txt.
 - Verification: csharpier two repositories; helper/test guard clean; target repository Vendor-predicate guard clean; git diff --check clean; CMS PostgreSQL integration Application|ApiClient passed 36/36.
 - Notes: broader tenant-predicate search still finds pre-existing Vendor/ClaimSet repository filtering outside this task; remaining open task is docs/RELATIONAL-BACKEND.md.
+
+DMS-1244 - completed relational backend docs naming cleanup task.
+- Key decisions: document current tracked-change storage as OldX/NewX with source-name underscores preserved; document newest-change-version SQL as dialect-specific quoted PostgreSQL/bracketed SQL Server calls.
+- Files changed: docs/RELATIONAL-BACKEND.md, tasks.json, progress.txt.
+- Verification: task docs guard clean; reviewed doc diff; git diff --check clean.
+- Notes: all tasks in tasks.json now complete.

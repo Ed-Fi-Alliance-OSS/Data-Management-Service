@@ -412,6 +412,6 @@
       "Review any remaining matches in docs/RELATIONAL-BACKEND.md and confirm they are historical or explicitly explain the DMS-1244 rename.",
       "git diff -- docs/RELATIONAL-BACKEND.md"
     ],
-    "completed": false
+    "completed": true
   }
 ]

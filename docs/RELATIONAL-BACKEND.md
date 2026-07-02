@@ -206,8 +206,10 @@ tracked-change row, these are the sources of truth:
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
 Inspect the relevant per-resource table under that schema (for example
-`tracked_changes_edfi.<resourceTable>`) directly to see the `Old_*`/`New_*` columns, the document
-`Id`, and the `ChangeVersion` for a given write.
+`tracked_changes_edfi.<resourceTable>`) directly to see the `OldX`/`NewX` value columns, the
+document `Id`, and the `ChangeVersion` for a given write. Only the separator after the `Old` or
+`New` prefix is removed; source-name underscores are preserved, for example
+`OldStudent_DocumentId`.
 
 #### Read metadata (`_etag`, `_lastModifiedDate`)
 
@@ -233,7 +235,9 @@ endpoints, which are still a placeholder shim (see the note below).
 > are real and populated, but the runtime read side is a placeholder. `IChangeQueryRepository`'s
 > relational implementation
 > ([`RelationalChangeQueryRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalChangeQueryRepository.cs))
-> only returns the newest change version via `SELECT dms.GetMaxChangeVersion()`, and the
+> only returns the newest change version through dialect-specific SQL. PostgreSQL calls
+> `SELECT "dms"."GetMaxChangeVersion"() AS "NewestChangeVersion"` and SQL Server calls
+> `SELECT [dms].[GetMaxChangeVersion]() AS [NewestChangeVersion]`. The
 > `/deletes` and `/keyChanges` endpoints are a temporary empty-response shim
 > ([`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs))
 > that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
