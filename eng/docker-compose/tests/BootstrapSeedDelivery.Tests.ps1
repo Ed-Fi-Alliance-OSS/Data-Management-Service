@@ -19,6 +19,31 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             return $path
         }
 
+        function script:Copy-WrapperCompositionPrerequisites {
+            param([string]$DockerComposeRoot)
+
+            # Invoke-BootstrapWrapper always composes the default Data Standard bootstrap overlay
+            # onto the effective env file, so every isolated fixture that executes the wrapper must
+            # carry the composition utility module, the tracked bootstrap overlay files, and a base
+            # env file for the composition to read (mirroring the tracked .env.example).
+            foreach ($fileName in @("env-utility.psm1", ".env.bootstrap.ds52", ".env.bootstrap.ds61")) {
+                Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $DockerComposeRoot -Force
+            }
+
+            $exampleEnvFile = Join-Path $DockerComposeRoot ".env.example"
+            if (-not (Test-Path -LiteralPath $exampleEnvFile)) {
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $exampleEnvFile -Encoding utf8
+            }
+        }
+
         function script:New-IsolatedSeedRepo {
             $repoRoot = New-TestDirectory
             $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
@@ -2435,6 +2460,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes when
             # the second invocation below adds -LoadSeedData.
@@ -2474,6 +2500,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
@@ -2509,6 +2536,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
@@ -2544,6 +2572,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $prepareProbe = Join-Path $tmpRoot "prepare-invoked.txt"
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
@@ -2590,6 +2619,7 @@ EdFi.BulkLoadClient.Console fake
             foreach ($moduleName in @("bootstrap-wrapper.psm1", "env-utility.psm1", "bootstrap-manifest.psm1")) {
                 Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $moduleName) -Destination $tmpDockerCompose
             }
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
@@ -2626,6 +2656,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
@@ -2653,6 +2684,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
@@ -2688,6 +2720,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
@@ -2719,6 +2752,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
@@ -2770,6 +2804,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
@@ -2813,6 +2848,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $prepareProbe = Join-Path $tmpRoot "prepare-invoked.txt"
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
@@ -2857,6 +2893,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
@@ -2933,6 +2970,7 @@ EdFi.BulkLoadClient.Console fake
 
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1") -Destination $tmpDockerCompose
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+            Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
