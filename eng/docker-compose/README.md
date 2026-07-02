@@ -202,12 +202,17 @@ elsewhere).
 Expert mode stages ApiSchema files directly from a local directory. Use this path for custom
 or in-repo schema directories that are not published as NuGet packages.
 
+`../../src/dms/EdFi.DataStandard52.ApiSchema` below is the conventional local materialization
+directory (reserved in `.gitignore`); it is absent on a fresh checkout, so populate it with the DS 5.2
+core plus any extension `ApiSchema*.json` files first — or point `-ApiSchemaPath` at any local directory
+that already contains them.
+
 ```pwsh
 # Stage schema and claims, then start DMS.
 # -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension. Core plus the
 # built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
 # stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
-./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath $schemaToolExe
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
 ./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
 ./bootstrap-local-dms.ps1
 ```
@@ -368,7 +373,7 @@ the health wait, then start DMS in the IDE between phases:
 
 ```pwsh
 cd eng/docker-compose
-./prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory> -SchemaToolPath ...
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
 ./prepare-dms-claims.ps1
 ./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
 ./configure-local-data-store.ps1 -AddSmokeTestCredentials

@@ -849,8 +849,8 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_h3_missing | Should -Not -BeNullOrEmpty
         }
 
-        It "queries /authorizationMetadata for the baseline and user-staged leaf checks" {
-            $script:authMetadataCalls_h3_missing | Should -Be 2
+        It "fetches /authorizationMetadata once for both EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_h3_missing | Should -Be 1
         }
 
         It "error message reports the missing user-staged resource claim" {
@@ -902,8 +902,8 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_h3_present | Should -BeNullOrEmpty
         }
 
-        It "queries /authorizationMetadata for both leaf checks" {
-            $script:authMetadataCalls_h3_present | Should -Be 2
+        It "fetches /authorizationMetadata once for both EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_h3_present | Should -Be 1
         }
     }
 
@@ -1086,8 +1086,8 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_j1 | Should -BeNullOrEmpty
         }
 
-        It "verifies all three leaf checks against /authorizationMetadata" {
-            $script:authMetadataCalls_j1 | Should -Be 3
+        It "fetches /authorizationMetadata once for the three EdFiSandbox checks (memoized per claim set)" {
+            $script:authMetadataCalls_j1 | Should -Be 1
         }
     }
 

@@ -146,26 +146,99 @@ exit $ExitCode
     function script:Add-KnownExtensionCatalogEntry {
         <#
         .SYNOPSIS
-        Injects an extra entry into the isolated repo's copy of KnownExtensionClaimsMetadata so tests can
-        exercise the catalog-validation branches in prepare-dms-claims.ps1 without touching the real (source)
-        catalog. Call after BeforeEach has staged $script:repo; the isolated repo is discarded in AfterEach.
+        Appends an extra KnownExtensionClaimsMetadata assignment to the isolated repo's copy of the catalog
+        module so tests can exercise the catalog-validation branches in prepare-dms-claims.ps1 without
+        touching the real (source) catalog. Call after BeforeEach has staged $script:repo; the isolated repo
+        is discarded in AfterEach.
         #>
         param(
             [Parameter(Mandatory)]
             [string]
-            $EntryDefinition
+            $Key,
+
+            # A hashtable literal for the entry body, e.g. '@{ FragmnetFileName = "x.json" }'.
+            [Parameter(Mandatory)]
+            [string]
+            $Body
         )
 
         $catalogPath = Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-catalog.psm1"
         $content = Get-Content -LiteralPath $catalogPath -Raw
-        $anchor = '$script:KnownExtensionClaimsMetadata = @{'
+        # Append the assignment after the built-in entries (which create the Ordinal-backed map) but
+        # before the first function, so the module-scope statement runs at import. Anchoring on the first
+        # function is stable across catalog edits and appends a self-contained statement rather than
+        # splicing into a literal.
+        $anchor = "function Get-StandardSchemaFeed"
         $index = $content.IndexOf($anchor)
         if ($index -lt 0) {
-            throw "Could not find KnownExtensionClaimsMetadata anchor in $catalogPath"
+            throw "Could not find catalog function anchor in $catalogPath"
         }
-        $insertAt = $index + $anchor.Length
-        $content = $content.Insert($insertAt, "`n    $EntryDefinition")
+        $statement = "`$script:KnownExtensionClaimsMetadata[`"$Key`"] = $Body`n`n"
+        $content = $content.Insert($index, $statement)
         Set-Content -LiteralPath $catalogPath -Value $content -Encoding utf8
+    }
+
+    function script:Resolve-EmbeddedClaimLeaf {
+        <#
+        .SYNOPSIS
+        Walks the embedded Claims.json claimsHierarchy for a resource-claim leaf and reports whether it
+        exists, whether it is a leaf (no child claims), and whether a named claim set's action reaches it
+        via claimSets on itself or any ancestor. Used to anchor the TPDM readiness-check literals to the
+        embedded claims - a stronger guard than a raw string match. The runtime claims-ready gate remains
+        authoritative for full composition; this is only the shift-left CI anchor.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            $Nodes,
+
+            [Parameter(Mandatory)]
+            [string]
+            $LeafName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $ClaimSetName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Action,
+
+            [bool]
+            $AncestorGrants = $false
+        )
+
+        foreach ($node in @($Nodes)) {
+            if ($null -eq $node) { continue }
+
+            $nodeGrants = $AncestorGrants
+            if ($node.PSObject.Properties['claimSets']) {
+                foreach ($claimSet in @($node.claimSets)) {
+                    if ($null -ne $claimSet -and [string]$claimSet.name -eq $ClaimSetName -and
+                        $claimSet.PSObject.Properties['actions']) {
+                        $actionNames = @($claimSet.actions | ForEach-Object { [string]$_.name })
+                        if ($actionNames -contains $Action) { $nodeGrants = $true }
+                    }
+                }
+            }
+
+            $children = if ($node.PSObject.Properties['claims']) { @($node.claims) } else { @() }
+
+            if ([string]$node.name -eq $LeafName) {
+                return [pscustomobject]@{
+                    Found        = $true
+                    IsLeaf       = ($children.Count -eq 0)
+                    GrantReaches = $nodeGrants
+                }
+            }
+
+            if ($children.Count -gt 0) {
+                $result = Resolve-EmbeddedClaimLeaf -Nodes $children -LeafName $LeafName `
+                    -ClaimSetName $ClaimSetName -Action $Action -AncestorGrants $nodeGrants
+                if ($result.Found) { return $result }
+            }
+        }
+
+        return [pscustomobject]@{ Found = $false; IsLeaf = $false; GrantReaches = $false }
     }
 
     function script:Invoke-PrepareSchema {
@@ -626,25 +699,35 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Acme*"
         }
 
-        It "throws when a known-extension catalog entry has no recognized keys" {
-            # A catalog entry whose only key is unrecognized (e.g. a misspelled 'FragmentFileName') must fail
-            # fast rather than be silently treated as fully mapped - which would stage nothing, contribute no
-            # checks, and suppress the unmapped-extension guard, yielding runtime 403s the gate can't detect.
-            Add-KnownExtensionCatalogEntry -EntryDefinition '"AcmeTypo" = @{ FragmnetFileName = "x.json" }'
+        It "throws when a known-extension catalog entry contributes no security metadata (misspelled key)" {
+            # A catalog entry whose only key is unrecognized (e.g. a misspelled 'FragmentFileName') contributes
+            # nothing and must fail fast rather than be silently treated as fully mapped - which would stage
+            # nothing, suppress the unmapped-extension guard, and yield runtime 403s the gate can't detect.
+            Add-KnownExtensionCatalogEntry -Key "AcmeTypo" -Body '@{ FragmnetFileName = "x.json" }'
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeTypo"))
 
             { Invoke-PrepareClaim } |
-                Should -Throw -ExpectedMessage "*AcmeTypo*no recognized keys*"
+                Should -Throw -ExpectedMessage "*AcmeTypo*contributes no security metadata*"
+        }
+
+        It "throws when a known-extension catalog entry contributes no security metadata (empty VerificationChecks)" {
+            # An entry with an empty VerificationChecks list and no fragment/prefix has a recognized key but
+            # still contributes nothing; the value-level guard must reject it, not just key presence.
+            Add-KnownExtensionCatalogEntry -Key "AcmeEmpty" -Body '@{ VerificationChecks = @() }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeEmpty"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*AcmeEmpty*contributes no security metadata*"
         }
 
         It "throws when a known-extension catalog VerificationChecks entry is malformed" {
             # A VerificationChecks entry missing a field would be silently dropped by
-            # Add-ExpectedVerificationCheck's whitespace guard; the catalog loop must reject it up front.
-            Add-KnownExtensionCatalogEntry -EntryDefinition '"AcmeBadCheck" = @{ VerificationChecks = @(@{ ClaimSetName = "EdFiSandbox"; ResourceClaim = ""; Action = "Read" }) }'
+            # Add-ExpectedVerificationCheck's whitespace guard; -ThrowOnInvalid makes the catalog path reject it.
+            Add-KnownExtensionCatalogEntry -Key "AcmeBadCheck" -Body '@{ VerificationChecks = @(@{ ClaimSetName = "EdFiSandbox"; ResourceClaim = ""; Action = "Read" }) }'
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeBadCheck"))
 
             { Invoke-PrepareClaim } |
-                Should -Throw -ExpectedMessage "*AcmeBadCheck*malformed VerificationChecks*"
+                Should -Throw -ExpectedMessage "*Malformed verification check*AcmeBadCheck*"
         }
 
         It "stages core + TPDM in Embedded claims mode from embedded claims without a caller fragment" {
@@ -736,18 +819,24 @@ exit $ExitCode
             Get-StandardKnownExtensionInfo -ProjectName "tpdm" | Should -BeNullOrEmpty
         }
 
-        It "anchors TPDM catalog verification checks to leaf claims present in the embedded DS 5.2 Claims.json" {
-            # The two TPDM check URIs are hand-authored literals; tie them to the embedded claims so a
-            # future rename surfaces here rather than as a confusing claims-ready gate failure at bootstrap.
+        It "anchors TPDM catalog checks to leaf claims that EdFiSandbox reaches in the embedded DS 5.2 Claims.json" {
+            # The TPDM check URIs are hand-authored literals. Assert each is still (a) present, (b) a LEAF
+            # resource claim, and (c) reachable by its claim set's action via claimSets on itself or an
+            # ancestor - so a future claims rename OR restructure surfaces here, not as a confusing gate
+            # failure at bootstrap. The runtime claims-ready gate stays authoritative for full composition.
             Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
             $tpdm = Get-StandardKnownExtensionInfo -ProjectName "TPDM"
             $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
-            $claimsText = Get-Content -LiteralPath $claimsPath -Raw
+            $hierarchy = @((Get-Content -LiteralPath $claimsPath -Raw | ConvertFrom-Json).claimsHierarchy)
 
             @($tpdm.VerificationChecks).Count | Should -BeGreaterThan 0
             foreach ($check in $tpdm.VerificationChecks) {
-                # Match the quoted claim name so e.g. tpdm/evaluation does not match tpdm/evaluationObjective.
-                $claimsText | Should -Match ([regex]::Escape('"' + $check.ResourceClaim + '"'))
+                $resolved = Resolve-EmbeddedClaimLeaf -Nodes $hierarchy -LeafName $check.ResourceClaim `
+                    -ClaimSetName $check.ClaimSetName -Action $check.Action
+
+                $resolved.Found | Should -BeTrue -Because "$($check.ResourceClaim) must exist in the embedded Claims.json"
+                $resolved.IsLeaf | Should -BeTrue -Because "$($check.ResourceClaim) must be a leaf resource claim (the gate asserts leaves directly)"
+                $resolved.GrantReaches | Should -BeTrue -Because "$($check.ClaimSetName)/$($check.Action) must reach $($check.ResourceClaim) via claimSets lineage"
             }
         }
 

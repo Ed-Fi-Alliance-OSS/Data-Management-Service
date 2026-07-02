@@ -200,13 +200,28 @@ function Add-ExpectedVerificationCheck {
         # observable in CMS /authorizationMetadata (which serializes leaf resource claims
         # only), so the claims-ready gate defers these instead of asserting them.
         [switch]
-        $IsParent
+        $IsParent,
+
+        # When set, an empty ClaimSetName/ResourceClaim/Action throws instead of being silently
+        # skipped. The catalog loop passes this so a malformed static KnownExtensionClaimsMetadata
+        # entry fails fast at prepare time; fragment-derived checks leave it off (default) because a
+        # fragment's own structural validation already owns those errors.
+        [switch]
+        $ThrowOnInvalid,
+
+        # Optional context surfaced in the -ThrowOnInvalid error message (e.g. the extension name).
+        [string]
+        $Source = ""
 
     )
 
     if ([string]::IsNullOrWhiteSpace($ClaimSetName) -or
         [string]::IsNullOrWhiteSpace($ResourceClaim) -or
         [string]::IsNullOrWhiteSpace($Action)) {
+        if ($ThrowOnInvalid) {
+            $sourceSuffix = if ([string]::IsNullOrWhiteSpace($Source)) { "" } else { " for $(Format-LogSafeText $Source)" }
+            throw "Malformed verification check$sourceSuffix (ClaimSetName, ResourceClaim, and Action are all required)."
+        }
         return
     }
 
@@ -454,13 +469,20 @@ foreach ($extensionProject in $extensionProjects) {
         continue
     }
 
-    # A known-extension entry must carry at least one actionable key. An entry with none (e.g. a
-    # misspelled key) would otherwise be silently treated as fully mapped: it would stage nothing,
-    # contribute no checks, and suppress the unmapped-extension guard - yielding runtime 403s the
-    # claims-ready gate cannot detect.
-    $recognizedKeys = @("FragmentFileName", "NamespacePrefix", "VerificationChecks")
-    if (@($recognizedKeys | Where-Object { $knownExtension.ContainsKey($_) }).Count -eq 0) {
-        throw "Known extension '$(Format-LogSafeText $projectName)' has a claims metadata entry with no recognized keys (expected one or more of: $($recognizedKeys -join ', ')). Check KnownExtensionClaimsMetadata for a misspelled key."
+    # A known-extension entry must contribute at least one piece of security metadata. An entry that
+    # contributes nothing - no fragment, no namespace prefix, and no (or an empty) VerificationChecks
+    # list - would otherwise be silently treated as fully mapped: it would stage nothing, suppress the
+    # unmapped-extension guard, and yield runtime 403s the claims-ready gate cannot detect. Checking
+    # for non-empty *values* (not just key presence) also catches a misspelled key and an empty
+    # VerificationChecks = @() no-op.
+    $hasFragment = $knownExtension.ContainsKey("FragmentFileName") -and
+        -not [string]::IsNullOrWhiteSpace([string]$knownExtension["FragmentFileName"])
+    $hasNamespacePrefix = $knownExtension.ContainsKey("NamespacePrefix") -and
+        -not [string]::IsNullOrWhiteSpace([string]$knownExtension["NamespacePrefix"])
+    $hasVerificationChecks = $knownExtension.ContainsKey("VerificationChecks") -and
+        @($knownExtension["VerificationChecks"]).Count -gt 0
+    if (-not ($hasFragment -or $hasNamespacePrefix -or $hasVerificationChecks)) {
+        throw "Known extension '$(Format-LogSafeText $projectName)' has a claims metadata entry that contributes no security metadata (expected a non-empty FragmentFileName, NamespacePrefix, or VerificationChecks). Check KnownExtensionClaimsMetadata for a misspelled or empty entry."
     }
 
     if ($knownExtension.ContainsKey("FragmentFileName")) {
@@ -480,25 +502,18 @@ foreach ($extensionProject in $extensionProjects) {
     # stage no fragment; their catalog-declared VerificationChecks are added to the readiness checks
     # directly so the claims-ready gate still confirms CMS composed those extension claims from the
     # embedded base. Each targets a leaf resource claim, so it is asserted directly against
-    # /authorizationMetadata rather than deferred like parent-derived checks. Malformed entries throw
-    # here rather than being silently dropped by Add-ExpectedVerificationCheck's whitespace guard.
+    # /authorizationMetadata rather than deferred like parent-derived checks. -ThrowOnInvalid makes a
+    # malformed static entry fail fast here (the sink owns the required-fields predicate, single source).
     if ($knownExtension.ContainsKey("VerificationChecks")) {
         foreach ($verificationCheck in @($knownExtension["VerificationChecks"])) {
-            $checkClaimSet = [string]$verificationCheck["ClaimSetName"]
-            $checkResourceClaim = [string]$verificationCheck["ResourceClaim"]
-            $checkAction = [string]$verificationCheck["Action"]
-            if ([string]::IsNullOrWhiteSpace($checkClaimSet) -or
-                [string]::IsNullOrWhiteSpace($checkResourceClaim) -or
-                [string]::IsNullOrWhiteSpace($checkAction)) {
-                throw "Known extension '$(Format-LogSafeText $projectName)' has a malformed VerificationChecks entry (ClaimSetName, ResourceClaim, and Action are all required)."
-            }
-
             Add-ExpectedVerificationCheck `
                 -Seen $seenChecks `
                 -Checks $expectedVerificationChecks `
-                -ClaimSetName $checkClaimSet `
-                -ResourceClaim $checkResourceClaim `
-                -Action $checkAction
+                -ClaimSetName ([string]$verificationCheck["ClaimSetName"]) `
+                -ResourceClaim ([string]$verificationCheck["ResourceClaim"]) `
+                -Action ([string]$verificationCheck["Action"]) `
+                -ThrowOnInvalid `
+                -Source "known extension '$projectName'"
         }
     }
 }

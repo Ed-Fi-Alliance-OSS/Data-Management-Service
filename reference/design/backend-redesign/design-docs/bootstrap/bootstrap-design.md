@@ -1829,7 +1829,7 @@ pwsh eng/docker-compose/bootstrap-local-dms.ps1
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedTemplate Minimal
 
 # Extension-containing schema set: stage via expert -ApiSchemaPath first, then run the wrapper
-pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath <path-to-apischema-directory>
+pwsh eng/docker-compose/prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seeds/
 
 # Keycloak-backed seed loading
