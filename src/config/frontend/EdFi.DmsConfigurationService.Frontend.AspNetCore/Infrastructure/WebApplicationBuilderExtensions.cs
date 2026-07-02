@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
+using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
@@ -155,7 +156,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
             webAppBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
             webAppBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
-            webAppBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
+            webAppBuilder.Services.AddTransient<
+                IClaimSetDataProvider,
+                Backend.Postgresql.ClaimSetDataProvider
+            >();
             webAppBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
             webAppBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
             webAppBuilder.Services.AddTransient<IDataStoreContextRepository, DataStoreContextRepository>();
@@ -320,7 +324,23 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
             logger.Information("Registering Self-Contained services");
-            webApplicationBuilder.Services.AddPostgresOpenIddictStores(config, identitySettings.Authority);
+            if (
+                string.Equals(
+                    config.GetSection("AppSettings:Datastore").Value,
+                    "mssql",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                webApplicationBuilder.Services.AddMssqlOpenIddictStores(config, identitySettings.Authority);
+            }
+            else
+            {
+                webApplicationBuilder.Services.AddPostgresOpenIddictStores(
+                    config,
+                    identitySettings.Authority
+                );
+            }
         }
         else // Default to Keycloak
         {

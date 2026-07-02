@@ -134,6 +134,10 @@ function New-OpenIddictKeyPair {
 .PARAMETER KeySize
     Size of the RSA key in bits. Default is 2048.
 
+.PARAMETER DbType
+    Target database engine: "Postgresql" (default) or "MSSQL". Selects the encryption
+    function and literal typing used in the generated INSERT statement.
+
 .EXAMPLE
     $sql = New-OpenIddictKeyInsertSql -EncryptionKey "myEncryptionKey123"
     Write-Host $sql
@@ -153,13 +157,27 @@ function New-OpenIddictKeyInsertSql {
         [string]$EncryptionKey = "",
 
         [Parameter(Mandatory = $false)]
-        [int]$KeySize = 2048
+        [int]$KeySize = 2048,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DbType = "Postgresql"
     )
 
     try {
         $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
         $encodedKey = [Convert]::ToBase64String($bytes)
+
+        if ($DbType -eq "MSSQL") {
+            $sql = @"
+INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+SELECT '$encodedKey',
+       CAST('' AS XML).value('xs:base64Binary("$($keyPair.PublicKey)")', 'VARBINARY(MAX)'),
+       ENCRYPTBYPASSPHRASE(N'$EncryptionKey', '$($keyPair.PrivateKey)'),
+       1;
+"@
+            return $sql
+        }
 
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")

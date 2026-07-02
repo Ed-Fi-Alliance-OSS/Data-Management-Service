@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -1066,6 +1067,100 @@ public class ApplicationTests : DatabaseTest
                 a.Id == _applicationId
             );
             app.Enabled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_GetApplicationByClientId_WithDisabledApiClient : ApplicationTests
+    {
+        private string _clientId = string.Empty;
+
+        private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
+            MssqlTestConfiguration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext()
+        );
+
+        private readonly OpenIddictDataRepository _openIddictDataRepository = new(
+            MssqlTestConfiguration.DatabaseOptions
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "OpenIddict Disabled Test Company",
+                    ContactEmailAddress = "openiddict@test.com",
+                    ContactName = "OpenIddict Test",
+                    NamespacePrefixes = "OpenIddictPrefix",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            _clientId = Guid.NewGuid().ToString();
+
+            var appResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "OpenIddict Disabled App",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim Set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            appResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
+
+            // Create OpenIddictApplication record to make the application visible to OpenIddict queries
+            await _openIddictDataRepository.ExecuteInTransactionAsync(
+                async (connection, transaction) =>
+                {
+                    await _openIddictDataRepository.InsertApplicationAsync(
+                        Guid.NewGuid(),
+                        _clientId,
+                        "secret",
+                        "OpenIddict Disabled App",
+                        [],
+                        [],
+                        "confidential",
+                        "{}",
+                        connection,
+                        transaction
+                    );
+                }
+            );
+
+            // InsertApplication auto-creates an ApiClient with IsApproved = true using _clientId.
+            // Adding a second client with IsApproved = false AND THE SAME ClientId makes BOOL_AND return false.
+            var clientResult = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = applicationId,
+                    Name = "Unapproved OpenIddict Client",
+                    IsApproved = false,
+                    DataStoreIds = [],
+                },
+                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+            );
+            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_return_IsApproved_false_from_GetApplicationByClientIdAsync()
+        {
+            var result = await _openIddictDataRepository.GetApplicationByClientIdAsync(_clientId);
+            result.Should().NotBeNull();
+            result!.IsApproved.Should().BeFalse();
         }
     }
 }
