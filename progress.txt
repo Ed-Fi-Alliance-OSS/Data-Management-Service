@@ -51,3 +51,9 @@ DMS-1244 - completed CMS PostgreSQL core repository quoted identifier task.
 - Files changed: core CMS PostgreSQL repositories, claims-loader SQL helpers, TenantContextExtensions, affected PostgreSQL integration test direct SQL, tasks.json, progress.txt.
 - Verification: csharpier on changed CMS backend/test files; repository unquoted/old-name guards clean; Backend.Tests.Unit passed 321/321; PostgreSQL integration passed 234/234 excluding the known OpenIddictDataRepository case; full PostgreSQL integration passed 234/235 with only dmscs.openiddictapplication failure from next OpenIddict repository task.
 - Notes: local edfi_configurationservice test DB needed dmscs schema and public."dmscs_SchemaVersions" reset after stale lowercase/PascalCase mix; next task should quote OpenIddictDataRepository/OpenIddictTokenRepository.
+
+DMS-1244 - completed CMS PostgreSQL OpenIddict repository quoted identifier task.
+- Key decisions: quote OpenIddictDataRepository table/column/projection SQL; keep token repository as delegate only; include Payload on token insert; use named UX/PK ON CONFLICT in setup OpenIddict seed SQL; pass psql SQL as arguments instead of Invoke-Expression escaping.
+- Files changed: OpenIddictDataRepository.cs, setup-openiddict.ps1, OpenIddict-Crypto.psm1, CMS E2E SetupHooks.cs, tasks.json, progress.txt.
+- Verification: csharpier changed C#; OpenIddict/setup unquoted and old-name guards clean; PostgreSQL integration task filter matched no tests, effective GetApplicationByClientId passed 1/1; full PostgreSQL integration passed 235/235; teardown/setup-local-cms completed; env -u NODE_OPTIONS CMS E2E Token|Connect passed 12/12.
+- Notes: direct E2E command fails before API calls when NODE_OPTIONS contains --experimental-strip-types; clear NODE_OPTIONS for this suite.

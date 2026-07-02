@@ -78,7 +78,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             IDbTransaction? transaction = null
         )
         {
-            const string sql = "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = @Name";
+            const string sql = "SELECT \"Id\" FROM \"dmscs\".\"OpenIddictRole\" WHERE \"Name\" = @Name";
             return await connection.ExecuteScalarAsync<Guid?>(sql, new { Name = roleName }, transaction);
         }
 
@@ -89,7 +89,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             IDbTransaction? transaction = null
         )
         {
-            const string sql = "INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES (@Id, @Name)";
+            const string sql =
+                "INSERT INTO \"dmscs\".\"OpenIddictRole\" (\"Id\", \"Name\") VALUES (@Id, @Name)";
             await connection.ExecuteAsync(sql, new { Id = roleId, Name = roleName }, transaction);
         }
 
@@ -108,8 +109,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
         {
             const string sql =
                 @"
-INSERT INTO dmscs.OpenIddictApplication
-    (Id, ClientId, ClientSecret, DisplayName, Permissions, Requirements, Type, CreatedAt, ProtocolMappers)
+INSERT INTO ""dmscs"".""OpenIddictApplication""
+    (""Id"", ""ClientId"", ""ClientSecret"", ""DisplayName"", ""Permissions"", ""Requirements"", ""Type"", ""CreatedAt"", ""ProtocolMappers"")
 VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @ProtocolMappers::jsonb)";
 
             await connection.ExecuteAsync(
@@ -135,7 +136,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
             IDbTransaction? transaction = null
         )
         {
-            const string sql = "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = @Name";
+            const string sql = "SELECT \"Id\" FROM \"dmscs\".\"OpenIddictScope\" WHERE \"Name\" = @Name";
             return await connection.ExecuteScalarAsync<Guid?>(sql, new { Name = scopeName }, transaction);
         }
 
@@ -146,7 +147,8 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
             IDbTransaction? transaction = null
         )
         {
-            const string sql = "INSERT INTO dmscs.OpenIddictScope (Id, Name) VALUES (@Id, @Name)";
+            const string sql =
+                "INSERT INTO \"dmscs\".\"OpenIddictScope\" (\"Id\", \"Name\") VALUES (@Id, @Name)";
             await connection.ExecuteAsync(sql, new { Id = scopeId, Name = scopeName }, transaction);
         }
 
@@ -158,7 +160,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
         )
         {
             const string sql =
-                "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES (@AppId, @ScopeId)";
+                "INSERT INTO \"dmscs\".\"OpenIddictApplicationScope\" (\"ApplicationId\", \"ScopeId\") VALUES (@AppId, @ScopeId)";
             await connection.ExecuteAsync(sql, new { AppId = applicationId, ScopeId = scopeId }, transaction);
         }
 
@@ -170,7 +172,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
         )
         {
             const string sql =
-                "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES (@ClientId, @RoleId)";
+                "INSERT INTO \"dmscs\".\"OpenIddictClientRole\" (\"ClientId\", \"RoleId\") VALUES (@ClientId, @RoleId)";
             await connection.ExecuteAsync(sql, new { ClientId = clientId, RoleId = roleId }, transaction);
         }
 
@@ -185,11 +187,11 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
         {
             const string sql =
                 @"
-UPDATE dmscs.OpenIddictApplication
-    SET DisplayName = @DisplayName,
-        Permissions = @Permissions,
-        ProtocolMappers = @ProtocolMappers::jsonb
-    WHERE Id = @Id";
+UPDATE ""dmscs"".""OpenIddictApplication""
+    SET ""DisplayName"" = @DisplayName,
+        ""Permissions"" = @Permissions,
+        ""ProtocolMappers"" = @ProtocolMappers::jsonb
+    WHERE ""Id"" = @Id";
 
             return await connection.ExecuteAsync(
                 sql,
@@ -210,7 +212,8 @@ UPDATE dmscs.OpenIddictApplication
             IDbTransaction? transaction = null
         )
         {
-            const string sql = "DELETE FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = @AppId";
+            const string sql =
+                "DELETE FROM \"dmscs\".\"OpenIddictApplicationScope\" WHERE \"ApplicationId\" = @AppId";
             await connection.ExecuteAsync(sql, new { AppId = applicationId }, transaction);
         }
 
@@ -223,9 +226,9 @@ UPDATE dmscs.OpenIddictApplication
         {
             const string sql =
                 @"
-UPDATE dmscs.OpenIddictApplication
-    SET ProtocolMappers = @ProtocolMappers::jsonb
-    WHERE Id = @Id";
+UPDATE ""dmscs"".""OpenIddictApplication""
+    SET ""ProtocolMappers"" = @ProtocolMappers::jsonb
+    WHERE ""Id"" = @Id";
 
             return await connection.ExecuteAsync(
                 sql,
@@ -238,7 +241,7 @@ UPDATE dmscs.OpenIddictApplication
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-            const string sql = "SELECT ClientId FROM dmscs.OpenIddictApplication";
+            const string sql = "SELECT \"ClientId\" FROM \"dmscs\".\"OpenIddictApplication\"";
             return await connection.QueryAsync<string>(sql);
         }
 
@@ -246,7 +249,7 @@ UPDATE dmscs.OpenIddictApplication
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-            const string sql = "DELETE FROM dmscs.OpenIddictApplication WHERE Id = @Id";
+            const string sql = "DELETE FROM \"dmscs\".\"OpenIddictApplication\" WHERE \"Id\" = @Id";
             return await connection.ExecuteAsync(sql, new { Id = id });
         }
 
@@ -259,9 +262,9 @@ UPDATE dmscs.OpenIddictApplication
         {
             const string sql =
                 @"
-                UPDATE dmscs.OpenIddictApplication
-                SET ClientSecret = @ClientSecret
-                WHERE Id = @Id";
+                UPDATE ""dmscs"".""OpenIddictApplication""
+                SET ""ClientSecret"" = @ClientSecret
+                WHERE ""Id"" = @Id";
 
             return await connection.ExecuteAsync(
                 sql,
@@ -277,19 +280,19 @@ UPDATE dmscs.OpenIddictApplication
             await connection.OpenAsync();
 
             const string applicationSql =
-                @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                         a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
-                         COALESCE(array_agg(DISTINCT s.Name) FILTER (WHERE s.Name IS NOT NULL), ARRAY[]::text[]) as Scopes,
-                         COALESCE(array_agg(DISTINCT acd.DataStoreId) FILTER (WHERE acd.DataStoreId IS NOT NULL), ARRAY[]::bigint[]) as DataStoreIds,
-                         COALESCE(BOOL_AND(ac.IsApproved), true) AS IsApproved
-                  FROM dmscs.OpenIddictApplication a
-                  LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
-                  LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
-                  LEFT JOIN dmscs.ApiClient ac ON a.ClientId = ac.ClientId
-                  LEFT JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                  WHERE a.ClientId = @ClientId
-                  GROUP BY a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                           a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers";
+                @"SELECT a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
+                         a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
+                         COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
+                         COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::bigint[]) AS ""DataStoreIds"",
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                  FROM ""dmscs"".""OpenIddictApplication"" a
+                  LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
+                  LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
+                  LEFT JOIN ""dmscs"".""ApiClient"" ac ON a.""ClientId"" = ac.""ClientId""
+                  LEFT JOIN ""dmscs"".""ApiClientDataStore"" acd ON ac.""Id"" = acd.""ApiClientId""
+                  WHERE a.""ClientId"" = @ClientId
+                  GROUP BY a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
+                           a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""";
 
             return await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
                 applicationSql,
@@ -304,19 +307,19 @@ UPDATE dmscs.OpenIddictApplication
         )
         {
             const string applicationSql =
-                @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                         a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
-                         COALESCE(array_agg(DISTINCT s.Name) FILTER (WHERE s.Name IS NOT NULL), ARRAY[]::text[]) as Scopes,
-                         COALESCE(array_agg(DISTINCT acd.DataStoreId) FILTER (WHERE acd.DataStoreId IS NOT NULL), ARRAY[]::bigint[]) as DataStoreIds,
-                         COALESCE(BOOL_AND(ac.IsApproved), true) AS IsApproved
-                  FROM dmscs.OpenIddictApplication a
-                  LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
-                  LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
-                  LEFT JOIN dmscs.ApiClient ac ON a.ClientId = ac.ClientId
-                  LEFT JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                  WHERE a.Id = @Id
-                  GROUP BY a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                           a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers";
+                @"SELECT a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
+                         a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
+                         COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
+                         COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::bigint[]) AS ""DataStoreIds"",
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                  FROM ""dmscs"".""OpenIddictApplication"" a
+                  LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
+                  LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
+                  LEFT JOIN ""dmscs"".""ApiClient"" ac ON a.""ClientId"" = ac.""ClientId""
+                  LEFT JOIN ""dmscs"".""ApiClientDataStore"" acd ON ac.""Id"" = acd.""ApiClientId""
+                  WHERE a.""Id"" = @Id
+                  GROUP BY a.""Id"", a.""ClientId"", a.""ClientSecret"", a.""DisplayName"", a.""RedirectUris"", a.""PostLogoutRedirectUris"",
+                           a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""";
 
             return await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
                 applicationSql,
@@ -331,10 +334,10 @@ UPDATE dmscs.OpenIddictApplication
             await connection.OpenAsync();
 
             return await connection.QueryAsync<string>(
-                @"SELECT r.Name
-                  FROM dmscs.OpenIddictClientRole cr
-                  JOIN dmscs.OpenIddictRole r ON cr.RoleId = r.Id
-                  WHERE cr.ClientId = @ClientId",
+                @"SELECT r.""Name""
+                  FROM ""dmscs"".""OpenIddictClientRole"" cr
+                  JOIN ""dmscs"".""OpenIddictRole"" r ON cr.""RoleId"" = r.""Id""
+                  WHERE cr.""ClientId"" = @ClientId",
                 new { ClientId = clientId }
             );
         }
@@ -343,7 +346,11 @@ UPDATE dmscs.OpenIddictApplication
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-            const string sql = "SELECT * FROM dmscs.OpenIddictToken WHERE Id = @Id";
+            const string sql =
+                @"SELECT ""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""Payload"", ""CreationDate"",
+                         ""ExpirationDate"", ""Status"", ""ReferenceId"", ""RedemptionDate""
+                  FROM ""dmscs"".""OpenIddictToken""
+                  WHERE ""Id"" = @Id";
             return await connection.QuerySingleOrDefaultAsync<TokenInfo>(sql, new { Id = tokenId });
         }
 
@@ -359,10 +366,10 @@ UPDATE dmscs.OpenIddictApplication
             await connection.OpenAsync();
             const string insertSql =
                 @"
-                INSERT INTO dmscs.OpenIddictToken
-                (Id, ApplicationId, Subject, Type, CreationDate, ExpirationDate, Status, ReferenceId)
+                INSERT INTO ""dmscs"".""OpenIddictToken""
+                (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""Payload"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
                 VALUES
-                (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
+                (@Id, @ApplicationId, @Subject, @Type, @Payload, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
             await connection.ExecuteAsync(
                 insertSql,
@@ -386,7 +393,7 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
             return await connection.QuerySingleOrDefaultAsync<string>(
-                "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
+                "SELECT \"Status\" FROM \"dmscs\".\"OpenIddictToken\" WHERE \"Id\" = @Id",
                 new { Id = tokenId }
             );
         }
@@ -396,7 +403,7 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
             var result = await connection.ExecuteAsync(
-                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = CURRENT_TIMESTAMP WHERE Id = @Id",
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP WHERE \"Id\" = @Id",
                 new { Id = tokenId }
             );
             return result > 0;
@@ -409,7 +416,7 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
             const string query =
-                "SELECT pgp_sym_decrypt(PrivateKey::bytea, @encryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
+                "SELECT pgp_sym_decrypt(\"PrivateKey\"::bytea, @encryptionKey) AS \"PrivateKey\", \"KeyId\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE ORDER BY \"CreatedAt\" DESC LIMIT 1";
             var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
                 query,
                 new { encryptionKey }
@@ -428,7 +435,7 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = TRUE"
+                "SELECT \"KeyId\", \"PublicKey\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE"
             );
         }
     }
