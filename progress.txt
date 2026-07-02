@@ -69,3 +69,9 @@ DMS-1244 - completed DMS generated fixture artifact refresh task.
 - Files changed: authoritative-derived-relational-model-set.json, tasks.json, progress.txt.
 - Verification: DDL golden/fixture/authoritative filter passed 178/178; RelationalModel golden/authoritative filter passed 20/20; Plans golden/manifest filter passed 52/52; scoped fixture diff showed no DDL/integration fixture changes; authoritative input diff guard clean.
 - Notes: initial parallel dotnet test attempt hit a build output file lock; reran sequentially for signal.
+
+DMS-1244 - completed DMS integration test tracked-change/GetMax quoting task.
+- Key decisions: update generated-DDL authoritative smoke assertions to OldX/NewX physical tracked-change columns while preserving internal underscores; keep PostgreSQL GetMax and descriptor-stamping quoted-call coverage unchanged.
+- Files changed: PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs, MssqlGeneratedDdlAuthoritativeSmokeTests.cs, tasks.json, progress.txt.
+- Verification: csharpier changed smoke tests; old-name/function guard clean; PostgreSQL literal task filter passed 8/8; effective PostgreSQL class filter passed 67/67; effective MSSQL class filter passed 66/66 with temp localhost,1434 container; API integration Category=PostgresqlIntegration|MssqlIntegration passed 102/102.
+- Notes: literal task filter misses Generated_Ddl/RelationalChangeQueryRepository classes due NUnit class names, so exact class filters were used for real smoke/repository coverage; temp MSSQL container stopped.
