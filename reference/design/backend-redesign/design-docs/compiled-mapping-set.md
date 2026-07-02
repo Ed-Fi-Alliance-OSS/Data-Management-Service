@@ -396,7 +396,7 @@ Notes:
   - `ValueColumnsInTableOrder` entries carry `RelationalScalarType` because they are schema-derived old/new values.
   - `IsOldColumnNullable` and `IsNewColumnNullable` describe the physical old/new tracked-change columns separately. They are required booleans, never tri-state values.
   - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
-  - `IsNewColumnNullable` is normally `true` because delete tombstones leave `New_*` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
+  - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
   - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoinsInNameOrder` and `PersonJoinsInNameOrder`; join definitions are owned once at the table level and are not duplicated per value column.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
   - `TrackedChangeColumnRole.PersonDocumentId` requires `PersonJoinName` and requires `DescriptorJoinName = null`.

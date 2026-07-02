@@ -111,3 +111,9 @@ DMS-1244 - completed CMS PostgreSQL repository constraint-name matching task.
 - Files changed: CMS PostgreSQL Application, ApiClient, DataStoreContext, DataStoreDerivative, Profile, Tenant, Vendor repositories; tasks.json; progress.txt.
 - Verification: csharpier changed repositories; named constraint Message.Contains guard clean; ConstraintName guard shows expected FK/UX checks; CMS PostgreSQL integration Repository|Application|ApiClient|Vendor|Tenant|Profile passed 104/104; git diff --check clean.
 - Notes: two low-priority follow-up tasks remain open in tasks.json.
+
+DMS-1244 - completed backend redesign docs remaining Old/New guidance task.
+- Key decisions: replace current-value guidance with OldX/NewX terminology; keep tracked_changes_* wildcard references; explicitly document preserved internal source-name underscores in DDL smoke guidance.
+- Files changed: compiled-mapping-set.md, ddl-generator-testing.md, tasks.json, progress.txt.
+- Verification: Old_/New_ docs guard returned no matches; reviewed doc diff; git diff --check clean for touched docs.
+- Notes: remaining open task is the null-equality cleanup in ReadChangesAuthViewDefinitionTests.

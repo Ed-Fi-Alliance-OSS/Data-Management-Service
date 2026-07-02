@@ -330,7 +330,7 @@
       "Review any remaining matches to confirm they are historical explanations or table-name wildcards, not current tracked-change value-column guidance.",
       "git diff -- reference/design/backend-redesign/design-docs/compiled-mapping-set.md reference/design/backend-redesign/design-docs/ddl-generator-testing.md"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
