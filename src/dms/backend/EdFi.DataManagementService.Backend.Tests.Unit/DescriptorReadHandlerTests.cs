@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -22,6 +23,7 @@ public class Given_DescriptorReadHandler
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
+    private static readonly IEtagComposer _etagComposer = new EtagComposer();
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]")]
@@ -182,7 +184,9 @@ public class Given_DescriptorReadHandler
                 description: "Alternative school type",
                 effectiveBeginDate: new DateOnly(2025, 1, 15)
             ),
-            RelationalGetRequestReadMode.ExternalResponse
+            RelationalGetRequestReadMode.ExternalResponse,
+            _etagComposer,
+            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
         var projectedDocument = JsonNode.Parse(
             """
@@ -524,10 +528,7 @@ public class Given_DescriptorReadHandler
         firstDocument["effectiveBeginDate"]!.GetValue<string>().Should().Be("2025-01-15");
         firstDocument["effectiveEndDate"].Should().BeNull();
         firstDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
-        firstDocument["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(firstDocument));
+        firstDocument["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
         firstDocument["Uri"].Should().BeNull();
         firstDocument["Discriminator"].Should().BeNull();
         firstDocument["ChangeVersion"].Should().BeNull();
@@ -541,10 +542,7 @@ public class Given_DescriptorReadHandler
         secondDocument["effectiveBeginDate"].Should().BeNull();
         secondDocument["effectiveEndDate"]!.GetValue<string>().Should().Be("2025-12-31");
         secondDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
-        secondDocument["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(secondDocument));
+        secondDocument["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
         secondDocument["Uri"].Should().BeNull();
         secondDocument["Discriminator"].Should().BeNull();
         secondDocument["ChangeVersion"].Should().BeNull();
@@ -573,7 +571,9 @@ public class Given_DescriptorReadHandler
                 description: "Alternative school type",
                 effectiveBeginDate: new DateOnly(2025, 1, 15)
             ),
-            RelationalGetRequestReadMode.ExternalResponse
+            RelationalGetRequestReadMode.ExternalResponse,
+            _etagComposer,
+            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
         var projectedDocument = JsonNode.Parse(
             """
@@ -691,6 +691,7 @@ public class Given_DescriptorReadHandler
         return new DescriptorReadHandler(
             commandExecutor,
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
+            _etagComposer,
             NullLogger<DescriptorReadHandler>.Instance
         );
     }
@@ -804,6 +805,7 @@ public class Given_DescriptorReadHandler
         return RelationalAccessTestData.CreateRow(
             ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
+            ("ContentVersion", 42L),
             ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)),
             ("ResourceKeyId", (short)13),
             ("Namespace", ns),
@@ -815,6 +817,12 @@ public class Given_DescriptorReadHandler
             ("Discriminator", discriminator)
         );
     }
+
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        _etagComposer.Compose(
+            contentVersion,
+            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+        );
 
     private static DescriptorReadRow CreateDescriptorReadRow(
         Guid documentUuid,
@@ -831,6 +839,7 @@ public class Given_DescriptorReadHandler
         return new DescriptorReadRow(
             DocumentId: documentId,
             DocumentUuid: documentUuid,
+            ContentVersion: 42L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             ResourceKeyId: 13,
             Namespace: ns!,

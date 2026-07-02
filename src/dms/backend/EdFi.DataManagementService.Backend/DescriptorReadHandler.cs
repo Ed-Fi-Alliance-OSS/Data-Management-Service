@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -21,6 +22,7 @@ internal sealed record DescriptorQueryRowsPage(long? TotalCount, IReadOnlyList<D
 internal sealed class DescriptorReadHandler(
     IRelationalCommandExecutor commandExecutor,
     IReadableProfileProjector readableProfileProjector,
+    IEtagComposer etagComposer,
     ILogger<DescriptorReadHandler> logger
 ) : IDescriptorReadHandler
 {
@@ -34,6 +36,8 @@ internal sealed class DescriptorReadHandler(
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
+    private readonly IEtagComposer _etagComposer =
+        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
     private readonly ILogger<DescriptorReadHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -440,13 +444,17 @@ internal sealed class DescriptorReadHandler(
 
         JsonArray edfiDocs = [];
 
+        // Build the fixed descriptor variant key once per request rather than per row.
+        var variantKey = DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash);
+
         foreach (var descriptorRow in descriptorRows)
         {
             edfiDocs.Add(
                 MaterializeDescriptorDocument(
                     descriptorRow,
                     RelationalGetRequestReadMode.ExternalResponse,
-                    request.ReadableProfileProjectionContext
+                    request.ReadableProfileProjectionContext,
+                    variantKey
                 )
             );
         }
@@ -457,10 +465,16 @@ internal sealed class DescriptorReadHandler(
     private JsonNode MaterializeDescriptorDocument(
         DescriptorReadRow descriptorRow,
         RelationalGetRequestReadMode readMode,
-        ReadableProfileProjectionContext? readableProfileProjectionContext
+        ReadableProfileProjectionContext? readableProfileProjectionContext,
+        VariantKey variantKey
     )
     {
-        var materializedDocument = DescriptorDocumentMaterializer.Materialize(descriptorRow, readMode);
+        var materializedDocument = DescriptorDocumentMaterializer.Materialize(
+            descriptorRow,
+            readMode,
+            _etagComposer,
+            variantKey
+        );
 
         if (
             readMode != RelationalGetRequestReadMode.ExternalResponse
@@ -486,7 +500,8 @@ internal sealed class DescriptorReadHandler(
         MaterializeDescriptorDocument(
             descriptorRow,
             request.ReadMode,
-            request.ReadableProfileProjectionContext
+            request.ReadableProfileProjectionContext,
+            DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash)
         );
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)
@@ -632,6 +647,7 @@ internal sealed class DescriptorReadHandler(
                 SELECT
                     page_document_ids."DocumentId" AS "DocumentId",
                     document."DocumentUuid" AS "DocumentUuid",
+                    document."ContentVersion" AS "ContentVersion",
                     document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
                     document."ResourceKeyId" AS "ResourceKeyId",
                     descriptor."Namespace" AS "Namespace",
@@ -654,6 +670,7 @@ internal sealed class DescriptorReadHandler(
                 SELECT
                     page_document_ids.[DocumentId] AS [DocumentId],
                     document.[DocumentUuid] AS [DocumentUuid],
+                    document.[ContentVersion] AS [ContentVersion],
                     document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
                     document.[ResourceKeyId] AS [ResourceKeyId],
                     descriptor.[Namespace] AS [Namespace],
@@ -925,6 +942,7 @@ internal sealed class DescriptorReadHandler(
                 SELECT
                     document."DocumentId" AS "DocumentId",
                     document."DocumentUuid" AS "DocumentUuid",
+                    document."ContentVersion" AS "ContentVersion",
                     document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
                     document."ResourceKeyId" AS "ResourceKeyId",
                     descriptor."Namespace" AS "Namespace",
@@ -947,6 +965,7 @@ internal sealed class DescriptorReadHandler(
                 SELECT
                     document.[DocumentId] AS [DocumentId],
                     document.[DocumentUuid] AS [DocumentUuid],
+                    document.[ContentVersion] AS [ContentVersion],
                     document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
                     document.[ResourceKeyId] AS [ResourceKeyId],
                     descriptor.[Namespace] AS [Namespace],

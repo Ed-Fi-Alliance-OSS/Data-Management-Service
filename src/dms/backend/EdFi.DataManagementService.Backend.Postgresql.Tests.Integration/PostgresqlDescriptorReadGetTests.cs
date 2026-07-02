@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -115,6 +114,7 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
             .CanonicalizeJson(success.EdfiDoc)
             .Should()
             .Be(CanonicalizeJson(CreateExpectedExternalResponse(seed, expectedLastModifiedAt)));
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
         success.EdfiDoc["Uri"].Should().BeNull();
         success.EdfiDoc["Discriminator"].Should().BeNull();
         success.EdfiDoc["ChangeVersion"].Should().BeNull();
@@ -279,6 +279,7 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
         CanonicalizeJson(success.EdfiDoc)
             .Should()
             .Be(CanonicalizeJson(CreateExpectedExternalResponse(seed, expectedLastModifiedAt)));
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
         success.EdfiDoc["description"].Should().BeNull();
         success.EdfiDoc["effectiveBeginDate"].Should().BeNull();
         success.EdfiDoc["effectiveEndDate"].Should().BeNull();
@@ -388,7 +389,6 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
         expectedDocument["id"] = seed.DocumentUuid.Value.ToString();
         expectedDocument["_lastModifiedDate"] =
             RelationalGetIntegrationTestHelper.FormatExternalLastModifiedDate(expectedLastModifiedAt);
-        expectedDocument["_etag"] = ResourceEtagFormatter.FormatEtag(expectedDocument);
 
         return expectedDocument;
     }
