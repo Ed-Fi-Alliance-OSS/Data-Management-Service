@@ -659,11 +659,11 @@ actual: {_requestInfo.FrontendResponse.Body}
         }
 
         [Test]
-        public void It_preserves_if_match()
+        public void It_normalizes_if_match_to_the_unquoted_opaque_tag()
         {
-            _repository
-                .CapturedRequest.WritePrecondition.Should()
-                .Be(new WritePrecondition.IfMatch("\"72\""));
+            // The inbound If-Match arrives quoted ("72"); WritePreconditionFactory strips the strong
+            // entity-tag quotes so the backend compares the unquoted opaque tag (72).
+            _repository.CapturedRequest.WritePrecondition.Should().Be(new WritePrecondition.IfMatch("72"));
         }
 
         [Test]

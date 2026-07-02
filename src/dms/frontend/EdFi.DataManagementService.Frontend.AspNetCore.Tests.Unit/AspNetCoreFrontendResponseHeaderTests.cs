@@ -17,9 +17,11 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class Given_AspNetCoreFrontend_Response_Header_Writing
 {
     [Test]
-    public async Task It_writes_opaque_etag_headers_without_parsing_them_as_entity_tags()
+    public async Task It_writes_the_etag_header_as_a_quoted_strong_validator()
     {
-        const string opaqueEtag = "Q29udGVudEhhc2g=";
+        // The composed opaque _etag value (unquoted, as it appears in the JSON body); the ETag
+        // response header must serve it as a quoted strong validator per RFC 7232 §2.3.
+        const string opaqueEtag = "5-a1b2c3d4.j._.l";
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "https";
         httpContext.Request.Host = new HostString("localhost");
@@ -44,6 +46,34 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         await result.ExecuteAsync(httpContext);
 
         httpContext.Response.StatusCode.Should().Be(201);
-        httpContext.Response.Headers.ETag.ToString().Should().Be(opaqueEtag);
+        httpContext.Response.Headers.ETag.ToString().Should().Be($"\"{opaqueEtag}\"");
+    }
+
+    [Test]
+    public async Task It_does_not_double_quote_or_emit_an_etag_header_for_an_empty_etag_value()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets";
+        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+
+        var response = new FrontendResponse(
+            StatusCode: 200,
+            Body: null,
+            Headers: new Dictionary<string, string> { ["etag"] = string.Empty }
+        );
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.Headers.ETag.ToString().Should().BeEmpty();
     }
 }
