@@ -33,6 +33,7 @@ function New-AspNetPasswordHash {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates a hash in memory; callers decide whether to persist it.')]
     [OutputType([string])]
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$PlainTextSecret,
@@ -149,6 +150,7 @@ function New-OpenIddictKeyInsertSql {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
     [OutputType([string])]
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $false)]
         [string]$KeyId = [guid]::NewGuid().ToString(),
@@ -217,6 +219,7 @@ function New-ClientSecretUpdateSql {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
     [OutputType([string])]
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$ClientId,

@@ -4,6 +4,8 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Bootstrap script intentionally writes operator progress and SQL diagnostics to the console.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive: the script parameters are consumed inside the nested helper functions, and this rule does not track usage across function scopes.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'DbPassword', Justification = 'Carries an ENV: indirection sentinel resolved from the .env file and handed to sqlcmd, which requires plaintext; SecureString adds no protection across that boundary.')]
 [CmdletBinding()]
 param (
     [string] $DbType = "Postgresql", # or "MSSQL"
