@@ -241,7 +241,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GeneratedDdl|FullyQualifiedName~RelationalChangeQueryRepositoryTests|FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~DescriptorStamping\"",
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration|Category=MssqlIntegration\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "verification",
