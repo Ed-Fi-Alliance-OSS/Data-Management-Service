@@ -192,7 +192,7 @@ public class Given_ReadChanges_Student_View_Definition
             .Qualified(currentArm.SourceTable)
             .Should()
             .Be("auth.EducationOrganizationIdToStudentDocumentId");
-        currentArm.OutputColumns.Should().OnlyContain(column => column.OutputName == null);
+        currentArm.OutputColumns.Where(column => column.OutputName is not null).Should().BeEmpty();
         ReadChangesAuthViewTestHelpers.OutputColumn(currentArm, "SourceEducationOrganizationId");
         ReadChangesAuthViewTestHelpers.OutputColumn(currentArm, "Student_DocumentId");
     }

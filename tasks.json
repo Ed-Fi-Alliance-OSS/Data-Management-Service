@@ -315,7 +315,7 @@
       "rg -n 'OutputName\\s*(==|!=)\\s*null' src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/ReadChangesAuthViewDefinitionTests.cs",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadChanges_Student_View_Definition\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation",

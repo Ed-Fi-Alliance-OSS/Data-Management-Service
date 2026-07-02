@@ -117,3 +117,9 @@ DMS-1244 - completed backend redesign docs remaining Old/New guidance task.
 - Files changed: compiled-mapping-set.md, ddl-generator-testing.md, tasks.json, progress.txt.
 - Verification: Old_/New_ docs guard returned no matches; reviewed doc diff; git diff --check clean for touched docs.
 - Notes: remaining open task is the null-equality cleanup in ReadChangesAuthViewDefinitionTests.
+
+DMS-1244 - completed read-changes auth view null-equality cleanup task.
+- Key decisions: use LINQ Where with `OutputName is not null` then assert empty because FluentAssertions OnlyContain expression trees cannot compile `is null` patterns.
+- Files changed: ReadChangesAuthViewDefinitionTests.cs, tasks.json, progress.txt.
+- Verification: csharpier touched test; OutputName null equality guard clean; Given_ReadChanges_Student_View_Definition focused DDL test passed 3/3.
+- Notes: all tasks in tasks.json now complete.
