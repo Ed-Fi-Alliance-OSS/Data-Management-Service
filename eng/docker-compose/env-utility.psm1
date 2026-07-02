@@ -596,11 +596,19 @@ function Resolve-DataStandardEnvironmentFile {
     .PARAMETER DockerComposeRoot
         Directory holding the .env.<token> overlays and the .derived output. Defaults to this module's
         directory (eng/docker-compose).
+
+    .PARAMETER OverlayPrefix
+        Overlay file-name prefix. Defaults to ".env" (the shared E2E/SDK-surface overlays,
+        e.g. .env.ds61). The bootstrap wrapper passes ".env.bootstrap" to compose the
+        local-bootstrap surfaces (e.g. .env.bootstrap.ds61) instead. A non-default prefix is
+        reflected in the derived file name (e.g. <base>.bootstrap.<token>) so both derivations
+        can coexist under .derived/.
     #>
     param(
         [string]$DataStandardVersion,
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [string]$DockerComposeRoot
+        [string]$DockerComposeRoot,
+        [string]$OverlayPrefix = ".env"
     )
 
     if ([string]::IsNullOrWhiteSpace($DataStandardVersion)) {
@@ -612,14 +620,22 @@ function Resolve-DataStandardEnvironmentFile {
     }
 
     $token = Get-DataStandardOverlayToken $DataStandardVersion
-    $overlayPath = Join-Path $DockerComposeRoot ".env.$token"
+    $overlayPath = Join-Path $DockerComposeRoot "$OverlayPrefix.$token"
     if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
-        $available = @(Get-ChildItem -Path $DockerComposeRoot -Filter ".env.ds*" -ErrorAction SilentlyContinue |
+        $available = @(Get-ChildItem -Path $DockerComposeRoot -Filter "$OverlayPrefix.ds*" -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name) -join ", "
         throw "Resolve-DataStandardEnvironmentFile: no overlay for data standard version '$DataStandardVersion' (expected '$overlayPath'). Available overlays: $available."
     }
 
-    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$token"
+    # A non-default prefix contributes its distinguishing segment(s) to the derived name
+    # (".env.bootstrap" -> "<base>.bootstrap.<token>"); the default ".env" contributes nothing
+    # ("<base>.<token>", the pre-existing naming).
+    $prefixSegment = ($OverlayPrefix -replace '^\.env\.?', '').Trim('.')
+    $derivedName = if ([string]::IsNullOrEmpty($prefixSegment)) {
+        "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$token"
+    } else {
+        "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$prefixSegment.$token"
+    }
     $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
 
     return New-DataStandardDerivedEnvFile `

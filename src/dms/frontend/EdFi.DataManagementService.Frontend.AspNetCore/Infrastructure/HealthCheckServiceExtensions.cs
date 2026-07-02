@@ -63,7 +63,7 @@ public class DbHealthCheck(string connectionString, string providerName, ILogger
 
     private static DbConnection CreateConnection(string providerName, string connectionString)
     {
-        return providerName.ToLower() switch
+        return providerName.ToLowerInvariant() switch
         {
             "postgresql" => new NpgsqlConnection(connectionString),
             "mssql" => new SqlConnection(connectionString),

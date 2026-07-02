@@ -958,6 +958,19 @@ function Invoke-SchemaPackagesModeSchemaStaging {
 
     $schemaPackages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath)
 
+    # Core detection is data-standard-agnostic: the standard core package id is
+    # EdFi.DataStandard<NN>.ApiSchema for every data standard (52, 61, ...), while extension
+    # packages carry an extra project segment (e.g. EdFi.DataStandard52.TPDM.ApiSchema,
+    # EdFi.DataStandard61.Sample.ApiSchema). The catalog core id is not compared directly
+    # because it pins a single data standard; the catalog still supplies the canonical core
+    # project/endpoint tokens asserted in the resolve loop below. The exactly-one-core
+    # invariant is enforced BEFORE any package download so a malformed set fails fast.
+    $script:StandardCorePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
+    $coreEntryCount = @($schemaPackages | Where-Object { ([string]$_.name) -match $script:StandardCorePackageIdPattern }).Count
+    if ($coreEntryCount -ne 1) {
+        throw "SCHEMA_PACKAGES in '$(Format-LogSafeText $EnvironmentFilePath)' must list exactly one core package (EdFi.DataStandard<NN>.ApiSchema). Found $coreEntryCount."
+    }
+
     $corePackage = Get-StandardCorePackage
     $defaultFeedUrl = Get-StandardSchemaFeed
 
@@ -968,7 +981,6 @@ function Invoke-SchemaPackagesModeSchemaStaging {
     try {
         $schemaSourceFiles = [System.Collections.Generic.List[string]]::new()
         $expectedIdentities = @{}
-        $coreEntryCount = 0
 
         foreach ($schemaPackage in $schemaPackages) {
             $packageId = [string]$schemaPackage.name
@@ -980,13 +992,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
                 $packageFeedUrl
             }
 
-            # Core detection is data-standard-agnostic: the standard core package id is
-            # EdFi.DataStandard<NN>.ApiSchema for every data standard (52, 61, ...), while
-            # extension packages carry an extra project segment (e.g.
-            # EdFi.DataStandard52.TPDM.ApiSchema, EdFi.DataStandard61.Sample.ApiSchema). The
-            # catalog core id is not compared directly because it pins a single data standard;
-            # the catalog still supplies the canonical core project/endpoint tokens asserted below.
-            $isCoreEntry = $packageId -match '^EdFi\.DataStandard\d+\.ApiSchema$'
+            $isCoreEntry = $packageId -match $script:StandardCorePackageIdPattern
 
             $resolved = Resolve-StandardSchemaPackage `
                 -FeedUrl $resolvedFeedUrl `
@@ -1001,7 +1007,6 @@ function Invoke-SchemaPackagesModeSchemaStaging {
                 -ExpectedIsExtension (-not $isCoreEntry)
 
             if ($isCoreEntry) {
-                $coreEntryCount++
                 Assert-RequestedPackageIdentity `
                     -Validated $validated `
                     -ExpectedProjectName $corePackage.ProjectToken `
@@ -1011,10 +1016,6 @@ function Invoke-SchemaPackagesModeSchemaStaging {
 
             $schemaSourceFiles.Add($validated.SchemaPath)
             $expectedIdentities[[System.IO.Path]::GetFullPath($validated.SchemaPath)] = $validated
-        }
-
-        if ($coreEntryCount -ne 1) {
-            throw "SCHEMA_PACKAGES in '$(Format-LogSafeText $EnvironmentFilePath)' must list exactly one core package (EdFi.DataStandard<NN>.ApiSchema). Found $coreEntryCount."
         }
 
         # Stage the collected (core + extensions) schema files using the shared staging function.
