@@ -397,6 +397,12 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationRejectedWriteS
 [Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture
 {
+    // The readable profile name in effect for the projected read. Threaded into the served _etag's
+    // profileCode so the projected representation carries a distinct strong validator (profile is
+    // state-significant per adr-etag-from-content-version.md). Backend-direct integration tests must
+    // set ProfileName explicitly; Core populates it in production.
+    private const string ReadableProfileName = "sample-readable-profile";
+
     private static readonly ContentTypeDefinition ReadableProfileContentType = new(
         MemberSelection.IncludeOnly,
         [],
@@ -1033,14 +1039,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             )
             .Should()
             .Equal((long?)null, null);
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
+        // The served _etag is a strong validator of the projected representation. A readable-profile
+        // projection changes the served bytes, so its _etag MUST differ from the unprojected read's —
+        // profile is state-significant per adr-etag-from-content-version.md (a deliberate reversal of
+        // the earlier profile-insensitive contract). They differ only in the profileCode component.
         success.EdfiDoc["_etag"]!
             .GetValue<string>()
             .Should()
-            .Be(expectedDocument["_etag"]!.GetValue<string>());
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+            .NotBe(
+                unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>(),
+                "a readable-profile projection yields a distinct strong-validator etag (profile is state-significant)"
+            );
         RelationalGetIntegrationTestHelper
             .CanonicalizeJson(success.EdfiDoc)
             .Should()
@@ -1116,7 +1126,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         new(
             ReadableProfileContentType,
             IReadableProfileProjector.ExtractIdentityPropertyNames(_baseResourceSchema.IdentityJsonPaths)
-        );
+        )
+        {
+            ProfileName = ReadableProfileName,
+        };
 
     private JsonObject CreateExpectedReadableProfileExternalResponse(
         string requestBodyJson,

@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -25,17 +26,21 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-// DMS-1145 task 31 — feature-flag tests. Three assertions per the plan, updated for the
-// canonical-etag contract clarified by DMS-1005 (design-docs/link-injection.md §Cache and Etag):
-//   1. Flag on  -> link present, _etag is canonical SHA-256 of the link-bearing body.
-//   2. Flag off -> link absent, _etag is canonical SHA-256 of the link-free body.
-//   3. Flag flip across restart -> _etag MUST match across the flip (etag derives from the
-//      canonical resource-state body, which is link-stripped regardless of served-body shape).
+// DMS-1145 task 31 — feature-flag tests, updated for the ContentVersion-based composed _etag
+// (adr-etag-from-content-version.md). This deliberately REVERSES the earlier link-insensitive
+// contract: the served _etag is now a strong validator "{ContentVersion}-{variantKey}" whose
+// variantKey embeds the link flag (l/n), so the served representations differ:
+//   1. Flag on  -> link present, _etag is composed and carries the link flag "l".
+//   2. Flag off -> link absent, _etag is composed and carries the link flag "n".
+//   3. Flag flip across restart -> the SERVED _etag DIFFERS across the flip (link flag differs),
+//      but the state-significant If-Match projection (which drops format/linkFlag) is EQUAL, so a
+//      conditional write is not spuriously rejected across a link-mode change. See
+//      adr-etag-from-content-version.md §"If-Match comparison (decided)" and EtagMatchProjection.
 //
 // "Flip across restart" is simulated by two ordered test methods that share the seeded
 // database fixture but each rebuild their own service provider with the opposite Enabled
 // value for the link-injection options. The first test captures its etag in a static
-// field; the second test asserts equality.
+// field; the second test asserts the divergence and the projection equality.
 
 [TestFixture]
 [NonParallelizable]
@@ -56,9 +61,9 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         Guid.Parse("bbbbbbbb-3100-0000-0000-000000000002")
     );
 
-    // Captured by the flag-on test, asserted against by the flag-off test to prove the
-    // flag-on _etag equals the flag-off _etag (the design's "flag flip across restart"
-    // canonical-equality requirement; see DMS-1005).
+    // Captured by the flag-on test, asserted against by the flag-off test to prove the served
+    // _etag DIFFERS across the flip (the link flag component changes) while the state-significant
+    // If-Match projection stays EQUAL (adr-etag-from-content-version.md).
     private static string? _recordedEtagWithFlagEnabled;
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
@@ -117,7 +122,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
 
     [Test]
     [Order(1)]
-    public async Task It_emits_link_and_canonical_etag_when_flag_is_enabled()
+    public async Task It_emits_link_and_composed_etag_carrying_the_link_flag_when_flag_is_enabled()
     {
         await using ServiceProvider scopedHost = CreateServiceProvider(flagEnabled: true);
 
@@ -133,18 +138,19 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             expectedDocumentUuid: SchoolDocumentUuid.Value
         );
 
-        // _etag matches the canonical SHA-256 recompute of the served body (FormatEtag
-        // delegates to ResourceEtagFormatter, which strips {id, link, _etag, _lastModifiedDate}
-        // recursively before hashing).
+        // _etag is the composed strong validator; the link flag component is "l" when links are on.
         string servedEtag = academicWeekDocument["_etag"]!.GetValue<string>();
-        servedEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(academicWeekDocument));
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(servedEtag);
+        servedEtag
+            .Should()
+            .EndWith(".l", "the link flag component is 'l' when ResourceLinksOptions.Enabled is true");
 
         _recordedEtagWithFlagEnabled = servedEtag;
     }
 
     [Test]
     [Order(2)]
-    public async Task It_strips_link_and_preserves_canonical_etag_when_flag_is_disabled()
+    public async Task It_strips_link_and_composed_etag_differs_only_in_link_flag_when_flag_is_disabled()
     {
         _recordedEtagWithFlagEnabled
             .Should()
@@ -160,20 +166,32 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         JsonNode schoolReference = ReferenceLocator.RequireSingle(academicWeekDocument, "$.schoolReference");
         LinkInjectionAssertions.AssertNoLink(schoolReference);
 
-        // _etag matches the canonical SHA-256 of the served body — and the canonical formatter
-        // strips {id, link, _etag, _lastModifiedDate} recursively, so the hash input is the same
-        // whether the body carries link or not.
+        // _etag is the composed strong validator; the link flag component is "n" when links are off.
         string servedEtag = academicWeekDocument["_etag"]!.GetValue<string>();
-        servedEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(academicWeekDocument));
-
-        // Flag toggle MUST NOT change _etag for the same canonical state: the etag derives from
-        // the canonical resource-state body (link-stripped) per design-docs/link-injection.md
-        // §Cache and Etag (clarified by DMS-1005).
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(servedEtag);
         servedEtag
             .Should()
-            .Be(
+            .EndWith(".n", "the link flag component is 'n' when ResourceLinksOptions.Enabled is false");
+
+        // The served _etag DIFFERS across the flip because the link flag is representation-complete
+        // (adr-etag-from-content-version.md: the served tag carries all four variantKey components so
+        // conditional GET / If-None-Match remain correct).
+        servedEtag
+            .Should()
+            .NotBe(
                 _recordedEtagWithFlagEnabled,
-                "design: _etag derives from the canonical resource-state body (link-stripped) per design-docs/link-injection.md — flag toggle MUST NOT change _etag for the same canonical state. See DMS-1005."
+                "the served _etag embeds the link flag, so it changes when the link mode changes"
+            );
+
+        // ...but the state-significant If-Match projection (which drops format and linkFlag) is EQUAL,
+        // so a conditional write issued after reading under the opposite link mode is not spuriously
+        // rejected. This is the decided link-insensitivity of the If-Match comparison.
+        EtagMatchProjection
+            .Of(servedEtag)
+            .Should()
+            .Be(
+                EtagMatchProjection.Of(_recordedEtagWithFlagEnabled!),
+                "If-Match compares ContentVersion + schemaEpoch + profileCode only; link mode must not cause a 412"
             );
     }
 
