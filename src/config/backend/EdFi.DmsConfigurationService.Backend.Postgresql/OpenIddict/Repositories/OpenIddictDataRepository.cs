@@ -367,9 +367,9 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             const string insertSql =
                 @"
                 INSERT INTO ""dmscs"".""OpenIddictToken""
-                (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
+                (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""Payload"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
                 VALUES
-                (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
+                (@Id, @ApplicationId, @Subject, @Type, @Payload, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
             await connection.ExecuteAsync(
                 insertSql,
@@ -379,6 +379,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     ApplicationId = applicationId,
                     Subject = subject,
                     Type = "access_token",
+                    Payload = payload,
                     CreationDate = DateTimeOffset.UtcNow,
                     ExpirationDate = expiration,
                     Status = "valid",

@@ -505,15 +505,11 @@ public static class AuthObjectDefinitions
         var staffDocId = AuthNames.StaffDocumentId;
         const string edOrgAlias = "edOrg";
 
-        // Matches DeriveTrackedChangeInventoryPass: only the Old prefix is added; internal
-        // underscores from the source column are preserved.
-        static DbColumnName OldValueColumn(DbColumnName sourceColumn) => new("Old" + sourceColumn.Value);
-
-        var oldSchoolIdUnified = OldValueColumn(AuthNames.SchoolIdUnified);
-        var oldStudentDocId = OldValueColumn(studentDocId);
-        var oldContactDocId = OldValueColumn(contactDocId);
-        var oldStaffDocId = OldValueColumn(staffDocId);
-        var oldEdOrgEdOrgId = OldValueColumn(AuthNames.EdOrgEdOrgId);
+        var oldSchoolIdUnified = TrackedChangeNameConventions.OldValueColumn(AuthNames.SchoolIdUnified);
+        var oldStudentDocId = TrackedChangeNameConventions.OldValueColumn(studentDocId);
+        var oldContactDocId = TrackedChangeNameConventions.OldValueColumn(contactDocId);
+        var oldStaffDocId = TrackedChangeNameConventions.OldValueColumn(staffDocId);
+        var oldEdOrgEdOrgId = TrackedChangeNameConventions.OldValueColumn(AuthNames.EdOrgEdOrgId);
 
         var trackedSsa = new DbTableName(trackedChanges, "StudentSchoolAssociation");
         var trackedSca = new DbTableName(trackedChanges, "StudentContactAssociation");

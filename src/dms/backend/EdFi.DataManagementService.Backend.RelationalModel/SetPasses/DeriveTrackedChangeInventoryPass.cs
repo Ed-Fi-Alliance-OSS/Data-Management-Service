@@ -35,8 +35,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </remarks>
 public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 {
-    private const string OldValueColumnPrefix = "Old";
-    private const string NewValueColumnPrefix = "New";
     private const string DocumentIdSuffix = "_DocumentId";
     private const string DescriptorIdSuffix = "_DescriptorId";
     private const string NamespaceSuffix = "_Namespace";
@@ -770,9 +768,10 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         TrackedChangeColumnOrigin origin
     )
     {
+        var sourceColumn = new DbColumnName(baseColumnName);
         return new TrackedChangeColumnInfo(
-            new DbColumnName(OldValueColumnPrefix + baseColumnName),
-            new DbColumnName(NewValueColumnPrefix + baseColumnName),
+            TrackedChangeNameConventions.OldValueColumn(sourceColumn),
+            TrackedChangeNameConventions.NewValueColumn(sourceColumn),
             sourcePath,
             CanonicalStorageColumn: null,
             IsOldColumnNullable: isOldNullable,
