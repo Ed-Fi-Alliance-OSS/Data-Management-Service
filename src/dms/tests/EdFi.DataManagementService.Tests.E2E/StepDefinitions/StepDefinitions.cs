@@ -434,7 +434,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             if (apiResponse.Headers.TryGetValue("etag", out string? etagValue))
             {
-                _etag = etagValue;
+                _etag = StripEtagQuotes(etagValue);
             }
             if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
@@ -1639,9 +1639,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the ETag is in the response header")]
         public void ThenTheEtagIsInTheResponseHeader()
         {
-            _etag = _apiResponse.Headers["etag"];
+            _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
             _etag.Should().NotBeNullOrEmpty();
         }
+
+        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
+        // surrounding quotes so the captured value matches the unquoted _etag in the response body and
+        // round-trips as an If-Match request header (the API accepts both quoted and unquoted forms).
+        private static string StripEtagQuotes(string? etag) =>
+            etag is { Length: >= 2 } && etag[0] == '"' && etag[^1] == '"'
+                ? etag[1..^1]
+                : etag ?? string.Empty;
 
         [Then("the lastModifiedDate has not changed")]
         public async Task ThenTheLastModifiedDateHasNotChanged()

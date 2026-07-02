@@ -1338,6 +1338,17 @@ public class ProfileStepDefinitions(
     public void WhenTheResponseHeaderIsStoredAsVariable(string headerName, string variableName)
     {
         string headerValue = GetResponseHeaderValue(headerName);
+
+        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
+        // surrounding quotes so the stored value matches the unquoted _etag in the response body.
+        if (
+            headerName.Equals("etag", StringComparison.OrdinalIgnoreCase)
+            && headerValue is { Length: >= 2 } and ['"', .., '"']
+        )
+        {
+            headerValue = headerValue[1..^1];
+        }
+
         _scenarioVariables.Add(variableName, headerValue);
     }
 
