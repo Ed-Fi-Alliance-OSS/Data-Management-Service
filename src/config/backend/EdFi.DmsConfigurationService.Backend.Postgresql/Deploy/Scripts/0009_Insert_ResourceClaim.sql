@@ -3,10 +3,9 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-ALTER TABLE dmscs.ResourceClaim ALTER COLUMN Id DROP IDENTITY;
-
-INSERT INTO dmscs.ResourceClaim (Id, ResourceName, ClaimName)
-SELECT v.Id, v.ResourceName, v.ClaimName FROM (
+INSERT INTO "dmscs"."ResourceClaim" ("Id", "ResourceName", "ClaimName")
+OVERRIDING SYSTEM VALUE
+SELECT v."Id", v."ResourceName", v."ClaimName" FROM (
     VALUES
         (1,'types','http://ed-fi.org/identity/claims/domains/edFiTypes'),
         (2,'systemDescriptors','http://ed-fi.org/identity/claims/domains/systemDescriptors'),
@@ -437,20 +436,15 @@ SELECT v.Id, v.ResourceName, v.ClaimName FROM (
         (435,'membershipTypeDescriptor','http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor'),
         (436,'studentArtProgramAssociation','http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation'),
         (437,'studentGraduationPlanAssociation','http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation')
-) AS v(Id, ResourceName, ClaimName)
+) AS v("Id", "ResourceName", "ClaimName")
 WHERE NOT EXISTS (
-    SELECT 1 FROM dmscs.ResourceClaim s WHERE s.Id = v.Id
+    SELECT 1 FROM "dmscs"."ResourceClaim" s WHERE s."Id" = v."Id"
 );
-
-ALTER TABLE dmscs.ResourceClaim ALTER COLUMN Id ADD GENERATED ALWAYS AS IDENTITY;
 
 DO $$
 DECLARE
-    seq_name text := 'dmscs.resourceclaim_id_seq';
-    max_id bigint;
+    next_id bigint;
 BEGIN
-    SELECT MAX(Id) INTO max_id FROM dmscs.ResourceClaim;
-    IF max_id IS NOT NULL THEN
-        EXECUTE format('SELECT setval(%L, %s)', seq_name, max_id);
-    END IF;
+    SELECT COALESCE(MAX("Id"), 0) + 1 INTO next_id FROM "dmscs"."ResourceClaim";
+    EXECUTE format('ALTER TABLE "dmscs"."ResourceClaim" ALTER COLUMN "Id" RESTART WITH %s', next_id);
 END$$;

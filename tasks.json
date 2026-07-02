@@ -1,0 +1,273 @@
+[
+  {
+    "category": "analysis",
+    "description": "Build and record a concrete dmscs identifier and naming inventory for the CMS PostgreSQL install path before changing scripts.",
+    "acceptance-criteria": [
+      "Every SQL file under src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts is accounted for as schema, seed, tenant-alter, OpenIddict, or extension setup work.",
+      "Each existing dmscs primary key, foreign key, check, unique constraint, unique index, and lookup index is mapped to the intended PK_*, FK_*, CK_*, UX_*, or IX_* name.",
+      "Tenant-owned logical uniqueness is identified from repository behavior and table ownership, including where TenantId must be part of a UX_* constraint.",
+      "OpenIddict tables and currently implicit primary key or unique constraints are included in the inventory.",
+      "The inventory distinguishes logical UX_* constraints from non-unique IX_* lookup indexes and flags redundant unique indexes for removal.",
+      "The inventory is captured in a new dmscs-identifier-and-naming-inventory.md file committed with the implementation so later tasks do not depend on memory, and the file is referenced in progress.txt"
+    ],
+    "steps-to-verify": [
+      "rg -n \"dmscs\\.|CREATE TABLE|CREATE INDEX|UNIQUE|PRIMARY KEY|FOREIGN KEY|CHECK|CONSTRAINT\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "rg -n \"ON CONFLICT|23505|PostgresException|constraint|duplicate|TenantWhereClause|ORDER BY|Sort\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql",
+      "Review the planned names against DMS generated naming patterns in src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Constraints/ConstraintNaming.cs"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update core CMS PostgreSQL create-table scripts to use explicit quoted PascalCase dmscs identifiers and guarded named constraints.",
+    "acceptance-criteria": [
+      "Core CMS tables such as Vendor, Application, ApiClient, ClaimSet, AuthorizationStrategy, ResourceClaim, ClaimsHierarchy, DataStore, DataStoreContext, DataStoreDerivative, Tenant, Profile, ProfileApplication, and ApiClientDataStore are created as quoted PascalCase objects under \"dmscs\".",
+      "All table columns, comments, references, and ALTER TABLE statements use explicit quoted PascalCase identifiers.",
+      "CREATE TABLE IF NOT EXISTS remains in place for fresh quoted-schema idempotency.",
+      "PK_*, FK_*, UX_*, IX_*, and CK_* names follow the story convention and FK names use target names unless a role is needed to disambiguate.",
+      "PK, FK, UX, and CK constraints are added with guarded ALTER TABLE blocks using pg_constraint checks against quoted table regclass values rather than relying on inline constraints for idempotency.",
+      "Redundant unique indexes on core CMS tables are removed where a UX_* constraint covers the same logical columns, and remaining IX_* objects are non-unique lookup indexes.",
+      "PostgreSQL defaults remain unnamed."
+    ],
+    "steps-to-verify": [
+      "rg -n \"dmscs\\.[A-Za-z]|\\bdmscs\\.\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "rg -n \"CONSTRAINT\\s+(pk_|fk_|uq_|idx_|ix_|ck_)\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update CMS PostgreSQL seed and tenant-alter scripts to preserve fresh-install idempotency with quoted identifiers and the new constraint/index names.",
+    "acceptance-criteria": [
+      "Seed scripts that insert default claims, authorization strategies, OpenIddict client data, and related configuration use quoted PascalCase dmscs table and column names.",
+      "TenantId add-column checks use information_schema or catalog predicates that match quoted PascalCase table and column names.",
+      "Tenant foreign keys use guarded FK_Table_Tenant constraints and the intended ON DELETE behavior.",
+      "Tenant lookup indexes are named IX_Table_TenantId and are non-unique unless they represent logical uniqueness.",
+      "The scripts can be run more than once against a fresh quoted install without duplicate-object failures."
+    ],
+    "steps-to-verify": [
+      "rg -n \"table_name = '[a-z]|column_name = '[a-z]|fk_|idx_|uq_|pk_\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0008_Insert_AuthorizationStrategy.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0009_Insert_ResourceClaim.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0018_Create_openiddict_Client_Rol_and_Claims.sql src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0025_Add_TenantId_To_Tables.sql",
+      "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1",
+      "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1",
+      "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Normalize CMS PostgreSQL OpenIddict install scripts and related storage tables to the same quoted identifier and constraint/index naming conventions.",
+    "acceptance-criteria": [
+      "OpenIddictApplication, OpenIddictAuthorization, OpenIddictScope, OpenIddictApplicationScope, OpenIddictToken, OpenIddictKey, and OpenIddict role/claim tables use quoted PascalCase dmscs identifiers in install SQL.",
+      "OpenIddict primary keys and logical unique constraints are explicitly named with PK_* and UX_* constraints.",
+      "OpenIddict lookup indexes are non-unique IX_* indexes and no duplicate unique index remains where a UX_* constraint covers the same columns.",
+      "Foreign keys between OpenIddict tables and CMS-owned tables use guarded FK_* constraints with quoted references.",
+      "OpenIddict script comments reference quoted table and column names."
+    ],
+    "steps-to-verify": [
+      "rg -n \"OpenIddict|openiddict|CREATE TABLE|CREATE INDEX|UNIQUE|PRIMARY KEY|FOREIGN KEY|CONSTRAINT\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "rg -n \"dmscs\\.open|dmscs\\.OpenIddict|openiddict[a-z_]*|pk_|fk_|uq_|idx_\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OpenIddict|FullyQualifiedName~Database\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update CMS PostgreSQL repository SQL to use quoted PascalCase dmscs identifiers and the new constraint names.",
+    "acceptance-criteria": [
+      "All SQL in src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories uses quoted PascalCase schema, table, column, alias-projected column, and ORDER BY identifiers.",
+      "Tenant filtering fragments and repository joins reference quoted PascalCase table and column names.",
+      "Ordering maps and paging SQL continue to produce valid PostgreSQL with quoted identifiers.",
+      "Duplicate-key handling checks for the new UX_* names and preserves existing API error behavior.",
+      "No repository SQL depends on existing lowercase dmscs table or column names."
+    ],
+    "steps-to-verify": [
+      "rg -n \"dmscs\\.[A-Za-z]|\\bdmscs\\.\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories",
+      "rg -n \"23505|constraint|uq_|pk_|fk_|idx_|TenantWhereClause|ORDER BY\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update CMS PostgreSQL OpenIddict repository SQL to use quoted PascalCase identifiers and the new UX_* duplicate-key names.",
+    "acceptance-criteria": [
+      "OpenIddictDataRepository and OpenIddictTokenRepository SQL uses quoted PascalCase dmscs table and column names.",
+      "OpenIddict query filters, joins, ordering, inserts, updates, and deletes work against fresh quoted-schema installs.",
+      "OpenIddict duplicate-key and uniqueness handling references the explicit UX_* constraints introduced in the install scripts.",
+      "No OpenIddict repository SQL depends on lowercase dmscs objects."
+    ],
+    "steps-to-verify": [
+      "rg -n \"dmscs\\.[A-Za-z]|\\bdmscs\\.|OpenIddict|openiddict|uq_|idx_|constraint\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/OpenIddict",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OpenIddict|FullyQualifiedName~Token\"",
+      "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj --filter \"Category=Token|FullyQualifiedName~Connect\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "tests",
+    "description": "Add focused CMS PostgreSQL database-shape tests for quoted PascalCase identifiers and DMS-style constraint/index names.",
+    "acceptance-criteria": [
+      "Integration tests assert dmscs tables and columns exist with PascalCase names and do not exist only as folded lowercase names after a fresh install.",
+      "Integration tests assert PK_*, FK_*, UX_*, IX_*, and CK_* names for representative core, tenant-owned, and OpenIddict tables.",
+      "Integration tests assert logical uniqueness is represented by UX_* constraints and redundant unique IX_* indexes are absent.",
+      "Integration tests cover tenant-scoped uniqueness where repository behavior is tenant-scoped and global uniqueness where the domain is global.",
+      "Integration tests verify the install scripts can be run twice against the same fresh quoted database."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj",
+      "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1",
+      "pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1",
+      "dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Change DMS tracked-change value-column derivation to remove only the Old/New prefix separator in PostgreSQL and SQL Server models.",
+    "acceptance-criteria": [
+      "Tracked-change value columns are derived as OldX and NewX rather than Old_X and New_X.",
+      "Internal underscores in source column names are preserved, for example Old_Student_DocumentId becomes OldStudent_DocumentId.",
+      "Identifier shortening applies to the new Old/New-prefixed names without reintroducing the prefix separator.",
+      "Relational model manifests serialize the new tracked-change column names for both PostgreSQL and SQL Server.",
+      "No duplicate tracked-change value column names are introduced by the naming change."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~DeriveTrackedChangeInventoryPassTests|FullyQualifiedName~DerivedModelSetManifestEmitterTests|FullyQualifiedName~IdentifierShorteningScopeTests\"",
+      "rg -n \"OldPrefix|NewPrefix|Old_|New_\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit",
+      "rg -n '\"Old_|\"New_|\\[Old_|\\[New_' src/dms/backend/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update DMS DDL emitters and trigger generation to use the new tracked-change column names in generated PostgreSQL and SQL Server SQL.",
+    "acceptance-criteria": [
+      "Tracked-change CREATE TABLE DDL emits OldX and NewX value columns in PostgreSQL and SQL Server.",
+      "Delete and key-change trigger bodies insert and select the new tracked-change column names.",
+      "Descriptor tracked-change tables and concrete resource tracked-change tables use the same naming rule.",
+      "Authorization support objects that join tracked_changes_* tables use the new OldX column names.",
+      "Expected DDL tests distinguish allowed explanatory comments from executable SQL that still uses Old_ or New_ prefixes."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalModelDdlEmitterTests|FullyQualifiedName~Tracked|FullyQualifiedName~ReadChanges|FullyQualifiedName~Auth\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~CoreDdlEmitterTests|FullyQualifiedName~DdlManifestEmitterTests\"",
+      "rg -n 'Old_|New_' src/dms/backend/EdFi.DataManagementService.Backend.Ddl src/dms/backend/EdFi.DataManagementService.Backend.External src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit"
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Update tracked-change query planning, authorization SQL, and response mapping to consume the new OldX/NewX column names.",
+    "acceptance-criteria": [
+      "TrackedChangeQueryPlanner SQL for deletes and keyChanges references OldX and NewX columns in PostgreSQL and SQL Server.",
+      "ReadChanges authorization SQL and static authorization-view definitions reference OldX tracked-change columns.",
+      "ChangeQueryResponseFieldMapper maps the new value-column names back to public oldKeyValues and newKeyValues fields without changing API response shapes.",
+      "RelationalChangeQueryRepository tests and seed SQL use the new column names.",
+      "Runtime behavior remains unchanged except for the database identifier names."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ChangeQueries\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~ReadChanges|FullyQualifiedName~Authorization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalChangeQueryRepositoryTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalChangeQueryRepositoryTests\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Quote the generated PostgreSQL GetMaxChangeVersion function name and add dialect-specific runtime calls for newest change version.",
+    "acceptance-criteria": [
+      "PostgreSQL generated DDL creates \"dms\".\"GetMaxChangeVersion\"() and no lowercase compatibility wrapper.",
+      "PostgreSQL generated DDL and tests call SELECT \"dms\".\"GetMaxChangeVersion\"().",
+      "SQL Server generated DDL and tests continue to use dms.GetMaxChangeVersion() or [dms].[GetMaxChangeVersion] as appropriate.",
+      "RelationalChangeQueryRepository no longer uses one shared SELECT dms.GetMaxChangeVersion() SQL string for both dialects.",
+      "A small dialect/provider abstraction selects the PostgreSQL quoted call and SQL Server unquoted/bracketed call without leaking PostgreSQL syntax into SQL Server paths."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~PgsqlDialectTests|FullyQualifiedName~MssqlDialectTests|FullyQualifiedName~CoreDdlEmitterTests|FullyQualifiedName~DdlManifestEmitterTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~RelationalChangeQueryRepositoryTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~RelationalChangeQueryRepositoryTests\"",
+      "rg -n '\"dms\"\\.GetMaxChangeVersion|SELECT dms\\.GetMaxChangeVersion\\(\\)' src/dms/backend src/dms/core src/dms/tests"
+    ],
+    "completed": true
+  },
+  {
+    "category": "fixtures",
+    "description": "Refresh affected generated DDL, manifest, and integration fixture artifacts for PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "Authoritative ds-5.2, ds-5.2-tpdm, sample, focused, small, and integration fixture expected SQL files reflect quoted PostgreSQL GetMaxChangeVersion and OldX/NewX tracked-change columns.",
+      "Expected relational-model and ddl manifests reflect the new tracked-change value-column names and unchanged public response mappings.",
+      "Fixture updates are limited to generated identifier/name changes required by this story unless a test failure exposes a true dependent change.",
+      "PostgreSQL and SQL Server fixture outputs remain deterministic across repeated generation."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Golden|FullyQualifiedName~Fixture|FullyQualifiedName~Authoritative\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Golden|FullyQualifiedName~Authoritative\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Golden|FullyQualifiedName~Manifest\"",
+      "git diff -- src/dms/backend/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures"
+    ],
+    "completed": true
+  },
+  {
+    "category": "documentation",
+    "description": "Update backend redesign reference docs affected by the DMS-1244 identifier convention changes.",
+    "acceptance-criteria": [
+      "change-queries.md describes tracked-change value columns with OldX and NewX prefixes while preserving internal source-name underscores.",
+      "Tracked-change authorization, /deletes, and /keyChanges SQL examples in change-queries.md use OldX/NewX storage names or explicitly label any Old_/New_ text as historical explanation.",
+      "summary.md, ddl-generation.md, update-tracking.md, and change-queries.md reference the PostgreSQL function as \"dms\".\"GetMaxChangeVersion\"() where PostgreSQL identifier quoting matters.",
+      "Documentation updates are limited to DMS-1244 naming changes and do not rewrite unrelated backend redesign content."
+    ],
+    "steps-to-verify": [
+      "rg -n 'Old_|New_|\"dms\"\\.GetMaxChangeVersion|dms\\.GetMaxChangeVersion\\(\\)' reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/change-queries.md reference/design/backend-redesign/design-docs/ddl-generation.md reference/design/backend-redesign/design-docs/update-tracking.md",
+      "Review remaining matches to confirm they are explanatory historical references rather than current generated identifier guidance.",
+      "git diff -- reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/change-queries.md reference/design/backend-redesign/design-docs/ddl-generation.md reference/design/backend-redesign/design-docs/update-tracking.md"
+    ],
+    "completed": true
+  },
+  {
+    "category": "tests",
+    "description": "Update and extend DMS integration tests for tracked-change behavior and PostgreSQL function-name quoting.",
+    "acceptance-criteria": [
+      "PostgreSQL generated-DDL smoke tests assert tracked-change rows use OldX/NewX columns and call \"dms\".\"GetMaxChangeVersion\"().",
+      "SQL Server generated-DDL smoke tests assert tracked-change rows use OldX/NewX columns while preserving SQL Server GetMaxChangeVersion calls.",
+      "RelationalChangeQueryRepository integration tests seed and query tracked-change tables with the new value-column names in both dialects.",
+      "Descriptor, delete, key-change, authorization, and identity-propagation tracked-change scenarios still pass in both dialects.",
+      "Tests cover at least one source column with internal underscores to verify only the prefix separator was removed."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~GeneratedDdl|FullyQualifiedName~RelationalChangeQueryRepositoryTests|FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~DescriptorStamping\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~GeneratedDdl|FullyQualifiedName~RelationalChangeQueryRepositoryTests|FullyQualifiedName~GetMaxChangeVersionTests|FullyQualifiedName~DescriptorStamping\"",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration|Category=MssqlIntegration\""
+    ],
+    "completed": true
+  },
+  {
+    "category": "verification",
+    "description": "Run final formatting, static guardrails, and focused DMS/CMS test coverage for DMS-1244.",
+    "acceptance-criteria": [
+      "C# files changed for this story are formatted with csharpier.",
+      "Executable CMS PostgreSQL SQL no longer contains unquoted dmscs.Table references, lowercase folded table checks, lowercase pk_/fk_/uq_/idx_ constraint or index names, or duplicate unique-index patterns.",
+      "Executable DMS generated SQL, manifests, repository SQL, and SQL-asserting tests no longer use Old_ or New_ tracked-change prefixes except explanatory text that explicitly documents the rename.",
+      "PostgreSQL generated DDL no longer emits or calls \"dms\".GetMaxChangeVersion().",
+      "Backend redesign reference docs no longer present Old_/New_ tracked-change columns or unquoted PostgreSQL GetMaxChangeVersion calls as the current convention.",
+      "DMS Docker/env/docs/rest-client cache configuration no longer references CacheExpirationMinutes or CACHE_EXPIRATION_MINUTES and consistently exposes the seconds-based settings.",
+      "Focused DMS and CMS unit, integration, and E2E coverage relevant to identifier naming, tracked changes, and availableChangeVersions passes or any environmental skip/failure is documented."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/config src/dms",
+      "rg -n 'dmscs\\.[A-Za-z]|table_name = '\\''[a-z]|column_name = '\\''[a-z]|\\b(pk_|fk_|uq_|idx_)' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql",
+      "rg -n 'Old_|New_' src/dms/backend/EdFi.DataManagementService.Backend.Ddl src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.*.Tests.Integration",
+      "rg -n '\"dms\"\\.GetMaxChangeVersion|SELECT dms\\.GetMaxChangeVersion\\(\\)' src/dms/backend src/dms/core src/dms/tests",
+      "rg -n 'Old_|New_|\"dms\"\\.GetMaxChangeVersion|dms\\.GetMaxChangeVersion\\(\\)' reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/change-queries.md reference/design/backend-redesign/design-docs/ddl-generation.md reference/design/backend-redesign/design-docs/update-tracking.md",
+      "rg -n 'CacheExpirationMinutes|CACHE_EXPIRATION_MINUTES' docs eng/docker-compose src/dms/tests/RestClient",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj",
+      "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ChangeQueries\""
+    ],
+    "completed": true
+  }
+]

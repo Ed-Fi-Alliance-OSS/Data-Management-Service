@@ -1,0 +1,89 @@
+DMS-1244 - completed dmscs identifier/naming inventory task.
+- Key decisions: use DMS PK/FK/UX/IX/CK naming; tenant-owned logical UX includes TenantId for Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim; nullable TenantId needs PostgreSQL NULLS NOT DISTINCT to preserve non-multitenant uniqueness.
+- Files changed: dmscs-identifier-and-naming-inventory.md, tasks.json, progress.txt.
+- Verification: ran deploy-script identifier/constraint search, repository duplicate/tenant/order search, reviewed ConstraintNaming.cs.
+- Notes: later tasks must update ON CONFLICT ClaimSetName/ClaimName to new tenant-aware UX constraints; progress.txt was missing and created in this iteration.
+
+DMS-1244 - completed tracked-change value-column derivation prefix task.
+- Key decisions: derive physical tracked-change value columns as OldX/NewX by changing only the derivation prefix; keep source-name internal underscores, e.g. OldStudent_DocumentId and OldSchoolId_Unified.
+- Files changed: DeriveTrackedChangeInventoryPass.cs, RelationalModelSetBuilderContext.cs, DeriveTrackedChangeInventoryPassTests.cs, IdentifierShorteningScopeTests.cs, relational-model expected manifests, tasks.json, progress.txt.
+- Verification: dotnet test RelationalModel.Tests.Unit passed 865/865; task filter command was attempted first but matched no tests; guard searches show remaining Old_ references in static read-changes auth views and downstream DDL/integration fixtures for later tasks.
+- Notes: static AuthObjectDefinitions/read-changes SQL still uses Old_ names by design for a later query/auth task; backend DDL and integration fixture artifacts still need refresh in later fixture task.
+
+DMS-1244 - completed DMS DDL emitters/read-change auth tracked-column task.
+- Key decisions: keep DDL emitters model-driven; update static ReadChanges auth view definitions to synthesize OldX names with preserved internal underscores; refresh DDL/integration expected artifacts because task guard requires no executable Old_/New_ DDL snapshots.
+- Files changed: AuthObjectDefinitions.cs, DDL emitter/contract comments, DDL unit assertions, generated DDL/relational-model expected artifacts, tasks.json, progress.txt.
+- Verification: dotnet test Ddl.Tests.Unit passed 970/971 with 1 known skipped guard test; task broad DDL filter passed 177/178 with same skip; CoreDdl/DdlManifest effective filter passed 216/216; Old_/New_ guard returned no matches.
+- Notes: task command for CoreDdlEmitterTests|DdlManifestEmitterTests matches no NUnit tests by file name, so used Given_CoreDdlEmitter|Given_DdlManifestEmitter after recording the mismatch.
+
+DMS-1244 - completed quoted PostgreSQL GetMaxChangeVersion/runtime dialect call task.
+- Key decisions: emit PostgreSQL "dms"."GetMaxChangeVersion"() with no lowercase wrapper; runtime uses ChangeVersionSqlProvider to select PostgreSQL quoted call vs SQL Server bracketed call from IRelationalCommandExecutor.Dialect.
+- Files changed: PgsqlDialect/ISqlDialect, RelationalChangeQueryRepository, ChangeVersionSqlProvider, GetMax/DDL/repository tests, generated DDL pgsql expected SQL and manifest hashes, tasks.json, progress.txt.
+- Verification: csharpier on changed C#; DDL task file-name filter matched no tests, effective Given_* filter passed 413/413; Backend.Tests.Unit RelationalChangeQueryRepositoryTrackedChanges passed 11/11; full DDL.Tests.Unit passed 970/971 with known skip; PostgreSQL GetMax/repository integration passed 6/6; SQL Server GetMax/repository integration passed 6/6 against temp localhost,14336 container; guard for "dms".GetMaxChangeVersion and SELECT dms.GetMaxChangeVersion returned no matches.
+- Notes: broad PostgreSQL Generated_Ddl_RelationalChangeQueryRepository fixture still fails on Old_* tracked-change seed/query columns, expected for next tracked-change query-planning task; default SQL Server appsettings localhost,1434 rejected sa login, so used temporary container and stopped it.
+
+DMS-1244 - completed tracked-change query planning/runtime OldX task.
+- Key decisions: runtime planners already consume tracked-change metadata; updated query-planning/mapper/auth tests and repository integration seed SQL to use OldX/NewX names while preserving internal underscores.
+- Files changed: ChangeQueries unit tests, ReadChanges authorization planner comments/tests, PostgreSQL/MSSQL RelationalChangeQueryRepository integration tests, tasks.json, progress.txt.
+- Verification: csharpier changed C#; Backend.Tests.Unit ChangeQueries passed 67/67; Plans.Tests.Unit ReadChanges|Authorization passed 453/453; PostgreSQL RelationalChangeQueryRepository effective filter passed 27/27; MSSQL RelationalChangeQueryRepository effective filter passed 27/27 with localhost,1434 container; scoped Old_/New_ guard and git diff --check clean.
+- Notes: task's integration filter FullyQualifiedName~RelationalChangeQueryRepositoryTests matched no tests because classes omit the Tests suffix; used FullyQualifiedName~RelationalChangeQueryRepository.
+
+DMS-1244 - completed core CMS PostgreSQL create-table quoted identifier task.
+- Key decisions: core scripts now create quoted "dmscs"."PascalCase" tables/columns; PK/FK/UX moved to guarded pg_constraint blocks; tenant-owned core tables include nullable TenantId so UX_TenantId_* uses NULLS NOT DISTINCT; redundant unique indexes removed, remaining DataStoreDerivative lookup is IX_* non-unique.
+- Files changed: core CMS deploy scripts 0000-0007, 0021, 0022 ApiClientDataStore/DataStoreContext, 0023, 0024, 0026, 0027; tasks.json; progress.txt.
+- Verification: touched core-script unquoted/lowercase constraint guards clean; psql temp db applied core scripts twice on localhost:5435 and produced 16 PascalCase tables/34 PK/FK/UX constraints; git diff --check clean; broad all-script guards still match seed/tenant-alter/OpenIddict future tasks; full script probe fails first at 0008 unquoted AuthorizationStrategy; dotnet TenantTests deploy rolls back and Respawn reports no tables for same downstream script gap.
+- Notes: next seed/tenant task should quote 0008/0009/0025, change ON CONFLICT to new UX constraint names, and add tenant FKs/indexes with quoted identifiers.
+
+DMS-1244 - completed CMS PostgreSQL seed and tenant-alter quoted identifier task.
+- Key decisions: seed 0008/0009 uses quoted identifiers plus OVERRIDING SYSTEM VALUE and identity restart; 0025 adds TenantId columns separately from guarded FK_Table_Tenant constraints so fresh quoted tables still get tenant FKs; tenant lookup indexes use IX_Table_TenantId.
+- Files changed: 0008_Insert_AuthorizationStrategy.sql, 0009_Insert_ResourceClaim.sql, 0025_Add_TenantId_To_Tables.sql, tasks.json, progress.txt.
+- Verification: task guard for lowercase table/column checks and old pk/fk/uq/idx names clean; psql throwaway db applied all deploy scripts twice and found five FK_*_Tenant constraints/five IX_*_TenantId indexes; setup-local-cms teardown/setup/setup commands completed after clearing dms-local container-name conflict; git diff --check clean.
+- Notes: config service container restarts after setup because ClaimsTableValidator still queries dmscs.claimset unquoted; that is repository SQL task, not seed/tenant script work.
+
+DMS-1244 - completed CMS PostgreSQL OpenIddict install-script quoted identifier task.
+- Key decisions: preserve existing OpenIddict FK behavior; quote all OpenIddict tables/columns/comments; move PK/UX/FK definitions to guarded pg_constraint blocks; keep token lookup indexes non-unique IX_*.
+- Files changed: OpenIddict deploy scripts 0012-0019, tasks.json, progress.txt.
+- Verification: old OpenIddict lowercase/old-name guard clean; psql throwaway db on localhost:5435 applied all deploy scripts twice and found 8 OpenIddict tables plus expected PK/UX/FK and IX_OpenIddictToken_* objects; exact task dotnet test filter ran but matched no tests; git diff --check clean.
+- Notes: OpenIddict repository SQL still uses unquoted dmscs.OpenIddict* names and remains the next OpenIddict-specific repository task.
+
+DMS-1244 - completed CMS PostgreSQL core repository quoted identifier task.
+- Key decisions: quote core dmscs schema/table/column/order identifiers in repository SQL; update tenant predicate helper to emit quoted TenantId predicates; move ClaimSet/ResourceClaim import conflict paths to tenant-aware UX_* constraints.
+- Files changed: core CMS PostgreSQL repositories, claims-loader SQL helpers, TenantContextExtensions, affected PostgreSQL integration test direct SQL, tasks.json, progress.txt.
+- Verification: csharpier on changed CMS backend/test files; repository unquoted/old-name guards clean; Backend.Tests.Unit passed 321/321; PostgreSQL integration passed 234/234 excluding the known OpenIddictDataRepository case; full PostgreSQL integration passed 234/235 with only dmscs.openiddictapplication failure from next OpenIddict repository task.
+- Notes: local edfi_configurationservice test DB needed dmscs schema and public."dmscs_SchemaVersions" reset after stale lowercase/PascalCase mix; next task should quote OpenIddictDataRepository/OpenIddictTokenRepository.
+
+DMS-1244 - completed CMS PostgreSQL OpenIddict repository quoted identifier task.
+- Key decisions: quote OpenIddictDataRepository table/column/projection SQL; keep token repository as delegate only; include Payload on token insert; use named UX/PK ON CONFLICT in setup OpenIddict seed SQL; pass psql SQL as arguments instead of Invoke-Expression escaping.
+- Files changed: OpenIddictDataRepository.cs, setup-openiddict.ps1, OpenIddict-Crypto.psm1, CMS E2E SetupHooks.cs, tasks.json, progress.txt.
+- Verification: csharpier changed C#; OpenIddict/setup unquoted and old-name guards clean; PostgreSQL integration task filter matched no tests, effective GetApplicationByClientId passed 1/1; full PostgreSQL integration passed 235/235; teardown/setup-local-cms completed; env -u NODE_OPTIONS CMS E2E Token|Connect passed 12/12.
+- Notes: direct E2E command fails before API calls when NODE_OPTIONS contains --experimental-strip-types; clear NODE_OPTIONS for this suite.
+
+DMS-1244 - completed CMS PostgreSQL database-shape integration tests task.
+- Key decisions: use isolated throwaway database per fixture; deploy with DbUp, replay embedded deploy scripts manually, then deploy again to cover fresh-install shape plus script idempotency without stale shared DB state.
+- Files changed: DatabaseShapeTests.cs, tasks.json, progress.txt.
+- Verification: csharpier new test; focused database-shape filter passed 6/6; full CMS PostgreSQL integration passed 241/241; CMS teardown/setup completed; env -u NODE_OPTIONS full CMS E2E passed 192/192.
+- Notes: PostgreSQL exposes NOT NULL catalog rows as pg_constraint contype n on this runtime, so shape assertions filter to PK/FK/UX/CK constraint families required by story.
+
+DMS-1244 - completed DMS generated fixture artifact refresh task.
+- Key decisions: refresh only the authoritative sample expected relational-model manifest read-change auth mappings still using Old_ tracked-change columns; leave authoritative input goldens untouched.
+- Files changed: authoritative-derived-relational-model-set.json, tasks.json, progress.txt.
+- Verification: DDL golden/fixture/authoritative filter passed 178/178; RelationalModel golden/authoritative filter passed 20/20; Plans golden/manifest filter passed 52/52; scoped fixture diff showed no DDL/integration fixture changes; authoritative input diff guard clean.
+- Notes: initial parallel dotnet test attempt hit a build output file lock; reran sequentially for signal.
+
+DMS-1244 - completed DMS integration test tracked-change/GetMax quoting task.
+- Key decisions: update generated-DDL authoritative smoke assertions to OldX/NewX physical tracked-change columns while preserving internal underscores; keep PostgreSQL GetMax and descriptor-stamping quoted-call coverage unchanged.
+- Files changed: PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs, MssqlGeneratedDdlAuthoritativeSmokeTests.cs, tasks.json, progress.txt.
+- Verification: csharpier changed smoke tests; old-name/function guard clean; PostgreSQL literal task filter passed 8/8; effective PostgreSQL class filter passed 67/67; effective MSSQL class filter passed 66/66 with temp localhost,1434 container; API integration Category=PostgresqlIntegration|MssqlIntegration passed 102/102.
+- Notes: literal task filter misses Generated_Ddl/RelationalChangeQueryRepository classes due NUnit class names, so exact class filters were used for real smoke/repository coverage; temp MSSQL container stopped.
+
+DMS-1244 - completed backend redesign docs naming update task.
+- Key decisions: document current OldX/NewX tracked-change storage names with internal underscores preserved; describe GetMaxChangeVersion as PostgreSQL quoted "dms"."GetMaxChangeVersion"() and SQL Server [dms].[GetMaxChangeVersion].
+- Files changed: summary.md, change-queries.md, ddl-generation.md, update-tracking.md, tasks.json, progress.txt.
+- Verification: docs Old_/New_/GetMax guard clean; git diff --check clean for touched docs.
+- Notes: remaining open task is final DMS-1244 verification.
+
+DMS-1244 - completed final verification task.
+- Key decisions: keep broad Old_/New_ guard results as reviewed false positives for non-tracked-change test names and America/New_York; fix stale relational-model manifest assertion to expect OldStudent_DocumentId; remove noisy Old_ explanatory comment text.
+- Files changed: DerivedModelSetManifestEmitterTests.cs, DerivedModelSetManifestEmitter.cs, csharpier-only DataStoreTests.cs and ChangeQueryStepDefinitions.cs, tasks.json, progress.txt.
+- Verification: csharpier src/config src/dms; CMS/PostgreSQL/GetMax/docs/cache guards clean except reviewed broad New_ false positives; git diff --check clean; CMS backend unit 321/321; CMS PostgreSQL integration 241/241; RelationalModel unit 865/865; DDL unit 970/971 with known skip; Backend ChangeQueries 67/67.
+- Notes: all tasks in tasks.json now complete.

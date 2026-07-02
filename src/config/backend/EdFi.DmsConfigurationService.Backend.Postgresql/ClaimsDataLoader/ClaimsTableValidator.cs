@@ -30,7 +30,7 @@ public class ClaimsTableValidator(
 
             // Check if ClaimSet table has any records
             int claimSetCount = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM dmscs.ClaimSet"
+                "SELECT COUNT(*) FROM \"dmscs\".\"ClaimSet\""
             );
 
             if (claimSetCount > 0)
@@ -41,7 +41,7 @@ public class ClaimsTableValidator(
 
             // Check if ClaimsHierarchy table has any records
             int hierarchyCount = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM dmscs.ClaimsHierarchy"
+                "SELECT COUNT(*) FROM \"dmscs\".\"ClaimsHierarchy\""
             );
 
             if (hierarchyCount > 0)

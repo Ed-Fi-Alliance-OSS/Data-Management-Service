@@ -162,10 +162,11 @@ internal sealed record BatchReadResult(
 );
 
 internal sealed class InMemoryRelationalCommandExecutor(
-    IReadOnlyList<InMemoryRelationalCommandExecution> executions
+    IReadOnlyList<InMemoryRelationalCommandExecution> executions,
+    SqlDialect dialect = SqlDialect.Pgsql
 ) : IRelationalCommandExecutor
 {
-    public SqlDialect Dialect => SqlDialect.Pgsql;
+    public SqlDialect Dialect => dialect;
 
     private readonly Queue<InMemoryRelationalCommandExecution> _executions = new(executions);
 

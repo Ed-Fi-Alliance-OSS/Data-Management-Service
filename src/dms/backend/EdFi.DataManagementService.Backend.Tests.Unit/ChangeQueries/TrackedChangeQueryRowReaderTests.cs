@@ -436,8 +436,8 @@ public class Given_TrackedChangeQueryRowReader
         ScalarKind scalarKind = ScalarKind.String
     ) =>
         new(
-            OldColumnName: new DbColumnName($"Old_{columnName}"),
-            NewColumnName: new DbColumnName($"New_{columnName}"),
+            OldColumnName: new DbColumnName($"Old{columnName}"),
+            NewColumnName: new DbColumnName($"New{columnName}"),
             SourceJsonPath: $"$.{columnName}",
             CanonicalStorageColumn: null,
             IsOldColumnNullable: false,

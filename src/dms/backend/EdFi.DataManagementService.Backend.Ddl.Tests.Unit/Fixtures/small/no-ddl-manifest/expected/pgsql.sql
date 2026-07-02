@@ -40,7 +40,7 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
 $GetMaxChangeVersion$
 DECLARE
     result bigint;
@@ -464,8 +464,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
 (
-    "Old_PersonId" integer NOT NULL,
-    "New_PersonId" integer NULL,
+    "OldPersonId" integer NOT NULL,
+    "NewPersonId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -521,7 +521,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Person" (
-            "Old_PersonId",
+            "OldPersonId",
             "Id",
             "ChangeVersion"
         )
@@ -556,8 +556,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Person" (
-            "Old_PersonId",
-            "New_PersonId",
+            "OldPersonId",
+            "NewPersonId",
             "Id",
             "ChangeVersion"
         )

@@ -26,7 +26,7 @@ public class TenantTests : DatabaseTest
         foreach (var name in names)
         {
             await Connection!.ExecuteAsync(
-                @"DELETE FROM dmscs.Tenant WHERE Name = @Name;",
+                @"DELETE FROM ""dmscs"".""Tenant"" WHERE ""Name"" = @Name;",
                 new { Name = name }
             );
         }

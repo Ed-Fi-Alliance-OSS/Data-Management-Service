@@ -33,8 +33,8 @@ public class Given_ChangeQueryResponseFieldMapper
         fields.Should().ContainSingle();
         fields[0].QueryFieldName.Should().Be("schoolId");
         fields[0].Kind.Should().Be(ChangeQueryResponseFieldKind.Scalar);
-        fields[0].OldColumn.OldColumnName.Should().Be(new DbColumnName("Old_SchoolId"));
-        fields[0].NewColumn.NewColumnName.Should().Be(new DbColumnName("New_SchoolId"));
+        fields[0].OldColumn.OldColumnName.Should().Be(new DbColumnName("OldSchoolId"));
+        fields[0].NewColumn.NewColumnName.Should().Be(new DbColumnName("NewSchoolId"));
         fields[0].OldDescriptorCodeValueColumn.Should().BeNull();
         fields[0].NewDescriptorCodeValueColumn.Should().BeNull();
     }
@@ -62,14 +62,14 @@ public class Given_ChangeQueryResponseFieldMapper
         fields.Should().ContainSingle();
         fields[0].QueryFieldName.Should().Be("termDescriptor");
         fields[0].Kind.Should().Be(ChangeQueryResponseFieldKind.Descriptor);
-        fields[0].OldColumn.OldColumnName.Should().Be(new DbColumnName("Old_TermDescriptor_Namespace"));
-        fields[0].NewColumn.NewColumnName.Should().Be(new DbColumnName("New_TermDescriptor_Namespace"));
+        fields[0].OldColumn.OldColumnName.Should().Be(new DbColumnName("OldTermDescriptor_Namespace"));
+        fields[0].NewColumn.NewColumnName.Should().Be(new DbColumnName("NewTermDescriptor_Namespace"));
         fields[0]
             .OldDescriptorCodeValueColumn!.OldColumnName.Should()
-            .Be(new DbColumnName("Old_TermDescriptor_CodeValue"));
+            .Be(new DbColumnName("OldTermDescriptor_CodeValue"));
         fields[0]
             .NewDescriptorCodeValueColumn!.NewColumnName.Should()
-            .Be(new DbColumnName("New_TermDescriptor_CodeValue"));
+            .Be(new DbColumnName("NewTermDescriptor_CodeValue"));
     }
 
     [Test]
@@ -134,8 +134,8 @@ public class Given_ChangeQueryResponseFieldMapper
     public void It_ignores_person_document_id_columns()
     {
         var personDocumentIdColumn = new TrackedChangeColumnInfo(
-            OldColumnName: new DbColumnName("Old_Student_DocumentId"),
-            NewColumnName: new DbColumnName("New_Student_DocumentId"),
+            OldColumnName: new DbColumnName("OldStudent_DocumentId"),
+            NewColumnName: new DbColumnName("NewStudent_DocumentId"),
             SourceJsonPath: "$.studentReference.studentUniqueId",
             CanonicalStorageColumn: null,
             IsOldColumnNullable: false,
@@ -468,8 +468,8 @@ public class Given_ChangeQueryResponseFieldMapper
     )
     {
         return new TrackedChangeColumnInfo(
-            OldColumnName: new DbColumnName($"Old_{columnName}"),
-            NewColumnName: new DbColumnName($"New_{columnName}"),
+            OldColumnName: new DbColumnName($"Old{columnName}"),
+            NewColumnName: new DbColumnName($"New{columnName}"),
             SourceJsonPath: sourceJsonPath,
             CanonicalStorageColumn: canonicalStorageColumn,
             IsOldColumnNullable: false,
@@ -487,8 +487,8 @@ public class Given_ChangeQueryResponseFieldMapper
     )
     {
         return new TrackedChangeColumnInfo(
-            OldColumnName: new DbColumnName($"Old_{columnName}"),
-            NewColumnName: new DbColumnName($"New_{columnName}"),
+            OldColumnName: new DbColumnName($"Old{columnName}"),
+            NewColumnName: new DbColumnName($"New{columnName}"),
             SourceJsonPath: sourceJsonPath,
             CanonicalStorageColumn: null,
             IsOldColumnNullable: false,

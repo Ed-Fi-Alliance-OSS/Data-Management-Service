@@ -3,37 +3,59 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
+CREATE TABLE IF NOT EXISTS "dmscs"."ClaimSet"
 (
-    Id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
-    ClaimSetName VARCHAR(256) NOT NULL,
-    IsSystemReserved BOOLEAN NOT NULL,
-    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
-    CreatedBy VARCHAR(256),
-    LastModifiedAt TIMESTAMP,
-    ModifiedBy VARCHAR(256),
-    CONSTRAINT claimset_pkey PRIMARY KEY (id)
+    "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    "TenantId" BIGINT,
+    "ClaimSetName" VARCHAR(256) NOT NULL,
+    "IsSystemReserved" BOOLEAN NOT NULL,
+    "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+    "CreatedBy" VARCHAR(256),
+    "LastModifiedAt" TIMESTAMP,
+    "ModifiedBy" VARCHAR(256)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ClaimSetName ON dmscs.ClaimSet (ClaimSetName);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'PK_ClaimSet'
+          AND conrelid = '"dmscs"."ClaimSet"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."ClaimSet" ADD CONSTRAINT "PK_ClaimSet" PRIMARY KEY ("Id");
+    END IF;
 
-COMMENT ON COLUMN dmscs.claimset.id
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'UX_ClaimSet_TenantId_ClaimSetName'
+          AND conrelid = '"dmscs"."ClaimSet"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."ClaimSet" ADD CONSTRAINT "UX_ClaimSet_TenantId_ClaimSetName" UNIQUE NULLS NOT DISTINCT ("TenantId", "ClaimSetName");
+    END IF;
+END$$;
+
+COMMENT ON COLUMN "dmscs"."ClaimSet"."Id"
     IS 'ClaimSet id';
 
-COMMENT ON COLUMN dmscs.claimset.ClaimSetName
+COMMENT ON COLUMN "dmscs"."ClaimSet"."TenantId"
+    IS 'Tenant id';
+
+COMMENT ON COLUMN "dmscs"."ClaimSet"."ClaimSetName"
     IS 'Claim set name and must be unique';
 
-COMMENT ON COLUMN dmscs.claimset.IsSystemReserved
+COMMENT ON COLUMN "dmscs"."ClaimSet"."IsSystemReserved"
     IS 'Is system reserved';
 
-COMMENT ON COLUMN dmscs.claimset.CreatedAt
+COMMENT ON COLUMN "dmscs"."ClaimSet"."CreatedAt"
     IS 'Timestamp when the record was created (UTC)';
 
-COMMENT ON COLUMN dmscs.claimset.CreatedBy
+COMMENT ON COLUMN "dmscs"."ClaimSet"."CreatedBy"
     IS 'User or client ID who created the record';
 
-COMMENT ON COLUMN dmscs.claimset.LastModifiedAt
+COMMENT ON COLUMN "dmscs"."ClaimSet"."LastModifiedAt"
     IS 'Timestamp when the record was last modified (UTC)';
 
-COMMENT ON COLUMN dmscs.claimset.ModifiedBy
+COMMENT ON COLUMN "dmscs"."ClaimSet"."ModifiedBy"
     IS 'User or client ID who last modified the record';

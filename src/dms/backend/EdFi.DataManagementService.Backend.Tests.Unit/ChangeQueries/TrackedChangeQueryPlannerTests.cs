@@ -83,7 +83,7 @@ public class Given_TrackedChangeQueryPlanner
         TrackedChangeColumnInfo result = TrackedChangeQueryPlanner.RequireRepresentativeIdentityColumn(table);
 
         result.Should().BeSameAs(schoolIdColumn);
-        result.NewColumnName.Should().Be(new DbColumnName("New_SchoolId"));
+        result.NewColumnName.Should().Be(new DbColumnName("NewSchoolId"));
     }
 
     [Test]
@@ -157,7 +157,7 @@ public class Given_TrackedChangeQueryPlanner
         plan.TotalCount.Should().BeNull();
         sql.Should().StartWith("WITH FilteredChanges AS");
         sql.Should().Contain("FROM \"tracked_changes_edfi\".\"School\" c");
-        sql.Should().Contain("c.\"New_SchoolId\" IS NOT NULL");
+        sql.Should().Contain("c.\"NewSchoolId\" IS NOT NULL");
         sql.Should().Contain("c.\"ChangeVersion\" >= @MinChangeVersion");
         sql.Should().Contain("c.\"ChangeVersion\" <= @MaxChangeVersion");
         sql.Should().NotContain("@MinChangeVersion IS NULL");
@@ -170,8 +170,8 @@ public class Given_TrackedChangeQueryPlanner
         sql.Should().Contain("JOIN FilteredChanges lastChange");
         sql.Should().Contain("firstChange.\"Id\" AS \"__Id\"");
         sql.Should().Contain("w.\"__LastChangeVersion\" AS \"__ChangeVersion\"");
-        sql.Should().Contain("firstChange.\"Old_SchoolId\" AS \"schoolId__old\"");
-        sql.Should().Contain("lastChange.\"New_SchoolId\" AS \"schoolId__new\"");
+        sql.Should().Contain("firstChange.\"OldSchoolId\" AS \"schoolId__old\"");
+        sql.Should().Contain("lastChange.\"NewSchoolId\" AS \"schoolId__new\"");
         sql.Should().Contain("ORDER BY w.\"__LastChangeVersion\" ASC");
         sql.Should().Contain("LIMIT @Limit OFFSET @Offset");
         AssertParameter(command, "@MinChangeVersion", 10L);
@@ -229,10 +229,10 @@ public class Given_TrackedChangeQueryPlanner
             .Contain(
                 "JOIN FilteredChanges lastChange ON lastChange.\"Id\" = w.\"Id\" AND lastChange.\"ChangeVersion\" = w.\"__LastChangeVersion\""
             );
-        sql.Should().Contain("firstChange.\"Old_SchoolId\" AS \"schoolId__old\"");
-        sql.Should().Contain("lastChange.\"New_SchoolId\" AS \"schoolId__new\"");
-        sql.Should().Contain("firstChange.\"Old_NameOfInstitution\" AS \"nameOfInstitution__old\"");
-        sql.Should().Contain("lastChange.\"New_NameOfInstitution\" AS \"nameOfInstitution__new\"");
+        sql.Should().Contain("firstChange.\"OldSchoolId\" AS \"schoolId__old\"");
+        sql.Should().Contain("lastChange.\"NewSchoolId\" AS \"schoolId__new\"");
+        sql.Should().Contain("firstChange.\"OldNameOfInstitution\" AS \"nameOfInstitution__old\"");
+        sql.Should().Contain("lastChange.\"NewNameOfInstitution\" AS \"nameOfInstitution__new\"");
     }
 
     [Test]
@@ -328,18 +328,18 @@ public class Given_TrackedChangeQueryPlanner
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
-        sql.Should().Contain("c.\"New_ProgramTypeDescriptor_Namespace\" IS NOT NULL");
+        sql.Should().Contain("c.\"NewProgramTypeDescriptor_Namespace\" IS NOT NULL");
         sql.Should()
-            .Contain("firstChange.\"Old_ProgramTypeDescriptor_Namespace\" AS \"programTypeDescriptor__old\"");
+            .Contain("firstChange.\"OldProgramTypeDescriptor_Namespace\" AS \"programTypeDescriptor__old\"");
         sql.Should()
             .Contain(
-                "firstChange.\"Old_ProgramTypeDescriptor_CodeValue\" AS \"programTypeDescriptor__oldCodeValue\""
+                "firstChange.\"OldProgramTypeDescriptor_CodeValue\" AS \"programTypeDescriptor__oldCodeValue\""
             );
         sql.Should()
-            .Contain("lastChange.\"New_ProgramTypeDescriptor_Namespace\" AS \"programTypeDescriptor__new\"");
+            .Contain("lastChange.\"NewProgramTypeDescriptor_Namespace\" AS \"programTypeDescriptor__new\"");
         sql.Should()
             .Contain(
-                "lastChange.\"New_ProgramTypeDescriptor_CodeValue\" AS \"programTypeDescriptor__newCodeValue\""
+                "lastChange.\"NewProgramTypeDescriptor_CodeValue\" AS \"programTypeDescriptor__newCodeValue\""
             );
     }
 
@@ -371,7 +371,7 @@ public class Given_TrackedChangeQueryPlanner
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should().Contain("FROM [tracked_changes_edfi].[School] c");
-        sql.Should().Contain("c.[New_SchoolId] IS NOT NULL");
+        sql.Should().Contain("c.[NewSchoolId] IS NOT NULL");
         sql.Should().Contain("MIN(c.[ChangeVersion]) AS [__FirstChangeVersion]");
         sql.Should().Contain("MAX(c.[ChangeVersion]) AS [__LastChangeVersion]");
         sql.Should().Contain("GROUP BY c.[Id]");
@@ -379,8 +379,8 @@ public class Given_TrackedChangeQueryPlanner
             .Contain(
                 "JOIN FilteredChanges firstChange ON firstChange.[Id] = w.[Id] AND firstChange.[ChangeVersion] = w.[__FirstChangeVersion]"
             );
-        sql.Should().Contain("firstChange.[Old_SchoolId] AS [schoolId__old]");
-        sql.Should().Contain("lastChange.[New_SchoolId] AS [schoolId__new]");
+        sql.Should().Contain("firstChange.[OldSchoolId] AS [schoolId__old]");
+        sql.Should().Contain("lastChange.[NewSchoolId] AS [schoolId__new]");
         sql.Should()
             .Contain("ORDER BY w.[__LastChangeVersion] ASC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY");
     }
@@ -426,14 +426,14 @@ public class Given_TrackedChangeQueryPlanner
         plan.TotalCount.Should().BeNull();
         sql.Should().StartWith("SELECT COUNT(1) AS \"__TotalCount\"");
         sql.Should().Contain("FROM \"tracked_changes_edfi\".\"School\" c");
-        sql.Should().Contain("c.\"New_SchoolId\" IS NULL");
+        sql.Should().Contain("c.\"NewSchoolId\" IS NULL");
         sql.Should().Contain("c.\"ChangeVersion\" >= @MinChangeVersion");
         sql.Should().Contain("c.\"ChangeVersion\" <= @MaxChangeVersion");
         sql.Should().NotContain("@MinChangeVersion IS NULL");
         sql.Should().NotContain("@MaxChangeVersion IS NULL");
         sql.Should().Contain("c.\"Id\" AS \"__Id\"");
         sql.Should().Contain("c.\"ChangeVersion\" AS \"__ChangeVersion\"");
-        sql.Should().Contain("c.\"Old_SchoolId\" AS \"schoolId__old\"");
+        sql.Should().Contain("c.\"OldSchoolId\" AS \"schoolId__old\"");
         sql.Should().Contain("ORDER BY c.\"ChangeVersion\" ASC");
         sql.Should().Contain("LIMIT @Limit OFFSET @Offset");
         sql.IndexOf("SELECT COUNT(1) AS \"__TotalCount\"", StringComparison.Ordinal)
@@ -582,10 +582,10 @@ public class Given_TrackedChangeQueryPlanner
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should().Contain("FROM [tracked_changes_edfi].[School] c");
-        sql.Should().Contain("c.[New_SchoolId] IS NULL");
+        sql.Should().Contain("c.[NewSchoolId] IS NULL");
         sql.Should().Contain("c.[Id] AS [__Id]");
         sql.Should().Contain("c.[ChangeVersion] AS [__ChangeVersion]");
-        sql.Should().Contain("c.[Old_SchoolId] AS [schoolId__old]");
+        sql.Should().Contain("c.[OldSchoolId] AS [schoolId__old]");
         sql.Should()
             .Contain("ORDER BY c.[ChangeVersion] ASC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY");
     }
@@ -617,7 +617,7 @@ public class Given_TrackedChangeQueryPlanner
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
-        sql.Should().Contain("LEFT JOIN \"edfi\".\"School\" live ON live.\"SchoolId\" = c.\"Old_SchoolId\"");
+        sql.Should().Contain("LEFT JOIN \"edfi\".\"School\" live ON live.\"SchoolId\" = c.\"OldSchoolId\"");
         sql.Should().Contain("live.\"DocumentId\" IS NULL");
         sql.Should().NotContain("live.\"DocumentId\" = c.");
     }
@@ -681,7 +681,7 @@ public class Given_TrackedChangeQueryPlanner
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"Discriminator\" IN (@DescriptorDiscriminator0, @DescriptorDiscriminatorQualified0) AND descriptor_0.\"Namespace\" = c.\"Old_ProgramTypeDescriptor_Namespace\" AND descriptor_0.\"CodeValue\" = c.\"Old_ProgramTypeDescriptor_CodeValue\""
+                "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"Discriminator\" IN (@DescriptorDiscriminator0, @DescriptorDiscriminatorQualified0) AND descriptor_0.\"Namespace\" = c.\"OldProgramTypeDescriptor_Namespace\" AND descriptor_0.\"CodeValue\" = c.\"OldProgramTypeDescriptor_CodeValue\""
             );
         sql.Should()
             .Contain(
@@ -691,9 +691,9 @@ public class Given_TrackedChangeQueryPlanner
         AssertParameter(plan.Command, "@DescriptorDiscriminatorQualified0", "Ed-Fi:ProgramTypeDescriptor");
         sql.Should().Contain("live.\"DocumentId\" IS NULL");
         sql.Should()
-            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"Old_ProgramTypeDescriptor_Namespace\"");
+            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"OldProgramTypeDescriptor_Namespace\"");
         sql.Should()
-            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"Old_ProgramTypeDescriptor_CodeValue\"");
+            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"OldProgramTypeDescriptor_CodeValue\"");
     }
 
     [Test]
@@ -903,7 +903,7 @@ public class Given_TrackedChangeQueryPlanner
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"Discriminator\" IN (@Discriminator, @QualifiedDiscriminator) AND live.\"Namespace\" = c.\"Old_Namespace\" AND live.\"CodeValue\" = c.\"Old_CodeValue\""
+                "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"Discriminator\" IN (@Discriminator, @QualifiedDiscriminator) AND live.\"Namespace\" = c.\"OldNamespace\" AND live.\"CodeValue\" = c.\"OldCodeValue\""
             );
         sql.Should().Contain("live.\"DocumentId\" IS NULL");
     }
@@ -964,7 +964,7 @@ public class Given_TrackedChangeQueryPlanner
         );
 
         var authSql = new TrackedChangeAuthorizationSql(
-            ["c.\"Old_SchoolId\" IN (SELECT 1)"],
+            ["c.\"OldSchoolId\" IN (SELECT 1)"],
             [new RelationalParameter("@AuthP0", 7L)]
         );
 
@@ -972,7 +972,7 @@ public class Given_TrackedChangeQueryPlanner
         TrackedChangeQueryPlan plan = sut.Plan(request, fields, authSql);
 
         string sql = NormalizeSql(plan.Command!.CommandText);
-        sql.Should().Contain("c.\"Old_SchoolId\" IN (SELECT 1)");
+        sql.Should().Contain("c.\"OldSchoolId\" IN (SELECT 1)");
         plan.Command!.Parameters.Should().Contain(p => p.Name == "@AuthP0");
     }
 
@@ -998,14 +998,14 @@ public class Given_TrackedChangeQueryPlanner
             resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
         );
 
-        var authSql = new TrackedChangeAuthorizationSql(["c.\"Old_SchoolId\" IN (SELECT 1)"], []);
+        var authSql = new TrackedChangeAuthorizationSql(["c.\"OldSchoolId\" IN (SELECT 1)"], []);
 
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
         string sql = NormalizeSql(sut.Plan(request, fields, authSql).Command!.CommandText);
 
         // Auth predicate must be inside the FilteredChanges CTE (before GROUP BY / paging).
         int filteredChangesIndex = sql.IndexOf("FilteredChanges AS", StringComparison.Ordinal);
-        int authIndex = sql.IndexOf("c.\"Old_SchoolId\" IN (SELECT 1)", StringComparison.Ordinal);
+        int authIndex = sql.IndexOf("c.\"OldSchoolId\" IN (SELECT 1)", StringComparison.Ordinal);
         int groupByIndex = sql.IndexOf("GROUP BY", StringComparison.Ordinal);
         authIndex.Should().BeGreaterThan(filteredChangesIndex);
         authIndex.Should().BeLessThan(groupByIndex);
@@ -1122,8 +1122,8 @@ public class Given_TrackedChangeQueryPlanner
     )
     {
         return new TrackedChangeColumnInfo(
-            OldColumnName: new DbColumnName($"Old_{columnName}"),
-            NewColumnName: new DbColumnName($"New_{columnName}"),
+            OldColumnName: new DbColumnName($"Old{columnName}"),
+            NewColumnName: new DbColumnName($"New{columnName}"),
             SourceJsonPath: sourceJsonPath,
             CanonicalStorageColumn: canonicalStorageColumn,
             IsOldColumnNullable: false,

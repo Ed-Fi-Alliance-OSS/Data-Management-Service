@@ -4178,16 +4178,16 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         _ddl.Should().Contain("_stampedContentVersion");
         _ddl.Should().Contain("IS DISTINCT FROM");
 
-        // The tracked-change CREATE TABLE earlier in the script legitimately names New_* columns,
+        // The tracked-change CREATE TABLE earlier in the script legitimately names New* columns,
         // so slice to the trigger-function section to prove the key-change INSERT was rendered.
         var triggerSection = _ddl[_ddl.IndexOf("CREATE OR REPLACE FUNCTION", StringComparison.Ordinal)..];
-        triggerSection.Should().Contain("\"New_BeginDate\"");
+        triggerSection.Should().Contain("\"NewBeginDate\"");
 
         // The key-change INSERT must appear AFTER the IdentityVersion UPDATE within the DDL.
         triggerSection
             .IndexOf("\"IdentityVersion\"", StringComparison.Ordinal)
             .Should()
-            .BeLessThan(triggerSection.IndexOf("\"New_BeginDate\"", StringComparison.Ordinal));
+            .BeLessThan(triggerSection.IndexOf("\"NewBeginDate\"", StringComparison.Ordinal));
     }
 
     [Test]
@@ -4288,16 +4288,16 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_ConcreteAbstract
         ddl.Should().Contain("tracked_changes_edfi");
         ddl.Should().NotContain("@identityChangedDocs");
 
-        // The tombstone itself never emits New_* columns, so their absence from the trigger
+        // The tombstone itself never emits New* columns, so their absence from the trigger
         // section proves no key-change INSERT was rendered. (The tracked-change CREATE TABLE
-        // earlier in the script legitimately names New_* columns.)
+        // earlier in the script legitimately names New* columns.)
         var triggerSectionStart =
             sqlDialect == SqlDialect.Pgsql
                 ? ddl.IndexOf("CREATE OR REPLACE FUNCTION", StringComparison.Ordinal)
                 : ddl.IndexOf("CREATE OR ALTER TRIGGER", StringComparison.Ordinal);
         triggerSectionStart.Should().BeGreaterThanOrEqualTo(0);
         var triggerSection = ddl[triggerSectionStart..];
-        triggerSection.Should().NotContain("\"New_BeginDate\"").And.NotContain("[New_BeginDate]");
+        triggerSection.Should().NotContain("\"NewBeginDate\"").And.NotContain("[NewBeginDate]");
         triggerSection
             .Should()
             .Contain(

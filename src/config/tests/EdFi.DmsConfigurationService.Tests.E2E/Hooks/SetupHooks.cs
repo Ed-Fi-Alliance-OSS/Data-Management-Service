@@ -59,12 +59,12 @@ public static class SetupHooks
             await conn.OpenAsync();
 
             // Delete in reverse dependency order
-            await DeleteData("dmscs.DataStoreContext");
-            await DeleteData("dmscs.DataStore");
-            await DeleteData("dmscs.ApiClientDataStore");
-            await DeleteData("dmscs.ApiClient");
-            await DeleteData("dmscs.Application");
-            await DeleteData("dmscs.Vendor");
+            await DeleteData(@"""dmscs"".""DataStoreContext""");
+            await DeleteData(@"""dmscs"".""DataStore""");
+            await DeleteData(@"""dmscs"".""ApiClientDataStore""");
+            await DeleteData(@"""dmscs"".""ApiClient""");
+            await DeleteData(@"""dmscs"".""Application""");
+            await DeleteData(@"""dmscs"".""Vendor""");
             // Clean up test-created claimsets (not system-reserved ones)
             await DeleteTestClaimSets();
 
@@ -78,12 +78,13 @@ public static class SetupHooks
             {
                 // Delete only non-system-reserved claimsets created by tests
                 var deleteTestClaimSetsCmd = new NpgsqlCommand(
-                    @"
-                    DELETE FROM dmscs.ClaimSet 
-                    WHERE ClaimSetName IN ('TestClaimSet1', 'TestClaimSet2', 'TestClaimSet3', 
-                                          'TestClaimSet4', 'AcademicHonorClaimSet', 
+                    """
+                    DELETE FROM "dmscs"."ClaimSet"
+                    WHERE "ClaimSetName" IN ('TestClaimSet1', 'TestClaimSet2', 'TestClaimSet3',
+                                          'TestClaimSet4', 'AcademicHonorClaimSet',
                                           'NewClaimSet', 'ImportedClaimSet')
-                    AND IsSystemReserved = false;",
+                    AND "IsSystemReserved" = false;
+                    """,
                     conn
                 );
                 await deleteTestClaimSetsCmd.ExecuteNonQueryAsync();

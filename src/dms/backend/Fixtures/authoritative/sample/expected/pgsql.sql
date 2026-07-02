@@ -40,7 +40,7 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
 $GetMaxChangeVersion$
 DECLARE
     result bigint;
@@ -439,8 +439,8 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
             "Discriminator",
-            "Old_Namespace",
-            "Old_CodeValue",
+            "OldNamespace",
+            "OldCodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -8950,10 +8950,10 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AcademicWeek"
 (
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
-    "Old_WeekIdentifier" varchar(80) NOT NULL,
-    "New_WeekIdentifier" varchar(80) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
+    "OldWeekIdentifier" varchar(80) NOT NULL,
+    "NewWeekIdentifier" varchar(80) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -8962,12 +8962,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AcademicWeek"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AccountabilityRating"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_RatingTitle" varchar(60) NOT NULL,
-    "New_RatingTitle" varchar(60) NULL,
-    "Old_SchoolYear_SchoolYear" integer NOT NULL,
-    "New_SchoolYear_SchoolYear" integer NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldRatingTitle" varchar(60) NOT NULL,
+    "NewRatingTitle" varchar(60) NULL,
+    "OldSchoolYear_SchoolYear" integer NOT NULL,
+    "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -8976,10 +8976,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AccountabilityRating"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Assessment"
 (
-    "Old_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_AssessmentIdentifier" varchar(60) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
+    "OldAssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessmentIdentifier" varchar(60) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -8988,14 +8988,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Assessment"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministration"
 (
-    "Old_AdministrationIdentifier" varchar(255) NOT NULL,
-    "New_AdministrationIdentifier" varchar(255) NULL,
-    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
-    "Old_Assessment_Namespace" varchar(255) NOT NULL,
-    "New_Assessment_Namespace" varchar(255) NULL,
-    "Old_AssigningEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_AssigningEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldAdministrationIdentifier" varchar(255) NOT NULL,
+    "NewAdministrationIdentifier" varchar(255) NULL,
+    "OldAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessment_Namespace" varchar(255) NOT NULL,
+    "NewAssessment_Namespace" varchar(255) NULL,
+    "OldAssigningEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewAssigningEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9004,16 +9004,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministration"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministrationParticipation"
 (
-    "Old_AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
-    "New_AssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
-    "Old_AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_AssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
-    "Old_AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
-    "New_AssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
-    "Old_AssessmentAdministration_Namespace" varchar(255) NOT NULL,
-    "New_AssessmentAdministration_Namespace" varchar(255) NULL,
-    "Old_ParticipatingEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_ParticipatingEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldAssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "NewAssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
+    "OldAssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
+    "NewAssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
+    "OldAssessmentAdministration_Namespace" varchar(255) NOT NULL,
+    "NewAssessmentAdministration_Namespace" varchar(255) NULL,
+    "OldParticipatingEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewParticipatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9022,12 +9022,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministrationParti
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentBatteryPart"
 (
-    "Old_AssessmentBatteryPartName" varchar(65) NOT NULL,
-    "New_AssessmentBatteryPartName" varchar(65) NULL,
-    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
-    "Old_Assessment_Namespace" varchar(255) NOT NULL,
-    "New_Assessment_Namespace" varchar(255) NULL,
+    "OldAssessmentBatteryPartName" varchar(65) NOT NULL,
+    "NewAssessmentBatteryPartName" varchar(65) NULL,
+    "OldAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessment_Namespace" varchar(255) NOT NULL,
+    "NewAssessment_Namespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9036,12 +9036,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentBatteryPart"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentItem"
 (
-    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
-    "Old_Assessment_Namespace" varchar(255) NOT NULL,
-    "New_Assessment_Namespace" varchar(255) NULL,
-    "Old_IdentificationCode" varchar(60) NOT NULL,
-    "New_IdentificationCode" varchar(60) NULL,
+    "OldAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessment_Namespace" varchar(255) NOT NULL,
+    "NewAssessment_Namespace" varchar(255) NULL,
+    "OldIdentificationCode" varchar(60) NOT NULL,
+    "NewIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9050,12 +9050,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentItem"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentScoreRangeLearningStandard"
 (
-    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
-    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_ScoreRangeId" varchar(60) NOT NULL,
-    "New_ScoreRangeId" varchar(60) NULL,
+    "OldAssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "NewAssessmentIdentifier_Unified" varchar(60) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldScoreRangeId" varchar(60) NOT NULL,
+    "NewScoreRangeId" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9064,10 +9064,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentScoreRangeLearningS
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BalanceSheetDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9076,10 +9076,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BalanceSheetDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BellSchedule"
 (
-    "Old_BellScheduleName" varchar(60) NOT NULL,
-    "New_BellScheduleName" varchar(60) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
+    "OldBellScheduleName" varchar(60) NOT NULL,
+    "NewBellScheduleName" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9088,12 +9088,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BellSchedule"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Calendar"
 (
-    "Old_CalendarCode" varchar(60) NOT NULL,
-    "New_CalendarCode" varchar(60) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
-    "Old_SchoolYear_SchoolYear" integer NOT NULL,
-    "New_SchoolYear_SchoolYear" integer NULL,
+    "OldCalendarCode" varchar(60) NOT NULL,
+    "NewCalendarCode" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
+    "OldSchoolYear_SchoolYear" integer NOT NULL,
+    "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9102,14 +9102,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Calendar"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CalendarDate"
 (
-    "Old_Calendar_CalendarCode" varchar(60) NOT NULL,
-    "New_Calendar_CalendarCode" varchar(60) NULL,
-    "Old_Calendar_SchoolId" bigint NOT NULL,
-    "New_Calendar_SchoolId" bigint NULL,
-    "Old_Calendar_SchoolYear" integer NOT NULL,
-    "New_Calendar_SchoolYear" integer NULL,
-    "Old_Date" date NOT NULL,
-    "New_Date" date NULL,
+    "OldCalendar_CalendarCode" varchar(60) NOT NULL,
+    "NewCalendar_CalendarCode" varchar(60) NULL,
+    "OldCalendar_SchoolId" bigint NOT NULL,
+    "NewCalendar_SchoolId" bigint NULL,
+    "OldCalendar_SchoolYear" integer NOT NULL,
+    "NewCalendar_SchoolYear" integer NULL,
+    "OldDate" date NOT NULL,
+    "NewDate" date NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9118,12 +9118,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CalendarDate"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ChartOfAccount"
 (
-    "Old_AccountIdentifier" varchar(50) NOT NULL,
-    "New_AccountIdentifier" varchar(50) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_FiscalYear_Unified" integer NOT NULL,
-    "New_FiscalYear_Unified" integer NULL,
+    "OldAccountIdentifier" varchar(50) NOT NULL,
+    "NewAccountIdentifier" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldFiscalYear_Unified" integer NOT NULL,
+    "NewFiscalYear_Unified" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9132,10 +9132,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ChartOfAccount"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ClassPeriod"
 (
-    "Old_ClassPeriodName" varchar(60) NOT NULL,
-    "New_ClassPeriodName" varchar(60) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
+    "OldClassPeriodName" varchar(60) NOT NULL,
+    "NewClassPeriodName" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9144,10 +9144,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ClassPeriod"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Cohort"
 (
-    "Old_CohortIdentifier" varchar(36) NOT NULL,
-    "New_CohortIdentifier" varchar(36) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldCohortIdentifier" varchar(36) NOT NULL,
+    "NewCohortIdentifier" varchar(36) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9156,8 +9156,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Cohort"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityOrganization"
 (
-    "Old_CommunityOrganizationId" bigint NOT NULL,
-    "New_CommunityOrganizationId" bigint NULL,
+    "OldCommunityOrganizationId" bigint NOT NULL,
+    "NewCommunityOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9166,8 +9166,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityOrganization"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProvider"
 (
-    "Old_CommunityProviderId" bigint NOT NULL,
-    "New_CommunityProviderId" bigint NULL,
+    "OldCommunityProviderId" bigint NOT NULL,
+    "NewCommunityProviderId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9176,12 +9176,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProvider"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProviderLicense"
 (
-    "Old_CommunityProvider_CommunityProviderId" bigint NOT NULL,
-    "New_CommunityProvider_CommunityProviderId" bigint NULL,
-    "Old_LicenseIdentifier" varchar(36) NOT NULL,
-    "New_LicenseIdentifier" varchar(36) NULL,
-    "Old_LicensingOrganization" varchar(75) NOT NULL,
-    "New_LicensingOrganization" varchar(75) NULL,
+    "OldCommunityProvider_CommunityProviderId" bigint NOT NULL,
+    "NewCommunityProvider_CommunityProviderId" bigint NULL,
+    "OldLicenseIdentifier" varchar(36) NOT NULL,
+    "NewLicenseIdentifier" varchar(36) NULL,
+    "OldLicensingOrganization" varchar(75) NOT NULL,
+    "NewLicensingOrganization" varchar(75) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9190,14 +9190,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProviderLicense"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CompetencyObjective"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Objective" varchar(60) NOT NULL,
-    "New_Objective" varchar(60) NULL,
-    "Old_ObjectiveGradeLevelDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ObjectiveGradeLevelDescriptor_Namespace" varchar(255) NULL,
-    "Old_ObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldObjective" varchar(60) NOT NULL,
+    "NewObjective" varchar(60) NULL,
+    "OldObjectiveGradeLevelDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewObjectiveGradeLevelDescriptor_Namespace" varchar(255) NULL,
+    "OldObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9206,10 +9206,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CompetencyObjective"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Contact"
 (
-    "Old_ContactUniqueId" varchar(32) NOT NULL,
-    "New_ContactUniqueId" varchar(32) NULL,
-    "Old_Contact_DocumentId" bigint NOT NULL,
-    "New_Contact_DocumentId" bigint NULL,
+    "OldContactUniqueId" varchar(32) NOT NULL,
+    "NewContactUniqueId" varchar(32) NULL,
+    "OldContact_DocumentId" bigint NOT NULL,
+    "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9218,10 +9218,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Contact"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Course"
 (
-    "Old_CourseCode" varchar(60) NOT NULL,
-    "New_CourseCode" varchar(60) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldCourseCode" varchar(60) NOT NULL,
+    "NewCourseCode" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9230,14 +9230,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Course"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseOffering"
 (
-    "Old_LocalCourseCode" varchar(60) NOT NULL,
-    "New_LocalCourseCode" varchar(60) NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_Session_SchoolYear" integer NOT NULL,
-    "New_Session_SchoolYear" integer NULL,
-    "Old_Session_SessionName" varchar(60) NOT NULL,
-    "New_Session_SessionName" varchar(60) NULL,
+    "OldLocalCourseCode" varchar(60) NOT NULL,
+    "NewLocalCourseCode" varchar(60) NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldSession_SchoolYear" integer NOT NULL,
+    "NewSession_SchoolYear" integer NULL,
+    "OldSession_SessionName" varchar(60) NOT NULL,
+    "NewSession_SessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9246,26 +9246,26 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseOffering"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseTranscript"
 (
-    "Old_CourseAttemptResultDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_CourseAttemptResultDescriptor_Namespace" varchar(255) NULL,
-    "Old_CourseAttemptResultDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_CourseAttemptResultDescriptor_CodeValue" varchar(50) NULL,
-    "Old_CourseCourse_CourseCode" varchar(60) NOT NULL,
-    "New_CourseCourse_CourseCode" varchar(60) NULL,
-    "Old_CourseCourse_EducationOrganizationId" bigint NOT NULL,
-    "New_CourseCourse_EducationOrganizationId" bigint NULL,
-    "Old_StudentAcademicRecord_EducationOrganizationId" bigint NOT NULL,
-    "New_StudentAcademicRecord_EducationOrganizationId" bigint NULL,
-    "Old_StudentAcademicRecord_SchoolYear" integer NOT NULL,
-    "New_StudentAcademicRecord_SchoolYear" integer NULL,
-    "Old_StudentAcademicRecord_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentAcademicRecord_StudentUniqueId" varchar(32) NULL,
-    "Old_StudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_StudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NULL,
-    "Old_StudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_StudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NULL,
-    "Old_StudentAcademicRecord_Student_DocumentId" bigint NOT NULL,
-    "New_StudentAcademicRecord_Student_DocumentId" bigint NULL,
+    "OldCourseAttemptResultDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewCourseAttemptResultDescriptor_Namespace" varchar(255) NULL,
+    "OldCourseAttemptResultDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewCourseAttemptResultDescriptor_CodeValue" varchar(50) NULL,
+    "OldCourseCourse_CourseCode" varchar(60) NOT NULL,
+    "NewCourseCourse_CourseCode" varchar(60) NULL,
+    "OldCourseCourse_EducationOrganizationId" bigint NOT NULL,
+    "NewCourseCourse_EducationOrganizationId" bigint NULL,
+    "OldStudentAcademicRecord_EducationOrganizationId" bigint NOT NULL,
+    "NewStudentAcademicRecord_EducationOrganizationId" bigint NULL,
+    "OldStudentAcademicRecord_SchoolYear" integer NOT NULL,
+    "NewStudentAcademicRecord_SchoolYear" integer NULL,
+    "OldStudentAcademicRecord_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentAcademicRecord_StudentUniqueId" varchar(32) NULL,
+    "OldStudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewStudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NULL,
+    "OldStudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewStudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudentAcademicRecord_Student_DocumentId" bigint NOT NULL,
+    "NewStudentAcademicRecord_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9274,14 +9274,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseTranscript"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Credential"
 (
-    "Old_CredentialIdentifier" varchar(60) NOT NULL,
-    "New_CredentialIdentifier" varchar(60) NULL,
-    "Old_StateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_StateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NULL,
-    "Old_StateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_StateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
+    "OldCredentialIdentifier" varchar(60) NOT NULL,
+    "NewCredentialIdentifier" varchar(60) NULL,
+    "OldStateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewStateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NULL,
+    "OldStateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewStateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9290,8 +9290,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Credential"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CrisisEvent"
 (
-    "Old_CrisisEventName" varchar(100) NOT NULL,
-    "New_CrisisEventName" varchar(100) NULL,
+    "OldCrisisEventName" varchar(100) NOT NULL,
+    "NewCrisisEventName" varchar(100) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9300,10 +9300,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CrisisEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 (
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_CodeValue" varchar(50) NOT NULL,
-    "New_CodeValue" varchar(50) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldCodeValue" varchar(50) NOT NULL,
+    "NewCodeValue" varchar(50) NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
@@ -9313,14 +9313,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DescriptorMapping"
 (
-    "Old_MappedNamespace" varchar(255) NOT NULL,
-    "New_MappedNamespace" varchar(255) NULL,
-    "Old_MappedValue" varchar(50) NOT NULL,
-    "New_MappedValue" varchar(50) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_Value" varchar(50) NOT NULL,
-    "New_Value" varchar(50) NULL,
+    "OldMappedNamespace" varchar(255) NOT NULL,
+    "NewMappedNamespace" varchar(255) NULL,
+    "OldMappedValue" varchar(50) NOT NULL,
+    "NewMappedValue" varchar(50) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldValue" varchar(50) NOT NULL,
+    "NewValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9329,16 +9329,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DescriptorMapping"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineAction"
 (
-    "Old_DisciplineActionIdentifier" varchar(36) NOT NULL,
-    "New_DisciplineActionIdentifier" varchar(36) NULL,
-    "Old_DisciplineDate" date NOT NULL,
-    "New_DisciplineDate" date NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_ResponsibilitySchool_SchoolId" bigint NOT NULL,
-    "New_ResponsibilitySchool_SchoolId" bigint NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldDisciplineActionIdentifier" varchar(36) NOT NULL,
+    "NewDisciplineActionIdentifier" varchar(36) NULL,
+    "OldDisciplineDate" date NOT NULL,
+    "NewDisciplineDate" date NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldResponsibilitySchool_SchoolId" bigint NOT NULL,
+    "NewResponsibilitySchool_SchoolId" bigint NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9347,10 +9347,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineAction"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineIncident"
 (
-    "Old_IncidentIdentifier" varchar(36) NOT NULL,
-    "New_IncidentIdentifier" varchar(36) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
+    "OldIncidentIdentifier" varchar(36) NOT NULL,
+    "NewIncidentIdentifier" varchar(36) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9359,10 +9359,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineIncident"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationContent"
 (
-    "Old_ContentIdentifier" varchar(225) NOT NULL,
-    "New_ContentIdentifier" varchar(225) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
+    "OldContentIdentifier" varchar(225) NOT NULL,
+    "NewContentIdentifier" varchar(225) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9371,12 +9371,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationContent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationInterventionPrescriptionAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_InterventionPrescriptionInterventionPrescription_fcdc1d0ce4" bigint NOT NULL,
-    "New_InterventionPrescriptionInterventionPrescription_3b83ee0f39" bigint NULL,
-    "Old_InterventionPrescriptionInterventionPrescription_80fde4ffdf" varchar(60) NOT NULL,
-    "New_InterventionPrescriptionInterventionPrescription_4bd8fc257a" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldInterventionPrescriptionInterventionPrescription__756e805543" bigint NOT NULL,
+    "NewInterventionPrescriptionInterventionPrescription__4e45dc33ef" bigint NULL,
+    "OldInterventionPrescriptionInterventionPrescription__0c20ee7025" varchar(60) NOT NULL,
+    "NewInterventionPrescriptionInterventionPrescription__a4d6e2eb61" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9385,8 +9385,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationInterven
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetwork"
 (
-    "Old_EducationOrganizationNetworkId" bigint NOT NULL,
-    "New_EducationOrganizationNetworkId" bigint NULL,
+    "OldEducationOrganizationNetworkId" bigint NOT NULL,
+    "NewEducationOrganizationNetworkId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9395,10 +9395,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetwork"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetworkAssociation"
 (
-    "Old_EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
-    "New_EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NULL,
-    "Old_MemberEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_MemberEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldEducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
+    "NewEducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NULL,
+    "OldMemberEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewMemberEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9407,10 +9407,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetworkA
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationPeerAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_PeerEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_PeerEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldPeerEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewPeerEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9419,8 +9419,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationPeerAsso
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationServiceCenter"
 (
-    "Old_EducationServiceCenterId" bigint NOT NULL,
-    "New_EducationServiceCenterId" bigint NULL,
+    "OldEducationServiceCenterId" bigint NOT NULL,
+    "NewEducationServiceCenterId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9429,28 +9429,28 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationServiceCenter"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EvaluationRubricDimension"
 (
-    "Old_EvaluationRubricRating" integer NOT NULL,
-    "New_EvaluationRubricRating" integer NULL,
-    "Old_ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_9beb2fd68a" varchar(255) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationPeriod_2c9ac21869" varchar(255) NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_ca462f72c4" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationPeriod_55088c080b" varchar(50) NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_f738e95469" varchar(255) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_262301020d" varchar(255) NULL,
-    "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_0949af4b92" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_b2661cda2d" varchar(50) NULL,
-    "Old_ProgramEvaluationElement_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramName" varchar(60) NULL,
-    "Old_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldEvaluationRubricRating" integer NOT NULL,
+    "NewEvaluationRubricRating" integer NULL,
+    "OldProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
+    "NewProgramEvaluationElement_ProgramEducationOrganizationId" bigint NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationPeriodD_e621b439ab" varchar(255) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationPeriodD_4b1800d797" varchar(255) NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationPeriodD_2c6e8213c7" varchar(50) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationPeriodD_dfd7309a64" varchar(50) NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationTypeDes_9b4560a189" varchar(255) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationTypeDes_4c01a52394" varchar(255) NULL,
+    "OldProgramEvaluationElement_ProgramEvaluationTypeDes_914de55982" varchar(50) NOT NULL,
+    "NewProgramEvaluationElement_ProgramEvaluationTypeDes_4489e14d13" varchar(50) NULL,
+    "OldProgramEvaluationElement_ProgramName" varchar(60) NOT NULL,
+    "NewProgramEvaluationElement_ProgramName" varchar(60) NULL,
+    "OldProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9459,12 +9459,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EvaluationRubricDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FeederSchoolAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_FeederSchool_SchoolId" bigint NOT NULL,
-    "New_FeederSchool_SchoolId" bigint NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldFeederSchool_SchoolId" bigint NOT NULL,
+    "NewFeederSchool_SchoolId" bigint NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9473,10 +9473,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FeederSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FunctionDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9485,10 +9485,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FunctionDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FundDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9497,32 +9497,32 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FundDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Grade"
 (
-    "Old_GradeTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_GradeTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_GradeTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_GradeTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_SchoolYear_Unified" integer NOT NULL,
-    "New_SchoolYear_Unified" integer NULL,
-    "Old_StudentSectionAssociation_BeginDate" date NOT NULL,
-    "New_StudentSectionAssociation_BeginDate" date NULL,
-    "Old_StudentSectionAssociation_LocalCourseCode" varchar(60) NOT NULL,
-    "New_StudentSectionAssociation_LocalCourseCode" varchar(60) NULL,
-    "Old_StudentSectionAssociation_SectionIdentifier" varchar(255) NOT NULL,
-    "New_StudentSectionAssociation_SectionIdentifier" varchar(255) NULL,
-    "Old_StudentSectionAssociation_SessionName" varchar(60) NOT NULL,
-    "New_StudentSectionAssociation_SessionName" varchar(60) NULL,
-    "Old_StudentSectionAssociation_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentSectionAssociation_StudentUniqueId" varchar(32) NULL,
-    "Old_StudentSectionAssociation_Student_DocumentId" bigint NOT NULL,
-    "New_StudentSectionAssociation_Student_DocumentId" bigint NULL,
+    "OldGradeTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGradeTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldGradeTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGradeTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldSchoolYear_Unified" integer NOT NULL,
+    "NewSchoolYear_Unified" integer NULL,
+    "OldStudentSectionAssociation_BeginDate" date NOT NULL,
+    "NewStudentSectionAssociation_BeginDate" date NULL,
+    "OldStudentSectionAssociation_LocalCourseCode" varchar(60) NOT NULL,
+    "NewStudentSectionAssociation_LocalCourseCode" varchar(60) NULL,
+    "OldStudentSectionAssociation_SectionIdentifier" varchar(255) NOT NULL,
+    "NewStudentSectionAssociation_SectionIdentifier" varchar(255) NULL,
+    "OldStudentSectionAssociation_SessionName" varchar(60) NOT NULL,
+    "NewStudentSectionAssociation_SessionName" varchar(60) NULL,
+    "OldStudentSectionAssociation_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentSectionAssociation_StudentUniqueId" varchar(32) NULL,
+    "OldStudentSectionAssociation_Student_DocumentId" bigint NOT NULL,
+    "NewStudentSectionAssociation_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9531,10 +9531,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Grade"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradebookEntry"
 (
-    "Old_GradebookEntryIdentifier" varchar(60) NOT NULL,
-    "New_GradebookEntryIdentifier" varchar(60) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
+    "OldGradebookEntryIdentifier" varchar(60) NOT NULL,
+    "NewGradebookEntryIdentifier" varchar(60) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9543,16 +9543,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradebookEntry"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradingPeriod"
 (
-    "Old_GradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_GradingPeriodDescriptor_Namespace" varchar(255) NULL,
-    "Old_GradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_GradingPeriodDescriptor_CodeValue" varchar(50) NULL,
-    "Old_GradingPeriodName" varchar(60) NOT NULL,
-    "New_GradingPeriodName" varchar(60) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
-    "Old_SchoolYear_SchoolYear" integer NOT NULL,
-    "New_SchoolYear_SchoolYear" integer NULL,
+    "OldGradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGradingPeriodDescriptor_Namespace" varchar(255) NULL,
+    "OldGradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGradingPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "OldGradingPeriodName" varchar(60) NOT NULL,
+    "NewGradingPeriodName" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
+    "OldSchoolYear_SchoolYear" integer NOT NULL,
+    "NewSchoolYear_SchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9561,14 +9561,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradingPeriod"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GraduationPlan"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_GraduationPlanTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_GraduationPlanTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_GraduationSchoolYear_GraduationSchoolYear" integer NOT NULL,
-    "New_GraduationSchoolYear_GraduationSchoolYear" integer NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldGraduationPlanTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGraduationPlanTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldGraduationPlanTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGraduationPlanTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldGraduationSchoolYear_GraduationSchoolYear" integer NOT NULL,
+    "NewGraduationSchoolYear_GraduationSchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9577,10 +9577,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GraduationPlan"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Intervention"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_InterventionIdentificationCode" varchar(60) NOT NULL,
-    "New_InterventionIdentificationCode" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldInterventionIdentificationCode" varchar(60) NOT NULL,
+    "NewInterventionIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9589,10 +9589,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Intervention"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionPrescription"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_InterventionPrescriptionIdentificationCode" varchar(60) NOT NULL,
-    "New_InterventionPrescriptionIdentificationCode" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldInterventionPrescriptionIdentificationCode" varchar(60) NOT NULL,
+    "NewInterventionPrescriptionIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9601,10 +9601,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionPrescription"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionStudy"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_InterventionStudyIdentificationCode" varchar(60) NOT NULL,
-    "New_InterventionStudyIdentificationCode" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldInterventionStudyIdentificationCode" varchar(60) NOT NULL,
+    "NewInterventionStudyIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9613,10 +9613,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionStudy"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandard"
 (
-    "Old_LearningStandardId" varchar(60) NOT NULL,
-    "New_LearningStandardId" varchar(60) NULL,
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
+    "OldLearningStandardId" varchar(60) NOT NULL,
+    "NewLearningStandardId" varchar(60) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9625,12 +9625,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandard"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandardEquivalenceAssociation"
 (
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_SourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
-    "New_SourceLearningStandard_LearningStandardId" varchar(60) NULL,
-    "Old_TargetLearningStandard_LearningStandardId" varchar(60) NOT NULL,
-    "New_TargetLearningStandard_LearningStandardId" varchar(60) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldSourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
+    "NewSourceLearningStandard_LearningStandardId" varchar(60) NULL,
+    "OldTargetLearningStandard_LearningStandardId" varchar(60) NOT NULL,
+    "NewTargetLearningStandard_LearningStandardId" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9639,12 +9639,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandardEquivalenceAs
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalAccount"
 (
-    "Old_AccountIdentifier" varchar(50) NOT NULL,
-    "New_AccountIdentifier" varchar(50) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_FiscalYear_Unified" integer NOT NULL,
-    "New_FiscalYear_Unified" integer NULL,
+    "OldAccountIdentifier" varchar(50) NOT NULL,
+    "NewAccountIdentifier" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldFiscalYear_Unified" integer NOT NULL,
+    "NewFiscalYear_Unified" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9653,14 +9653,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalAccount"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalActual"
 (
-    "Old_AsOfDate" date NOT NULL,
-    "New_AsOfDate" date NULL,
-    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
-    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
-    "New_LocalAccount_EducationOrganizationId" bigint NULL,
-    "Old_LocalAccount_FiscalYear" integer NOT NULL,
-    "New_LocalAccount_FiscalYear" integer NULL,
+    "OldAsOfDate" date NOT NULL,
+    "NewAsOfDate" date NULL,
+    "OldLocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "NewLocalAccount_AccountIdentifier" varchar(50) NULL,
+    "OldLocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "NewLocalAccount_EducationOrganizationId" bigint NULL,
+    "OldLocalAccount_FiscalYear" integer NOT NULL,
+    "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9669,14 +9669,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalActual"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalBudget"
 (
-    "Old_AsOfDate" date NOT NULL,
-    "New_AsOfDate" date NULL,
-    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
-    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
-    "New_LocalAccount_EducationOrganizationId" bigint NULL,
-    "Old_LocalAccount_FiscalYear" integer NOT NULL,
-    "New_LocalAccount_FiscalYear" integer NULL,
+    "OldAsOfDate" date NOT NULL,
+    "NewAsOfDate" date NULL,
+    "OldLocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "NewLocalAccount_AccountIdentifier" varchar(50) NULL,
+    "OldLocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "NewLocalAccount_EducationOrganizationId" bigint NULL,
+    "OldLocalAccount_FiscalYear" integer NOT NULL,
+    "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9685,18 +9685,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalBudget"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalContractedStaff"
 (
-    "Old_AsOfDate" date NOT NULL,
-    "New_AsOfDate" date NULL,
-    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
-    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
-    "New_LocalAccount_EducationOrganizationId" bigint NULL,
-    "Old_LocalAccount_FiscalYear" integer NOT NULL,
-    "New_LocalAccount_FiscalYear" integer NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldAsOfDate" date NOT NULL,
+    "NewAsOfDate" date NULL,
+    "OldLocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "NewLocalAccount_AccountIdentifier" varchar(50) NULL,
+    "OldLocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "NewLocalAccount_EducationOrganizationId" bigint NULL,
+    "OldLocalAccount_FiscalYear" integer NOT NULL,
+    "NewLocalAccount_FiscalYear" integer NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9705,8 +9705,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalContractedStaff"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
 (
-    "Old_LocalEducationAgencyId" bigint NOT NULL,
-    "New_LocalEducationAgencyId" bigint NULL,
+    "OldLocalEducationAgencyId" bigint NOT NULL,
+    "NewLocalEducationAgencyId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9715,14 +9715,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEncumbrance"
 (
-    "Old_AsOfDate" date NOT NULL,
-    "New_AsOfDate" date NULL,
-    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
-    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
-    "New_LocalAccount_EducationOrganizationId" bigint NULL,
-    "Old_LocalAccount_FiscalYear" integer NOT NULL,
-    "New_LocalAccount_FiscalYear" integer NULL,
+    "OldAsOfDate" date NOT NULL,
+    "NewAsOfDate" date NULL,
+    "OldLocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "NewLocalAccount_AccountIdentifier" varchar(50) NULL,
+    "OldLocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "NewLocalAccount_EducationOrganizationId" bigint NULL,
+    "OldLocalAccount_FiscalYear" integer NOT NULL,
+    "NewLocalAccount_FiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9731,18 +9731,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEncumbrance"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalPayroll"
 (
-    "Old_AsOfDate" date NOT NULL,
-    "New_AsOfDate" date NULL,
-    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
-    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
-    "New_LocalAccount_EducationOrganizationId" bigint NULL,
-    "Old_LocalAccount_FiscalYear" integer NOT NULL,
-    "New_LocalAccount_FiscalYear" integer NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldAsOfDate" date NOT NULL,
+    "NewAsOfDate" date NULL,
+    "OldLocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "NewLocalAccount_AccountIdentifier" varchar(50) NULL,
+    "OldLocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "NewLocalAccount_EducationOrganizationId" bigint NULL,
+    "OldLocalAccount_FiscalYear" integer NOT NULL,
+    "NewLocalAccount_FiscalYear" integer NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9751,10 +9751,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalPayroll"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Location"
 (
-    "Old_ClassroomIdentificationCode" varchar(60) NOT NULL,
-    "New_ClassroomIdentificationCode" varchar(60) NULL,
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
+    "OldClassroomIdentificationCode" varchar(60) NOT NULL,
+    "NewClassroomIdentificationCode" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9763,10 +9763,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Location"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9775,12 +9775,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectiveAssessment"
 (
-    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
-    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_IdentificationCode" varchar(60) NOT NULL,
-    "New_IdentificationCode" varchar(60) NULL,
+    "OldAssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "NewAssessmentIdentifier_Unified" varchar(60) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldIdentificationCode" varchar(60) NOT NULL,
+    "NewIdentificationCode" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9789,10 +9789,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectiveAssessment"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OpenStaffPosition"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_RequisitionNumber" varchar(20) NOT NULL,
-    "New_RequisitionNumber" varchar(20) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldRequisitionNumber" varchar(20) NOT NULL,
+    "NewRequisitionNumber" varchar(20) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9801,10 +9801,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OpenStaffPosition"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OperationalUnitDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9813,10 +9813,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OperationalUnitDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OrganizationDepartment"
 (
-    "Old_OrganizationDepartmentId" bigint NOT NULL,
-    "New_OrganizationDepartmentId" bigint NULL,
-    "Old_ParentEducationOrganization_EducationOrganizationId" bigint NULL,
-    "New_ParentEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldOrganizationDepartmentId" bigint NOT NULL,
+    "NewOrganizationDepartmentId" bigint NULL,
+    "OldParentEducationOrganization_EducationOrganizationId" bigint NULL,
+    "NewParentEducationOrganization_EducationOrganizationId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9825,12 +9825,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OrganizationDepartment"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
 (
-    "Old_PersonId" varchar(32) NOT NULL,
-    "New_PersonId" varchar(32) NULL,
-    "Old_SourceSystemDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_SourceSystemDescriptor_Namespace" varchar(255) NULL,
-    "Old_SourceSystemDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_SourceSystemDescriptor_CodeValue" varchar(50) NULL,
+    "OldPersonId" varchar(32) NOT NULL,
+    "NewPersonId" varchar(32) NULL,
+    "OldSourceSystemDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewSourceSystemDescriptor_Namespace" varchar(255) NULL,
+    "OldSourceSystemDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewSourceSystemDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9839,16 +9839,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryEvent"
 (
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_PostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_PostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_PostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_PostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldPostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewPostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldPostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewPostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9857,8 +9857,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryInstitution"
 (
-    "Old_PostSecondaryInstitutionId" bigint NOT NULL,
-    "New_PostSecondaryInstitutionId" bigint NULL,
+    "OldPostSecondaryInstitutionId" bigint NOT NULL,
+    "NewPostSecondaryInstitutionId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9867,14 +9867,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryInstitution"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramName" varchar(60) NULL,
-    "Old_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramName" varchar(60) NOT NULL,
+    "NewProgramName" varchar(60) NULL,
+    "OldProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9883,10 +9883,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9895,24 +9895,24 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluation"
 (
-    "Old_ProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NULL,
-    "Old_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluationTitle" varchar(50) NULL,
-    "Old_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluationTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluationTitle" varchar(50) NULL,
+    "OldProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9921,26 +9921,26 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationElement"
 (
-    "Old_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluationElementTitle" varchar(50) NULL,
-    "Old_ProgramEducationOrganizationId_Unified" bigint NOT NULL,
-    "New_ProgramEducationOrganizationId_Unified" bigint NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
-    "Old_ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
-    "New_ProgramEvaluationTitle_Unified" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_ProgramName_Unified" varchar(60) NOT NULL,
-    "New_ProgramName_Unified" varchar(60) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluationElementTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluationElementTitle" varchar(50) NULL,
+    "OldProgramEducationOrganizationId_Unified" bigint NOT NULL,
+    "NewProgramEducationOrganizationId_Unified" bigint NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7" varchar(50) NULL,
+    "OldProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
+    "NewProgramEvaluationTitle_Unified" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramName_Unified" varchar(60) NOT NULL,
+    "NewProgramName_Unified" varchar(60) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9949,26 +9949,26 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationElement"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationObjective"
 (
-    "Old_ProgramEvaluationObjectiveTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluationObjectiveTitle" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
-    "New_ProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramEvaluation_ProgramName" varchar(60) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluationObjectiveTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluationObjectiveTitle" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
+    "NewProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramName" varchar(60) NOT NULL,
+    "NewProgramEvaluation_ProgramName" varchar(60) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9977,10 +9977,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationObjective"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProjectDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -9989,22 +9989,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProjectDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ReportCard"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
-    "Old_GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
-    "New_GradingPeriodGradingPeriod_SchoolId" bigint NULL,
-    "Old_GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
-    "New_GradingPeriodGradingPeriod_SchoolYear" integer NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "OldGradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
+    "NewGradingPeriodGradingPeriod_SchoolId" bigint NULL,
+    "OldGradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
+    "NewGradingPeriodGradingPeriod_SchoolYear" integer NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10013,14 +10013,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ReportCard"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."RestraintEvent"
 (
-    "Old_RestraintEventIdentifier" varchar(36) NOT NULL,
-    "New_RestraintEventIdentifier" varchar(36) NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldRestraintEventIdentifier" varchar(36) NOT NULL,
+    "NewRestraintEventIdentifier" varchar(36) NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10029,8 +10029,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."RestraintEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 (
-    "Old_SchoolId" bigint NOT NULL,
-    "New_SchoolId" bigint NULL,
+    "OldSchoolId" bigint NOT NULL,
+    "NewSchoolId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10039,8 +10039,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SchoolYearType"
 (
-    "Old_SchoolYear" integer NOT NULL,
-    "New_SchoolYear" integer NULL,
+    "OldSchoolYear" integer NOT NULL,
+    "NewSchoolYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10049,16 +10049,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SchoolYearType"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Section"
 (
-    "Old_CourseOffering_LocalCourseCode" varchar(60) NOT NULL,
-    "New_CourseOffering_LocalCourseCode" varchar(60) NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_CourseOffering_SchoolYear" integer NOT NULL,
-    "New_CourseOffering_SchoolYear" integer NULL,
-    "Old_CourseOffering_SessionName" varchar(60) NOT NULL,
-    "New_CourseOffering_SessionName" varchar(60) NULL,
-    "Old_SectionIdentifier" varchar(255) NOT NULL,
-    "New_SectionIdentifier" varchar(255) NULL,
+    "OldCourseOffering_LocalCourseCode" varchar(60) NOT NULL,
+    "NewCourseOffering_LocalCourseCode" varchar(60) NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldCourseOffering_SchoolYear" integer NOT NULL,
+    "NewCourseOffering_SchoolYear" integer NULL,
+    "OldCourseOffering_SessionName" varchar(60) NOT NULL,
+    "NewCourseOffering_SessionName" varchar(60) NULL,
+    "OldSectionIdentifier" varchar(255) NOT NULL,
+    "NewSectionIdentifier" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10067,20 +10067,20 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Section"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SectionAttendanceTakenEvent"
 (
-    "Old_CalendarDate_CalendarCode" varchar(60) NOT NULL,
-    "New_CalendarDate_CalendarCode" varchar(60) NULL,
-    "Old_CalendarDate_Date" date NOT NULL,
-    "New_CalendarDate_Date" date NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_SchoolYear_Unified" integer NOT NULL,
-    "New_SchoolYear_Unified" integer NULL,
-    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
-    "New_Section_LocalCourseCode" varchar(60) NULL,
-    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
-    "New_Section_SectionIdentifier" varchar(255) NULL,
-    "Old_Section_SessionName" varchar(60) NOT NULL,
-    "New_Section_SessionName" varchar(60) NULL,
+    "OldCalendarDate_CalendarCode" varchar(60) NOT NULL,
+    "NewCalendarDate_CalendarCode" varchar(60) NULL,
+    "OldCalendarDate_Date" date NOT NULL,
+    "NewCalendarDate_Date" date NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldSchoolYear_Unified" integer NOT NULL,
+    "NewSchoolYear_Unified" integer NULL,
+    "OldSection_LocalCourseCode" varchar(60) NOT NULL,
+    "NewSection_LocalCourseCode" varchar(60) NULL,
+    "OldSection_SectionIdentifier" varchar(255) NOT NULL,
+    "NewSection_SectionIdentifier" varchar(255) NULL,
+    "OldSection_SessionName" varchar(60) NOT NULL,
+    "NewSection_SessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10089,12 +10089,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SectionAttendanceTakenEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Session"
 (
-    "Old_School_SchoolId" bigint NOT NULL,
-    "New_School_SchoolId" bigint NULL,
-    "Old_SchoolYear_SchoolYear" integer NOT NULL,
-    "New_SchoolYear_SchoolYear" integer NULL,
-    "Old_SessionName" varchar(60) NOT NULL,
-    "New_SessionName" varchar(60) NULL,
+    "OldSchool_SchoolId" bigint NOT NULL,
+    "NewSchool_SchoolId" bigint NULL,
+    "OldSchoolYear_SchoolYear" integer NOT NULL,
+    "NewSchoolYear_SchoolYear" integer NULL,
+    "OldSessionName" varchar(60) NOT NULL,
+    "NewSessionName" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10103,10 +10103,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Session"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SourceDimension"
 (
-    "Old_Code" varchar(16) NOT NULL,
-    "New_Code" varchar(16) NULL,
-    "Old_FiscalYear" integer NOT NULL,
-    "New_FiscalYear" integer NULL,
+    "OldCode" varchar(16) NOT NULL,
+    "NewCode" varchar(16) NULL,
+    "OldFiscalYear" integer NOT NULL,
+    "NewFiscalYear" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10115,10 +10115,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SourceDimension"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Staff"
 (
-    "Old_StaffUniqueId" varchar(32) NOT NULL,
-    "New_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldStaffUniqueId" varchar(32) NOT NULL,
+    "NewStaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10127,16 +10127,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Staff"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffAbsenceEvent"
 (
-    "Old_AbsenceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_AbsenceEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_AbsenceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_AbsenceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldAbsenceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewAbsenceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldAbsenceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewAbsenceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10145,16 +10145,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffAbsenceEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffCohortAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_Cohort_CohortIdentifier" varchar(36) NOT NULL,
-    "New_Cohort_CohortIdentifier" varchar(36) NULL,
-    "Old_Cohort_EducationOrganizationId" bigint NOT NULL,
-    "New_Cohort_EducationOrganizationId" bigint NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldCohort_CohortIdentifier" varchar(36) NOT NULL,
+    "NewCohort_CohortIdentifier" varchar(36) NULL,
+    "OldCohort_EducationOrganizationId" bigint NOT NULL,
+    "NewCohort_EducationOrganizationId" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10163,14 +10163,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffCohortAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffDisciplineIncidentAssociation"
 (
-    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
-    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
-    "New_DisciplineIncident_SchoolId" bigint NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldDisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "NewDisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "OldDisciplineIncident_SchoolId" bigint NOT NULL,
+    "NewDisciplineIncident_SchoolId" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10179,18 +10179,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffDisciplineIncidentAssoci
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_StaffClassificationDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_StaffClassificationDescriptor_Namespace" varchar(255) NULL,
-    "Old_StaffClassificationDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_StaffClassificationDescriptor_CodeValue" varchar(50) NULL,
-    "Old_StaffUniqueId_Unified" varchar(32) NOT NULL,
-    "New_StaffUniqueId_Unified" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStaffClassificationDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewStaffClassificationDescriptor_Namespace" varchar(255) NULL,
+    "OldStaffClassificationDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewStaffClassificationDescriptor_CodeValue" varchar(50) NULL,
+    "OldStaffUniqueId_Unified" varchar(32) NOT NULL,
+    "NewStaffUniqueId_Unified" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10199,14 +10199,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAss
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationContactAssociation"
 (
-    "Old_ContactTitle" varchar(75) NOT NULL,
-    "New_ContactTitle" varchar(75) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldContactTitle" varchar(75) NOT NULL,
+    "NewContactTitle" varchar(75) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10215,18 +10215,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationCon
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_EmploymentStatusDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_EmploymentStatusDescriptor_Namespace" varchar(255) NULL,
-    "Old_EmploymentStatusDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_EmploymentStatusDescriptor_CodeValue" varchar(50) NULL,
-    "Old_HireDate" date NOT NULL,
-    "New_HireDate" date NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldEmploymentStatusDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewEmploymentStatusDescriptor_Namespace" varchar(255) NULL,
+    "OldEmploymentStatusDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewEmploymentStatusDescriptor_CodeValue" varchar(50) NULL,
+    "OldHireDate" date NOT NULL,
+    "NewHireDate" date NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10235,16 +10235,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmp
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffLeave"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_StaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_StaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_StaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_StaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldStaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewStaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldStaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewStaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10253,20 +10253,20 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffLeave"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10275,16 +10275,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSchoolAssociation"
 (
-    "Old_ProgramAssignmentDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramAssignmentDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramAssignmentDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramAssignmentDescriptor_CodeValue" varchar(50) NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldProgramAssignmentDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramAssignmentDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramAssignmentDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramAssignmentDescriptor_CodeValue" varchar(50) NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10293,22 +10293,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSectionAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
-    "New_Section_LocalCourseCode" varchar(60) NULL,
-    "Old_Section_SchoolId" bigint NOT NULL,
-    "New_Section_SchoolId" bigint NULL,
-    "Old_Section_SchoolYear" integer NOT NULL,
-    "New_Section_SchoolYear" integer NULL,
-    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
-    "New_Section_SectionIdentifier" varchar(255) NULL,
-    "Old_Section_SessionName" varchar(60) NOT NULL,
-    "New_Section_SessionName" varchar(60) NULL,
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldSection_LocalCourseCode" varchar(60) NOT NULL,
+    "NewSection_LocalCourseCode" varchar(60) NULL,
+    "OldSection_SchoolId" bigint NOT NULL,
+    "NewSection_SchoolId" bigint NULL,
+    "OldSection_SchoolYear" integer NOT NULL,
+    "NewSection_SchoolYear" integer NULL,
+    "OldSection_SectionIdentifier" varchar(255) NOT NULL,
+    "NewSection_SectionIdentifier" varchar(255) NULL,
+    "OldSection_SessionName" varchar(60) NOT NULL,
+    "NewSection_SessionName" varchar(60) NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10317,8 +10317,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSectionAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StateEducationAgency"
 (
-    "Old_StateEducationAgencyId" bigint NOT NULL,
-    "New_StateEducationAgencyId" bigint NULL,
+    "OldStateEducationAgencyId" bigint NOT NULL,
+    "NewStateEducationAgencyId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10327,10 +10327,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StateEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 (
-    "Old_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldStudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10339,18 +10339,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAcademicRecord"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_SchoolYear_SchoolYear" integer NOT NULL,
-    "New_SchoolYear_SchoolYear" integer NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_TermDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_TermDescriptor_Namespace" varchar(255) NULL,
-    "Old_TermDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_TermDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldSchoolYear_SchoolYear" integer NOT NULL,
+    "NewSchoolYear_SchoolYear" integer NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldTermDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewTermDescriptor_Namespace" varchar(255) NULL,
+    "OldTermDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewTermDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10359,18 +10359,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAcademicRecord"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessment"
 (
-    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
-    "Old_Assessment_Namespace" varchar(255) NOT NULL,
-    "New_Assessment_Namespace" varchar(255) NULL,
-    "Old_StudentAssessmentIdentifier" varchar(60) NOT NULL,
-    "New_StudentAssessmentIdentifier" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_ReportedSchool_SchoolId" bigint NULL,
-    "New_ReportedSchool_SchoolId" bigint NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessment_Namespace" varchar(255) NOT NULL,
+    "NewAssessment_Namespace" varchar(255) NULL,
+    "OldStudentAssessmentIdentifier" varchar(60) NOT NULL,
+    "NewStudentAssessmentIdentifier" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldReportedSchool_SchoolId" bigint NULL,
+    "NewReportedSchool_SchoolId" bigint NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10379,22 +10379,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessment"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentEducationOrganizationAssociation"
 (
-    "Old_EducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_EducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_EducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_EducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_StudentAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_StudentAssessment_AssessmentIdentifier" varchar(60) NULL,
-    "Old_StudentAssessment_Namespace" varchar(255) NOT NULL,
-    "New_StudentAssessment_Namespace" varchar(255) NULL,
-    "Old_StudentAssessment_StudentAssessmentIdentifier" varchar(60) NOT NULL,
-    "New_StudentAssessment_StudentAssessmentIdentifier" varchar(60) NULL,
-    "Old_StudentAssessment_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentAssessment_StudentUniqueId" varchar(32) NULL,
-    "Old_StudentAssessment_Student_DocumentId" bigint NOT NULL,
-    "New_StudentAssessment_Student_DocumentId" bigint NULL,
+    "OldEducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewEducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldEducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewEducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStudentAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewStudentAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "OldStudentAssessment_Namespace" varchar(255) NOT NULL,
+    "NewStudentAssessment_Namespace" varchar(255) NULL,
+    "OldStudentAssessment_StudentAssessmentIdentifier" varchar(60) NOT NULL,
+    "NewStudentAssessment_StudentAssessmentIdentifier" varchar(60) NULL,
+    "OldStudentAssessment_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentAssessment_StudentUniqueId" varchar(32) NULL,
+    "OldStudentAssessment_Student_DocumentId" bigint NOT NULL,
+    "NewStudentAssessment_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10403,20 +10403,20 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentEducationOrg
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration"
 (
-    "Old_AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
-    "New_AssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
-    "Old_AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
-    "New_AssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
-    "Old_AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
-    "New_AssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
-    "Old_AssessmentAdministration_Namespace" varchar(255) NOT NULL,
-    "New_AssessmentAdministration_Namespace" varchar(255) NULL,
-    "Old_StudentEducationOrganizationAssociation_Educatio_5bb485678a" bigint NOT NULL,
-    "New_StudentEducationOrganizationAssociation_Educatio_9fe27e4988" bigint NULL,
-    "Old_StudentUniqueId_Unified" varchar(32) NOT NULL,
-    "New_StudentUniqueId_Unified" varchar(32) NULL,
-    "Old_StudentEducationOrganizationAssociation_Student_DocumentId" bigint NOT NULL,
-    "New_StudentEducationOrganizationAssociation_Student_DocumentId" bigint NULL,
+    "OldAssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "NewAssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
+    "OldAssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
+    "NewAssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
+    "OldAssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
+    "NewAssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
+    "OldAssessmentAdministration_Namespace" varchar(255) NOT NULL,
+    "NewAssessmentAdministration_Namespace" varchar(255) NULL,
+    "OldStudentEducationOrganizationAssociation_Education_955578800a" bigint NOT NULL,
+    "NewStudentEducationOrganizationAssociation_Education_a33160f1d5" bigint NULL,
+    "OldStudentUniqueId_Unified" varchar(32) NOT NULL,
+    "NewStudentUniqueId_Unified" varchar(32) NULL,
+    "OldStudentEducationOrganizationAssociation_Student_DocumentId" bigint NOT NULL,
+    "NewStudentEducationOrganizationAssociation_Student_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10425,22 +10425,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
 (
-    "Old_AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NOT NULL,
-    "New_AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NULL,
-    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
-    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_StudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NOT NULL,
-    "New_StudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NULL,
-    "Old_StudentAssessmentRegistration_AssigningEducation_32eafba146" bigint NOT NULL,
-    "New_StudentAssessmentRegistration_AssigningEducation_3e528e87d8" bigint NULL,
-    "Old_StudentAssessmentRegistration_EducationOrganizationId" bigint NOT NULL,
-    "New_StudentAssessmentRegistration_EducationOrganizationId" bigint NULL,
-    "Old_StudentAssessmentRegistration_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentAssessmentRegistration_StudentUniqueId" varchar(32) NULL,
-    "Old_StudentAssessmentRegistration_StudentEducationOr_d1d49658ae" bigint NOT NULL,
-    "New_StudentAssessmentRegistration_StudentEducationOr_d26eebe360" bigint NULL,
+    "OldAssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NOT NULL,
+    "NewAssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NULL,
+    "OldAssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "NewAssessmentIdentifier_Unified" varchar(60) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldStudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "NewStudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NULL,
+    "OldStudentAssessmentRegistration_AssigningEducationO_8330ef761c" bigint NOT NULL,
+    "NewStudentAssessmentRegistration_AssigningEducationO_9385f80891" bigint NULL,
+    "OldStudentAssessmentRegistration_EducationOrganizationId" bigint NOT NULL,
+    "NewStudentAssessmentRegistration_EducationOrganizationId" bigint NULL,
+    "OldStudentAssessmentRegistration_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentAssessmentRegistration_StudentUniqueId" varchar(32) NULL,
+    "OldStudentAssessmentRegistration_StudentEducationOrg_492057c6e1" bigint NOT NULL,
+    "NewStudentAssessmentRegistration_StudentEducationOrg_bfebe478d0" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10449,22 +10449,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCTEProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10473,16 +10473,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCTEProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCohortAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_Cohort_CohortIdentifier" varchar(36) NOT NULL,
-    "New_Cohort_CohortIdentifier" varchar(36) NULL,
-    "Old_Cohort_EducationOrganizationId" bigint NOT NULL,
-    "New_Cohort_EducationOrganizationId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldCohort_CohortIdentifier" varchar(36) NOT NULL,
+    "NewCohort_CohortIdentifier" varchar(36) NULL,
+    "OldCohort_EducationOrganizationId" bigint NOT NULL,
+    "NewCohort_EducationOrganizationId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10491,28 +10491,28 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCohortAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCompetencyObjective"
 (
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
-    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
-    "Old_GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
-    "New_GradingPeriodGradingPeriod_SchoolId" bigint NULL,
-    "Old_GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
-    "New_GradingPeriodGradingPeriod_SchoolYear" integer NULL,
-    "Old_ObjectiveCompetencyObjective_EducationOrganizationId" bigint NOT NULL,
-    "New_ObjectiveCompetencyObjective_EducationOrganizationId" bigint NULL,
-    "Old_ObjectiveCompetencyObjective_Objective" varchar(60) NOT NULL,
-    "New_ObjectiveCompetencyObjective_Objective" varchar(60) NULL,
-    "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_4b5e91cff3" varchar(255) NOT NULL,
-    "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_ae5f765c69" varchar(255) NULL,
-    "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_7f79a12138" varchar(50) NOT NULL,
-    "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_65dd7db251" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace" varchar(255) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "OldGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "NewGradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "OldGradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
+    "NewGradingPeriodGradingPeriod_SchoolId" bigint NULL,
+    "OldGradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
+    "NewGradingPeriodGradingPeriod_SchoolYear" integer NULL,
+    "OldObjectiveCompetencyObjective_EducationOrganizationId" bigint NOT NULL,
+    "NewObjectiveCompetencyObjective_EducationOrganizationId" bigint NULL,
+    "OldObjectiveCompetencyObjective_Objective" varchar(60) NOT NULL,
+    "NewObjectiveCompetencyObjective_Objective" varchar(60) NULL,
+    "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_12636ca4f5" varchar(255) NOT NULL,
+    "NewObjectiveCompetencyObjective_ObjectiveGradeLevelD_2b85981479" varchar(255) NULL,
+    "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_e0cddf5f4d" varchar(50) NOT NULL,
+    "NewObjectiveCompetencyObjective_ObjectiveGradeLevelD_7d813236b6" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10521,14 +10521,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCompetencyObjective"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
 (
-    "Old_Contact_ContactUniqueId" varchar(32) NOT NULL,
-    "New_Contact_ContactUniqueId" varchar(32) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
-    "Old_Contact_DocumentId" bigint NOT NULL,
-    "New_Contact_DocumentId" bigint NULL,
+    "OldContact_ContactUniqueId" varchar(32) NOT NULL,
+    "NewContact_ContactUniqueId" varchar(32) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
+    "OldContact_DocumentId" bigint NOT NULL,
+    "NewContact_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10537,18 +10537,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentBehaviorAssociation"
 (
-    "Old_BehaviorDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_BehaviorDescriptor_Namespace" varchar(255) NULL,
-    "Old_BehaviorDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_BehaviorDescriptor_CodeValue" varchar(50) NULL,
-    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
-    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
-    "New_DisciplineIncident_SchoolId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBehaviorDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewBehaviorDescriptor_Namespace" varchar(255) NULL,
+    "OldBehaviorDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewBehaviorDescriptor_CodeValue" varchar(50) NULL,
+    "OldDisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "NewDisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "OldDisciplineIncident_SchoolId" bigint NOT NULL,
+    "NewDisciplineIncident_SchoolId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10557,14 +10557,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentBeha
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentNonOffenderAssociation"
 (
-    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
-    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
-    "New_DisciplineIncident_SchoolId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldDisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "NewDisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "OldDisciplineIncident_SchoolId" bigint NOT NULL,
+    "NewDisciplineIncident_SchoolId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10573,12 +10573,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentNonO
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationAssessmentAccommodation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10587,12 +10587,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationA
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10601,18 +10601,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationA
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ResponsibilityDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ResponsibilityDescriptor_Namespace" varchar(255) NULL,
-    "Old_ResponsibilityDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ResponsibilityDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldResponsibilityDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewResponsibilityDescriptor_Namespace" varchar(255) NULL,
+    "OldResponsibilityDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewResponsibilityDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10621,14 +10621,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationR
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentGradebookEntry"
 (
-    "Old_GradebookEntry_GradebookEntryIdentifier" varchar(60) NOT NULL,
-    "New_GradebookEntry_GradebookEntryIdentifier" varchar(60) NULL,
-    "Old_GradebookEntry_Namespace" varchar(255) NOT NULL,
-    "New_GradebookEntry_Namespace" varchar(255) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldGradebookEntry_GradebookEntryIdentifier" varchar(60) NOT NULL,
+    "NewGradebookEntry_GradebookEntryIdentifier" varchar(60) NULL,
+    "OldGradebookEntry_Namespace" varchar(255) NOT NULL,
+    "NewGradebookEntry_Namespace" varchar(255) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10637,12 +10637,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentGradebookEntry"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHealth"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10651,22 +10651,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHealth"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHomelessProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10675,14 +10675,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHomelessProgramAssocia
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAssociation"
 (
-    "Old_Intervention_EducationOrganizationId" bigint NOT NULL,
-    "New_Intervention_EducationOrganizationId" bigint NULL,
-    "Old_Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
-    "New_Intervention_InterventionIdentificationCode" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldIntervention_EducationOrganizationId" bigint NOT NULL,
+    "NewIntervention_EducationOrganizationId" bigint NULL,
+    "OldIntervention_InterventionIdentificationCode" varchar(60) NOT NULL,
+    "NewIntervention_InterventionIdentificationCode" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10691,20 +10691,20 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAssociatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAttendanceEvent"
 (
-    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_Intervention_EducationOrganizationId" bigint NOT NULL,
-    "New_Intervention_EducationOrganizationId" bigint NULL,
-    "Old_Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
-    "New_Intervention_InterventionIdentificationCode" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldAttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldIntervention_EducationOrganizationId" bigint NOT NULL,
+    "NewIntervention_EducationOrganizationId" bigint NULL,
+    "OldIntervention_InterventionIdentificationCode" varchar(60) NOT NULL,
+    "NewIntervention_InterventionIdentificationCode" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10713,22 +10713,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAttendance
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentLanguageInstructionProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10737,22 +10737,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentLanguageInstructionPro
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentMigrantEducationProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10761,22 +10761,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentMigrantEducationProgra
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10785,22 +10785,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentNeglectedOrDelinquentP
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10809,26 +10809,26 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAttendanceEvent"
 (
-    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldAttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10837,30 +10837,30 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAttendanceEvent
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramEvaluation"
 (
-    "Old_EvaluationDate" date NOT NULL,
-    "New_EvaluationDate" date NULL,
-    "Old_ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
-    "New_ProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramEvaluation_ProgramName" varchar(60) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEvaluationDate" date NOT NULL,
+    "NewEvaluationDate" date NULL,
+    "OldProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
+    "NewProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldProgramEvaluation_ProgramName" varchar(60) NOT NULL,
+    "NewProgramEvaluation_ProgramName" varchar(60) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10869,14 +10869,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 (
-    "Old_EntryDate" date NOT NULL,
-    "New_EntryDate" date NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldEntryDate" date NOT NULL,
+    "NewEntryDate" date NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10885,22 +10885,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAttendanceEvent"
 (
-    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_SchoolId_Unified" bigint NOT NULL,
-    "New_SchoolId_Unified" bigint NULL,
-    "Old_Session_SchoolYear" integer NOT NULL,
-    "New_Session_SchoolYear" integer NULL,
-    "Old_Session_SessionName" varchar(60) NOT NULL,
-    "New_Session_SessionName" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldAttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldSchoolId_Unified" bigint NOT NULL,
+    "NewSchoolId_Unified" bigint NULL,
+    "OldSession_SchoolYear" integer NOT NULL,
+    "NewSession_SchoolYear" integer NULL,
+    "OldSession_SessionName" varchar(60) NOT NULL,
+    "NewSession_SessionName" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10909,22 +10909,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAttendanceEvent"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolFoodServiceProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10933,22 +10933,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolFoodServiceProgr
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSection504ProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10957,22 +10957,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSection504ProgramAssoc
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
-    "New_Section_LocalCourseCode" varchar(60) NULL,
-    "Old_Section_SchoolId" bigint NOT NULL,
-    "New_Section_SchoolId" bigint NULL,
-    "Old_Section_SchoolYear" integer NOT NULL,
-    "New_Section_SchoolYear" integer NULL,
-    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
-    "New_Section_SectionIdentifier" varchar(255) NULL,
-    "Old_Section_SessionName" varchar(60) NOT NULL,
-    "New_Section_SessionName" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldSection_LocalCourseCode" varchar(60) NOT NULL,
+    "NewSection_LocalCourseCode" varchar(60) NULL,
+    "OldSection_SchoolId" bigint NOT NULL,
+    "NewSection_SchoolId" bigint NULL,
+    "OldSection_SchoolYear" integer NOT NULL,
+    "NewSection_SchoolYear" integer NULL,
+    "OldSection_SectionIdentifier" varchar(255) NOT NULL,
+    "NewSection_SectionIdentifier" varchar(255) NULL,
+    "OldSection_SessionName" varchar(60) NOT NULL,
+    "NewSection_SessionName" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -10981,26 +10981,26 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAttendanceEvent"
 (
-    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
-    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
-    "Old_EventDate" date NOT NULL,
-    "New_EventDate" date NULL,
-    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
-    "New_Section_LocalCourseCode" varchar(60) NULL,
-    "Old_Section_SchoolId" bigint NOT NULL,
-    "New_Section_SchoolId" bigint NULL,
-    "Old_Section_SchoolYear" integer NOT NULL,
-    "New_Section_SchoolYear" integer NULL,
-    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
-    "New_Section_SectionIdentifier" varchar(255) NULL,
-    "Old_Section_SessionName" varchar(60) NOT NULL,
-    "New_Section_SessionName" varchar(60) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldAttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "OldAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewAttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "OldEventDate" date NOT NULL,
+    "NewEventDate" date NULL,
+    "OldSection_LocalCourseCode" varchar(60) NOT NULL,
+    "NewSection_LocalCourseCode" varchar(60) NULL,
+    "OldSection_SchoolId" bigint NOT NULL,
+    "NewSection_SchoolId" bigint NULL,
+    "OldSection_SchoolYear" integer NOT NULL,
+    "NewSection_SchoolYear" integer NULL,
+    "OldSection_SectionIdentifier" varchar(255) NOT NULL,
+    "NewSection_SectionIdentifier" varchar(255) NULL,
+    "OldSection_SessionName" varchar(60) NOT NULL,
+    "NewSection_SessionName" varchar(60) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11009,22 +11009,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAttendanceEvent
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11033,22 +11033,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgra
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgramEligibilityAssociation"
 (
-    "Old_ConsentToEvaluationReceivedDate" date NOT NULL,
-    "New_ConsentToEvaluationReceivedDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldConsentToEvaluationReceivedDate" date NOT NULL,
+    "NewConsentToEvaluationReceivedDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11057,22 +11057,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgra
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTitleIPartAProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11081,12 +11081,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTitleIPartAProgramAsso
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTransportation"
 (
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_TransportationEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_TransportationEducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldTransportationEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewTransportationEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11095,10 +11095,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTransportation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Survey"
 (
-    "Old_Namespace" varchar(255) NOT NULL,
-    "New_Namespace" varchar(255) NULL,
-    "Old_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_SurveyIdentifier" varchar(60) NULL,
+    "OldNamespace" varchar(255) NOT NULL,
+    "NewNamespace" varchar(255) NULL,
+    "OldSurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11107,14 +11107,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Survey"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyCourseAssociation"
 (
-    "Old_Course_CourseCode" varchar(60) NOT NULL,
-    "New_Course_CourseCode" varchar(60) NULL,
-    "Old_Course_EducationOrganizationId" bigint NOT NULL,
-    "New_Course_EducationOrganizationId" bigint NULL,
-    "Old_Survey_Namespace" varchar(255) NOT NULL,
-    "New_Survey_Namespace" varchar(255) NULL,
-    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "OldCourse_CourseCode" varchar(60) NOT NULL,
+    "NewCourse_CourseCode" varchar(60) NULL,
+    "OldCourse_EducationOrganizationId" bigint NOT NULL,
+    "NewCourse_EducationOrganizationId" bigint NULL,
+    "OldSurvey_Namespace" varchar(255) NOT NULL,
+    "NewSurvey_Namespace" varchar(255) NULL,
+    "OldSurvey_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11123,18 +11123,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyCourseAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyProgramAssociation"
 (
-    "Old_Program_EducationOrganizationId" bigint NOT NULL,
-    "New_Program_EducationOrganizationId" bigint NULL,
-    "Old_Program_ProgramName" varchar(60) NOT NULL,
-    "New_Program_ProgramName" varchar(60) NULL,
-    "Old_Program_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_Program_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_Program_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_Program_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Survey_Namespace" varchar(255) NOT NULL,
-    "New_Survey_Namespace" varchar(255) NULL,
-    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "OldProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgram_EducationOrganizationId" bigint NULL,
+    "OldProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgram_ProgramName" varchar(60) NULL,
+    "OldProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldSurvey_Namespace" varchar(255) NOT NULL,
+    "NewSurvey_Namespace" varchar(255) NULL,
+    "OldSurvey_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11143,12 +11143,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestion"
 (
-    "Old_QuestionCode" varchar(60) NOT NULL,
-    "New_QuestionCode" varchar(60) NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
-    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "OldQuestionCode" varchar(60) NOT NULL,
+    "NewQuestionCode" varchar(60) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldSurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "NewSurveyIdentifier_Unified" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11157,14 +11157,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestion"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestionResponse"
 (
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_SurveyQuestion_QuestionCode" varchar(60) NOT NULL,
-    "New_SurveyQuestion_QuestionCode" varchar(60) NULL,
-    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
-    "New_SurveyIdentifier_Unified" varchar(60) NULL,
-    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldSurveyQuestion_QuestionCode" varchar(60) NOT NULL,
+    "NewSurveyQuestion_QuestionCode" varchar(60) NULL,
+    "OldSurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "NewSurveyIdentifier_Unified" varchar(60) NULL,
+    "OldSurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11173,12 +11173,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestionResponse"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponse"
 (
-    "Old_Survey_Namespace" varchar(255) NOT NULL,
-    "New_Survey_Namespace" varchar(255) NULL,
-    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_Survey_SurveyIdentifier" varchar(60) NULL,
-    "Old_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldSurvey_Namespace" varchar(255) NOT NULL,
+    "NewSurvey_Namespace" varchar(255) NULL,
+    "OldSurvey_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurvey_SurveyIdentifier" varchar(60) NULL,
+    "OldSurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11187,14 +11187,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponse"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_SurveyResponse_Namespace" varchar(255) NOT NULL,
-    "New_SurveyResponse_Namespace" varchar(255) NULL,
-    "Old_SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyIdentifier" varchar(60) NULL,
-    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldSurveyResponse_Namespace" varchar(255) NOT NULL,
+    "NewSurveyResponse_Namespace" varchar(255) NULL,
+    "OldSurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyIdentifier" varchar(60) NULL,
+    "OldSurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11203,16 +11203,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseEducationOrgani
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseStaffTargetAssociation"
 (
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_SurveyResponse_Namespace" varchar(255) NOT NULL,
-    "New_SurveyResponse_Namespace" varchar(255) NULL,
-    "Old_SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyIdentifier" varchar(60) NULL,
-    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldSurveyResponse_Namespace" varchar(255) NOT NULL,
+    "NewSurveyResponse_Namespace" varchar(255) NULL,
+    "OldSurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyIdentifier" varchar(60) NULL,
+    "OldSurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11221,12 +11221,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseStaffTargetAsso
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySection"
 (
-    "Old_Survey_Namespace" varchar(255) NOT NULL,
-    "New_Survey_Namespace" varchar(255) NULL,
-    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_Survey_SurveyIdentifier" varchar(60) NULL,
-    "Old_SurveySectionTitle" varchar(255) NOT NULL,
-    "New_SurveySectionTitle" varchar(255) NULL,
+    "OldSurvey_Namespace" varchar(255) NOT NULL,
+    "NewSurvey_Namespace" varchar(255) NULL,
+    "OldSurvey_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurvey_SurveyIdentifier" varchar(60) NULL,
+    "OldSurveySectionTitle" varchar(255) NOT NULL,
+    "NewSurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11235,20 +11235,20 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySection"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionAssociation"
 (
-    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
-    "New_Section_LocalCourseCode" varchar(60) NULL,
-    "Old_Section_SchoolId" bigint NOT NULL,
-    "New_Section_SchoolId" bigint NULL,
-    "Old_Section_SchoolYear" integer NOT NULL,
-    "New_Section_SchoolYear" integer NULL,
-    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
-    "New_Section_SectionIdentifier" varchar(255) NULL,
-    "Old_Section_SessionName" varchar(60) NOT NULL,
-    "New_Section_SessionName" varchar(60) NULL,
-    "Old_Survey_Namespace" varchar(255) NOT NULL,
-    "New_Survey_Namespace" varchar(255) NULL,
-    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
-    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "OldSection_LocalCourseCode" varchar(60) NOT NULL,
+    "NewSection_LocalCourseCode" varchar(60) NULL,
+    "OldSection_SchoolId" bigint NOT NULL,
+    "NewSection_SchoolId" bigint NULL,
+    "OldSection_SchoolYear" integer NOT NULL,
+    "NewSection_SchoolYear" integer NULL,
+    "OldSection_SectionIdentifier" varchar(255) NOT NULL,
+    "NewSection_SectionIdentifier" varchar(255) NULL,
+    "OldSection_SessionName" varchar(60) NOT NULL,
+    "NewSection_SessionName" varchar(60) NULL,
+    "OldSurvey_Namespace" varchar(255) NOT NULL,
+    "NewSurvey_Namespace" varchar(255) NULL,
+    "OldSurvey_SurveyIdentifier" varchar(60) NOT NULL,
+    "NewSurvey_SurveyIdentifier" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11257,14 +11257,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionAssociation"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponse"
 (
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
-    "New_SurveyIdentifier_Unified" varchar(60) NULL,
-    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
-    "Old_SurveySection_SurveySectionTitle" varchar(255) NOT NULL,
-    "New_SurveySection_SurveySectionTitle" varchar(255) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldSurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "NewSurveyIdentifier_Unified" varchar(60) NULL,
+    "OldSurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldSurveySection_SurveySectionTitle" varchar(255) NOT NULL,
+    "NewSurveySection_SurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11273,16 +11273,16 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponse"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
 (
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
-    "New_SurveyIdentifier_Unified" varchar(60) NULL,
-    "Old_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
-    "Old_SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
-    "New_SurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldSurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "NewSurveyIdentifier_Unified" varchar(60) NULL,
+    "OldSurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldSurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
+    "NewSurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11291,18 +11291,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseEducatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseStaffTargetAssociation"
 (
-    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "New_Staff_StaffUniqueId" varchar(32) NULL,
-    "Old_Namespace_Unified" varchar(255) NOT NULL,
-    "New_Namespace_Unified" varchar(255) NULL,
-    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
-    "New_SurveyIdentifier_Unified" varchar(60) NULL,
-    "Old_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
-    "New_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
-    "Old_SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
-    "New_SurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
-    "Old_Staff_DocumentId" bigint NOT NULL,
-    "New_Staff_DocumentId" bigint NULL,
+    "OldStaff_StaffUniqueId" varchar(32) NOT NULL,
+    "NewStaff_StaffUniqueId" varchar(32) NULL,
+    "OldNamespace_Unified" varchar(255) NOT NULL,
+    "NewNamespace_Unified" varchar(255) NULL,
+    "OldSurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "NewSurveyIdentifier_Unified" varchar(60) NULL,
+    "OldSurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "NewSurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "OldSurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
+    "NewSurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
+    "OldStaff_DocumentId" bigint NOT NULL,
+    "NewStaff_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11311,8 +11311,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseStaffTar
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."Bus"
 (
-    "Old_BusId" varchar(60) NOT NULL,
-    "New_BusId" varchar(60) NULL,
+    "OldBusId" varchar(60) NOT NULL,
+    "NewBusId" varchar(60) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11321,10 +11321,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."Bus"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."BusRoute"
 (
-    "Old_Bus_BusId" varchar(60) NOT NULL,
-    "New_Bus_BusId" varchar(60) NULL,
-    "Old_BusRouteNumber" integer NOT NULL,
-    "New_BusRouteNumber" integer NULL,
+    "OldBus_BusId" varchar(60) NOT NULL,
+    "NewBus_BusId" varchar(60) NULL,
+    "OldBusRouteNumber" integer NOT NULL,
+    "NewBusRouteNumber" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11333,22 +11333,22 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."BusRoute"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."StudentArtProgramAssociation"
 (
-    "Old_BeginDate" date NOT NULL,
-    "New_BeginDate" date NULL,
-    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
-    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
-    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "New_ProgramProgram_ProgramName" varchar(60) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldBeginDate" date NOT NULL,
+    "NewBeginDate" date NULL,
+    "OldEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "NewProgramProgram_EducationOrganizationId" bigint NULL,
+    "OldProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "NewProgramProgram_ProgramName" varchar(60) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -11357,18 +11357,18 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."StudentArtProgramAssociatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_sample"."StudentGraduationPlanAssociation"
 (
-    "Old_GraduationPlan_EducationOrganizationId" bigint NOT NULL,
-    "New_GraduationPlan_EducationOrganizationId" bigint NULL,
-    "Old_GraduationPlan_GraduationPlanTypeDescriptor_Namespace" varchar(255) NOT NULL,
-    "New_GraduationPlan_GraduationPlanTypeDescriptor_Namespace" varchar(255) NULL,
-    "Old_GraduationPlan_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NOT NULL,
-    "New_GraduationPlan_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NULL,
-    "Old_GraduationPlan_GraduationSchoolYear" integer NOT NULL,
-    "New_GraduationPlan_GraduationSchoolYear" integer NULL,
-    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
-    "New_Student_StudentUniqueId" varchar(32) NULL,
-    "Old_Student_DocumentId" bigint NOT NULL,
-    "New_Student_DocumentId" bigint NULL,
+    "OldGraduationPlan_EducationOrganizationId" bigint NOT NULL,
+    "NewGraduationPlan_EducationOrganizationId" bigint NULL,
+    "OldGraduationPlan_GraduationPlanTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "NewGraduationPlan_GraduationPlanTypeDescriptor_Namespace" varchar(255) NULL,
+    "OldGraduationPlan_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "NewGraduationPlan_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NULL,
+    "OldGraduationPlan_GraduationSchoolYear" integer NOT NULL,
+    "NewGraduationPlan_GraduationSchoolYear" integer NULL,
+    "OldStudent_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudent_StudentUniqueId" varchar(32) NULL,
+    "OldStudent_DocumentId" bigint NOT NULL,
+    "NewStudent_DocumentId" bigint NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -39260,24 +39260,24 @@ FROM "auth"."EducationOrganizationIdToContactDocumentId" edOrgToContact
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+    sca_tc."OldContact_DocumentId" AS "Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
 INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
-INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa."Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa."Student_DocumentId" = sca_tc."OldStudent_DocumentId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
     sca."Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
-INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa_tc."Old_Student_DocumentId" = sca."Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
+INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa_tc."OldStudent_DocumentId" = sca."Student_DocumentId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+    sca_tc."OldContact_DocumentId" AS "Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
-INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa_tc."Old_Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa_tc."OldStudent_DocumentId" = sca_tc."OldStudent_DocumentId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStaffDocumentIdIncludingDeletes" AS
@@ -39288,15 +39288,15 @@ FROM "auth"."EducationOrganizationIdToStaffDocumentId" edOrgToStaff
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seoaa_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+    seoaa_tc."OldStaff_DocumentId" AS "Staff_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa_tc ON edOrg."TargetEducationOrganizationId" = seoaa_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa_tc ON edOrg."TargetEducationOrganizationId" = seoaa_tc."OldEducationOrganization_EducationOrganizationId"
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seoea_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+    seoea_tc."OldStaff_DocumentId" AS "Staff_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" seoea_tc ON edOrg."TargetEducationOrganizationId" = seoea_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" seoea_tc ON edOrg."TargetEducationOrganizationId" = seoea_tc."OldEducationOrganization_EducationOrganizationId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdDeletedResponsibility" AS
@@ -39307,9 +39307,9 @@ FROM "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" ed
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    seora_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+    seora_tc."OldStudent_DocumentId" AS "Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" seora_tc ON edOrg."TargetEducationOrganizationId" = seora_tc."Old_EducationOrganization_EducationOrganizationId"
+INNER JOIN "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" seora_tc ON edOrg."TargetEducationOrganizationId" = seora_tc."OldEducationOrganization_EducationOrganizationId"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdIncludingDeletes" AS
@@ -39320,9 +39320,9 @@ FROM "auth"."EducationOrganizationIdToStudentDocumentId" edOrgToStudent
 UNION
 SELECT
     edOrg."SourceEducationOrganizationId",
-    ssa_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+    ssa_tc."OldStudent_DocumentId" AS "Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."OldSchoolId_Unified"
 ;
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"()
@@ -39355,8 +39355,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AcademicWeek" (
-            "Old_School_SchoolId",
-            "Old_WeekIdentifier",
+            "OldSchool_SchoolId",
+            "OldWeekIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -39392,10 +39392,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AcademicWeek" (
-            "Old_School_SchoolId",
-            "Old_WeekIdentifier",
-            "New_School_SchoolId",
-            "New_WeekIdentifier",
+            "OldSchool_SchoolId",
+            "OldWeekIdentifier",
+            "NewSchool_SchoolId",
+            "NewWeekIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -39449,9 +39449,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AccountabilityRating" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_RatingTitle",
-            "Old_SchoolYear_SchoolYear",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldRatingTitle",
+            "OldSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -39488,12 +39488,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AccountabilityRating" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_RatingTitle",
-            "Old_SchoolYear_SchoolYear",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_RatingTitle",
-            "New_SchoolYear_SchoolYear",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldRatingTitle",
+            "OldSchoolYear_SchoolYear",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewRatingTitle",
+            "NewSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -39549,8 +39549,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Assessment" (
-            "Old_AssessmentIdentifier",
-            "Old_Namespace",
+            "OldAssessmentIdentifier",
+            "OldNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -39586,10 +39586,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Assessment" (
-            "Old_AssessmentIdentifier",
-            "Old_Namespace",
-            "New_AssessmentIdentifier",
-            "New_Namespace",
+            "OldAssessmentIdentifier",
+            "OldNamespace",
+            "NewAssessmentIdentifier",
+            "NewNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -39684,10 +39684,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentAdministration" (
-            "Old_AdministrationIdentifier",
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_AssigningEducationOrganization_EducationOrganizationId",
+            "OldAdministrationIdentifier",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldAssigningEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -39725,14 +39725,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentAdministration" (
-            "Old_AdministrationIdentifier",
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_AssigningEducationOrganization_EducationOrganizationId",
-            "New_AdministrationIdentifier",
-            "New_Assessment_AssessmentIdentifier",
-            "New_Assessment_Namespace",
-            "New_AssigningEducationOrganization_EducationOrganizationId",
+            "OldAdministrationIdentifier",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldAssigningEducationOrganization_EducationOrganizationId",
+            "NewAdministrationIdentifier",
+            "NewAssessment_AssessmentIdentifier",
+            "NewAssessment_Namespace",
+            "NewAssigningEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -39831,11 +39831,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentAdministrationParticipation" (
-            "Old_AssessmentAdministration_AdministrationIdentifier",
-            "Old_AssessmentAdministration_AssessmentIdentifier",
-            "Old_AssessmentAdministration_AssigningEducationOrganizationId",
-            "Old_AssessmentAdministration_Namespace",
-            "Old_ParticipatingEducationOrganization_EducationOrganizationId",
+            "OldAssessmentAdministration_AdministrationIdentifier",
+            "OldAssessmentAdministration_AssessmentIdentifier",
+            "OldAssessmentAdministration_AssigningEducationOrganizationId",
+            "OldAssessmentAdministration_Namespace",
+            "OldParticipatingEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -39874,16 +39874,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentAdministrationParticipation" (
-            "Old_AssessmentAdministration_AdministrationIdentifier",
-            "Old_AssessmentAdministration_AssessmentIdentifier",
-            "Old_AssessmentAdministration_AssigningEducationOrganizationId",
-            "Old_AssessmentAdministration_Namespace",
-            "Old_ParticipatingEducationOrganization_EducationOrganizationId",
-            "New_AssessmentAdministration_AdministrationIdentifier",
-            "New_AssessmentAdministration_AssessmentIdentifier",
-            "New_AssessmentAdministration_AssigningEducationOrganizationId",
-            "New_AssessmentAdministration_Namespace",
-            "New_ParticipatingEducationOrganization_EducationOrganizationId",
+            "OldAssessmentAdministration_AdministrationIdentifier",
+            "OldAssessmentAdministration_AssessmentIdentifier",
+            "OldAssessmentAdministration_AssigningEducationOrganizationId",
+            "OldAssessmentAdministration_Namespace",
+            "OldParticipatingEducationOrganization_EducationOrganizationId",
+            "NewAssessmentAdministration_AdministrationIdentifier",
+            "NewAssessmentAdministration_AssessmentIdentifier",
+            "NewAssessmentAdministration_AssigningEducationOrganizationId",
+            "NewAssessmentAdministration_Namespace",
+            "NewParticipatingEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -40107,9 +40107,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentBatteryPart" (
-            "Old_AssessmentBatteryPartName",
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
+            "OldAssessmentBatteryPartName",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
             "Id",
             "ChangeVersion"
         )
@@ -40146,12 +40146,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentBatteryPart" (
-            "Old_AssessmentBatteryPartName",
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "New_AssessmentBatteryPartName",
-            "New_Assessment_AssessmentIdentifier",
-            "New_Assessment_Namespace",
+            "OldAssessmentBatteryPartName",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "NewAssessmentBatteryPartName",
+            "NewAssessment_AssessmentIdentifier",
+            "NewAssessment_Namespace",
             "Id",
             "ChangeVersion"
         )
@@ -40289,9 +40289,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentItem" (
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_IdentificationCode",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -40328,12 +40328,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentItem" (
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_IdentificationCode",
-            "New_Assessment_AssessmentIdentifier",
-            "New_Assessment_Namespace",
-            "New_IdentificationCode",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldIdentificationCode",
+            "NewAssessment_AssessmentIdentifier",
+            "NewAssessment_Namespace",
+            "NewIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -40717,9 +40717,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentScoreRangeLearningStandard" (
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_ScoreRangeId",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldScoreRangeId",
             "Id",
             "ChangeVersion"
         )
@@ -40756,12 +40756,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."AssessmentScoreRangeLearningStandard" (
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_ScoreRangeId",
-            "New_AssessmentIdentifier_Unified",
-            "New_Namespace_Unified",
-            "New_ScoreRangeId",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldScoreRangeId",
+            "NewAssessmentIdentifier_Unified",
+            "NewNamespace_Unified",
+            "NewScoreRangeId",
             "Id",
             "ChangeVersion"
         )
@@ -40899,8 +40899,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."BalanceSheetDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -40936,10 +40936,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."BalanceSheetDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -41034,8 +41034,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."BellSchedule" (
-            "Old_BellScheduleName",
-            "Old_School_SchoolId",
+            "OldBellScheduleName",
+            "OldSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -41071,10 +41071,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."BellSchedule" (
-            "Old_BellScheduleName",
-            "Old_School_SchoolId",
-            "New_BellScheduleName",
-            "New_School_SchoolId",
+            "OldBellScheduleName",
+            "OldSchool_SchoolId",
+            "NewBellScheduleName",
+            "NewSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -41251,9 +41251,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Calendar" (
-            "Old_CalendarCode",
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
+            "OldCalendarCode",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -41290,12 +41290,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Calendar" (
-            "Old_CalendarCode",
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
-            "New_CalendarCode",
-            "New_School_SchoolId",
-            "New_SchoolYear_SchoolYear",
+            "OldCalendarCode",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
+            "NewCalendarCode",
+            "NewSchool_SchoolId",
+            "NewSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -41351,10 +41351,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CalendarDate" (
-            "Old_Calendar_CalendarCode",
-            "Old_Calendar_SchoolId",
-            "Old_Calendar_SchoolYear",
-            "Old_Date",
+            "OldCalendar_CalendarCode",
+            "OldCalendar_SchoolId",
+            "OldCalendar_SchoolYear",
+            "OldDate",
             "Id",
             "ChangeVersion"
         )
@@ -41392,14 +41392,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CalendarDate" (
-            "Old_Calendar_CalendarCode",
-            "Old_Calendar_SchoolId",
-            "Old_Calendar_SchoolYear",
-            "Old_Date",
-            "New_Calendar_CalendarCode",
-            "New_Calendar_SchoolId",
-            "New_Calendar_SchoolYear",
-            "New_Date",
+            "OldCalendar_CalendarCode",
+            "OldCalendar_SchoolId",
+            "OldCalendar_SchoolYear",
+            "OldDate",
+            "NewCalendar_CalendarCode",
+            "NewCalendar_SchoolId",
+            "NewCalendar_SchoolYear",
+            "NewDate",
             "Id",
             "ChangeVersion"
         )
@@ -41539,9 +41539,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ChartOfAccount" (
-            "Old_AccountIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_FiscalYear_Unified",
+            "OldAccountIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldFiscalYear_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -41578,12 +41578,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ChartOfAccount" (
-            "Old_AccountIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_FiscalYear_Unified",
-            "New_AccountIdentifier",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_FiscalYear_Unified",
+            "OldAccountIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldFiscalYear_Unified",
+            "NewAccountIdentifier",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewFiscalYear_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -41680,8 +41680,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ClassPeriod" (
-            "Old_ClassPeriodName",
-            "Old_School_SchoolId",
+            "OldClassPeriodName",
+            "OldSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -41717,10 +41717,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ClassPeriod" (
-            "Old_ClassPeriodName",
-            "Old_School_SchoolId",
-            "New_ClassPeriodName",
-            "New_School_SchoolId",
+            "OldClassPeriodName",
+            "OldSchool_SchoolId",
+            "NewClassPeriodName",
+            "NewSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -41815,8 +41815,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Cohort" (
-            "Old_CohortIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
+            "OldCohortIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -41852,10 +41852,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Cohort" (
-            "Old_CohortIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "New_CohortIdentifier",
-            "New_EducationOrganization_EducationOrganizationId",
+            "OldCohortIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "NewCohortIdentifier",
+            "NewEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -42003,7 +42003,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CommunityOrganization" (
-            "Old_CommunityOrganizationId",
+            "OldCommunityOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -42543,7 +42543,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CommunityProvider" (
-            "Old_CommunityProviderId",
+            "OldCommunityProviderId",
             "Id",
             "ChangeVersion"
         )
@@ -42946,9 +42946,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CommunityProviderLicense" (
-            "Old_CommunityProvider_CommunityProviderId",
-            "Old_LicenseIdentifier",
-            "Old_LicensingOrganization",
+            "OldCommunityProvider_CommunityProviderId",
+            "OldLicenseIdentifier",
+            "OldLicensingOrganization",
             "Id",
             "ChangeVersion"
         )
@@ -42985,12 +42985,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CommunityProviderLicense" (
-            "Old_CommunityProvider_CommunityProviderId",
-            "Old_LicenseIdentifier",
-            "Old_LicensingOrganization",
-            "New_CommunityProvider_CommunityProviderId",
-            "New_LicenseIdentifier",
-            "New_LicensingOrganization",
+            "OldCommunityProvider_CommunityProviderId",
+            "OldLicenseIdentifier",
+            "OldLicensingOrganization",
+            "NewCommunityProvider_CommunityProviderId",
+            "NewLicenseIdentifier",
+            "NewLicensingOrganization",
             "Id",
             "ChangeVersion"
         )
@@ -43046,10 +43046,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CompetencyObjective" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Objective",
-            "Old_ObjectiveGradeLevelDescriptor_Namespace",
-            "Old_ObjectiveGradeLevelDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldObjective",
+            "OldObjectiveGradeLevelDescriptor_Namespace",
+            "OldObjectiveGradeLevelDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -43088,14 +43088,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CompetencyObjective" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Objective",
-            "Old_ObjectiveGradeLevelDescriptor_Namespace",
-            "Old_ObjectiveGradeLevelDescriptor_CodeValue",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Objective",
-            "New_ObjectiveGradeLevelDescriptor_Namespace",
-            "New_ObjectiveGradeLevelDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldObjective",
+            "OldObjectiveGradeLevelDescriptor_Namespace",
+            "OldObjectiveGradeLevelDescriptor_CodeValue",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewObjective",
+            "NewObjectiveGradeLevelDescriptor_Namespace",
+            "NewObjectiveGradeLevelDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -43155,8 +43155,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Contact" (
-            "Old_ContactUniqueId",
-            "Old_Contact_DocumentId",
+            "OldContactUniqueId",
+            "OldContact_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -43192,10 +43192,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Contact" (
-            "Old_ContactUniqueId",
-            "Old_Contact_DocumentId",
-            "New_ContactUniqueId",
-            "New_Contact_DocumentId",
+            "OldContactUniqueId",
+            "OldContact_DocumentId",
+            "NewContactUniqueId",
+            "NewContact_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -43618,8 +43618,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Course" (
-            "Old_CourseCode",
-            "Old_EducationOrganization_EducationOrganizationId",
+            "OldCourseCode",
+            "OldEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -43655,10 +43655,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Course" (
-            "Old_CourseCode",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "New_CourseCode",
-            "New_EducationOrganization_EducationOrganizationId",
+            "OldCourseCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "NewCourseCode",
+            "NewEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -43958,10 +43958,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CourseOffering" (
-            "Old_LocalCourseCode",
-            "Old_SchoolId_Unified",
-            "Old_Session_SchoolYear",
-            "Old_Session_SessionName",
+            "OldLocalCourseCode",
+            "OldSchoolId_Unified",
+            "OldSession_SchoolYear",
+            "OldSession_SessionName",
             "Id",
             "ChangeVersion"
         )
@@ -43999,14 +43999,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CourseOffering" (
-            "Old_LocalCourseCode",
-            "Old_SchoolId_Unified",
-            "Old_Session_SchoolYear",
-            "Old_Session_SessionName",
-            "New_LocalCourseCode",
-            "New_SchoolId_Unified",
-            "New_Session_SchoolYear",
-            "New_Session_SessionName",
+            "OldLocalCourseCode",
+            "OldSchoolId_Unified",
+            "OldSession_SchoolYear",
+            "OldSession_SessionName",
+            "NewLocalCourseCode",
+            "NewSchoolId_Unified",
+            "NewSession_SchoolYear",
+            "NewSession_SessionName",
             "Id",
             "ChangeVersion"
         )
@@ -44187,16 +44187,16 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CourseTranscript" (
-            "Old_CourseAttemptResultDescriptor_Namespace",
-            "Old_CourseAttemptResultDescriptor_CodeValue",
-            "Old_CourseCourse_CourseCode",
-            "Old_CourseCourse_EducationOrganizationId",
-            "Old_StudentAcademicRecord_EducationOrganizationId",
-            "Old_StudentAcademicRecord_SchoolYear",
-            "Old_StudentAcademicRecord_StudentUniqueId",
-            "Old_StudentAcademicRecord_TermDescriptor_Namespace",
-            "Old_StudentAcademicRecord_TermDescriptor_CodeValue",
-            "Old_StudentAcademicRecord_Student_DocumentId",
+            "OldCourseAttemptResultDescriptor_Namespace",
+            "OldCourseAttemptResultDescriptor_CodeValue",
+            "OldCourseCourse_CourseCode",
+            "OldCourseCourse_EducationOrganizationId",
+            "OldStudentAcademicRecord_EducationOrganizationId",
+            "OldStudentAcademicRecord_SchoolYear",
+            "OldStudentAcademicRecord_StudentUniqueId",
+            "OldStudentAcademicRecord_TermDescriptor_Namespace",
+            "OldStudentAcademicRecord_TermDescriptor_CodeValue",
+            "OldStudentAcademicRecord_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -44244,26 +44244,26 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CourseTranscript" (
-            "Old_CourseAttemptResultDescriptor_Namespace",
-            "Old_CourseAttemptResultDescriptor_CodeValue",
-            "Old_CourseCourse_CourseCode",
-            "Old_CourseCourse_EducationOrganizationId",
-            "Old_StudentAcademicRecord_EducationOrganizationId",
-            "Old_StudentAcademicRecord_SchoolYear",
-            "Old_StudentAcademicRecord_StudentUniqueId",
-            "Old_StudentAcademicRecord_TermDescriptor_Namespace",
-            "Old_StudentAcademicRecord_TermDescriptor_CodeValue",
-            "Old_StudentAcademicRecord_Student_DocumentId",
-            "New_CourseAttemptResultDescriptor_Namespace",
-            "New_CourseAttemptResultDescriptor_CodeValue",
-            "New_CourseCourse_CourseCode",
-            "New_CourseCourse_EducationOrganizationId",
-            "New_StudentAcademicRecord_EducationOrganizationId",
-            "New_StudentAcademicRecord_SchoolYear",
-            "New_StudentAcademicRecord_StudentUniqueId",
-            "New_StudentAcademicRecord_TermDescriptor_Namespace",
-            "New_StudentAcademicRecord_TermDescriptor_CodeValue",
-            "New_StudentAcademicRecord_Student_DocumentId",
+            "OldCourseAttemptResultDescriptor_Namespace",
+            "OldCourseAttemptResultDescriptor_CodeValue",
+            "OldCourseCourse_CourseCode",
+            "OldCourseCourse_EducationOrganizationId",
+            "OldStudentAcademicRecord_EducationOrganizationId",
+            "OldStudentAcademicRecord_SchoolYear",
+            "OldStudentAcademicRecord_StudentUniqueId",
+            "OldStudentAcademicRecord_TermDescriptor_Namespace",
+            "OldStudentAcademicRecord_TermDescriptor_CodeValue",
+            "OldStudentAcademicRecord_Student_DocumentId",
+            "NewCourseAttemptResultDescriptor_Namespace",
+            "NewCourseAttemptResultDescriptor_CodeValue",
+            "NewCourseCourse_CourseCode",
+            "NewCourseCourse_EducationOrganizationId",
+            "NewStudentAcademicRecord_EducationOrganizationId",
+            "NewStudentAcademicRecord_SchoolYear",
+            "NewStudentAcademicRecord_StudentUniqueId",
+            "NewStudentAcademicRecord_TermDescriptor_Namespace",
+            "NewStudentAcademicRecord_TermDescriptor_CodeValue",
+            "NewStudentAcademicRecord_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -44628,10 +44628,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Credential" (
-            "Old_CredentialIdentifier",
-            "Old_StateOfIssueStateAbbreviationDescriptor_Namespace",
-            "Old_StateOfIssueStateAbbreviationDescriptor_CodeValue",
-            "Old_Namespace",
+            "OldCredentialIdentifier",
+            "OldStateOfIssueStateAbbreviationDescriptor_Namespace",
+            "OldStateOfIssueStateAbbreviationDescriptor_CodeValue",
+            "OldNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -44670,14 +44670,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Credential" (
-            "Old_CredentialIdentifier",
-            "Old_StateOfIssueStateAbbreviationDescriptor_Namespace",
-            "Old_StateOfIssueStateAbbreviationDescriptor_CodeValue",
-            "Old_Namespace",
-            "New_CredentialIdentifier",
-            "New_StateOfIssueStateAbbreviationDescriptor_Namespace",
-            "New_StateOfIssueStateAbbreviationDescriptor_CodeValue",
-            "New_Namespace",
+            "OldCredentialIdentifier",
+            "OldStateOfIssueStateAbbreviationDescriptor_Namespace",
+            "OldStateOfIssueStateAbbreviationDescriptor_CodeValue",
+            "OldNamespace",
+            "NewCredentialIdentifier",
+            "NewStateOfIssueStateAbbreviationDescriptor_Namespace",
+            "NewStateOfIssueStateAbbreviationDescriptor_CodeValue",
+            "NewNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -44860,7 +44860,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CrisisEvent" (
-            "Old_CrisisEventName",
+            "OldCrisisEventName",
             "Id",
             "ChangeVersion"
         )
@@ -44895,8 +44895,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."CrisisEvent" (
-            "Old_CrisisEventName",
-            "New_CrisisEventName",
+            "OldCrisisEventName",
+            "NewCrisisEventName",
             "Id",
             "ChangeVersion"
         )
@@ -44948,10 +44948,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DescriptorMapping" (
-            "Old_MappedNamespace",
-            "Old_MappedValue",
-            "Old_Namespace",
-            "Old_Value",
+            "OldMappedNamespace",
+            "OldMappedValue",
+            "OldNamespace",
+            "OldValue",
             "Id",
             "ChangeVersion"
         )
@@ -44989,14 +44989,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DescriptorMapping" (
-            "Old_MappedNamespace",
-            "Old_MappedValue",
-            "Old_Namespace",
-            "Old_Value",
-            "New_MappedNamespace",
-            "New_MappedValue",
-            "New_Namespace",
-            "New_Value",
+            "OldMappedNamespace",
+            "OldMappedValue",
+            "OldNamespace",
+            "OldValue",
+            "NewMappedNamespace",
+            "NewMappedValue",
+            "NewNamespace",
+            "NewValue",
             "Id",
             "ChangeVersion"
         )
@@ -45095,11 +45095,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DisciplineAction" (
-            "Old_DisciplineActionIdentifier",
-            "Old_DisciplineDate",
-            "Old_Student_StudentUniqueId",
-            "Old_ResponsibilitySchool_SchoolId",
-            "Old_Student_DocumentId",
+            "OldDisciplineActionIdentifier",
+            "OldDisciplineDate",
+            "OldStudent_StudentUniqueId",
+            "OldResponsibilitySchool_SchoolId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -45139,16 +45139,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DisciplineAction" (
-            "Old_DisciplineActionIdentifier",
-            "Old_DisciplineDate",
-            "Old_Student_StudentUniqueId",
-            "Old_ResponsibilitySchool_SchoolId",
-            "Old_Student_DocumentId",
-            "New_DisciplineActionIdentifier",
-            "New_DisciplineDate",
-            "New_Student_StudentUniqueId",
-            "New_ResponsibilitySchool_SchoolId",
-            "New_Student_DocumentId",
+            "OldDisciplineActionIdentifier",
+            "OldDisciplineDate",
+            "OldStudent_StudentUniqueId",
+            "OldResponsibilitySchool_SchoolId",
+            "OldStudent_DocumentId",
+            "NewDisciplineActionIdentifier",
+            "NewDisciplineDate",
+            "NewStudent_StudentUniqueId",
+            "NewResponsibilitySchool_SchoolId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -45333,8 +45333,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DisciplineIncident" (
-            "Old_IncidentIdentifier",
-            "Old_School_SchoolId",
+            "OldIncidentIdentifier",
+            "OldSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -45370,10 +45370,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DisciplineIncident" (
-            "Old_IncidentIdentifier",
-            "Old_School_SchoolId",
-            "New_IncidentIdentifier",
-            "New_School_SchoolId",
+            "OldIncidentIdentifier",
+            "OldSchool_SchoolId",
+            "NewIncidentIdentifier",
+            "NewSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -45550,8 +45550,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationContent" (
-            "Old_ContentIdentifier",
-            "Old_Namespace",
+            "OldContentIdentifier",
+            "OldNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -45587,10 +45587,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationContent" (
-            "Old_ContentIdentifier",
-            "Old_Namespace",
-            "New_ContentIdentifier",
-            "New_Namespace",
+            "OldContentIdentifier",
+            "OldNamespace",
+            "NewContentIdentifier",
+            "NewNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -45912,9 +45912,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationInterventionPrescriptionAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionPrescriptionInterventionPrescription_fcdc1d0ce4",
-            "Old_InterventionPrescriptionInterventionPrescription_80fde4ffdf",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionPrescriptionInterventionPrescription__756e805543",
+            "OldInterventionPrescriptionInterventionPrescription__0c20ee7025",
             "Id",
             "ChangeVersion"
         )
@@ -45951,12 +45951,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationInterventionPrescriptionAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionPrescriptionInterventionPrescription_fcdc1d0ce4",
-            "Old_InterventionPrescriptionInterventionPrescription_80fde4ffdf",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_InterventionPrescriptionInterventionPrescription_3b83ee0f39",
-            "New_InterventionPrescriptionInterventionPrescription_4bd8fc257a",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionPrescriptionInterventionPrescription__756e805543",
+            "OldInterventionPrescriptionInterventionPrescription__0c20ee7025",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewInterventionPrescriptionInterventionPrescription__4e45dc33ef",
+            "NewInterventionPrescriptionInterventionPrescription__a4d6e2eb61",
             "Id",
             "ChangeVersion"
         )
@@ -46084,7 +46084,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationNetwork" (
-            "Old_EducationOrganizationNetworkId",
+            "OldEducationOrganizationNetworkId",
             "Id",
             "ChangeVersion"
         )
@@ -46241,8 +46241,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationNetworkAssociation" (
-            "Old_EducationOrganizationNetwork_EducationOrganizationNetworkId",
-            "Old_MemberEducationOrganization_EducationOrganizationId",
+            "OldEducationOrganizationNetwork_EducationOrganizationNetworkId",
+            "OldMemberEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -46278,10 +46278,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationNetworkAssociation" (
-            "Old_EducationOrganizationNetwork_EducationOrganizationNetworkId",
-            "Old_MemberEducationOrganization_EducationOrganizationId",
-            "New_EducationOrganizationNetwork_EducationOrganizationNetworkId",
-            "New_MemberEducationOrganization_EducationOrganizationId",
+            "OldEducationOrganizationNetwork_EducationOrganizationNetworkId",
+            "OldMemberEducationOrganization_EducationOrganizationId",
+            "NewEducationOrganizationNetwork_EducationOrganizationNetworkId",
+            "NewMemberEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -46581,8 +46581,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationPeerAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_PeerEducationOrganization_EducationOrganizationId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldPeerEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -46618,10 +46618,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationOrganizationPeerAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_PeerEducationOrganization_EducationOrganizationId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_PeerEducationOrganization_EducationOrganizationId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldPeerEducationOrganization_EducationOrganizationId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewPeerEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -46812,7 +46812,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EducationServiceCenter" (
-            "Old_EducationServiceCenterId",
+            "OldEducationServiceCenterId",
             "Id",
             "ChangeVersion"
         )
@@ -47215,17 +47215,17 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EvaluationRubricDimension" (
-            "Old_EvaluationRubricRating",
-            "Old_ProgramEvaluationElement_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluationElement_ProgramEvaluationElementTitle",
-            "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_9beb2fd68a",
-            "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_ca462f72c4",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTitle",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_f738e95469",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_0949af4b92",
-            "Old_ProgramEvaluationElement_ProgramName",
-            "Old_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
+            "OldEvaluationRubricRating",
+            "OldProgramEvaluationElement_ProgramEducationOrganizationId",
+            "OldProgramEvaluationElement_ProgramEvaluationElementTitle",
+            "OldProgramEvaluationElement_ProgramEvaluationPeriodD_e621b439ab",
+            "OldProgramEvaluationElement_ProgramEvaluationPeriodD_2c6e8213c7",
+            "OldProgramEvaluationElement_ProgramEvaluationTitle",
+            "OldProgramEvaluationElement_ProgramEvaluationTypeDes_9b4560a189",
+            "OldProgramEvaluationElement_ProgramEvaluationTypeDes_914de55982",
+            "OldProgramEvaluationElement_ProgramName",
+            "OldProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -47273,28 +47273,28 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EvaluationRubricDimension" (
-            "Old_EvaluationRubricRating",
-            "Old_ProgramEvaluationElement_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluationElement_ProgramEvaluationElementTitle",
-            "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_9beb2fd68a",
-            "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_ca462f72c4",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTitle",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_f738e95469",
-            "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_0949af4b92",
-            "Old_ProgramEvaluationElement_ProgramName",
-            "Old_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
-            "New_EvaluationRubricRating",
-            "New_ProgramEvaluationElement_ProgramEducationOrganizationId",
-            "New_ProgramEvaluationElement_ProgramEvaluationElementTitle",
-            "New_ProgramEvaluationElement_ProgramEvaluationPeriod_2c9ac21869",
-            "New_ProgramEvaluationElement_ProgramEvaluationPeriod_55088c080b",
-            "New_ProgramEvaluationElement_ProgramEvaluationTitle",
-            "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_262301020d",
-            "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_b2661cda2d",
-            "New_ProgramEvaluationElement_ProgramName",
-            "New_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
-            "New_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
+            "OldEvaluationRubricRating",
+            "OldProgramEvaluationElement_ProgramEducationOrganizationId",
+            "OldProgramEvaluationElement_ProgramEvaluationElementTitle",
+            "OldProgramEvaluationElement_ProgramEvaluationPeriodD_e621b439ab",
+            "OldProgramEvaluationElement_ProgramEvaluationPeriodD_2c6e8213c7",
+            "OldProgramEvaluationElement_ProgramEvaluationTitle",
+            "OldProgramEvaluationElement_ProgramEvaluationTypeDes_9b4560a189",
+            "OldProgramEvaluationElement_ProgramEvaluationTypeDes_914de55982",
+            "OldProgramEvaluationElement_ProgramName",
+            "OldProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
+            "NewEvaluationRubricRating",
+            "NewProgramEvaluationElement_ProgramEducationOrganizationId",
+            "NewProgramEvaluationElement_ProgramEvaluationElementTitle",
+            "NewProgramEvaluationElement_ProgramEvaluationPeriodD_4b1800d797",
+            "NewProgramEvaluationElement_ProgramEvaluationPeriodD_dfd7309a64",
+            "NewProgramEvaluationElement_ProgramEvaluationTitle",
+            "NewProgramEvaluationElement_ProgramEvaluationTypeDes_4c01a52394",
+            "NewProgramEvaluationElement_ProgramEvaluationTypeDes_4489e14d13",
+            "NewProgramEvaluationElement_ProgramName",
+            "NewProgramEvaluationElement_ProgramTypeDescriptor_Namespace",
+            "NewProgramEvaluationElement_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -47372,9 +47372,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FeederSchoolAssociation" (
-            "Old_BeginDate",
-            "Old_FeederSchool_SchoolId",
-            "Old_School_SchoolId",
+            "OldBeginDate",
+            "OldFeederSchool_SchoolId",
+            "OldSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -47411,12 +47411,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FeederSchoolAssociation" (
-            "Old_BeginDate",
-            "Old_FeederSchool_SchoolId",
-            "Old_School_SchoolId",
-            "New_BeginDate",
-            "New_FeederSchool_SchoolId",
-            "New_School_SchoolId",
+            "OldBeginDate",
+            "OldFeederSchool_SchoolId",
+            "OldSchool_SchoolId",
+            "NewBeginDate",
+            "NewFeederSchool_SchoolId",
+            "NewSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -47472,8 +47472,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FunctionDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -47509,10 +47509,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FunctionDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -47607,8 +47607,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FundDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -47644,10 +47644,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."FundDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -47742,19 +47742,19 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Grade" (
-            "Old_GradeTypeDescriptor_Namespace",
-            "Old_GradeTypeDescriptor_CodeValue",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_SchoolId_Unified",
-            "Old_SchoolYear_Unified",
-            "Old_StudentSectionAssociation_BeginDate",
-            "Old_StudentSectionAssociation_LocalCourseCode",
-            "Old_StudentSectionAssociation_SectionIdentifier",
-            "Old_StudentSectionAssociation_SessionName",
-            "Old_StudentSectionAssociation_StudentUniqueId",
-            "Old_StudentSectionAssociation_Student_DocumentId",
+            "OldGradeTypeDescriptor_Namespace",
+            "OldGradeTypeDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldSchoolId_Unified",
+            "OldSchoolYear_Unified",
+            "OldStudentSectionAssociation_BeginDate",
+            "OldStudentSectionAssociation_LocalCourseCode",
+            "OldStudentSectionAssociation_SectionIdentifier",
+            "OldStudentSectionAssociation_SessionName",
+            "OldStudentSectionAssociation_StudentUniqueId",
+            "OldStudentSectionAssociation_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -47805,32 +47805,32 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Grade" (
-            "Old_GradeTypeDescriptor_Namespace",
-            "Old_GradeTypeDescriptor_CodeValue",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_SchoolId_Unified",
-            "Old_SchoolYear_Unified",
-            "Old_StudentSectionAssociation_BeginDate",
-            "Old_StudentSectionAssociation_LocalCourseCode",
-            "Old_StudentSectionAssociation_SectionIdentifier",
-            "Old_StudentSectionAssociation_SessionName",
-            "Old_StudentSectionAssociation_StudentUniqueId",
-            "Old_StudentSectionAssociation_Student_DocumentId",
-            "New_GradeTypeDescriptor_Namespace",
-            "New_GradeTypeDescriptor_CodeValue",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7",
-            "New_GradingPeriodGradingPeriod_GradingPeriodName",
-            "New_SchoolId_Unified",
-            "New_SchoolYear_Unified",
-            "New_StudentSectionAssociation_BeginDate",
-            "New_StudentSectionAssociation_LocalCourseCode",
-            "New_StudentSectionAssociation_SectionIdentifier",
-            "New_StudentSectionAssociation_SessionName",
-            "New_StudentSectionAssociation_StudentUniqueId",
-            "New_StudentSectionAssociation_Student_DocumentId",
+            "OldGradeTypeDescriptor_Namespace",
+            "OldGradeTypeDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldSchoolId_Unified",
+            "OldSchoolYear_Unified",
+            "OldStudentSectionAssociation_BeginDate",
+            "OldStudentSectionAssociation_LocalCourseCode",
+            "OldStudentSectionAssociation_SectionIdentifier",
+            "OldStudentSectionAssociation_SessionName",
+            "OldStudentSectionAssociation_StudentUniqueId",
+            "OldStudentSectionAssociation_Student_DocumentId",
+            "NewGradeTypeDescriptor_Namespace",
+            "NewGradeTypeDescriptor_CodeValue",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "NewGradingPeriodGradingPeriod_GradingPeriodName",
+            "NewSchoolId_Unified",
+            "NewSchoolYear_Unified",
+            "NewStudentSectionAssociation_BeginDate",
+            "NewStudentSectionAssociation_LocalCourseCode",
+            "NewStudentSectionAssociation_SectionIdentifier",
+            "NewStudentSectionAssociation_SessionName",
+            "NewStudentSectionAssociation_StudentUniqueId",
+            "NewStudentSectionAssociation_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -47955,8 +47955,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GradebookEntry" (
-            "Old_GradebookEntryIdentifier",
-            "Old_Namespace",
+            "OldGradebookEntryIdentifier",
+            "OldNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -47992,10 +47992,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GradebookEntry" (
-            "Old_GradebookEntryIdentifier",
-            "Old_Namespace",
-            "New_GradebookEntryIdentifier",
-            "New_Namespace",
+            "OldGradebookEntryIdentifier",
+            "OldNamespace",
+            "NewGradebookEntryIdentifier",
+            "NewNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -48090,11 +48090,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GradingPeriod" (
-            "Old_GradingPeriodDescriptor_Namespace",
-            "Old_GradingPeriodDescriptor_CodeValue",
-            "Old_GradingPeriodName",
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
+            "OldGradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodName",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -48134,16 +48134,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GradingPeriod" (
-            "Old_GradingPeriodDescriptor_Namespace",
-            "Old_GradingPeriodDescriptor_CodeValue",
-            "Old_GradingPeriodName",
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
-            "New_GradingPeriodDescriptor_Namespace",
-            "New_GradingPeriodDescriptor_CodeValue",
-            "New_GradingPeriodName",
-            "New_School_SchoolId",
-            "New_SchoolYear_SchoolYear",
+            "OldGradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodName",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
+            "NewGradingPeriodDescriptor_Namespace",
+            "NewGradingPeriodDescriptor_CodeValue",
+            "NewGradingPeriodName",
+            "NewSchool_SchoolId",
+            "NewSchoolYear_SchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -48205,10 +48205,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GraduationPlan" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_GraduationPlanTypeDescriptor_Namespace",
-            "Old_GraduationPlanTypeDescriptor_CodeValue",
-            "Old_GraduationSchoolYear_GraduationSchoolYear",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldGraduationPlanTypeDescriptor_Namespace",
+            "OldGraduationPlanTypeDescriptor_CodeValue",
+            "OldGraduationSchoolYear_GraduationSchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -48247,14 +48247,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."GraduationPlan" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_GraduationPlanTypeDescriptor_Namespace",
-            "Old_GraduationPlanTypeDescriptor_CodeValue",
-            "Old_GraduationSchoolYear_GraduationSchoolYear",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_GraduationPlanTypeDescriptor_Namespace",
-            "New_GraduationPlanTypeDescriptor_CodeValue",
-            "New_GraduationSchoolYear_GraduationSchoolYear",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldGraduationPlanTypeDescriptor_Namespace",
+            "OldGraduationPlanTypeDescriptor_CodeValue",
+            "OldGraduationSchoolYear_GraduationSchoolYear",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewGraduationPlanTypeDescriptor_Namespace",
+            "NewGraduationPlanTypeDescriptor_CodeValue",
+            "NewGraduationSchoolYear_GraduationSchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -48560,8 +48560,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Intervention" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -48597,10 +48597,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Intervention" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionIdentificationCode",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_InterventionIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionIdentificationCode",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewInterventionIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -48982,8 +48982,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."InterventionPrescription" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionPrescriptionIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionPrescriptionIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -49019,10 +49019,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."InterventionPrescription" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionPrescriptionIdentificationCode",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_InterventionPrescriptionIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionPrescriptionIdentificationCode",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewInterventionPrescriptionIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -49404,8 +49404,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."InterventionStudy" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionStudyIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionStudyIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -49441,10 +49441,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."InterventionStudy" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_InterventionStudyIdentificationCode",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_InterventionStudyIdentificationCode",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldInterventionStudyIdentificationCode",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewInterventionStudyIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -49867,8 +49867,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LearningStandard" (
-            "Old_LearningStandardId",
-            "Old_Namespace",
+            "OldLearningStandardId",
+            "OldNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -49904,10 +49904,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LearningStandard" (
-            "Old_LearningStandardId",
-            "Old_Namespace",
-            "New_LearningStandardId",
-            "New_Namespace",
+            "OldLearningStandardId",
+            "OldNamespace",
+            "NewLearningStandardId",
+            "NewNamespace",
             "Id",
             "ChangeVersion"
         )
@@ -50043,9 +50043,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LearningStandardEquivalenceAssociation" (
-            "Old_Namespace",
-            "Old_SourceLearningStandard_LearningStandardId",
-            "Old_TargetLearningStandard_LearningStandardId",
+            "OldNamespace",
+            "OldSourceLearningStandard_LearningStandardId",
+            "OldTargetLearningStandard_LearningStandardId",
             "Id",
             "ChangeVersion"
         )
@@ -50082,12 +50082,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LearningStandardEquivalenceAssociation" (
-            "Old_Namespace",
-            "Old_SourceLearningStandard_LearningStandardId",
-            "Old_TargetLearningStandard_LearningStandardId",
-            "New_Namespace",
-            "New_SourceLearningStandard_LearningStandardId",
-            "New_TargetLearningStandard_LearningStandardId",
+            "OldNamespace",
+            "OldSourceLearningStandard_LearningStandardId",
+            "OldTargetLearningStandard_LearningStandardId",
+            "NewNamespace",
+            "NewSourceLearningStandard_LearningStandardId",
+            "NewTargetLearningStandard_LearningStandardId",
             "Id",
             "ChangeVersion"
         )
@@ -50225,9 +50225,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalAccount" (
-            "Old_AccountIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_FiscalYear_Unified",
+            "OldAccountIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldFiscalYear_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -50264,12 +50264,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalAccount" (
-            "Old_AccountIdentifier",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_FiscalYear_Unified",
-            "New_AccountIdentifier",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_FiscalYear_Unified",
+            "OldAccountIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldFiscalYear_Unified",
+            "NewAccountIdentifier",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewFiscalYear_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -50366,10 +50366,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalActual" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -50407,14 +50407,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalActual" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "New_AsOfDate",
-            "New_LocalAccount_AccountIdentifier",
-            "New_LocalAccount_EducationOrganizationId",
-            "New_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "NewAsOfDate",
+            "NewLocalAccount_AccountIdentifier",
+            "NewLocalAccount_EducationOrganizationId",
+            "NewLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -50472,10 +50472,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalBudget" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -50513,14 +50513,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalBudget" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "New_AsOfDate",
-            "New_LocalAccount_AccountIdentifier",
-            "New_LocalAccount_EducationOrganizationId",
-            "New_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "NewAsOfDate",
+            "NewLocalAccount_AccountIdentifier",
+            "NewLocalAccount_EducationOrganizationId",
+            "NewLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -50578,12 +50578,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalContractedStaff" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -50624,18 +50624,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalContractedStaff" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_AsOfDate",
-            "New_LocalAccount_AccountIdentifier",
-            "New_LocalAccount_EducationOrganizationId",
-            "New_LocalAccount_FiscalYear",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewAsOfDate",
+            "NewLocalAccount_AccountIdentifier",
+            "NewLocalAccount_EducationOrganizationId",
+            "NewLocalAccount_FiscalYear",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -50906,7 +50906,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalEducationAgency" (
-            "Old_LocalEducationAgencyId",
+            "OldLocalEducationAgencyId",
             "Id",
             "ChangeVersion"
         )
@@ -51391,10 +51391,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalEncumbrance" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -51432,14 +51432,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalEncumbrance" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "New_AsOfDate",
-            "New_LocalAccount_AccountIdentifier",
-            "New_LocalAccount_EducationOrganizationId",
-            "New_LocalAccount_FiscalYear",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "NewAsOfDate",
+            "NewLocalAccount_AccountIdentifier",
+            "NewLocalAccount_EducationOrganizationId",
+            "NewLocalAccount_FiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -51497,12 +51497,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalPayroll" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -51543,18 +51543,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."LocalPayroll" (
-            "Old_AsOfDate",
-            "Old_LocalAccount_AccountIdentifier",
-            "Old_LocalAccount_EducationOrganizationId",
-            "Old_LocalAccount_FiscalYear",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_AsOfDate",
-            "New_LocalAccount_AccountIdentifier",
-            "New_LocalAccount_EducationOrganizationId",
-            "New_LocalAccount_FiscalYear",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldAsOfDate",
+            "OldLocalAccount_AccountIdentifier",
+            "OldLocalAccount_EducationOrganizationId",
+            "OldLocalAccount_FiscalYear",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewAsOfDate",
+            "NewLocalAccount_AccountIdentifier",
+            "NewLocalAccount_EducationOrganizationId",
+            "NewLocalAccount_FiscalYear",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -51618,8 +51618,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Location" (
-            "Old_ClassroomIdentificationCode",
-            "Old_School_SchoolId",
+            "OldClassroomIdentificationCode",
+            "OldSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -51655,10 +51655,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Location" (
-            "Old_ClassroomIdentificationCode",
-            "Old_School_SchoolId",
-            "New_ClassroomIdentificationCode",
-            "New_School_SchoolId",
+            "OldClassroomIdentificationCode",
+            "OldSchool_SchoolId",
+            "NewClassroomIdentificationCode",
+            "NewSchool_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -51712,8 +51712,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ObjectDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -51749,10 +51749,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ObjectDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -51847,9 +51847,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ObjectiveAssessment" (
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_IdentificationCode",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -51886,12 +51886,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ObjectiveAssessment" (
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_IdentificationCode",
-            "New_AssessmentIdentifier_Unified",
-            "New_Namespace_Unified",
-            "New_IdentificationCode",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldIdentificationCode",
+            "NewAssessmentIdentifier_Unified",
+            "NewNamespace_Unified",
+            "NewIdentificationCode",
             "Id",
             "ChangeVersion"
         )
@@ -52111,8 +52111,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."OpenStaffPosition" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_RequisitionNumber",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldRequisitionNumber",
             "Id",
             "ChangeVersion"
         )
@@ -52148,10 +52148,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."OpenStaffPosition" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_RequisitionNumber",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_RequisitionNumber",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldRequisitionNumber",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewRequisitionNumber",
             "Id",
             "ChangeVersion"
         )
@@ -52287,8 +52287,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."OperationalUnitDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -52324,10 +52324,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."OperationalUnitDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -52559,8 +52559,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."OrganizationDepartment" (
-            "Old_OrganizationDepartmentId",
-            "Old_ParentEducationOrganization_EducationOrganizationId",
+            "OldOrganizationDepartmentId",
+            "OldParentEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -52964,9 +52964,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Person" (
-            "Old_PersonId",
-            "Old_SourceSystemDescriptor_Namespace",
-            "Old_SourceSystemDescriptor_CodeValue",
+            "OldPersonId",
+            "OldSourceSystemDescriptor_Namespace",
+            "OldSourceSystemDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -53004,12 +53004,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Person" (
-            "Old_PersonId",
-            "Old_SourceSystemDescriptor_Namespace",
-            "Old_SourceSystemDescriptor_CodeValue",
-            "New_PersonId",
-            "New_SourceSystemDescriptor_Namespace",
-            "New_SourceSystemDescriptor_CodeValue",
+            "OldPersonId",
+            "OldSourceSystemDescriptor_Namespace",
+            "OldSourceSystemDescriptor_CodeValue",
+            "NewPersonId",
+            "NewSourceSystemDescriptor_Namespace",
+            "NewSourceSystemDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -53067,11 +53067,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."PostSecondaryEvent" (
-            "Old_EventDate",
-            "Old_PostSecondaryEventCategoryDescriptor_Namespace",
-            "Old_PostSecondaryEventCategoryDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEventDate",
+            "OldPostSecondaryEventCategoryDescriptor_Namespace",
+            "OldPostSecondaryEventCategoryDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -53112,16 +53112,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."PostSecondaryEvent" (
-            "Old_EventDate",
-            "Old_PostSecondaryEventCategoryDescriptor_Namespace",
-            "Old_PostSecondaryEventCategoryDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EventDate",
-            "New_PostSecondaryEventCategoryDescriptor_Namespace",
-            "New_PostSecondaryEventCategoryDescriptor_CodeValue",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEventDate",
+            "OldPostSecondaryEventCategoryDescriptor_Namespace",
+            "OldPostSecondaryEventCategoryDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEventDate",
+            "NewPostSecondaryEventCategoryDescriptor_Namespace",
+            "NewPostSecondaryEventCategoryDescriptor_CodeValue",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -53238,7 +53238,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."PostSecondaryInstitution" (
-            "Old_PostSecondaryInstitutionId",
+            "OldPostSecondaryInstitutionId",
             "Id",
             "ChangeVersion"
         )
@@ -53682,10 +53682,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Program" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramName",
-            "Old_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramTypeDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramName",
+            "OldProgramTypeDescriptor_Namespace",
+            "OldProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -53724,14 +53724,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Program" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramName",
-            "Old_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramTypeDescriptor_CodeValue",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_ProgramName",
-            "New_ProgramTypeDescriptor_Namespace",
-            "New_ProgramTypeDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramName",
+            "OldProgramTypeDescriptor_Namespace",
+            "OldProgramTypeDescriptor_CodeValue",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewProgramName",
+            "NewProgramTypeDescriptor_Namespace",
+            "NewProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -53832,8 +53832,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -53869,10 +53869,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -53967,15 +53967,15 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluation" (
-            "Old_ProgramEvaluationPeriodDescriptor_Namespace",
-            "Old_ProgramEvaluationPeriodDescriptor_CodeValue",
-            "Old_ProgramEvaluationTitle",
-            "Old_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationPeriodDescriptor_Namespace",
+            "OldProgramEvaluationPeriodDescriptor_CodeValue",
+            "OldProgramEvaluationTitle",
+            "OldProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54021,24 +54021,24 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluation" (
-            "Old_ProgramEvaluationPeriodDescriptor_Namespace",
-            "Old_ProgramEvaluationPeriodDescriptor_CodeValue",
-            "Old_ProgramEvaluationTitle",
-            "Old_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "New_ProgramEvaluationPeriodDescriptor_Namespace",
-            "New_ProgramEvaluationPeriodDescriptor_CodeValue",
-            "New_ProgramEvaluationTitle",
-            "New_ProgramEvaluationTypeDescriptor_Namespace",
-            "New_ProgramEvaluationTypeDescriptor_CodeValue",
-            "New_ProgramProgram_EducationOrganizationId",
-            "New_ProgramProgram_ProgramName",
-            "New_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "New_ProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationPeriodDescriptor_Namespace",
+            "OldProgramEvaluationPeriodDescriptor_CodeValue",
+            "OldProgramEvaluationTitle",
+            "OldProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "NewProgramEvaluationPeriodDescriptor_Namespace",
+            "NewProgramEvaluationPeriodDescriptor_CodeValue",
+            "NewProgramEvaluationTitle",
+            "NewProgramEvaluationTypeDescriptor_Namespace",
+            "NewProgramEvaluationTypeDescriptor_CodeValue",
+            "NewProgramProgram_EducationOrganizationId",
+            "NewProgramProgram_ProgramName",
+            "NewProgramProgram_ProgramTypeDescriptor_Namespace",
+            "NewProgramProgram_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54112,16 +54112,16 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluationElement" (
-            "Old_ProgramEvaluationElementTitle",
-            "Old_ProgramEducationOrganizationId_Unified",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluationTitle_Unified",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramName_Unified",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationElementTitle",
+            "OldProgramEducationOrganizationId_Unified",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluationTitle_Unified",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramName_Unified",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54168,26 +54168,26 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluationElement" (
-            "Old_ProgramEvaluationElementTitle",
-            "Old_ProgramEducationOrganizationId_Unified",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluationTitle_Unified",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramName_Unified",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
-            "New_ProgramEvaluationElementTitle",
-            "New_ProgramEducationOrganizationId_Unified",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58",
-            "New_ProgramEvaluationTitle_Unified",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "New_ProgramName_Unified",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationElementTitle",
+            "OldProgramEducationOrganizationId_Unified",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluationTitle_Unified",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramName_Unified",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "NewProgramEvaluationElementTitle",
+            "NewProgramEducationOrganizationId_Unified",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7",
+            "NewProgramEvaluationTitle_Unified",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "NewProgramName_Unified",
+            "NewProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54345,16 +54345,16 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluationObjective" (
-            "Old_ProgramEvaluationObjectiveTitle",
-            "Old_ProgramEvaluation_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluation_ProgramEvaluationTitle",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramEvaluation_ProgramName",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationObjectiveTitle",
+            "OldProgramEvaluation_ProgramEducationOrganizationId",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluation_ProgramEvaluationTitle",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramEvaluation_ProgramName",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54401,26 +54401,26 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProgramEvaluationObjective" (
-            "Old_ProgramEvaluationObjectiveTitle",
-            "Old_ProgramEvaluation_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluation_ProgramEvaluationTitle",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramEvaluation_ProgramName",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
-            "New_ProgramEvaluationObjectiveTitle",
-            "New_ProgramEvaluation_ProgramEducationOrganizationId",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58",
-            "New_ProgramEvaluation_ProgramEvaluationTitle",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "New_ProgramEvaluation_ProgramName",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldProgramEvaluationObjectiveTitle",
+            "OldProgramEvaluation_ProgramEducationOrganizationId",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluation_ProgramEvaluationTitle",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramEvaluation_ProgramName",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "NewProgramEvaluationObjectiveTitle",
+            "NewProgramEvaluation_ProgramEducationOrganizationId",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7",
+            "NewProgramEvaluation_ProgramEvaluationTitle",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "NewProgramEvaluation_ProgramName",
+            "NewProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue",
             "Id",
             "ChangeVersion"
         )
@@ -54619,8 +54619,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProjectDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -54656,10 +54656,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ProjectDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -54754,14 +54754,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ReportCard" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_GradingPeriodGradingPeriod_SchoolId",
-            "Old_GradingPeriodGradingPeriod_SchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldGradingPeriodGradingPeriod_SchoolId",
+            "OldGradingPeriodGradingPeriod_SchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -54805,22 +54805,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ReportCard" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_GradingPeriodGradingPeriod_SchoolId",
-            "Old_GradingPeriodGradingPeriod_SchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7",
-            "New_GradingPeriodGradingPeriod_GradingPeriodName",
-            "New_GradingPeriodGradingPeriod_SchoolId",
-            "New_GradingPeriodGradingPeriod_SchoolYear",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldGradingPeriodGradingPeriod_SchoolId",
+            "OldGradingPeriodGradingPeriod_SchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "NewGradingPeriodGradingPeriod_GradingPeriodName",
+            "NewGradingPeriodGradingPeriod_SchoolId",
+            "NewGradingPeriodGradingPeriod_SchoolYear",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -55013,10 +55013,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."RestraintEvent" (
-            "Old_RestraintEventIdentifier",
-            "Old_SchoolId_Unified",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldRestraintEventIdentifier",
+            "OldSchoolId_Unified",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -55055,14 +55055,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."RestraintEvent" (
-            "Old_RestraintEventIdentifier",
-            "Old_SchoolId_Unified",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_RestraintEventIdentifier",
-            "New_SchoolId_Unified",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldRestraintEventIdentifier",
+            "OldSchoolId_Unified",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewRestraintEventIdentifier",
+            "NewSchoolId_Unified",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -55341,7 +55341,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
+            "OldSchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -55826,7 +55826,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SchoolYearType" (
-            "Old_SchoolYear",
+            "OldSchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -55861,8 +55861,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SchoolYearType" (
-            "Old_SchoolYear",
-            "New_SchoolYear",
+            "OldSchoolYear",
+            "NewSchoolYear",
             "Id",
             "ChangeVersion"
         )
@@ -55914,11 +55914,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Section" (
-            "Old_CourseOffering_LocalCourseCode",
-            "Old_SchoolId_Unified",
-            "Old_CourseOffering_SchoolYear",
-            "Old_CourseOffering_SessionName",
-            "Old_SectionIdentifier",
+            "OldCourseOffering_LocalCourseCode",
+            "OldSchoolId_Unified",
+            "OldCourseOffering_SchoolYear",
+            "OldCourseOffering_SessionName",
+            "OldSectionIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -55957,16 +55957,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Section" (
-            "Old_CourseOffering_LocalCourseCode",
-            "Old_SchoolId_Unified",
-            "Old_CourseOffering_SchoolYear",
-            "Old_CourseOffering_SessionName",
-            "Old_SectionIdentifier",
-            "New_CourseOffering_LocalCourseCode",
-            "New_SchoolId_Unified",
-            "New_CourseOffering_SchoolYear",
-            "New_CourseOffering_SessionName",
-            "New_SectionIdentifier",
+            "OldCourseOffering_LocalCourseCode",
+            "OldSchoolId_Unified",
+            "OldCourseOffering_SchoolYear",
+            "OldCourseOffering_SessionName",
+            "OldSectionIdentifier",
+            "NewCourseOffering_LocalCourseCode",
+            "NewSchoolId_Unified",
+            "NewCourseOffering_SchoolYear",
+            "NewCourseOffering_SessionName",
+            "NewSectionIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -56026,13 +56026,13 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SectionAttendanceTakenEvent" (
-            "Old_CalendarDate_CalendarCode",
-            "Old_CalendarDate_Date",
-            "Old_SchoolId_Unified",
-            "Old_SchoolYear_Unified",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
+            "OldCalendarDate_CalendarCode",
+            "OldCalendarDate_Date",
+            "OldSchoolId_Unified",
+            "OldSchoolYear_Unified",
+            "OldSection_LocalCourseCode",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
             "Id",
             "ChangeVersion"
         )
@@ -56073,20 +56073,20 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SectionAttendanceTakenEvent" (
-            "Old_CalendarDate_CalendarCode",
-            "Old_CalendarDate_Date",
-            "Old_SchoolId_Unified",
-            "Old_SchoolYear_Unified",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "New_CalendarDate_CalendarCode",
-            "New_CalendarDate_Date",
-            "New_SchoolId_Unified",
-            "New_SchoolYear_Unified",
-            "New_Section_LocalCourseCode",
-            "New_Section_SectionIdentifier",
-            "New_Section_SessionName",
+            "OldCalendarDate_CalendarCode",
+            "OldCalendarDate_Date",
+            "OldSchoolId_Unified",
+            "OldSchoolYear_Unified",
+            "OldSection_LocalCourseCode",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "NewCalendarDate_CalendarCode",
+            "NewCalendarDate_Date",
+            "NewSchoolId_Unified",
+            "NewSchoolYear_Unified",
+            "NewSection_LocalCourseCode",
+            "NewSection_SectionIdentifier",
+            "NewSection_SessionName",
             "Id",
             "ChangeVersion"
         )
@@ -56355,9 +56355,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Session" (
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
-            "Old_SessionName",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
+            "OldSessionName",
             "Id",
             "ChangeVersion"
         )
@@ -56394,12 +56394,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Session" (
-            "Old_School_SchoolId",
-            "Old_SchoolYear_SchoolYear",
-            "Old_SessionName",
-            "New_School_SchoolId",
-            "New_SchoolYear_SchoolYear",
-            "New_SessionName",
+            "OldSchool_SchoolId",
+            "OldSchoolYear_SchoolYear",
+            "OldSessionName",
+            "NewSchool_SchoolId",
+            "NewSchoolYear_SchoolYear",
+            "NewSessionName",
             "Id",
             "ChangeVersion"
         )
@@ -56537,8 +56537,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SourceDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -56574,10 +56574,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SourceDimension" (
-            "Old_Code",
-            "Old_FiscalYear",
-            "New_Code",
-            "New_FiscalYear",
+            "OldCode",
+            "OldFiscalYear",
+            "NewCode",
+            "NewFiscalYear",
             "Id",
             "ChangeVersion"
         )
@@ -56672,8 +56672,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Staff" (
-            "Old_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldStaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -56709,10 +56709,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Staff" (
-            "Old_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldStaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewStaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -56766,11 +56766,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffAbsenceEvent" (
-            "Old_AbsenceEventCategoryDescriptor_Namespace",
-            "Old_AbsenceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldAbsenceEventCategoryDescriptor_Namespace",
+            "OldAbsenceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -56811,16 +56811,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffAbsenceEvent" (
-            "Old_AbsenceEventCategoryDescriptor_Namespace",
-            "Old_AbsenceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_AbsenceEventCategoryDescriptor_Namespace",
-            "New_AbsenceEventCategoryDescriptor_CodeValue",
-            "New_EventDate",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldAbsenceEventCategoryDescriptor_Namespace",
+            "OldAbsenceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewAbsenceEventCategoryDescriptor_Namespace",
+            "NewAbsenceEventCategoryDescriptor_CodeValue",
+            "NewEventDate",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57007,11 +57007,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffCohortAssociation" (
-            "Old_BeginDate",
-            "Old_Cohort_CohortIdentifier",
-            "Old_Cohort_EducationOrganizationId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldBeginDate",
+            "OldCohort_CohortIdentifier",
+            "OldCohort_EducationOrganizationId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57051,16 +57051,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffCohortAssociation" (
-            "Old_BeginDate",
-            "Old_Cohort_CohortIdentifier",
-            "Old_Cohort_EducationOrganizationId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_BeginDate",
-            "New_Cohort_CohortIdentifier",
-            "New_Cohort_EducationOrganizationId",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldBeginDate",
+            "OldCohort_CohortIdentifier",
+            "OldCohort_EducationOrganizationId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewBeginDate",
+            "NewCohort_CohortIdentifier",
+            "NewCohort_EducationOrganizationId",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57163,10 +57163,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffDisciplineIncidentAssociation" (
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57205,14 +57205,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffDisciplineIncidentAssociation" (
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_DisciplineIncident_IncidentIdentifier",
-            "New_DisciplineIncident_SchoolId",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewDisciplineIncident_IncidentIdentifier",
+            "NewDisciplineIncident_SchoolId",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57313,12 +57313,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_StaffClassificationDescriptor_Namespace",
-            "Old_StaffClassificationDescriptor_CodeValue",
-            "Old_StaffUniqueId_Unified",
-            "Old_Staff_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStaffClassificationDescriptor_Namespace",
+            "OldStaffClassificationDescriptor_CodeValue",
+            "OldStaffUniqueId_Unified",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57360,18 +57360,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_StaffClassificationDescriptor_Namespace",
-            "Old_StaffClassificationDescriptor_CodeValue",
-            "Old_StaffUniqueId_Unified",
-            "Old_Staff_DocumentId",
-            "New_BeginDate",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_StaffClassificationDescriptor_Namespace",
-            "New_StaffClassificationDescriptor_CodeValue",
-            "New_StaffUniqueId_Unified",
-            "New_Staff_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStaffClassificationDescriptor_Namespace",
+            "OldStaffClassificationDescriptor_CodeValue",
+            "OldStaffUniqueId_Unified",
+            "OldStaff_DocumentId",
+            "NewBeginDate",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStaffClassificationDescriptor_Namespace",
+            "NewStaffClassificationDescriptor_CodeValue",
+            "NewStaffUniqueId_Unified",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57437,10 +57437,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationContactAssociation" (
-            "Old_ContactTitle",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldContactTitle",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57479,14 +57479,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationContactAssociation" (
-            "Old_ContactTitle",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_ContactTitle",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldContactTitle",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewContactTitle",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57628,12 +57628,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_EmploymentStatusDescriptor_Namespace",
-            "Old_EmploymentStatusDescriptor_CodeValue",
-            "Old_HireDate",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldEmploymentStatusDescriptor_Namespace",
+            "OldEmploymentStatusDescriptor_CodeValue",
+            "OldHireDate",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57675,18 +57675,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_EmploymentStatusDescriptor_Namespace",
-            "Old_EmploymentStatusDescriptor_CodeValue",
-            "Old_HireDate",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_EmploymentStatusDescriptor_Namespace",
-            "New_EmploymentStatusDescriptor_CodeValue",
-            "New_HireDate",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldEmploymentStatusDescriptor_Namespace",
+            "OldEmploymentStatusDescriptor_CodeValue",
+            "OldHireDate",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewEmploymentStatusDescriptor_Namespace",
+            "NewEmploymentStatusDescriptor_CodeValue",
+            "NewHireDate",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -57998,11 +57998,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffLeave" (
-            "Old_BeginDate",
-            "Old_StaffLeaveEventCategoryDescriptor_Namespace",
-            "Old_StaffLeaveEventCategoryDescriptor_CodeValue",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldBeginDate",
+            "OldStaffLeaveEventCategoryDescriptor_Namespace",
+            "OldStaffLeaveEventCategoryDescriptor_CodeValue",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58043,16 +58043,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffLeave" (
-            "Old_BeginDate",
-            "Old_StaffLeaveEventCategoryDescriptor_Namespace",
-            "Old_StaffLeaveEventCategoryDescriptor_CodeValue",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_BeginDate",
-            "New_StaffLeaveEventCategoryDescriptor_Namespace",
-            "New_StaffLeaveEventCategoryDescriptor_CodeValue",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldBeginDate",
+            "OldStaffLeaveEventCategoryDescriptor_Namespace",
+            "OldStaffLeaveEventCategoryDescriptor_CodeValue",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewBeginDate",
+            "NewStaffLeaveEventCategoryDescriptor_Namespace",
+            "NewStaffLeaveEventCategoryDescriptor_CodeValue",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58198,13 +58198,13 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffProgramAssociation" (
-            "Old_BeginDate",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldBeginDate",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58247,20 +58247,20 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffProgramAssociation" (
-            "Old_BeginDate",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_BeginDate",
-            "New_ProgramProgram_EducationOrganizationId",
-            "New_ProgramProgram_ProgramName",
-            "New_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "New_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldBeginDate",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewBeginDate",
+            "NewProgramProgram_EducationOrganizationId",
+            "NewProgramProgram_ProgramName",
+            "NewProgramProgram_ProgramTypeDescriptor_Namespace",
+            "NewProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58410,11 +58410,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffSchoolAssociation" (
-            "Old_ProgramAssignmentDescriptor_Namespace",
-            "Old_ProgramAssignmentDescriptor_CodeValue",
-            "Old_SchoolId_Unified",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldProgramAssignmentDescriptor_Namespace",
+            "OldProgramAssignmentDescriptor_CodeValue",
+            "OldSchoolId_Unified",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58455,16 +58455,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffSchoolAssociation" (
-            "Old_ProgramAssignmentDescriptor_Namespace",
-            "Old_ProgramAssignmentDescriptor_CodeValue",
-            "Old_SchoolId_Unified",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_ProgramAssignmentDescriptor_Namespace",
-            "New_ProgramAssignmentDescriptor_CodeValue",
-            "New_SchoolId_Unified",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldProgramAssignmentDescriptor_Namespace",
+            "OldProgramAssignmentDescriptor_CodeValue",
+            "OldSchoolId_Unified",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewProgramAssignmentDescriptor_Namespace",
+            "NewProgramAssignmentDescriptor_CodeValue",
+            "NewSchoolId_Unified",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58610,14 +58610,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffSectionAssociation" (
-            "Old_BeginDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
+            "OldBeginDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58660,22 +58660,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StaffSectionAssociation" (
-            "Old_BeginDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Staff_StaffUniqueId",
-            "Old_Staff_DocumentId",
-            "New_BeginDate",
-            "New_Section_LocalCourseCode",
-            "New_Section_SchoolId",
-            "New_Section_SchoolYear",
-            "New_Section_SectionIdentifier",
-            "New_Section_SessionName",
-            "New_Staff_StaffUniqueId",
-            "New_Staff_DocumentId",
+            "OldBeginDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStaff_StaffUniqueId",
+            "OldStaff_DocumentId",
+            "NewBeginDate",
+            "NewSection_LocalCourseCode",
+            "NewSection_SchoolId",
+            "NewSection_SchoolYear",
+            "NewSection_SectionIdentifier",
+            "NewSection_SessionName",
+            "NewStaff_StaffUniqueId",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -58919,7 +58919,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StateEducationAgency" (
-            "Old_StateEducationAgencyId",
+            "OldStateEducationAgencyId",
             "Id",
             "ChangeVersion"
         )
@@ -59404,8 +59404,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldStudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59441,10 +59441,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldStudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewStudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59498,12 +59498,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAcademicRecord" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_SchoolYear_SchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_TermDescriptor_Namespace",
-            "Old_TermDescriptor_CodeValue",
-            "Old_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldSchoolYear_SchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldTermDescriptor_Namespace",
+            "OldTermDescriptor_CodeValue",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59545,18 +59545,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAcademicRecord" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_SchoolYear_SchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_TermDescriptor_Namespace",
-            "Old_TermDescriptor_CodeValue",
-            "Old_Student_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_SchoolYear_SchoolYear",
-            "New_Student_StudentUniqueId",
-            "New_TermDescriptor_Namespace",
-            "New_TermDescriptor_CodeValue",
-            "New_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldSchoolYear_SchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldTermDescriptor_Namespace",
+            "OldTermDescriptor_CodeValue",
+            "OldStudent_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewSchoolYear_SchoolYear",
+            "NewStudent_StudentUniqueId",
+            "NewTermDescriptor_Namespace",
+            "NewTermDescriptor_CodeValue",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59827,12 +59827,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessment" (
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_StudentAssessmentIdentifier",
-            "Old_Student_StudentUniqueId",
-            "Old_ReportedSchool_SchoolId",
-            "Old_Student_DocumentId",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldStudentAssessmentIdentifier",
+            "OldStudent_StudentUniqueId",
+            "OldReportedSchool_SchoolId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59873,18 +59873,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessment" (
-            "Old_Assessment_AssessmentIdentifier",
-            "Old_Assessment_Namespace",
-            "Old_StudentAssessmentIdentifier",
-            "Old_Student_StudentUniqueId",
-            "Old_ReportedSchool_SchoolId",
-            "Old_Student_DocumentId",
-            "New_Assessment_AssessmentIdentifier",
-            "New_Assessment_Namespace",
-            "New_StudentAssessmentIdentifier",
-            "New_Student_StudentUniqueId",
-            "New_ReportedSchool_SchoolId",
-            "New_Student_DocumentId",
+            "OldAssessment_AssessmentIdentifier",
+            "OldAssessment_Namespace",
+            "OldStudentAssessmentIdentifier",
+            "OldStudent_StudentUniqueId",
+            "OldReportedSchool_SchoolId",
+            "OldStudent_DocumentId",
+            "NewAssessment_AssessmentIdentifier",
+            "NewAssessment_Namespace",
+            "NewStudentAssessmentIdentifier",
+            "NewStudent_StudentUniqueId",
+            "NewReportedSchool_SchoolId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -59989,14 +59989,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentEducationOrganizationAssociation" (
-            "Old_EducationOrganizationAssociationTypeDescriptor_Namespace",
-            "Old_EducationOrganizationAssociationTypeDescriptor_CodeValue",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_StudentAssessment_AssessmentIdentifier",
-            "Old_StudentAssessment_Namespace",
-            "Old_StudentAssessment_StudentAssessmentIdentifier",
-            "Old_StudentAssessment_StudentUniqueId",
-            "Old_StudentAssessment_Student_DocumentId",
+            "OldEducationOrganizationAssociationTypeDescriptor_Namespace",
+            "OldEducationOrganizationAssociationTypeDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudentAssessment_AssessmentIdentifier",
+            "OldStudentAssessment_Namespace",
+            "OldStudentAssessment_StudentAssessmentIdentifier",
+            "OldStudentAssessment_StudentUniqueId",
+            "OldStudentAssessment_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -60041,22 +60041,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentEducationOrganizationAssociation" (
-            "Old_EducationOrganizationAssociationTypeDescriptor_Namespace",
-            "Old_EducationOrganizationAssociationTypeDescriptor_CodeValue",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_StudentAssessment_AssessmentIdentifier",
-            "Old_StudentAssessment_Namespace",
-            "Old_StudentAssessment_StudentAssessmentIdentifier",
-            "Old_StudentAssessment_StudentUniqueId",
-            "Old_StudentAssessment_Student_DocumentId",
-            "New_EducationOrganizationAssociationTypeDescriptor_Namespace",
-            "New_EducationOrganizationAssociationTypeDescriptor_CodeValue",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_StudentAssessment_AssessmentIdentifier",
-            "New_StudentAssessment_Namespace",
-            "New_StudentAssessment_StudentAssessmentIdentifier",
-            "New_StudentAssessment_StudentUniqueId",
-            "New_StudentAssessment_Student_DocumentId",
+            "OldEducationOrganizationAssociationTypeDescriptor_Namespace",
+            "OldEducationOrganizationAssociationTypeDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudentAssessment_AssessmentIdentifier",
+            "OldStudentAssessment_Namespace",
+            "OldStudentAssessment_StudentAssessmentIdentifier",
+            "OldStudentAssessment_StudentUniqueId",
+            "OldStudentAssessment_Student_DocumentId",
+            "NewEducationOrganizationAssociationTypeDescriptor_Namespace",
+            "NewEducationOrganizationAssociationTypeDescriptor_CodeValue",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStudentAssessment_AssessmentIdentifier",
+            "NewStudentAssessment_Namespace",
+            "NewStudentAssessment_StudentAssessmentIdentifier",
+            "NewStudentAssessment_StudentUniqueId",
+            "NewStudentAssessment_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -60210,13 +60210,13 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentRegistration" (
-            "Old_AssessmentAdministration_AdministrationIdentifier",
-            "Old_AssessmentAdministration_AssessmentIdentifier",
-            "Old_AssessmentAdministration_AssigningEducationOrganizationId",
-            "Old_AssessmentAdministration_Namespace",
-            "Old_StudentEducationOrganizationAssociation_Educatio_5bb485678a",
-            "Old_StudentUniqueId_Unified",
-            "Old_StudentEducationOrganizationAssociation_Student_DocumentId",
+            "OldAssessmentAdministration_AdministrationIdentifier",
+            "OldAssessmentAdministration_AssessmentIdentifier",
+            "OldAssessmentAdministration_AssigningEducationOrganizationId",
+            "OldAssessmentAdministration_Namespace",
+            "OldStudentEducationOrganizationAssociation_Education_955578800a",
+            "OldStudentUniqueId_Unified",
+            "OldStudentEducationOrganizationAssociation_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -60259,20 +60259,20 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentRegistration" (
-            "Old_AssessmentAdministration_AdministrationIdentifier",
-            "Old_AssessmentAdministration_AssessmentIdentifier",
-            "Old_AssessmentAdministration_AssigningEducationOrganizationId",
-            "Old_AssessmentAdministration_Namespace",
-            "Old_StudentEducationOrganizationAssociation_Educatio_5bb485678a",
-            "Old_StudentUniqueId_Unified",
-            "Old_StudentEducationOrganizationAssociation_Student_DocumentId",
-            "New_AssessmentAdministration_AdministrationIdentifier",
-            "New_AssessmentAdministration_AssessmentIdentifier",
-            "New_AssessmentAdministration_AssigningEducationOrganizationId",
-            "New_AssessmentAdministration_Namespace",
-            "New_StudentEducationOrganizationAssociation_Educatio_9fe27e4988",
-            "New_StudentUniqueId_Unified",
-            "New_StudentEducationOrganizationAssociation_Student_DocumentId",
+            "OldAssessmentAdministration_AdministrationIdentifier",
+            "OldAssessmentAdministration_AssessmentIdentifier",
+            "OldAssessmentAdministration_AssigningEducationOrganizationId",
+            "OldAssessmentAdministration_Namespace",
+            "OldStudentEducationOrganizationAssociation_Education_955578800a",
+            "OldStudentUniqueId_Unified",
+            "OldStudentEducationOrganizationAssociation_Student_DocumentId",
+            "NewAssessmentAdministration_AdministrationIdentifier",
+            "NewAssessmentAdministration_AssessmentIdentifier",
+            "NewAssessmentAdministration_AssigningEducationOrganizationId",
+            "NewAssessmentAdministration_Namespace",
+            "NewStudentEducationOrganizationAssociation_Education_a33160f1d5",
+            "NewStudentUniqueId_Unified",
+            "NewStudentEducationOrganizationAssociation_Student_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -60422,14 +60422,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentRegistrationBatteryPartAssociation" (
-            "Old_AssessmentBatteryPart_AssessmentBatteryPartName",
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_StudentAssessmentRegistration_AdministrationIdentifier",
-            "Old_StudentAssessmentRegistration_AssigningEducation_32eafba146",
-            "Old_StudentAssessmentRegistration_EducationOrganizationId",
-            "Old_StudentAssessmentRegistration_StudentUniqueId",
-            "Old_StudentAssessmentRegistration_StudentEducationOr_d1d49658ae",
+            "OldAssessmentBatteryPart_AssessmentBatteryPartName",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldStudentAssessmentRegistration_AdministrationIdentifier",
+            "OldStudentAssessmentRegistration_AssigningEducationO_8330ef761c",
+            "OldStudentAssessmentRegistration_EducationOrganizationId",
+            "OldStudentAssessmentRegistration_StudentUniqueId",
+            "OldStudentAssessmentRegistration_StudentEducationOrg_492057c6e1",
             "Id",
             "ChangeVersion"
         )
@@ -60474,22 +60474,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentAssessmentRegistrationBatteryPartAssociation" (
-            "Old_AssessmentBatteryPart_AssessmentBatteryPartName",
-            "Old_AssessmentIdentifier_Unified",
-            "Old_Namespace_Unified",
-            "Old_StudentAssessmentRegistration_AdministrationIdentifier",
-            "Old_StudentAssessmentRegistration_AssigningEducation_32eafba146",
-            "Old_StudentAssessmentRegistration_EducationOrganizationId",
-            "Old_StudentAssessmentRegistration_StudentUniqueId",
-            "Old_StudentAssessmentRegistration_StudentEducationOr_d1d49658ae",
-            "New_AssessmentBatteryPart_AssessmentBatteryPartName",
-            "New_AssessmentIdentifier_Unified",
-            "New_Namespace_Unified",
-            "New_StudentAssessmentRegistration_AdministrationIdentifier",
-            "New_StudentAssessmentRegistration_AssigningEducation_3e528e87d8",
-            "New_StudentAssessmentRegistration_EducationOrganizationId",
-            "New_StudentAssessmentRegistration_StudentUniqueId",
-            "New_StudentAssessmentRegistration_StudentEducationOr_d26eebe360",
+            "OldAssessmentBatteryPart_AssessmentBatteryPartName",
+            "OldAssessmentIdentifier_Unified",
+            "OldNamespace_Unified",
+            "OldStudentAssessmentRegistration_AdministrationIdentifier",
+            "OldStudentAssessmentRegistration_AssigningEducationO_8330ef761c",
+            "OldStudentAssessmentRegistration_EducationOrganizationId",
+            "OldStudentAssessmentRegistration_StudentUniqueId",
+            "OldStudentAssessmentRegistration_StudentEducationOrg_492057c6e1",
+            "NewAssessmentBatteryPart_AssessmentBatteryPartName",
+            "NewAssessmentIdentifier_Unified",
+            "NewNamespace_Unified",
+            "NewStudentAssessmentRegistration_AdministrationIdentifier",
+            "NewStudentAssessmentRegistration_AssigningEducationO_9385f80891",
+            "NewStudentAssessmentRegistration_EducationOrganizationId",
+            "NewStudentAssessmentRegistration_StudentUniqueId",
+            "NewStudentAssessmentRegistration_StudentEducationOrg_bfebe478d0",
             "Id",
             "ChangeVersion"
         )
@@ -60789,14 +60789,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentCTEProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -60962,11 +60962,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentCohortAssociation" (
-            "Old_BeginDate",
-            "Old_Cohort_CohortIdentifier",
-            "Old_Cohort_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldCohort_CohortIdentifier",
+            "OldCohort_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61006,16 +61006,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentCohortAssociation" (
-            "Old_BeginDate",
-            "Old_Cohort_CohortIdentifier",
-            "Old_Cohort_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_BeginDate",
-            "New_Cohort_CohortIdentifier",
-            "New_Cohort_EducationOrganizationId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldBeginDate",
+            "OldCohort_CohortIdentifier",
+            "OldCohort_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewBeginDate",
+            "NewCohort_CohortIdentifier",
+            "NewCohort_EducationOrganizationId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61118,17 +61118,17 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentCompetencyObjective" (
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_GradingPeriodGradingPeriod_SchoolId",
-            "Old_GradingPeriodGradingPeriod_SchoolYear",
-            "Old_ObjectiveCompetencyObjective_EducationOrganizationId",
-            "Old_ObjectiveCompetencyObjective_Objective",
-            "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_4b5e91cff3",
-            "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_7f79a12138",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldGradingPeriodGradingPeriod_SchoolId",
+            "OldGradingPeriodGradingPeriod_SchoolYear",
+            "OldObjectiveCompetencyObjective_EducationOrganizationId",
+            "OldObjectiveCompetencyObjective_Objective",
+            "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_12636ca4f5",
+            "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_e0cddf5f4d",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61176,28 +61176,28 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentCompetencyObjective" (
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8",
-            "Old_GradingPeriodGradingPeriod_GradingPeriodName",
-            "Old_GradingPeriodGradingPeriod_SchoolId",
-            "Old_GradingPeriodGradingPeriod_SchoolYear",
-            "Old_ObjectiveCompetencyObjective_EducationOrganizationId",
-            "Old_ObjectiveCompetencyObjective_Objective",
-            "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_4b5e91cff3",
-            "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_7f79a12138",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522",
-            "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7",
-            "New_GradingPeriodGradingPeriod_GradingPeriodName",
-            "New_GradingPeriodGradingPeriod_SchoolId",
-            "New_GradingPeriodGradingPeriod_SchoolYear",
-            "New_ObjectiveCompetencyObjective_EducationOrganizationId",
-            "New_ObjectiveCompetencyObjective_Objective",
-            "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_ae5f765c69",
-            "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_65dd7db251",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "OldGradingPeriodGradingPeriod_GradingPeriodName",
+            "OldGradingPeriodGradingPeriod_SchoolId",
+            "OldGradingPeriodGradingPeriod_SchoolYear",
+            "OldObjectiveCompetencyObjective_EducationOrganizationId",
+            "OldObjectiveCompetencyObjective_Objective",
+            "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_12636ca4f5",
+            "OldObjectiveCompetencyObjective_ObjectiveGradeLevelD_e0cddf5f4d",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace",
+            "NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue",
+            "NewGradingPeriodGradingPeriod_GradingPeriodName",
+            "NewGradingPeriodGradingPeriod_SchoolId",
+            "NewGradingPeriodGradingPeriod_SchoolYear",
+            "NewObjectiveCompetencyObjective_EducationOrganizationId",
+            "NewObjectiveCompetencyObjective_Objective",
+            "NewObjectiveCompetencyObjective_ObjectiveGradeLevelD_2b85981479",
+            "NewObjectiveCompetencyObjective_ObjectiveGradeLevelD_7d813236b6",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61357,10 +61357,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentContactAssociation" (
-            "Old_Contact_ContactUniqueId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "Old_Contact_DocumentId",
+            "OldContact_ContactUniqueId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "OldContact_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61400,14 +61400,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentContactAssociation" (
-            "Old_Contact_ContactUniqueId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "Old_Contact_DocumentId",
-            "New_Contact_ContactUniqueId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
-            "New_Contact_DocumentId",
+            "OldContact_ContactUniqueId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "OldContact_DocumentId",
+            "NewContact_ContactUniqueId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
+            "NewContact_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61469,12 +61469,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentDisciplineIncidentBehaviorAssociation" (
-            "Old_BehaviorDescriptor_Namespace",
-            "Old_BehaviorDescriptor_CodeValue",
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBehaviorDescriptor_Namespace",
+            "OldBehaviorDescriptor_CodeValue",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61516,18 +61516,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentDisciplineIncidentBehaviorAssociation" (
-            "Old_BehaviorDescriptor_Namespace",
-            "Old_BehaviorDescriptor_CodeValue",
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_BehaviorDescriptor_Namespace",
-            "New_BehaviorDescriptor_CodeValue",
-            "New_DisciplineIncident_IncidentIdentifier",
-            "New_DisciplineIncident_SchoolId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldBehaviorDescriptor_Namespace",
+            "OldBehaviorDescriptor_CodeValue",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewBehaviorDescriptor_Namespace",
+            "NewBehaviorDescriptor_CodeValue",
+            "NewDisciplineIncident_IncidentIdentifier",
+            "NewDisciplineIncident_SchoolId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61675,10 +61675,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentDisciplineIncidentNonOffenderAssociation" (
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61717,14 +61717,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentDisciplineIncidentNonOffenderAssociation" (
-            "Old_DisciplineIncident_IncidentIdentifier",
-            "Old_DisciplineIncident_SchoolId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_DisciplineIncident_IncidentIdentifier",
-            "New_DisciplineIncident_SchoolId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldDisciplineIncident_IncidentIdentifier",
+            "OldDisciplineIncident_SchoolId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewDisciplineIncident_IncidentIdentifier",
+            "NewDisciplineIncident_SchoolId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61825,9 +61825,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationAssessmentAccommodation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61865,12 +61865,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationAssessmentAccommodation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -61969,9 +61969,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -62009,12 +62009,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -62851,12 +62851,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ResponsibilityDescriptor_Namespace",
-            "Old_ResponsibilityDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldResponsibilityDescriptor_Namespace",
+            "OldResponsibilityDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -62898,18 +62898,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ResponsibilityDescriptor_Namespace",
-            "Old_ResponsibilityDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_BeginDate",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_ResponsibilityDescriptor_Namespace",
-            "New_ResponsibilityDescriptor_CodeValue",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldResponsibilityDescriptor_Namespace",
+            "OldResponsibilityDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewBeginDate",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewResponsibilityDescriptor_Namespace",
+            "NewResponsibilityDescriptor_CodeValue",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -62975,10 +62975,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentGradebookEntry" (
-            "Old_GradebookEntry_GradebookEntryIdentifier",
-            "Old_GradebookEntry_Namespace",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldGradebookEntry_GradebookEntryIdentifier",
+            "OldGradebookEntry_Namespace",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63017,14 +63017,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentGradebookEntry" (
-            "Old_GradebookEntry_GradebookEntryIdentifier",
-            "Old_GradebookEntry_Namespace",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_GradebookEntry_GradebookEntryIdentifier",
-            "New_GradebookEntry_Namespace",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldGradebookEntry_GradebookEntryIdentifier",
+            "OldGradebookEntry_Namespace",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewGradebookEntry_GradebookEntryIdentifier",
+            "NewGradebookEntry_Namespace",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63084,9 +63084,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentHealth" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63124,12 +63124,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentHealth" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63374,14 +63374,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentHomelessProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63588,10 +63588,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentInterventionAssociation" (
-            "Old_Intervention_EducationOrganizationId",
-            "Old_Intervention_InterventionIdentificationCode",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldIntervention_EducationOrganizationId",
+            "OldIntervention_InterventionIdentificationCode",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63630,14 +63630,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentInterventionAssociation" (
-            "Old_Intervention_EducationOrganizationId",
-            "Old_Intervention_InterventionIdentificationCode",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_Intervention_EducationOrganizationId",
-            "New_Intervention_InterventionIdentificationCode",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldIntervention_EducationOrganizationId",
+            "OldIntervention_InterventionIdentificationCode",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewIntervention_EducationOrganizationId",
+            "NewIntervention_InterventionIdentificationCode",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63738,13 +63738,13 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentInterventionAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Intervention_EducationOrganizationId",
-            "Old_Intervention_InterventionIdentificationCode",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldIntervention_EducationOrganizationId",
+            "OldIntervention_InterventionIdentificationCode",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63787,20 +63787,20 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentInterventionAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Intervention_EducationOrganizationId",
-            "Old_Intervention_InterventionIdentificationCode",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_AttendanceEventCategoryDescriptor_Namespace",
-            "New_AttendanceEventCategoryDescriptor_CodeValue",
-            "New_EventDate",
-            "New_Intervention_EducationOrganizationId",
-            "New_Intervention_InterventionIdentificationCode",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldIntervention_EducationOrganizationId",
+            "OldIntervention_InterventionIdentificationCode",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewAttendanceEventCategoryDescriptor_Namespace",
+            "NewAttendanceEventCategoryDescriptor_CodeValue",
+            "NewEventDate",
+            "NewIntervention_EducationOrganizationId",
+            "NewIntervention_InterventionIdentificationCode",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -63891,14 +63891,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentLanguageInstructionProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64128,14 +64128,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentMigrantEducationProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64324,14 +64324,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentNeglectedOrDelinquentProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64602,14 +64602,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64775,16 +64775,16 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentProgramAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_EventDate",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldEventDate",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64831,26 +64831,26 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentProgramAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_EventDate",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_AttendanceEventCategoryDescriptor_Namespace",
-            "New_AttendanceEventCategoryDescriptor_CodeValue",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_EventDate",
-            "New_ProgramProgram_EducationOrganizationId",
-            "New_ProgramProgram_ProgramName",
-            "New_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "New_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldEventDate",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewAttendanceEventCategoryDescriptor_Namespace",
+            "NewAttendanceEventCategoryDescriptor_CodeValue",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewEventDate",
+            "NewProgramProgram_EducationOrganizationId",
+            "NewProgramProgram_ProgramName",
+            "NewProgramProgram_ProgramTypeDescriptor_Namespace",
+            "NewProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64926,18 +64926,18 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentProgramEvaluation" (
-            "Old_EvaluationDate",
-            "Old_ProgramEvaluation_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluation_ProgramEvaluationTitle",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramEvaluation_ProgramName",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEvaluationDate",
+            "OldProgramEvaluation_ProgramEducationOrganizationId",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluation_ProgramEvaluationTitle",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramEvaluation_ProgramName",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -64987,30 +64987,30 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentProgramEvaluation" (
-            "Old_EvaluationDate",
-            "Old_ProgramEvaluation_ProgramEducationOrganizationId",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96",
-            "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98",
-            "Old_ProgramEvaluation_ProgramEvaluationTitle",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "Old_ProgramEvaluation_ProgramName",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EvaluationDate",
-            "New_ProgramEvaluation_ProgramEducationOrganizationId",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378",
-            "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58",
-            "New_ProgramEvaluation_ProgramEvaluationTitle",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
-            "New_ProgramEvaluation_ProgramName",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace",
-            "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEvaluationDate",
+            "OldProgramEvaluation_ProgramEducationOrganizationId",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_8a9816b04e",
+            "OldProgramEvaluation_ProgramEvaluationPeriodDescript_c35c8f0791",
+            "OldProgramEvaluation_ProgramEvaluationTitle",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "OldProgramEvaluation_ProgramName",
+            "OldProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "OldProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEvaluationDate",
+            "NewProgramEvaluation_ProgramEducationOrganizationId",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_577344c3e6",
+            "NewProgramEvaluation_ProgramEvaluationPeriodDescript_fed06c90d7",
+            "NewProgramEvaluation_ProgramEvaluationTitle",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue",
+            "NewProgramEvaluation_ProgramName",
+            "NewProgramEvaluation_ProgramTypeDescriptor_Namespace",
+            "NewProgramEvaluation_ProgramTypeDescriptor_CodeValue",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65215,10 +65215,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
-            "Old_EntryDate",
-            "Old_SchoolId_Unified",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldEntryDate",
+            "OldSchoolId_Unified",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65257,14 +65257,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
-            "Old_EntryDate",
-            "Old_SchoolId_Unified",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_EntryDate",
-            "New_SchoolId_Unified",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldEntryDate",
+            "OldSchoolId_Unified",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewEntryDate",
+            "NewSchoolId_Unified",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65406,14 +65406,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_SchoolId_Unified",
-            "Old_Session_SchoolYear",
-            "Old_Session_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldSchoolId_Unified",
+            "OldSession_SchoolYear",
+            "OldSession_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65457,22 +65457,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_SchoolId_Unified",
-            "Old_Session_SchoolYear",
-            "Old_Session_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_AttendanceEventCategoryDescriptor_Namespace",
-            "New_AttendanceEventCategoryDescriptor_CodeValue",
-            "New_EventDate",
-            "New_SchoolId_Unified",
-            "New_Session_SchoolYear",
-            "New_Session_SessionName",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldSchoolId_Unified",
+            "OldSession_SchoolYear",
+            "OldSession_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewAttendanceEventCategoryDescriptor_Namespace",
+            "NewAttendanceEventCategoryDescriptor_CodeValue",
+            "NewEventDate",
+            "NewSchoolId_Unified",
+            "NewSession_SchoolYear",
+            "NewSession_SessionName",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65565,14 +65565,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolFoodServiceProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65761,14 +65761,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSection504ProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65893,14 +65893,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSectionAssociation" (
-            "Old_BeginDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -65943,22 +65943,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSectionAssociation" (
-            "Old_BeginDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_BeginDate",
-            "New_Section_LocalCourseCode",
-            "New_Section_SchoolId",
-            "New_Section_SchoolYear",
-            "New_Section_SectionIdentifier",
-            "New_Section_SessionName",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldBeginDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewBeginDate",
+            "NewSection_LocalCourseCode",
+            "NewSection_SchoolId",
+            "NewSection_SchoolYear",
+            "NewSection_SectionIdentifier",
+            "NewSection_SessionName",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66067,16 +66067,16 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSectionAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66122,26 +66122,26 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSectionAttendanceEvent" (
-            "Old_AttendanceEventCategoryDescriptor_Namespace",
-            "Old_AttendanceEventCategoryDescriptor_CodeValue",
-            "Old_EventDate",
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_AttendanceEventCategoryDescriptor_Namespace",
-            "New_AttendanceEventCategoryDescriptor_CodeValue",
-            "New_EventDate",
-            "New_Section_LocalCourseCode",
-            "New_Section_SchoolId",
-            "New_Section_SchoolYear",
-            "New_Section_SectionIdentifier",
-            "New_Section_SessionName",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldAttendanceEventCategoryDescriptor_Namespace",
+            "OldAttendanceEventCategoryDescriptor_CodeValue",
+            "OldEventDate",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewAttendanceEventCategoryDescriptor_Namespace",
+            "NewAttendanceEventCategoryDescriptor_CodeValue",
+            "NewEventDate",
+            "NewSection_LocalCourseCode",
+            "NewSection_SchoolId",
+            "NewSection_SchoolYear",
+            "NewSection_SectionIdentifier",
+            "NewSection_SessionName",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66279,14 +66279,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSpecialEducationProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66616,14 +66616,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSpecialEducationProgramEligibilityAssociation" (
-            "Old_ConsentToEvaluationReceivedDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldConsentToEvaluationReceivedDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66667,22 +66667,22 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSpecialEducationProgramEligibilityAssociation" (
-            "Old_ConsentToEvaluationReceivedDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_ConsentToEvaluationReceivedDate",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_ProgramProgram_EducationOrganizationId",
-            "New_ProgramProgram_ProgramName",
-            "New_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "New_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldConsentToEvaluationReceivedDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewConsentToEvaluationReceivedDate",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewProgramProgram_EducationOrganizationId",
+            "NewProgramProgram_ProgramName",
+            "NewProgramProgram_ProgramTypeDescriptor_Namespace",
+            "NewProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66775,14 +66775,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentTitleIPartAProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66948,9 +66948,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentTransportation" (
-            "Old_Student_StudentUniqueId",
-            "Old_TransportationEducationOrganization_EducationOrganizationId",
-            "Old_Student_DocumentId",
+            "OldStudent_StudentUniqueId",
+            "OldTransportationEducationOrganization_EducationOrganizationId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -66988,12 +66988,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentTransportation" (
-            "Old_Student_StudentUniqueId",
-            "Old_TransportationEducationOrganization_EducationOrganizationId",
-            "Old_Student_DocumentId",
-            "New_Student_StudentUniqueId",
-            "New_TransportationEducationOrganization_EducationOrganizationId",
-            "New_Student_DocumentId",
+            "OldStudent_StudentUniqueId",
+            "OldTransportationEducationOrganization_EducationOrganizationId",
+            "OldStudent_DocumentId",
+            "NewStudent_StudentUniqueId",
+            "NewTransportationEducationOrganization_EducationOrganizationId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -67174,8 +67174,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Survey" (
-            "Old_Namespace",
-            "Old_SurveyIdentifier",
+            "OldNamespace",
+            "OldSurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67211,10 +67211,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Survey" (
-            "Old_Namespace",
-            "Old_SurveyIdentifier",
-            "New_Namespace",
-            "New_SurveyIdentifier",
+            "OldNamespace",
+            "OldSurveyIdentifier",
+            "NewNamespace",
+            "NewSurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67268,10 +67268,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyCourseAssociation" (
-            "Old_Course_CourseCode",
-            "Old_Course_EducationOrganizationId",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
+            "OldCourse_CourseCode",
+            "OldCourse_EducationOrganizationId",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67309,14 +67309,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyCourseAssociation" (
-            "Old_Course_CourseCode",
-            "Old_Course_EducationOrganizationId",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "New_Course_CourseCode",
-            "New_Course_EducationOrganizationId",
-            "New_Survey_Namespace",
-            "New_Survey_SurveyIdentifier",
+            "OldCourse_CourseCode",
+            "OldCourse_EducationOrganizationId",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "NewCourse_CourseCode",
+            "NewCourse_EducationOrganizationId",
+            "NewSurvey_Namespace",
+            "NewSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67374,12 +67374,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyProgramAssociation" (
-            "Old_Program_EducationOrganizationId",
-            "Old_Program_ProgramName",
-            "Old_Program_ProgramTypeDescriptor_Namespace",
-            "Old_Program_ProgramTypeDescriptor_CodeValue",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
+            "OldProgram_EducationOrganizationId",
+            "OldProgram_ProgramName",
+            "OldProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgram_ProgramTypeDescriptor_CodeValue",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67420,18 +67420,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyProgramAssociation" (
-            "Old_Program_EducationOrganizationId",
-            "Old_Program_ProgramName",
-            "Old_Program_ProgramTypeDescriptor_Namespace",
-            "Old_Program_ProgramTypeDescriptor_CodeValue",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "New_Program_EducationOrganizationId",
-            "New_Program_ProgramName",
-            "New_Program_ProgramTypeDescriptor_Namespace",
-            "New_Program_ProgramTypeDescriptor_CodeValue",
-            "New_Survey_Namespace",
-            "New_Survey_SurveyIdentifier",
+            "OldProgram_EducationOrganizationId",
+            "OldProgram_ProgramName",
+            "OldProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgram_ProgramTypeDescriptor_CodeValue",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "NewProgram_EducationOrganizationId",
+            "NewProgram_ProgramName",
+            "NewProgram_ProgramTypeDescriptor_Namespace",
+            "NewProgram_ProgramTypeDescriptor_CodeValue",
+            "NewSurvey_Namespace",
+            "NewSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67495,9 +67495,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyQuestion" (
-            "Old_QuestionCode",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
+            "OldQuestionCode",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -67534,12 +67534,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyQuestion" (
-            "Old_QuestionCode",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "New_QuestionCode",
-            "New_Namespace_Unified",
-            "New_SurveyIdentifier_Unified",
+            "OldQuestionCode",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "NewQuestionCode",
+            "NewNamespace_Unified",
+            "NewSurveyIdentifier_Unified",
             "Id",
             "ChangeVersion"
         )
@@ -67636,10 +67636,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyQuestionResponse" (
-            "Old_Namespace_Unified",
-            "Old_SurveyQuestion_QuestionCode",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
+            "OldNamespace_Unified",
+            "OldSurveyQuestion_QuestionCode",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveyResponse_SurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67677,14 +67677,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyQuestionResponse" (
-            "Old_Namespace_Unified",
-            "Old_SurveyQuestion_QuestionCode",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "New_Namespace_Unified",
-            "New_SurveyQuestion_QuestionCode",
-            "New_SurveyIdentifier_Unified",
-            "New_SurveyResponse_SurveyResponseIdentifier",
+            "OldNamespace_Unified",
+            "OldSurveyQuestion_QuestionCode",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "NewNamespace_Unified",
+            "NewSurveyQuestion_QuestionCode",
+            "NewSurveyIdentifier_Unified",
+            "NewSurveyResponse_SurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67865,9 +67865,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponse" (
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "Old_SurveyResponseIdentifier",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "OldSurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67904,12 +67904,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponse" (
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "Old_SurveyResponseIdentifier",
-            "New_Survey_Namespace",
-            "New_Survey_SurveyIdentifier",
-            "New_SurveyResponseIdentifier",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "OldSurveyResponseIdentifier",
+            "NewSurvey_Namespace",
+            "NewSurvey_SurveyIdentifier",
+            "NewSurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -67965,10 +67965,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponseEducationOrganizationTargetAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_SurveyResponse_Namespace",
-            "Old_SurveyResponse_SurveyIdentifier",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldSurveyResponse_Namespace",
+            "OldSurveyResponse_SurveyIdentifier",
+            "OldSurveyResponse_SurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -68006,14 +68006,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponseEducationOrganizationTargetAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_SurveyResponse_Namespace",
-            "Old_SurveyResponse_SurveyIdentifier",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_SurveyResponse_Namespace",
-            "New_SurveyResponse_SurveyIdentifier",
-            "New_SurveyResponse_SurveyResponseIdentifier",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldSurveyResponse_Namespace",
+            "OldSurveyResponse_SurveyIdentifier",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewSurveyResponse_Namespace",
+            "NewSurveyResponse_SurveyIdentifier",
+            "NewSurveyResponse_SurveyResponseIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -68071,11 +68071,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponseStaffTargetAssociation" (
-            "Old_Staff_StaffUniqueId",
-            "Old_SurveyResponse_Namespace",
-            "Old_SurveyResponse_SurveyIdentifier",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "Old_Staff_DocumentId",
+            "OldStaff_StaffUniqueId",
+            "OldSurveyResponse_Namespace",
+            "OldSurveyResponse_SurveyIdentifier",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -68115,16 +68115,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveyResponseStaffTargetAssociation" (
-            "Old_Staff_StaffUniqueId",
-            "Old_SurveyResponse_Namespace",
-            "Old_SurveyResponse_SurveyIdentifier",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "Old_Staff_DocumentId",
-            "New_Staff_StaffUniqueId",
-            "New_SurveyResponse_Namespace",
-            "New_SurveyResponse_SurveyIdentifier",
-            "New_SurveyResponse_SurveyResponseIdentifier",
-            "New_Staff_DocumentId",
+            "OldStaff_StaffUniqueId",
+            "OldSurveyResponse_Namespace",
+            "OldSurveyResponse_SurveyIdentifier",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "OldStaff_DocumentId",
+            "NewStaff_StaffUniqueId",
+            "NewSurveyResponse_Namespace",
+            "NewSurveyResponse_SurveyIdentifier",
+            "NewSurveyResponse_SurveyResponseIdentifier",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -68227,9 +68227,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySection" (
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "Old_SurveySectionTitle",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "OldSurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68266,12 +68266,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySection" (
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "Old_SurveySectionTitle",
-            "New_Survey_Namespace",
-            "New_Survey_SurveyIdentifier",
-            "New_SurveySectionTitle",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "OldSurveySectionTitle",
+            "NewSurvey_Namespace",
+            "NewSurvey_SurveyIdentifier",
+            "NewSurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68327,13 +68327,13 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionAssociation" (
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -68374,20 +68374,20 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionAssociation" (
-            "Old_Section_LocalCourseCode",
-            "Old_Section_SchoolId",
-            "Old_Section_SchoolYear",
-            "Old_Section_SectionIdentifier",
-            "Old_Section_SessionName",
-            "Old_Survey_Namespace",
-            "Old_Survey_SurveyIdentifier",
-            "New_Section_LocalCourseCode",
-            "New_Section_SchoolId",
-            "New_Section_SchoolYear",
-            "New_Section_SectionIdentifier",
-            "New_Section_SessionName",
-            "New_Survey_Namespace",
-            "New_Survey_SurveyIdentifier",
+            "OldSection_LocalCourseCode",
+            "OldSection_SchoolId",
+            "OldSection_SchoolYear",
+            "OldSection_SectionIdentifier",
+            "OldSection_SessionName",
+            "OldSurvey_Namespace",
+            "OldSurvey_SurveyIdentifier",
+            "NewSection_LocalCourseCode",
+            "NewSection_SchoolId",
+            "NewSection_SchoolYear",
+            "NewSection_SectionIdentifier",
+            "NewSection_SessionName",
+            "NewSurvey_Namespace",
+            "NewSurvey_SurveyIdentifier",
             "Id",
             "ChangeVersion"
         )
@@ -68451,10 +68451,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponse" (
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "Old_SurveySection_SurveySectionTitle",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "OldSurveySection_SurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68492,14 +68492,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponse" (
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveyResponse_SurveyResponseIdentifier",
-            "Old_SurveySection_SurveySectionTitle",
-            "New_Namespace_Unified",
-            "New_SurveyIdentifier_Unified",
-            "New_SurveyResponse_SurveyResponseIdentifier",
-            "New_SurveySection_SurveySectionTitle",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveyResponse_SurveyResponseIdentifier",
+            "OldSurveySection_SurveySectionTitle",
+            "NewNamespace_Unified",
+            "NewSurveyIdentifier_Unified",
+            "NewSurveyResponse_SurveyResponseIdentifier",
+            "NewSurveySection_SurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68538,11 +68538,11 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveySectionResponse_SurveyResponseIdentifier",
-            "Old_SurveySectionResponse_SurveySectionTitle",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveySectionResponse_SurveyResponseIdentifier",
+            "OldSurveySectionResponse_SurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68581,16 +68581,16 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" (
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveySectionResponse_SurveyResponseIdentifier",
-            "Old_SurveySectionResponse_SurveySectionTitle",
-            "New_EducationOrganization_EducationOrganizationId",
-            "New_Namespace_Unified",
-            "New_SurveyIdentifier_Unified",
-            "New_SurveySectionResponse_SurveyResponseIdentifier",
-            "New_SurveySectionResponse_SurveySectionTitle",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveySectionResponse_SurveyResponseIdentifier",
+            "OldSurveySectionResponse_SurveySectionTitle",
+            "NewEducationOrganization_EducationOrganizationId",
+            "NewNamespace_Unified",
+            "NewSurveyIdentifier_Unified",
+            "NewSurveySectionResponse_SurveyResponseIdentifier",
+            "NewSurveySectionResponse_SurveySectionTitle",
             "Id",
             "ChangeVersion"
         )
@@ -68669,12 +68669,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponseStaffTargetAssociation" (
-            "Old_Staff_StaffUniqueId",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveySectionResponse_SurveyResponseIdentifier",
-            "Old_SurveySectionResponse_SurveySectionTitle",
-            "Old_Staff_DocumentId",
+            "OldStaff_StaffUniqueId",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveySectionResponse_SurveyResponseIdentifier",
+            "OldSurveySectionResponse_SurveySectionTitle",
+            "OldStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -68715,18 +68715,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."SurveySectionResponseStaffTargetAssociation" (
-            "Old_Staff_StaffUniqueId",
-            "Old_Namespace_Unified",
-            "Old_SurveyIdentifier_Unified",
-            "Old_SurveySectionResponse_SurveyResponseIdentifier",
-            "Old_SurveySectionResponse_SurveySectionTitle",
-            "Old_Staff_DocumentId",
-            "New_Staff_StaffUniqueId",
-            "New_Namespace_Unified",
-            "New_SurveyIdentifier_Unified",
-            "New_SurveySectionResponse_SurveyResponseIdentifier",
-            "New_SurveySectionResponse_SurveySectionTitle",
-            "New_Staff_DocumentId",
+            "OldStaff_StaffUniqueId",
+            "OldNamespace_Unified",
+            "OldSurveyIdentifier_Unified",
+            "OldSurveySectionResponse_SurveyResponseIdentifier",
+            "OldSurveySectionResponse_SurveySectionTitle",
+            "OldStaff_DocumentId",
+            "NewStaff_StaffUniqueId",
+            "NewNamespace_Unified",
+            "NewSurveyIdentifier_Unified",
+            "NewSurveySectionResponse_SurveyResponseIdentifier",
+            "NewSurveySectionResponse_SurveySectionTitle",
+            "NewStaff_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -68790,7 +68790,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_sample"."Bus" (
-            "Old_BusId",
+            "OldBusId",
             "Id",
             "ChangeVersion"
         )
@@ -68825,8 +68825,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_sample"."Bus" (
-            "Old_BusId",
-            "New_BusId",
+            "OldBusId",
+            "NewBusId",
             "Id",
             "ChangeVersion"
         )
@@ -68878,8 +68878,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_sample"."BusRoute" (
-            "Old_Bus_BusId",
-            "Old_BusRouteNumber",
+            "OldBus_BusId",
+            "OldBusRouteNumber",
             "Id",
             "ChangeVersion"
         )
@@ -68915,10 +68915,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_sample"."BusRoute" (
-            "Old_Bus_BusId",
-            "Old_BusRouteNumber",
-            "New_Bus_BusId",
-            "New_BusRouteNumber",
+            "OldBus_BusId",
+            "OldBusRouteNumber",
+            "NewBus_BusId",
+            "NewBusRouteNumber",
             "Id",
             "ChangeVersion"
         )
@@ -69774,14 +69774,14 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_sample"."StudentArtProgramAssociation" (
-            "Old_BeginDate",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "Old_ProgramProgram_EducationOrganizationId",
-            "Old_ProgramProgram_ProgramName",
-            "Old_ProgramProgram_ProgramTypeDescriptor_Namespace",
-            "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldBeginDate",
+            "OldEducationOrganization_EducationOrganizationId",
+            "OldProgramProgram_EducationOrganizationId",
+            "OldProgramProgram_ProgramName",
+            "OldProgramProgram_ProgramTypeDescriptor_Namespace",
+            "OldProgramProgram_ProgramTypeDescriptor_CodeValue",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -70849,12 +70849,12 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_sample"."StudentGraduationPlanAssociation" (
-            "Old_GraduationPlan_EducationOrganizationId",
-            "Old_GraduationPlan_GraduationPlanTypeDescriptor_Namespace",
-            "Old_GraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
-            "Old_GraduationPlan_GraduationSchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
+            "OldGraduationPlan_EducationOrganizationId",
+            "OldGraduationPlan_GraduationPlanTypeDescriptor_Namespace",
+            "OldGraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
+            "OldGraduationPlan_GraduationSchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )
@@ -70896,18 +70896,18 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_sample"."StudentGraduationPlanAssociation" (
-            "Old_GraduationPlan_EducationOrganizationId",
-            "Old_GraduationPlan_GraduationPlanTypeDescriptor_Namespace",
-            "Old_GraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
-            "Old_GraduationPlan_GraduationSchoolYear",
-            "Old_Student_StudentUniqueId",
-            "Old_Student_DocumentId",
-            "New_GraduationPlan_EducationOrganizationId",
-            "New_GraduationPlan_GraduationPlanTypeDescriptor_Namespace",
-            "New_GraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
-            "New_GraduationPlan_GraduationSchoolYear",
-            "New_Student_StudentUniqueId",
-            "New_Student_DocumentId",
+            "OldGraduationPlan_EducationOrganizationId",
+            "OldGraduationPlan_GraduationPlanTypeDescriptor_Namespace",
+            "OldGraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
+            "OldGraduationPlan_GraduationSchoolYear",
+            "OldStudent_StudentUniqueId",
+            "OldStudent_DocumentId",
+            "NewGraduationPlan_EducationOrganizationId",
+            "NewGraduationPlan_GraduationPlanTypeDescriptor_Namespace",
+            "NewGraduationPlan_GraduationPlanTypeDescriptor_CodeValue",
+            "NewGraduationPlan_GraduationSchoolYear",
+            "NewStudent_StudentUniqueId",
+            "NewStudent_DocumentId",
             "Id",
             "ChangeVersion"
         )

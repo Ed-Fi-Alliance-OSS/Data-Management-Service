@@ -7,70 +7,130 @@
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'vendor' AND column_name = 'tenantid'
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'Vendor'
+          AND column_name = 'TenantId'
     ) THEN
-        ALTER TABLE dmscs.Vendor ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.Vendor ADD CONSTRAINT fk_vendor_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.Vendor.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE "dmscs"."Vendor" ADD COLUMN "TenantId" BIGINT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'FK_Vendor_Tenant'
+          AND conrelid = '"dmscs"."Vendor"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."Vendor" ADD CONSTRAINT "FK_Vendor_Tenant" FOREIGN KEY ("TenantId") REFERENCES "dmscs"."Tenant"("Id") ON DELETE CASCADE;
     END IF;
 END$$;
+
+COMMENT ON COLUMN "dmscs"."Vendor"."TenantId" IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
 
 -- Add TenantId to ClaimSet table
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'claimset' AND column_name = 'tenantid'
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'ClaimSet'
+          AND column_name = 'TenantId'
     ) THEN
-        ALTER TABLE dmscs.ClaimSet ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.ClaimSet ADD CONSTRAINT fk_claimset_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.ClaimSet.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE "dmscs"."ClaimSet" ADD COLUMN "TenantId" BIGINT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'FK_ClaimSet_Tenant'
+          AND conrelid = '"dmscs"."ClaimSet"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."ClaimSet" ADD CONSTRAINT "FK_ClaimSet_Tenant" FOREIGN KEY ("TenantId") REFERENCES "dmscs"."Tenant"("Id") ON DELETE CASCADE;
     END IF;
 END$$;
+
+COMMENT ON COLUMN "dmscs"."ClaimSet"."TenantId" IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
 
 -- Add TenantId to AuthorizationStrategy table
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'authorizationstrategy' AND column_name = 'tenantid'
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'AuthorizationStrategy'
+          AND column_name = 'TenantId'
     ) THEN
-        ALTER TABLE dmscs.AuthorizationStrategy ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.AuthorizationStrategy ADD CONSTRAINT fk_authorizationstrategy_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.AuthorizationStrategy.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE "dmscs"."AuthorizationStrategy" ADD COLUMN "TenantId" BIGINT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'FK_AuthorizationStrategy_Tenant'
+          AND conrelid = '"dmscs"."AuthorizationStrategy"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."AuthorizationStrategy" ADD CONSTRAINT "FK_AuthorizationStrategy_Tenant" FOREIGN KEY ("TenantId") REFERENCES "dmscs"."Tenant"("Id") ON DELETE CASCADE;
     END IF;
 END$$;
+
+COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."TenantId" IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
 
 -- Add TenantId to ResourceClaim table
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'resourceclaim' AND column_name = 'tenantid'
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'ResourceClaim'
+          AND column_name = 'TenantId'
     ) THEN
-        ALTER TABLE dmscs.ResourceClaim ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.ResourceClaim ADD CONSTRAINT fk_resourceclaim_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.ResourceClaim.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE "dmscs"."ResourceClaim" ADD COLUMN "TenantId" BIGINT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'FK_ResourceClaim_Tenant'
+          AND conrelid = '"dmscs"."ResourceClaim"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."ResourceClaim" ADD CONSTRAINT "FK_ResourceClaim_Tenant" FOREIGN KEY ("TenantId") REFERENCES "dmscs"."Tenant"("Id") ON DELETE CASCADE;
     END IF;
 END$$;
+
+COMMENT ON COLUMN "dmscs"."ResourceClaim"."TenantId" IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
 
 -- Add TenantId to DataStore table
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'datastore' AND column_name = 'tenantid'
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'DataStore'
+          AND column_name = 'TenantId'
     ) THEN
-        ALTER TABLE dmscs.DataStore ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.DataStore ADD CONSTRAINT fk_datastore_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.DataStore.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE "dmscs"."DataStore" ADD COLUMN "TenantId" BIGINT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'FK_DataStore_Tenant'
+          AND conrelid = '"dmscs"."DataStore"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."DataStore" ADD CONSTRAINT "FK_DataStore_Tenant" FOREIGN KEY ("TenantId") REFERENCES "dmscs"."Tenant"("Id") ON DELETE CASCADE;
     END IF;
 END$$;
 
+COMMENT ON COLUMN "dmscs"."DataStore"."TenantId" IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+
 -- Create indexes on TenantId columns for efficient tenant-scoped queries
-CREATE INDEX IF NOT EXISTS idx_vendor_tenantid ON dmscs.Vendor (TenantId);
-CREATE INDEX IF NOT EXISTS idx_claimset_tenantid ON dmscs.ClaimSet (TenantId);
-CREATE INDEX IF NOT EXISTS idx_authorizationstrategy_tenantid ON dmscs.AuthorizationStrategy (TenantId);
-CREATE INDEX IF NOT EXISTS idx_resourceclaim_tenantid ON dmscs.ResourceClaim (TenantId);
-CREATE INDEX IF NOT EXISTS idx_datastore_tenantid ON dmscs.DataStore (TenantId);
+CREATE INDEX IF NOT EXISTS "IX_Vendor_TenantId" ON "dmscs"."Vendor" ("TenantId");
+CREATE INDEX IF NOT EXISTS "IX_ClaimSet_TenantId" ON "dmscs"."ClaimSet" ("TenantId");
+CREATE INDEX IF NOT EXISTS "IX_AuthorizationStrategy_TenantId" ON "dmscs"."AuthorizationStrategy" ("TenantId");
+CREATE INDEX IF NOT EXISTS "IX_ResourceClaim_TenantId" ON "dmscs"."ResourceClaim" ("TenantId");
+CREATE INDEX IF NOT EXISTS "IX_DataStore_TenantId" ON "dmscs"."DataStore" ("TenantId");

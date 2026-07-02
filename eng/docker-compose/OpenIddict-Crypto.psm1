@@ -117,7 +117,7 @@ function New-OpenIddictKeyPair {
     Generates a SQL INSERT statement for OpenIddict keys.
 
 .DESCRIPTION
-    Creates a SQL statement to insert RSA key pairs into the dmscs.OpenIddictKey table.
+    Creates a SQL statement to insert RSA key pairs into the "dmscs"."OpenIddictKey" table.
     The private key is encrypted using PostgreSQL's pgcrypto extension.
 
 .PARAMETER KeyId
@@ -155,7 +155,7 @@ function New-OpenIddictKeyInsertSql {
         $encodedKey = [Convert]::ToBase64String($bytes)
 
         $sql = @"
-INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
 VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
 "@
 
@@ -173,7 +173,7 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
 
 .DESCRIPTION
     Generates a properly hashed client secret and creates a SQL UPDATE statement
-    to update the ClientSecret field in the dmscs.OpenIddictApplication table.
+    to update the ClientSecret field in the "dmscs"."OpenIddictApplication" table.
 
 .PARAMETER ClientId
     The ClientId of the application to update.
@@ -202,9 +202,9 @@ function New-ClientSecretUpdateSql {
         $hashedSecret = New-AspNetPasswordHash -Password $PlainTextSecret
 
         $sql = @"
-UPDATE dmscs.OpenIddictApplication
-SET ClientSecret = '$hashedSecret'
-WHERE ClientId = '$ClientId';
+UPDATE "dmscs"."OpenIddictApplication"
+SET "ClientSecret" = '$hashedSecret'
+WHERE "ClientId" = '$ClientId';
 "@
 
         return $sql

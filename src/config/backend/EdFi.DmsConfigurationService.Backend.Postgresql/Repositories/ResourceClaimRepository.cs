@@ -37,12 +37,12 @@ public class ResourceClaimRepository(
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         var rows = await connection.QueryAsync(
-            "SELECT Id, ResourceName, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL"
+            "SELECT \"Id\", \"ResourceName\", \"ClaimName\" FROM \"dmscs\".\"ResourceClaim\" WHERE \"TenantId\" IS NULL"
         );
         return rows.Select(r => new ResourceClaimMetadataRow(
-                (long)r.id,
-                (string)r.resourcename,
-                (string)r.claimname
+                (long)r.Id,
+                (string)r.ResourceName,
+                (string)r.ClaimName
             ))
             .ToList();
     }

@@ -40,7 +40,7 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+CREATE OR REPLACE FUNCTION "dms"."GetMaxChangeVersion"() RETURNS bigint AS
 $GetMaxChangeVersion$
 DECLARE
     result bigint;
@@ -609,8 +609,8 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DateTimeKeyResource"
 (
-    "Old_EventTimestamp" timestamp with time zone NOT NULL,
-    "New_EventTimestamp" timestamp with time zone NULL,
+    "OldEventTimestamp" timestamp with time zone NOT NULL,
+    "NewEventTimestamp" timestamp with time zone NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -619,8 +619,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DateTimeKeyResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalKeyResource"
 (
-    "Old_DecimalKey" numeric(9,2) NOT NULL,
-    "New_DecimalKey" numeric(9,2) NULL,
+    "OldDecimalKey" numeric(9,2) NOT NULL,
+    "NewDecimalKey" numeric(9,2) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -629,10 +629,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalKeyResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalRefResource"
 (
-    "Old_RefResourceId" varchar(64) NOT NULL,
-    "New_RefResourceId" varchar(64) NULL,
-    "Old_DecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
-    "New_DecimalKeyReference_DecimalKey" numeric(9,2) NULL,
+    "OldRefResourceId" varchar(64) NOT NULL,
+    "NewRefResourceId" varchar(64) NULL,
+    "OldDecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
+    "NewDecimalKeyReference_DecimalKey" numeric(9,2) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -641,12 +641,12 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalRefResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentChildResource"
 (
-    "Old_EdOrgDependentChildResourceId" varchar(64) NOT NULL,
-    "New_EdOrgDependentChildResourceId" varchar(64) NULL,
-    "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NOT NULL,
-    "New_EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NULL,
-    "Old_EdOrgDependentResourceReference_EducationOrganizationId" integer NOT NULL,
-    "New_EdOrgDependentResourceReference_EducationOrganizationId" integer NULL,
+    "OldEdOrgDependentChildResourceId" varchar(64) NOT NULL,
+    "NewEdOrgDependentChildResourceId" varchar(64) NULL,
+    "OldEdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NOT NULL,
+    "NewEdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NULL,
+    "OldEdOrgDependentResourceReference_EducationOrganizationId" integer NOT NULL,
+    "NewEdOrgDependentResourceReference_EducationOrganizationId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -655,10 +655,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentChildResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentResource"
 (
-    "Old_EdOrgDependentResourceId" varchar(64) NOT NULL,
-    "New_EdOrgDependentResourceId" varchar(64) NULL,
-    "Old_EducationOrganization_EducationOrganizationId" integer NOT NULL,
-    "New_EducationOrganization_EducationOrganizationId" integer NULL,
+    "OldEdOrgDependentResourceId" varchar(64) NOT NULL,
+    "NewEdOrgDependentResourceId" varchar(64) NULL,
+    "OldEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "NewEducationOrganization_EducationOrganizationId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -667,14 +667,14 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."KeyUnifiedResource"
 (
-    "Old_KeyUnifiedResourceId" varchar(64) NOT NULL,
-    "New_KeyUnifiedResourceId" varchar(64) NULL,
-    "Old_ResourceAReference_ResourceAId" varchar(64) NOT NULL,
-    "New_ResourceAReference_ResourceAId" varchar(64) NULL,
-    "Old_StudentUniqueId_Unified" varchar(32) NOT NULL,
-    "New_StudentUniqueId_Unified" varchar(32) NULL,
-    "Old_ResourceBReference_ResourceBId" varchar(64) NOT NULL,
-    "New_ResourceBReference_ResourceBId" varchar(64) NULL,
+    "OldKeyUnifiedResourceId" varchar(64) NOT NULL,
+    "NewKeyUnifiedResourceId" varchar(64) NULL,
+    "OldResourceAReference_ResourceAId" varchar(64) NOT NULL,
+    "NewResourceAReference_ResourceAId" varchar(64) NULL,
+    "OldStudentUniqueId_Unified" varchar(32) NOT NULL,
+    "NewStudentUniqueId_Unified" varchar(32) NULL,
+    "OldResourceBReference_ResourceBId" varchar(64) NOT NULL,
+    "NewResourceBReference_ResourceBId" varchar(64) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -683,10 +683,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."KeyUnifiedResource"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceA"
 (
-    "Old_ResourceAId" varchar(64) NOT NULL,
-    "New_ResourceAId" varchar(64) NULL,
-    "Old_StudentReference_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentReference_StudentUniqueId" varchar(32) NULL,
+    "OldResourceAId" varchar(64) NOT NULL,
+    "NewResourceAId" varchar(64) NULL,
+    "OldStudentReference_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentReference_StudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -695,10 +695,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceA"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceB"
 (
-    "Old_ResourceBId" varchar(64) NOT NULL,
-    "New_ResourceBId" varchar(64) NULL,
-    "Old_StudentReference_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentReference_StudentUniqueId" varchar(32) NULL,
+    "OldResourceBId" varchar(64) NOT NULL,
+    "NewResourceBId" varchar(64) NULL,
+    "OldStudentReference_StudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentReference_StudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -707,8 +707,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceB"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 (
-    "Old_SchoolId" integer NOT NULL,
-    "New_SchoolId" integer NULL,
+    "OldSchoolId" integer NOT NULL,
+    "NewSchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -717,8 +717,8 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 (
-    "Old_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentUniqueId" varchar(32) NULL,
+    "OldStudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentUniqueId" varchar(32) NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -727,10 +727,10 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 (
-    "Old_StudentUniqueId" varchar(32) NOT NULL,
-    "New_StudentUniqueId" varchar(32) NULL,
-    "Old_SchoolReference_SchoolId" integer NOT NULL,
-    "New_SchoolReference_SchoolId" integer NULL,
+    "OldStudentUniqueId" varchar(32) NOT NULL,
+    "NewStudentUniqueId" varchar(32) NULL,
+    "OldSchoolReference_SchoolId" integer NOT NULL,
+    "NewSchoolReference_SchoolId" integer NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -1162,7 +1162,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
-            "Old_EventTimestamp",
+            "OldEventTimestamp",
             "Id",
             "ChangeVersion"
         )
@@ -1197,8 +1197,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
-            "Old_EventTimestamp",
-            "New_EventTimestamp",
+            "OldEventTimestamp",
+            "NewEventTimestamp",
             "Id",
             "ChangeVersion"
         )
@@ -1250,7 +1250,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
-            "Old_DecimalKey",
+            "OldDecimalKey",
             "Id",
             "ChangeVersion"
         )
@@ -1285,8 +1285,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
-            "Old_DecimalKey",
-            "New_DecimalKey",
+            "OldDecimalKey",
+            "NewDecimalKey",
             "Id",
             "ChangeVersion"
         )
@@ -1338,8 +1338,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DecimalRefResource" (
-            "Old_RefResourceId",
-            "Old_DecimalKeyReference_DecimalKey",
+            "OldRefResourceId",
+            "OldDecimalKeyReference_DecimalKey",
             "Id",
             "ChangeVersion"
         )
@@ -1375,10 +1375,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."DecimalRefResource" (
-            "Old_RefResourceId",
-            "Old_DecimalKeyReference_DecimalKey",
-            "New_RefResourceId",
-            "New_DecimalKeyReference_DecimalKey",
+            "OldRefResourceId",
+            "OldDecimalKeyReference_DecimalKey",
+            "NewRefResourceId",
+            "NewDecimalKeyReference_DecimalKey",
             "Id",
             "ChangeVersion"
         )
@@ -1432,9 +1432,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentChildResource" (
-            "Old_EdOrgDependentChildResourceId",
-            "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
-            "Old_EdOrgDependentResourceReference_EducationOrganizationId",
+            "OldEdOrgDependentChildResourceId",
+            "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "OldEdOrgDependentResourceReference_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -1471,12 +1471,12 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentChildResource" (
-            "Old_EdOrgDependentChildResourceId",
-            "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
-            "Old_EdOrgDependentResourceReference_EducationOrganizationId",
-            "New_EdOrgDependentChildResourceId",
-            "New_EdOrgDependentResourceReference_EdOrgDependentResourceId",
-            "New_EdOrgDependentResourceReference_EducationOrganizationId",
+            "OldEdOrgDependentChildResourceId",
+            "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "OldEdOrgDependentResourceReference_EducationOrganizationId",
+            "NewEdOrgDependentChildResourceId",
+            "NewEdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "NewEdOrgDependentResourceReference_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -1532,8 +1532,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentResource" (
-            "Old_EdOrgDependentResourceId",
-            "Old_EducationOrganization_EducationOrganizationId",
+            "OldEdOrgDependentResourceId",
+            "OldEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -1569,10 +1569,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."EdOrgDependentResource" (
-            "Old_EdOrgDependentResourceId",
-            "Old_EducationOrganization_EducationOrganizationId",
-            "New_EdOrgDependentResourceId",
-            "New_EducationOrganization_EducationOrganizationId",
+            "OldEdOrgDependentResourceId",
+            "OldEducationOrganization_EducationOrganizationId",
+            "NewEdOrgDependentResourceId",
+            "NewEducationOrganization_EducationOrganizationId",
             "Id",
             "ChangeVersion"
         )
@@ -1626,10 +1626,10 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."KeyUnifiedResource" (
-            "Old_KeyUnifiedResourceId",
-            "Old_ResourceAReference_ResourceAId",
-            "Old_StudentUniqueId_Unified",
-            "Old_ResourceBReference_ResourceBId",
+            "OldKeyUnifiedResourceId",
+            "OldResourceAReference_ResourceAId",
+            "OldStudentUniqueId_Unified",
+            "OldResourceBReference_ResourceBId",
             "Id",
             "ChangeVersion"
         )
@@ -1667,14 +1667,14 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."KeyUnifiedResource" (
-            "Old_KeyUnifiedResourceId",
-            "Old_ResourceAReference_ResourceAId",
-            "Old_StudentUniqueId_Unified",
-            "Old_ResourceBReference_ResourceBId",
-            "New_KeyUnifiedResourceId",
-            "New_ResourceAReference_ResourceAId",
-            "New_StudentUniqueId_Unified",
-            "New_ResourceBReference_ResourceBId",
+            "OldKeyUnifiedResourceId",
+            "OldResourceAReference_ResourceAId",
+            "OldStudentUniqueId_Unified",
+            "OldResourceBReference_ResourceBId",
+            "NewKeyUnifiedResourceId",
+            "NewResourceAReference_ResourceAId",
+            "NewStudentUniqueId_Unified",
+            "NewResourceBReference_ResourceBId",
             "Id",
             "ChangeVersion"
         )
@@ -1732,8 +1732,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ResourceA" (
-            "Old_ResourceAId",
-            "Old_StudentReference_StudentUniqueId",
+            "OldResourceAId",
+            "OldStudentReference_StudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -1769,10 +1769,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ResourceA" (
-            "Old_ResourceAId",
-            "Old_StudentReference_StudentUniqueId",
-            "New_ResourceAId",
-            "New_StudentReference_StudentUniqueId",
+            "OldResourceAId",
+            "OldStudentReference_StudentUniqueId",
+            "NewResourceAId",
+            "NewStudentReference_StudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -1826,8 +1826,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ResourceB" (
-            "Old_ResourceBId",
-            "Old_StudentReference_StudentUniqueId",
+            "OldResourceBId",
+            "OldStudentReference_StudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -1863,10 +1863,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ResourceB" (
-            "Old_ResourceBId",
-            "Old_StudentReference_StudentUniqueId",
-            "New_ResourceBId",
-            "New_StudentReference_StudentUniqueId",
+            "OldResourceBId",
+            "OldStudentReference_StudentUniqueId",
+            "NewResourceBId",
+            "NewStudentReference_StudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -1973,7 +1973,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
-            "Old_SchoolId",
+            "OldSchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -2048,7 +2048,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
+            "OldStudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -2083,8 +2083,8 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Student" (
-            "Old_StudentUniqueId",
-            "New_StudentUniqueId",
+            "OldStudentUniqueId",
+            "NewStudentUniqueId",
             "Id",
             "ChangeVersion"
         )
@@ -2136,8 +2136,8 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
-            "Old_StudentUniqueId",
-            "Old_SchoolReference_SchoolId",
+            "OldStudentUniqueId",
+            "OldSchoolReference_SchoolId",
             "Id",
             "ChangeVersion"
         )
@@ -2173,10 +2173,10 @@ BEGIN
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
-            "Old_StudentUniqueId",
-            "Old_SchoolReference_SchoolId",
-            "New_StudentUniqueId",
-            "New_SchoolReference_SchoolId",
+            "OldStudentUniqueId",
+            "OldSchoolReference_SchoolId",
+            "NewStudentUniqueId",
+            "NewSchoolReference_SchoolId",
             "Id",
             "ChangeVersion"
         )

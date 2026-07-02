@@ -1114,11 +1114,11 @@ public class Given_DdlEmitter_With_ReadChangesAuthViews_For_Pgsql : DdlEmissionG
             .Should()
             .Contain(
                 "INNER JOIN \"tracked_changes_edfi\".\"StudentSchoolAssociation\" ssa_tc "
-                    + "ON edOrg.\"TargetEducationOrganizationId\" = ssa_tc.\"Old_SchoolId_Unified\""
+                    + "ON edOrg.\"TargetEducationOrganizationId\" = ssa_tc.\"OldSchoolId_Unified\""
             )
             .And.Contain(
                 "INNER JOIN \"tracked_changes_edfi\".\"StudentEducationOrganizationResponsibilityAssociation\" seora_tc "
-                    + "ON edOrg.\"TargetEducationOrganizationId\" = seora_tc.\"Old_EducationOrganization_EducationOrganizationId\""
+                    + "ON edOrg.\"TargetEducationOrganizationId\" = seora_tc.\"OldEducationOrganization_EducationOrganizationId\""
             );
     }
 
@@ -1127,10 +1127,10 @@ public class Given_DdlEmitter_With_ReadChangesAuthViews_For_Pgsql : DdlEmissionG
     {
         _readChangesViewsSection
             .Should()
-            .Contain("ssa_tc.\"Old_Student_DocumentId\" AS \"Student_DocumentId\"")
-            .And.Contain("sca_tc.\"Old_Contact_DocumentId\" AS \"Contact_DocumentId\"")
-            .And.Contain("seoaa_tc.\"Old_Staff_DocumentId\" AS \"Staff_DocumentId\"")
-            .And.Contain("seoea_tc.\"Old_Staff_DocumentId\" AS \"Staff_DocumentId\"");
+            .Contain("ssa_tc.\"OldStudent_DocumentId\" AS \"Student_DocumentId\"")
+            .And.Contain("sca_tc.\"OldContact_DocumentId\" AS \"Contact_DocumentId\"")
+            .And.Contain("seoaa_tc.\"OldStaff_DocumentId\" AS \"Staff_DocumentId\"")
+            .And.Contain("seoea_tc.\"OldStaff_DocumentId\" AS \"Staff_DocumentId\"");
     }
 
     [Test]
@@ -1214,8 +1214,8 @@ public class Given_DdlEmitter_With_ReadChangesAuthViews_For_Mssql : DdlEmissionG
     {
         _readChangesViewsSection
             .Should()
-            .Contain("ssa_tc.[Old_Student_DocumentId] AS [Student_DocumentId]")
-            .And.Contain("sca_tc.[Old_Contact_DocumentId] AS [Contact_DocumentId]");
+            .Contain("ssa_tc.[OldStudent_DocumentId] AS [Student_DocumentId]")
+            .And.Contain("sca_tc.[OldContact_DocumentId] AS [Contact_DocumentId]");
     }
 
     [Test]
@@ -3718,9 +3718,9 @@ internal static class AuthPeopleViewsFixture
 
         // ── Tracked-change tables ───────────────────────────────────────
         // Minimal tracked_changes_edfi tables for the five associations so the ReadChanges auth
-        // views (which join their Old_* columns) reference tables this fixture actually emits —
+        // views (which join their Old* columns) reference tables this fixture actually emits —
         // keeping the golden snapshot internally consistent and deployable. Value-column entries
-        // model Old_/New_ pairs; only the columns the views join/project are included.
+        // model Old/New pairs; only the columns the views join/project are included.
         var identityAndSecurable =
             TrackedChangeColumnOrigin.Identity | TrackedChangeColumnOrigin.SecurableElement;
         var int32Type = new RelationalScalarType(ScalarKind.Int32);
@@ -3824,7 +3824,7 @@ internal static class AuthPeopleViewsFixture
 
     /// <summary>
     /// Builds a minimal tracked-change table for an association source table: the supplied value
-    /// columns (Old_/New_ pairs) plus the standard Id / ChangeVersion / CreatedAt system columns
+    /// columns (Old/New pairs) plus the standard Id / ChangeVersion / CreatedAt system columns
     /// with ChangeVersion as the primary key, mirroring DeriveTrackedChangeInventoryPass.
     /// </summary>
     private static TrackedChangeTableInfo BuildTrackedChangeTable(
@@ -3872,7 +3872,7 @@ internal static class AuthPeopleViewsFixture
     }
 
     /// <summary>
-    /// Builds a tracked-change Old_/New_ value-column pair for a source column.
+    /// Builds a tracked-change Old/New value-column pair for a source column.
     /// </summary>
     private static TrackedChangeColumnInfo BuildTrackedChangeColumn(
         DbColumnName sourceColumn,
@@ -3882,12 +3882,12 @@ internal static class AuthPeopleViewsFixture
     )
     {
         return new TrackedChangeColumnInfo(
-            new DbColumnName($"Old_{sourceColumn.Value}"),
-            new DbColumnName($"New_{sourceColumn.Value}"),
+            new DbColumnName($"Old{sourceColumn.Value}"),
+            new DbColumnName($"New{sourceColumn.Value}"),
             SourceJsonPath: $"$.{char.ToLowerInvariant(sourceColumn.Value[0])}{sourceColumn.Value[1..]}",
             CanonicalStorageColumn: null,
             IsOldColumnNullable: false,
-            // New_* columns are populated only by key-change rows; tombstones leave them null.
+            // New* columns are populated only by key-change rows; tombstones leave them null.
             IsNewColumnNullable: true,
             scalarType,
             role,

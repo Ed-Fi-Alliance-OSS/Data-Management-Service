@@ -1568,8 +1568,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_EventTimestamp",
-          "new_column": "New_EventTimestamp",
+          "old_column": "OldEventTimestamp",
+          "new_column": "NewEventTimestamp",
           "source_json_path": "$.eventTimestamp",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1625,8 +1625,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_DecimalKey",
-          "new_column": "New_DecimalKey",
+          "old_column": "OldDecimalKey",
+          "new_column": "NewDecimalKey",
           "source_json_path": "$.decimalKey",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1684,8 +1684,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_RefResourceId",
-          "new_column": "New_RefResourceId",
+          "old_column": "OldRefResourceId",
+          "new_column": "NewRefResourceId",
           "source_json_path": "$.refResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1697,8 +1697,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_DecimalKeyReference_DecimalKey",
-          "new_column": "New_DecimalKeyReference_DecimalKey",
+          "old_column": "OldDecimalKeyReference_DecimalKey",
+          "new_column": "NewDecimalKeyReference_DecimalKey",
           "source_json_path": "$.decimalKeyReference.decimalKey",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1756,8 +1756,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_EdOrgDependentChildResourceId",
-          "new_column": "New_EdOrgDependentChildResourceId",
+          "old_column": "OldEdOrgDependentChildResourceId",
+          "new_column": "NewEdOrgDependentChildResourceId",
           "source_json_path": "$.edOrgDependentChildResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1769,8 +1769,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
-          "new_column": "New_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+          "old_column": "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
+          "new_column": "NewEdOrgDependentResourceReference_EdOrgDependentResourceId",
           "source_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1782,8 +1782,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_EdOrgDependentResourceReference_EducationOrganizationId",
-          "new_column": "New_EdOrgDependentResourceReference_EducationOrganizationId",
+          "old_column": "OldEdOrgDependentResourceReference_EducationOrganizationId",
+          "new_column": "NewEdOrgDependentResourceReference_EducationOrganizationId",
           "source_json_path": "$.edOrgDependentResourceReference.educationOrganizationId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1839,8 +1839,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_EdOrgDependentResourceId",
-          "new_column": "New_EdOrgDependentResourceId",
+          "old_column": "OldEdOrgDependentResourceId",
+          "new_column": "NewEdOrgDependentResourceId",
           "source_json_path": "$.edOrgDependentResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1852,8 +1852,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_EducationOrganization_EducationOrganizationId",
-          "new_column": "New_EducationOrganization_EducationOrganizationId",
+          "old_column": "OldEducationOrganization_EducationOrganizationId",
+          "new_column": "NewEducationOrganization_EducationOrganizationId",
           "source_json_path": "$.educationOrganizationReference.educationOrganizationId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1909,8 +1909,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_KeyUnifiedResourceId",
-          "new_column": "New_KeyUnifiedResourceId",
+          "old_column": "OldKeyUnifiedResourceId",
+          "new_column": "NewKeyUnifiedResourceId",
           "source_json_path": "$.keyUnifiedResourceId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1922,8 +1922,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_ResourceAReference_ResourceAId",
-          "new_column": "New_ResourceAReference_ResourceAId",
+          "old_column": "OldResourceAReference_ResourceAId",
+          "new_column": "NewResourceAReference_ResourceAId",
           "source_json_path": "$.resourceAReference.resourceAId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -1935,8 +1935,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_StudentUniqueId_Unified",
-          "new_column": "New_StudentUniqueId_Unified",
+          "old_column": "OldStudentUniqueId_Unified",
+          "new_column": "NewStudentUniqueId_Unified",
           "source_json_path": "$.resourceAReference.studentUniqueId",
           "canonical_storage_column": "StudentUniqueId_Unified",
           "is_old_column_nullable": false,
@@ -1949,8 +1949,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_ResourceBReference_ResourceBId",
-          "new_column": "New_ResourceBReference_ResourceBId",
+          "old_column": "OldResourceBReference_ResourceBId",
+          "new_column": "NewResourceBReference_ResourceBId",
           "source_json_path": "$.resourceBReference.resourceBId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2007,8 +2007,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_ResourceAId",
-          "new_column": "New_ResourceAId",
+          "old_column": "OldResourceAId",
+          "new_column": "NewResourceAId",
           "source_json_path": "$.resourceAId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2020,8 +2020,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_StudentReference_StudentUniqueId",
-          "new_column": "New_StudentReference_StudentUniqueId",
+          "old_column": "OldStudentReference_StudentUniqueId",
+          "new_column": "NewStudentReference_StudentUniqueId",
           "source_json_path": "$.studentReference.studentUniqueId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2078,8 +2078,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_ResourceBId",
-          "new_column": "New_ResourceBId",
+          "old_column": "OldResourceBId",
+          "new_column": "NewResourceBId",
           "source_json_path": "$.resourceBId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2091,8 +2091,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_StudentReference_StudentUniqueId",
-          "new_column": "New_StudentReference_StudentUniqueId",
+          "old_column": "OldStudentReference_StudentUniqueId",
+          "new_column": "NewStudentReference_StudentUniqueId",
           "source_json_path": "$.studentReference.studentUniqueId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2149,8 +2149,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_SchoolId",
-          "new_column": "New_SchoolId",
+          "old_column": "OldSchoolId",
+          "new_column": "NewSchoolId",
           "source_json_path": "$.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2206,8 +2206,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_StudentUniqueId",
-          "new_column": "New_StudentUniqueId",
+          "old_column": "OldStudentUniqueId",
+          "new_column": "NewStudentUniqueId",
           "source_json_path": "$.studentUniqueId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2264,8 +2264,8 @@
       ],
       "value_columns": [
         {
-          "old_column": "Old_StudentUniqueId",
-          "new_column": "New_StudentUniqueId",
+          "old_column": "OldStudentUniqueId",
+          "new_column": "NewStudentUniqueId",
           "source_json_path": "$.studentUniqueId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
@@ -2277,8 +2277,8 @@
           "origin": "Identity"
         },
         {
-          "old_column": "Old_SchoolReference_SchoolId",
-          "new_column": "New_SchoolReference_SchoolId",
+          "old_column": "OldSchoolReference_SchoolId",
+          "new_column": "NewSchoolReference_SchoolId",
           "source_json_path": "$.schoolReference.schoolId",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,

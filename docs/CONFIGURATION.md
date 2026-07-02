@@ -139,7 +139,6 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
 | EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. Must be non-empty; see the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
-| CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
 
 > [!NOTE]
 > **Shared key.** In the provided Docker Compose files, a single
@@ -162,6 +161,19 @@ These settings configure how the DMS API connects to the Configuration Service t
 >   AES key initialization.
 >
 > Recommended: a 32-character ASCII string.
+
+## CacheSettings
+
+These settings configure DMS in-memory cache behavior. Expiration values are in seconds.
+
+| Parameter                                | Description                                                                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| ClaimSetsCacheExpirationSeconds          | The duration before cached claim sets expire and are refreshed from the Configuration Service. Default: `600`              |
+| ApplicationContextCacheExpirationSeconds | The duration before cached application context metadata expires and is refreshed from the Configuration Service. Default: `600` |
+| TokenCacheExpirationSeconds              | The duration before cached Configuration Service OAuth tokens expire. Default: `1500`                                      |
+| ProfileCacheExpirationSeconds            | The duration before cached profile metadata expires and is refreshed from the Configuration Service. Default: `1800`       |
+| DataStoreCacheRefreshEnabled             | When `true`, enables TTL-based refresh of cached data store configuration from the Configuration Service. Default: `true`  |
+| DataStoreCacheExpirationSeconds          | The duration between automatic refreshes of cached data store configuration. Default: `600`                                |
 
 ## IdentitySettings.ClientSecretValidation
 

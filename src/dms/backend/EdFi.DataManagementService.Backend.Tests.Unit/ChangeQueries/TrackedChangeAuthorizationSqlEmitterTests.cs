@@ -27,7 +27,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -52,7 +52,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         );
 
         string predicate = string.Join(" ", result.Predicates).Replace("\n", " ");
-        predicate.Should().Contain("c.\"Old_SchoolId_Unified\" IN (SELECT");
+        predicate.Should().Contain("c.\"OldSchoolId_Unified\" IN (SELECT");
         predicate.Should().Contain("\"TargetEducationOrganizationId\"");
         predicate.Should().Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"");
         predicate.Should().Contain("\"SourceEducationOrganizationId\"");
@@ -69,7 +69,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -97,9 +97,9 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         predicate
             .Should()
             .Contain(
-                $"c.\"Old_SchoolId_Unified\" = ANY(@{RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds})"
+                $"c.\"OldSchoolId_Unified\" = ANY(@{RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds})"
             );
-        predicate.Should().Contain("OR c.\"Old_SchoolId_Unified\" IN (SELECT");
+        predicate.Should().Contain("OR c.\"OldSchoolId_Unified\" IN (SELECT");
     }
 
     [Test]
@@ -112,7 +112,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnlyInverted", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.SourceEdOrgId,
                             AuthNames.TargetEdOrgId
@@ -140,7 +140,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         predicate
             .Should()
             .Contain(
-                $"c.\"Old_SchoolId_Unified\" = ANY(@{RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds})"
+                $"c.\"OldSchoolId_Unified\" = ANY(@{RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds})"
             );
         predicate.Should().Contain("SELECT \"SourceEducationOrganizationId\"");
         predicate
@@ -160,7 +160,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -188,9 +188,9 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         predicate
             .Should()
             .Contain(
-                "c.[Old_SchoolId_Unified] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)"
+                "c.[OldSchoolId_Unified] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1)"
             );
-        predicate.Should().Contain("OR c.[Old_SchoolId_Unified] IN (SELECT");
+        predicate.Should().Contain("OR c.[OldSchoolId_Unified] IN (SELECT");
     }
 
     [Test]
@@ -203,7 +203,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -211,7 +211,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     ]
                 ),
             ],
-            NamespaceCheck: new ReadChangesNamespaceCheckSpec(new DbColumnName("Old_Namespace")),
+            NamespaceCheck: new ReadChangesNamespaceCheckSpec(new DbColumnName("OldNamespace")),
             ClaimParameterization: AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
                 SqlDialect.Pgsql,
                 [1L],
@@ -233,7 +233,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
 
         result.Predicates.Should().HaveCount(2); // one namespace predicate AND one relationship-group predicate
         string joined = string.Join(" ", result.Predicates);
-        joined.Should().Contain("c.\"Old_Namespace\" IS NOT NULL");
+        joined.Should().Contain("c.\"OldNamespace\" IS NOT NULL");
         joined.Should().Contain("LIKE");
     }
 
@@ -265,7 +265,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -295,7 +295,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         // Fail-closed: the relationship predicate IS present (not omitted) ...
         result.Predicates.Should().ContainSingle();
         string predicate = string.Join(" ", result.Predicates).Replace("\n", " ");
-        predicate.Should().Contain("c.\"Old_SchoolId_Unified\" IN (SELECT");
+        predicate.Should().Contain("c.\"OldSchoolId_Unified\" IN (SELECT");
         // ... and matches nothing: `= ANY(@ClaimEducationOrganizationIds)` bound to an empty long[].
         predicate
             .Should()
@@ -323,7 +323,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId
@@ -353,7 +353,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
         // Fail-closed: the relationship predicate IS present (not omitted) ...
         result.Predicates.Should().ContainSingle();
         string predicate = string.Join(" ", result.Predicates).Replace("\n", " ");
-        predicate.Should().Contain("c.[Old_SchoolId_Unified] IN (SELECT");
+        predicate.Should().Contain("c.[OldSchoolId_Unified] IN (SELECT");
         // ... and matches nothing.
         predicate.Should().Contain("IN (SELECT 1 WHERE 1 = 0)");
         // Zero claim ids → zero bound claim parameters.
@@ -384,7 +384,7 @@ public class TrackedChangeAuthorizationSqlEmitterTests
                     new ConfiguredAuthorizationStrategy("RelationshipsWithEdOrgsOnly", 0),
                     [
                         new ReadChangesAuthorizationSubject(
-                            new DbColumnName("Old_SchoolId_Unified"),
+                            new DbColumnName("OldSchoolId_Unified"),
                             AuthNames.EdOrgIdToEdOrgId,
                             AuthNames.TargetEdOrgId,
                             AuthNames.SourceEdOrgId

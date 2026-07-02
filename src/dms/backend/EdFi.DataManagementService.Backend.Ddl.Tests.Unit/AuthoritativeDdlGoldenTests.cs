@@ -368,10 +368,10 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
 
         // Old image follows the source nullability (NOT NULL); New image is nullable for tombstones.
         var block = ExtractTrackedChangeTableBlock(ReadActual("pgsql.sql"), mssql: false, "Descriptor");
-        block.Should().Contain("\"Old_Namespace\" varchar(255) NOT NULL");
-        block.Should().Contain("\"New_Namespace\" varchar(255) NULL");
-        block.Should().Contain("\"Old_CodeValue\" varchar(50) NOT NULL");
-        block.Should().Contain("\"New_CodeValue\" varchar(50) NULL");
+        block.Should().Contain("\"OldNamespace\" varchar(255) NOT NULL");
+        block.Should().Contain("\"NewNamespace\" varchar(255) NULL");
+        block.Should().Contain("\"OldCodeValue\" varchar(50) NOT NULL");
+        block.Should().Contain("\"NewCodeValue\" varchar(50) NULL");
         block.Should().Contain("\"Discriminator\" varchar(128) NOT NULL");
     }
 
@@ -381,10 +381,10 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "Descriptor", expectDiscriminator: true);
 
         var block = ExtractTrackedChangeTableBlock(ReadActual("mssql.sql"), mssql: true, "Descriptor");
-        block.Should().Contain("[Old_Namespace] nvarchar(255) NOT NULL");
-        block.Should().Contain("[New_Namespace] nvarchar(255) NULL");
-        block.Should().Contain("[Old_CodeValue] nvarchar(50) NOT NULL");
-        block.Should().Contain("[New_CodeValue] nvarchar(50) NULL");
+        block.Should().Contain("[OldNamespace] nvarchar(255) NOT NULL");
+        block.Should().Contain("[NewNamespace] nvarchar(255) NULL");
+        block.Should().Contain("[OldCodeValue] nvarchar(50) NOT NULL");
+        block.Should().Contain("[NewCodeValue] nvarchar(50) NULL");
         block.Should().Contain("[Discriminator] nvarchar(128) NOT NULL");
     }
 
@@ -403,8 +403,8 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         var (open, close) = mssql ? ("[", "]") : ("\"", "\"");
         var block = ExtractTrackedChangeTableBlock(ReadActual(fileName), mssql, tableName);
 
-        // Value columns (Old_*) precede the system columns (Id / ChangeVersion / CreatedAt).
-        var firstValueColumnIndex = block.IndexOf($"{open}Old_", StringComparison.Ordinal);
+        // Value columns (Old*) precede the system columns (Id / ChangeVersion / CreatedAt).
+        var firstValueColumnIndex = block.IndexOf($"{open}Old", StringComparison.Ordinal);
         firstValueColumnIndex
             .Should()
             .BeGreaterThan(0, $"{tableName} tracked-change table must have value columns");

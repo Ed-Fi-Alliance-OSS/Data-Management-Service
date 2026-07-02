@@ -3,10 +3,9 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-ALTER TABLE dmscs.AuthorizationStrategy ALTER COLUMN Id DROP IDENTITY;
-
-INSERT INTO dmscs.AuthorizationStrategy (Id, AuthorizationStrategyName, DisplayName)
-SELECT v.Id, v.AuthorizationStrategyName, v.DisplayName FROM (
+INSERT INTO "dmscs"."AuthorizationStrategy" ("Id", "AuthorizationStrategyName", "DisplayName")
+OVERRIDING SYSTEM VALUE
+SELECT v."Id", v."AuthorizationStrategyName", v."DisplayName" FROM (
     VALUES
         (1, 'NoFurtherAuthorizationRequired', 'No Further Authorization Required'),
         (2, 'RelationshipsWithEdOrgsAndPeople', 'Relationships with Education Organizations and People'),
@@ -21,20 +20,15 @@ SELECT v.Id, v.AuthorizationStrategyName, v.DisplayName FROM (
         (11, 'RelationshipsWithEdOrgsOnlyInverted', 'Relationships with Education Organizations only (Inverted)'),
         (12, 'RelationshipsWithEdOrgsAndPeopleInverted', 'Relationships with Education Organizations and People (Inverted)'),
         (13, 'RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes', 'Relationships with Students only (through StudentEducationOrganizationResponsibilityAssociation, including deletes)')
-) AS v(Id, AuthorizationStrategyName, DisplayName)
+) AS v("Id", "AuthorizationStrategyName", "DisplayName")
 WHERE NOT EXISTS (
-    SELECT 1 FROM dmscs.AuthorizationStrategy s WHERE s.Id = v.Id
+    SELECT 1 FROM "dmscs"."AuthorizationStrategy" s WHERE s."Id" = v."Id"
 );
-
-ALTER TABLE dmscs.AuthorizationStrategy ALTER COLUMN Id ADD GENERATED ALWAYS AS IDENTITY;
 
 DO $$
 DECLARE
-    seq_name text := 'dmscs.authorizationstrategy_id_seq';
-    max_id bigint;
+    next_id bigint;
 BEGIN
-    SELECT MAX(Id) INTO max_id FROM dmscs.AuthorizationStrategy;
-    IF max_id IS NOT NULL THEN
-        EXECUTE format('SELECT setval(%L, %s)', seq_name, max_id);
-    END IF;
+    SELECT COALESCE(MAX("Id"), 0) + 1 INTO next_id FROM "dmscs"."AuthorizationStrategy";
+    EXECUTE format('ALTER TABLE "dmscs"."AuthorizationStrategy" ALTER COLUMN "Id" RESTART WITH %s', next_id);
 END$$;

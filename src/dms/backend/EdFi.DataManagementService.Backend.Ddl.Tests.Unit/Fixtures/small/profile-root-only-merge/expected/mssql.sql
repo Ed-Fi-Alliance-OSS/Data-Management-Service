@@ -432,8 +432,8 @@ BEGIN
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Descriptor] (
             [Discriminator],
-            [Old_Namespace],
-            [Old_CodeValue],
+            [OldNamespace],
+            [OldCodeValue],
             [Id],
             [ChangeVersion]
         )
@@ -494,10 +494,10 @@ CREATE TABLE [edfi].[Student]
 IF OBJECT_ID(N'tracked_changes_edfi.Descriptor', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-    [Old_Namespace] nvarchar(255) NOT NULL,
-    [New_Namespace] nvarchar(255) NULL,
-    [Old_CodeValue] nvarchar(50) NOT NULL,
-    [New_CodeValue] nvarchar(50) NULL,
+    [OldNamespace] nvarchar(255) NOT NULL,
+    [NewNamespace] nvarchar(255) NULL,
+    [OldCodeValue] nvarchar(50) NOT NULL,
+    [NewCodeValue] nvarchar(50) NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -508,8 +508,8 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 IF OBJECT_ID(N'tracked_changes_edfi.ProfileRootOnlyMergeItem', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
 (
-    [Old_ProfileRootOnlyMergeItemId] int NOT NULL,
-    [New_ProfileRootOnlyMergeItemId] int NULL,
+    [OldProfileRootOnlyMergeItemId] int NOT NULL,
+    [NewProfileRootOnlyMergeItemId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProfileRootOnlyMergeItem_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -519,8 +519,8 @@ CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
 IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Student]
 (
-    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
-    [New_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentUniqueId] nvarchar(32) NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -686,7 +686,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
-            [Old_ProfileRootOnlyMergeItemId],
+            [OldProfileRootOnlyMergeItemId],
             [Id],
             [ChangeVersion]
         )
@@ -708,8 +708,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[ProfileRootOnlyMergeItemId] <> del.[ProfileRootOnlyMergeItemId] OR (i.[ProfileRootOnlyMergeItemId] IS NULL AND del.[ProfileRootOnlyMergeItemId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItemId] IS NOT NULL AND del.[ProfileRootOnlyMergeItemId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
-            [Old_ProfileRootOnlyMergeItemId],
-            [New_ProfileRootOnlyMergeItemId],
+            [OldProfileRootOnlyMergeItemId],
+            [NewProfileRootOnlyMergeItemId],
             [Id],
             [ChangeVersion]
         )
@@ -800,7 +800,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Student] (
-            [Old_StudentUniqueId],
+            [OldStudentUniqueId],
             [Id],
             [ChangeVersion]
         )
@@ -822,8 +822,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Student] (
-            [Old_StudentUniqueId],
-            [New_StudentUniqueId],
+            [OldStudentUniqueId],
+            [NewStudentUniqueId],
             [Id],
             [ChangeVersion]
         )

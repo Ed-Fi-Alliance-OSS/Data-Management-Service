@@ -455,8 +455,8 @@ CREATE TABLE [edfi].[NamingStressItem]
 IF OBJECT_ID(N'tracked_changes_edfi.NamingStressItem', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[NamingStressItem]
 (
-    [Old_NamingStressItemId] int NOT NULL,
-    [New_NamingStressItemId] int NULL,
+    [OldNamingStressItemId] int NOT NULL,
+    [NewNamingStressItemId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_NamingStressItem_CreatedAt] DEFAULT (sysutcdatetime()),
@@ -557,7 +557,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[NamingStressItem] (
-            [Old_NamingStressItemId],
+            [OldNamingStressItemId],
             [Id],
             [ChangeVersion]
         )
@@ -579,8 +579,8 @@ BEGIN
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[NamingStressItem] (
-            [Old_NamingStressItemId],
-            [New_NamingStressItemId],
+            [OldNamingStressItemId],
+            [NewNamingStressItemId],
             [Id],
             [ChangeVersion]
         )
