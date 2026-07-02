@@ -372,18 +372,12 @@ function Assert-SingleVerificationCheck {
     #>
     param(
         [Parameter(Mandatory)]
-        [string]
-        $CmsBaseUrl,
-
-        [Parameter(Mandatory)]
-        [string]
-        $AccessToken,
-
-        [Parameter(Mandatory)]
         $Check,
 
-        [string]
-        $Tenant = ""
+        # The /authorizationMetadata response for $Check.claimSetName, already fetched by the caller.
+        # Test-CmsClaimsReady memoizes this per claim set so repeated claim sets are fetched once.
+        # $null means the claim set was not found (404).
+        $Metadata
     )
 
     $claimSetName = [string]$Check.claimSetName
@@ -402,20 +396,13 @@ function Assert-SingleVerificationCheck {
         throw "Claims-ready gate: a verification check has an empty action. Manifest may be malformed."
     }
 
-    # Query CMS for the authorization metadata filtered to the expected claim set.
-    $metadata = Get-AuthorizationMetadataResponse `
-        -CmsBaseUrl $CmsBaseUrl `
-        -AccessToken $AccessToken `
-        -ClaimSetName $claimSetName `
-        -Tenant $Tenant
-
-    if ($null -eq $metadata) {
+    if ($null -eq $Metadata) {
         throw "Claims-ready gate FAILED: claim set '$(Format-ClaimsGateLogSafeText $claimSetName)' was not found in CMS /authorizationMetadata. CMS may not yet have applied the expected claims. /health green and /v2/claimSets name presence alone do not satisfy this gate."
     }
 
     # /authorizationMetadata returns an array of claim-set objects when no filter is applied;
     # with ?claimSetName= it returns the filtered subset. Normalize to array either way.
-    $claimSetArray = @($metadata)
+    $claimSetArray = @($Metadata)
 
     # Locate the matching claim set entry.
     $matchingClaimSet = $claimSetArray | Where-Object {
@@ -647,6 +634,9 @@ function Test-CmsClaimsReady {
     $checkIndex = 0
     $verifiedCount = 0
     $deferredCount = 0
+    # Memoize the /authorizationMetadata response per claim set: multiple checks commonly target the
+    # same claim set (e.g. EdFiSandbox), and the response is identical for each, so fetch it once.
+    $metadataByClaimSet = @{}
     foreach ($check in $checks) {
         $checkIndex++
 
@@ -675,11 +665,17 @@ function Test-CmsClaimsReady {
 
         Write-Information "Claims gate: verifying check $checkIndex/$($checks.Count) - claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet) resourceClaim=$(Format-ClaimsGateLogSafeText $logResourceClaim) action=$(Format-ClaimsGateLogSafeText $logAction)." -InformationAction Continue
 
-        Assert-SingleVerificationCheck `
-            -CmsBaseUrl $resolvedCmsBaseUrl `
-            -AccessToken $resolvedToken `
-            -Check $check `
-            -Tenant $resolvedTenant
+        # Fetch /authorizationMetadata once per claim set and reuse it for every check on that set.
+        $checkClaimSetName = [string]$logClaimSet
+        if (-not $metadataByClaimSet.ContainsKey($checkClaimSetName)) {
+            $metadataByClaimSet[$checkClaimSetName] = Get-AuthorizationMetadataResponse `
+                -CmsBaseUrl $resolvedCmsBaseUrl `
+                -AccessToken $resolvedToken `
+                -ClaimSetName $checkClaimSetName `
+                -Tenant $resolvedTenant
+        }
+
+        Assert-SingleVerificationCheck -Check $check -Metadata $metadataByClaimSet[$checkClaimSetName]
 
         $verifiedCount++
     }

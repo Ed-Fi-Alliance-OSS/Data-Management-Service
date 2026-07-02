@@ -49,8 +49,8 @@ Bootstrap must not invent a second schema fingerprint or a second schema-resolut
 In this story, the selected schema set drives the DDL target, the hash-validation path, and the exact
 physical schema footprint for the run. A direct filesystem input containing only the core schema yields only
 core tables. Core plus a known mapped extension such as Sample yields the tables required by that combined
-schema set. Unmapped extension schemas, including TPDM when supplied through direct filesystem input, are not
-silently substituted by Sample, Homograph, or any default mapping. A database provisioned for a different
+schema set. Unmapped extension schemas (a custom extension outside the built-in map) are not
+silently substituted by Sample, Homograph, TPDM, or any default mapping. A database provisioned for a different
 extension selection is incompatible existing state for this story's bootstrap run.
 
 Within the composable bootstrap design, schema selection and asset-container staging are owned exclusively by the
@@ -174,24 +174,30 @@ schema contract and claims-staging contract rather than introducing a second pat
 - CMS claims mode is driven from the staged inputs:
   - Embedded mode for core-only bootstrap,
   - Hybrid mode when one or more staged fragments exist.
-- Automatic extension-fragment selection in `prepare-dms-claims.ps1` is deterministic and explicit. The
-  command holds a short in-script lookup keyed by extension project identity from the staged schema set
-  (`projectName` from each non-core `ApiSchema*.json`) that maps to the exact shipped fragment filename
-  under `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` (for v1:
-  `Sample` → `004-sample-extension-claimset.json`, `Homograph` → `005-homograph-extension-claimset.json`).
-  The same lookup records any built-in extension seed namespace prefix known to the DMS-916 bootstrap
-  contract; v1 records `Sample` → `uri://sample.ed-fi.org`. Entries without a known built-in seed namespace
-  prefix write no prefix to the root bootstrap manifest, and bootstrap must not infer prefixes from arbitrary
-  direct filesystem schema content.
+- Automatic extension security-metadata selection in `prepare-dms-claims.ps1` is deterministic and explicit.
+  The command holds a short in-script lookup keyed by extension project identity from the staged schema set
+  (`projectName` from each non-core `ApiSchema*.json`) that records, per built-in extension, how bootstrap
+  handles its security metadata: an optional shipped fragment filename under
+  `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`, an optional seed
+  namespace prefix, and optional leaf readiness checks. For v1: `Sample` stages
+  `004-sample-extension-claimset.json` and records `uri://sample.ed-fi.org`; `Homograph` stages
+  `005-homograph-extension-claimset.json` (no distinct namespace); and `TPDM` stages no fragment (its claims
+  ship in the embedded DS 5.2 `Claims.json`), records `uri://tpdm.ed-fi.org`, and contributes leaf readiness
+  checks. Entries without a known built-in seed namespace prefix write no prefix to the root bootstrap
+  manifest, and bootstrap must not infer prefixes from arbitrary direct filesystem schema content.
   Core-baseline fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
   `003-edorgsonly-claimset.json`) remain part of embedded `Claims.json` loading and are never staged into
   the additive workspace. Staged extensions whose `projectName` is not in the lookup are treated as
   unmapped: `-ClaimsDirectoryPath` is required and the caller-supplied fragments are the only security
   inputs for those projects. The lookup is a v1 implementation detail of the claims phase, not a separate
   catalog artifact in the repo.
-- TPDM is not part of the Story 00 v1 mapped security-fragment surface. If TPDM appears in a direct
-  filesystem ApiSchema input, bootstrap treats it as unmapped and requires caller-supplied security fragments
-  through `-ClaimsDirectoryPath`; it is not silently replaced by `sample`, `homograph`, or any default.
+- TPDM is bootstrap-mapped for Data Standard 5.2 (added by DMS-1247). The embedded DS 5.2 `Claims.json`
+  already carries the full TPDM claims hierarchy and its `EdFiSandbox` grants, so the claims phase recognizes
+  TPDM without staging a fragment (Embedded mode) and does not require `-ClaimsDirectoryPath`. It records leaf
+  readiness checks so the claims-ready gate confirms CMS composed TPDM, and records TPDM's descriptor seed
+  namespace (`uri://tpdm.ed-fi.org`) so the `SeedLoader` credential can load TPDM descriptor seed data. Any
+  other direct filesystem extension outside the built-in map is treated as unmapped: it requires
+  caller-supplied `-ClaimsDirectoryPath` fragments and is never silently replaced by a built-in mapping.
 
 ## Tasks
 
@@ -206,9 +212,9 @@ schema contract and claims-staging contract rather than introducing a second pat
    uses schema identity fields from the direct filesystem input, and `prepare-dms-claims.ps1` uses
    security-fragment fields. `load-dms-seed-data.ps1` owns the separate seed catalog lookup when seed delivery
    runs. `EdFiSandbox` coverage is required for every bootstrap-managed extension fragment and `SeedLoader`
-   coverage is required only where a built-in seed package is advertised. Story 00's v1 mapped security
-   lookup covers Sample and Homograph only; TPDM and any other direct filesystem extension not in the lookup
-   are treated as unmapped and require `-ClaimsDirectoryPath`.
+   coverage is required only where a built-in seed package is advertised. The v1 mapped security lookup
+   covered Sample and Homograph; DMS-1247 additionally maps TPDM via the embedded DS 5.2 claims. Any other
+   direct filesystem extension not in the lookup is treated as unmapped and requires `-ClaimsDirectoryPath`.
 3. Implement direct filesystem schema-materialization logic in `prepare-dms-schema.ps1`: normalize
    `-ApiSchemaPath` inputs into the staged workspace, normalize one core schema plus zero or more extension
    schemas into the staged ApiSchema asset workspace, copy optional schema-adjacent static content into
@@ -275,7 +281,7 @@ schema contract and claims-staging contract rather than introducing a second pat
    resources ahead of runtime.
 12. Add focused tests for the Story 00 staging contracts: schema workspace normalization and collision
     detection, schema and claims rerun fingerprint mismatch handling, selected-extension manifest identity,
-    automatic extension-fragment filtering, known namespace-prefix handoff, Story 00 deferral of the staged
+    automatic extension security-metadata mapping, known namespace-prefix handoff, Story 00 deferral of the staged
     Config Service claims mount source to Story 04, and structural claim-fragment validation failures.
 
 ## Out of Scope

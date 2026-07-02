@@ -143,6 +143,104 @@ exit $ExitCode
         return $schemaDir
     }
 
+    function script:Add-KnownExtensionCatalogEntry {
+        <#
+        .SYNOPSIS
+        Appends an extra KnownExtensionClaimsMetadata assignment to the isolated repo's copy of the catalog
+        module so tests can exercise the catalog-validation branches in prepare-dms-claims.ps1 without
+        touching the real (source) catalog. Call after BeforeEach has staged $script:repo; the isolated repo
+        is discarded in AfterEach.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Key,
+
+            # A hashtable literal for the entry body, e.g. '@{ FragmnetFileName = "x.json" }'.
+            [Parameter(Mandatory)]
+            [string]
+            $Body
+        )
+
+        $catalogPath = Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-catalog.psm1"
+        $content = Get-Content -LiteralPath $catalogPath -Raw
+        # Append the assignment after the built-in entries (which create the Ordinal-backed map) but
+        # before the first function, so the module-scope statement runs at import. Anchoring on the first
+        # function is stable across catalog edits and appends a self-contained statement rather than
+        # splicing into a literal.
+        $anchor = "function Get-StandardSchemaFeed"
+        $index = $content.IndexOf($anchor)
+        if ($index -lt 0) {
+            throw "Could not find catalog function anchor in $catalogPath"
+        }
+        $statement = "`$script:KnownExtensionClaimsMetadata[`"$Key`"] = $Body`n`n"
+        $content = $content.Insert($index, $statement)
+        Set-Content -LiteralPath $catalogPath -Value $content -Encoding utf8
+    }
+
+    function script:Resolve-EmbeddedClaimLeaf {
+        <#
+        .SYNOPSIS
+        Walks the embedded Claims.json claimsHierarchy for a resource-claim leaf and reports whether it
+        exists, whether it is a leaf (no child claims), and whether a named claim set's action reaches it
+        via claimSets on itself or any ancestor. Used to anchor the TPDM readiness-check literals to the
+        embedded claims - a stronger guard than a raw string match. The runtime claims-ready gate remains
+        authoritative for full composition; this is only the shift-left CI anchor.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            $Nodes,
+
+            [Parameter(Mandatory)]
+            [string]
+            $LeafName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $ClaimSetName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Action,
+
+            [bool]
+            $AncestorGrants = $false
+        )
+
+        foreach ($node in @($Nodes)) {
+            if ($null -eq $node) { continue }
+
+            $nodeGrants = $AncestorGrants
+            if ($node.PSObject.Properties['claimSets']) {
+                foreach ($claimSet in @($node.claimSets)) {
+                    if ($null -ne $claimSet -and [string]$claimSet.name -eq $ClaimSetName -and
+                        $claimSet.PSObject.Properties['actions']) {
+                        $actionNames = @($claimSet.actions | ForEach-Object { [string]$_.name })
+                        if ($actionNames -contains $Action) { $nodeGrants = $true }
+                    }
+                }
+            }
+
+            $children = if ($node.PSObject.Properties['claims']) { @($node.claims) } else { @() }
+
+            if ([string]$node.name -eq $LeafName) {
+                return [pscustomobject]@{
+                    Found        = $true
+                    IsLeaf       = ($children.Count -eq 0)
+                    GrantReaches = $nodeGrants
+                }
+            }
+
+            if ($children.Count -gt 0) {
+                $result = Resolve-EmbeddedClaimLeaf -Nodes $children -LeafName $LeafName `
+                    -ClaimSetName $ClaimSetName -Action $Action -AncestorGrants $nodeGrants
+                if ($result.Found) { return $result }
+            }
+        }
+
+        return [pscustomobject]@{ Found = $false; IsLeaf = $false; GrantReaches = $false }
+    }
+
     function script:Invoke-PrepareSchema {
         param(
             [Parameter(Mandatory)]
@@ -594,15 +692,163 @@ exit $ExitCode
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
         }
 
-        It "requires caller-supplied claims for unmapped extensions such as TPDM" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+        It "requires caller-supplied claims for unmapped extensions" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
             { Invoke-PrepareClaim } |
-                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*TPDM*"
+                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Acme*"
+        }
+
+        It "throws when a known-extension catalog entry contributes no security metadata (misspelled key)" {
+            # A catalog entry whose only key is unrecognized (e.g. a misspelled 'FragmentFileName') contributes
+            # nothing and must fail fast rather than be silently treated as fully mapped - which would stage
+            # nothing, suppress the unmapped-extension guard, and yield runtime 403s the gate can't detect.
+            Add-KnownExtensionCatalogEntry -Key "AcmeTypo" -Body '@{ FragmnetFileName = "x.json" }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeTypo"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*AcmeTypo*contributes no security metadata*"
+        }
+
+        It "throws when a known-extension catalog entry contributes no security metadata (empty VerificationChecks)" {
+            # An entry with an empty VerificationChecks list and no fragment/prefix has a recognized key but
+            # still contributes nothing; the value-level guard must reject it, not just key presence.
+            Add-KnownExtensionCatalogEntry -Key "AcmeEmpty" -Body '@{ VerificationChecks = @() }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeEmpty"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*AcmeEmpty*contributes no security metadata*"
+        }
+
+        It "throws when a known-extension catalog VerificationChecks entry is malformed" {
+            # A VerificationChecks entry missing a field would be silently dropped by
+            # Add-ExpectedVerificationCheck's whitespace guard; -ThrowOnInvalid makes the catalog path reject it.
+            Add-KnownExtensionCatalogEntry -Key "AcmeBadCheck" -Body '@{ VerificationChecks = @(@{ ClaimSetName = "EdFiSandbox"; ResourceClaim = ""; Action = "Read" }) }'
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("AcmeBadCheck"))
+
+            { Invoke-PrepareClaim } |
+                Should -Throw -ExpectedMessage "*Malformed verification check*AcmeBadCheck*"
+        }
+
+        It "stages core + TPDM in Embedded claims mode from embedded claims without a caller fragment" {
+            # TPDM is a bootstrap-mapped extension whose claims are already carried by the embedded
+            # DS 5.2 Claims.json, so a core + TPDM schema set needs no caller fragment and stages no
+            # claim files - claims.mode stays Embedded. TPDM descriptor data uses the distinct
+            # uri://tpdm.ed-fi.org namespace, so that prefix IS recorded for the SeedLoader credential.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+
+            { Invoke-PrepareClaim } | Should -Not -Throw
+            $manifest = Get-RootManifest
+
+            $manifest.claims.mode | Should -Be "Embedded"
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Count |
+                Should -Be 0
+            $manifest.schema.selectedExtensions | Should -Contain "tpdm"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
+        }
+
+        It "records TPDM leaf verification checks so the claims-ready gate confirms CMS composed TPDM claims" {
+            # The catalog TPDM entry contributes leaf readiness checks (a TPDM descriptor reachable
+            # via domains/systemDescriptors and a TPDM resource reachable via domains/tpdm) so the
+            # gate verifies CMS actually flattened TPDM claims into EdFiSandbox in /authorizationMetadata.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareClaim
+            $manifest = Get-RootManifest
+
+            $checks = @($manifest.claims.expectedVerificationChecks)
+            $descriptorCheck = @($checks |
+                Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/credentialStatusDescriptor" })[0]
+            $resourceCheck = @($checks |
+                Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" })[0]
+
+            $descriptorCheck.claimSetName | Should -Be "EdFiSandbox"
+            $descriptorCheck.action | Should -Be "Read"
+            # Leaf checks are asserted directly by the gate; they must not carry the parent-defer flag.
+            $descriptorCheck.PSObject.Properties.Name | Should -Not -Contain "isParent"
+            $resourceCheck.claimSetName | Should -Be "EdFiSandbox"
+            $resourceCheck.action | Should -Be "Read"
+            $resourceCheck.PSObject.Properties.Name | Should -Not -Contain "isParent"
+        }
+
+        It "keeps Hybrid claims mode for core + Sample + TPDM and still records TPDM verification checks" {
+            # Sample stages a fragment (Hybrid) and records its namespace prefix; TPDM stages nothing
+            # but still contributes its embedded-claims readiness checks.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample", "TPDM"))
+            Invoke-PrepareClaim
+            $manifest = Get-RootManifest
+            $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
+
+            $manifest.claims.mode | Should -Be "Hybrid"
+            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
+            @($manifest.claims.expectedVerificationChecks |
+                Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
+                Should -Be 1
+        }
+
+        It "stages the full built-in set (core + Sample + Homograph + TPDM) without a caller fragment" {
+            # The documented headline scenario: the full in-repo DS 5.2 set bootstraps with no
+            # -ClaimsDirectoryPath. Sample and Homograph stage fragments (Hybrid) and Sample and TPDM
+            # record their descriptor namespace prefixes; TPDM stages nothing but still contributes
+            # its embedded-claims readiness checks.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample", "Homograph", "TPDM"))
+
+            { Invoke-PrepareClaim } | Should -Not -Throw
+            $manifest = Get-RootManifest
+            $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
+
+            $manifest.claims.mode | Should -Be "Hybrid"
+            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
+            $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
+            # Homograph resources stay on the core namespace, so it records no distinct prefix.
+            $manifest.seed.extensionNamespacePrefixes | Should -Not -Contain "uri://homograph.ed-fi.org"
+            @($manifest.claims.expectedVerificationChecks |
+                Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
+                Should -Be 1
+        }
+
+        It "resolves the TPDM catalog entry only for the exact Title-cased name (case-sensitive)" {
+            # A look-alike custom extension (e.g. "Tpdm") must not resolve to the built-in TPDM
+            # metadata and silently skip its required caller-supplied claims.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+
+            Get-StandardKnownExtensionInfo -ProjectName "TPDM" | Should -Not -BeNullOrEmpty
+            Get-StandardKnownExtensionInfo -ProjectName "Tpdm" | Should -BeNullOrEmpty
+            Get-StandardKnownExtensionInfo -ProjectName "tpdm" | Should -BeNullOrEmpty
+        }
+
+        It "anchors TPDM catalog checks to leaf claims that EdFiSandbox reaches in the embedded DS 5.2 Claims.json" {
+            # The TPDM check URIs are hand-authored literals. Assert each is still (a) present, (b) a LEAF
+            # resource claim, and (c) reachable by its claim set's action via claimSets on itself or an
+            # ancestor - so a future claims rename OR restructure surfaces here, not as a confusing gate
+            # failure at bootstrap. The runtime claims-ready gate stays authoritative for full composition.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+            $tpdm = Get-StandardKnownExtensionInfo -ProjectName "TPDM"
+            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+            $hierarchy = @((Get-Content -LiteralPath $claimsPath -Raw | ConvertFrom-Json).claimsHierarchy)
+
+            @($tpdm.VerificationChecks).Count | Should -BeGreaterThan 0
+            foreach ($check in $tpdm.VerificationChecks) {
+                $resolved = Resolve-EmbeddedClaimLeaf -Nodes $hierarchy -LeafName $check.ResourceClaim `
+                    -ClaimSetName $check.ClaimSetName -Action $check.Action
+
+                $resolved.Found | Should -BeTrue -Because "$($check.ResourceClaim) must exist in the embedded Claims.json"
+                $resolved.IsLeaf | Should -BeTrue -Because "$($check.ResourceClaim) must be a leaf resource claim (the gate asserts leaves directly)"
+                $resolved.GrantReaches | Should -BeTrue -Because "$($check.ClaimSetName)/$($check.Action) must reach $($check.ResourceClaim) via claimSets lineage"
+            }
+        }
+
+        It "reuses an identical core + TPDM Embedded claims workspace on re-run" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareClaim
+            { Invoke-PrepareClaim } | Should -Not -Throw
+            (Get-RootManifest).claims.mode | Should -Be "Embedded"
         }
 
         It "stages caller fragments and records expected verification checks with the fragment's raw resource name" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
 
@@ -621,7 +867,7 @@ exit $ExitCode
         }
 
         It "records explicit parent claimSets readiness checks structurally" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "parent-explicit"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -676,7 +922,7 @@ exit $ExitCode
         }
 
         It "rejects explicit claimSets on non-parent resource claims because CMS does not compose them" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "non-parent-explicit"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -704,7 +950,7 @@ exit $ExitCode
         }
 
         It "rejects malformed, duplicate, or unknown claim fragments" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
             $badJsonDir = Join-Path $script:repo.RepoRoot "bad-json"
             New-Item -ItemType Directory -Path $badJsonDir -Force | Out-Null
@@ -719,7 +965,7 @@ exit $ExitCode
         }
 
         It "accepts parent-only fragments without a top-level claim-set name" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "parent-only"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -737,7 +983,7 @@ exit $ExitCode
         }
 
         It "reuses identical claims workspaces and rejects changed fragment sets" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
 
@@ -754,7 +1000,7 @@ exit $ExitCode
         }
 
         It "rejects a fragment whose resourceClaims contains a non-object entry" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "bad-resource-claims"
             $fragment = [ordered]@{
                 name = "EdFiSandbox"
@@ -768,7 +1014,7 @@ exit $ExitCode
         }
 
         It "rejects a parent resourceClaim missing 'name'" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "parent-missing-name"
             $fragment = [ordered]@{
                 name = "FragLabel"
@@ -786,7 +1032,7 @@ exit $ExitCode
         }
 
         It "requires a top-level name for implicit non-parent claim-set use" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "implicit"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -809,7 +1055,7 @@ exit $ExitCode
         }
 
         It "rejects an implicit non-parent resourceClaim missing 'name'" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "implicit-missing-name"
             $fragment = [ordered]@{
                 name = "FragLabel"
@@ -829,7 +1075,7 @@ exit $ExitCode
         It "discovers caller fragments recursively to match CMS ClaimsFragmentComposer" {
             # CMS scans -ClaimsDirectoryPath with SearchOption.AllDirectories. Bootstrap input
             # discovery must match so nested fragments are staged (and nested duplicates rejected).
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-claims"
             $nestedDir = Join-Path $claimsDir "subdir"
             New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claimset.json")
@@ -841,7 +1087,7 @@ exit $ExitCode
         }
 
         It "detects nested filename collisions across subdirectories" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-collision"
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claimset.json")
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claimset.json")
@@ -851,7 +1097,7 @@ exit $ExitCode
         }
 
         It "rejects a non-boolean isParent value because CMS deserializes IsParent as a strict bool" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "string-isparent"
             $fragment = [ordered]@{
                 name = "EdFiSandbox"
@@ -871,7 +1117,7 @@ exit $ExitCode
         }
 
         It "rejects a resourceClaims value that is a single object instead of an array" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "scalar-resourceclaims"
             $fragment = [ordered]@{
                 name = "EdFiSandbox"
@@ -889,7 +1135,7 @@ exit $ExitCode
         }
 
         It "rejects a claimSets value that is a single object instead of an array" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "scalar-claimsets"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -916,7 +1162,7 @@ exit $ExitCode
         }
 
         It "rejects an actions value that is a single object instead of an array" {
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "scalar-actions"
             $fragment = [ordered]@{
                 resourceClaims = @(
@@ -946,7 +1192,7 @@ exit $ExitCode
             # Symmetric to the prepare-dms-schema.ps1 guard: a partial prior state (manifest
             # records claims/seed but .bootstrap/claims was removed) must not silently rewrite
             # the manifest sections; teardown is the required remediation.
-            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "stale-claims-input"
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
