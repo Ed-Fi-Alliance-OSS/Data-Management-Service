@@ -89,7 +89,7 @@ Source documents:
 - Change Queries surface (see [change-queries.md](change-queries.md)):
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
-  - `dms.GetMaxChangeVersion()` function; backs `/availableChangeVersions`.
+  - `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server); backs `/availableChangeVersions`.
 - Served metadata:
   - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
