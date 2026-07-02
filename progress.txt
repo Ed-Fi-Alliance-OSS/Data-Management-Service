@@ -159,3 +159,9 @@ DMS-1244 - completed OpenIddict token payload persistence cleanup task.
 - Files changed: OpenIddictDataRepository.cs, tasks.json, progress.txt.
 - Verification: csharpier touched repository; prohibited @Payload/insert-column guard clean; PostgreSQL integration OpenIddict|Token filter passed 1/1.
 - Notes: remaining open follow-up tasks are change-version comments and TenantId script consolidation.
+
+DMS-1244 - completed CMS TenantId install-script consolidation task.
+- Key decisions: remove direct TenantId columns/comments from base Vendor, ClaimSet, AuthorizationStrategy, ResourceClaim, and DataStore create scripts; keep all TenantId column/comment/FK/index creation centralized in 0025.
+- Files changed: CMS PostgreSQL base create scripts 0001, 0004, 0005, 0006, 0021; tasks.json; progress.txt.
+- Verification: base-script TenantId guard returned no matches; 0025 TenantId/FK/IX guard found expected additions; database-shape integration passed 6/6; git diff --check clean.
+- Notes: remaining open task is change-version comments.

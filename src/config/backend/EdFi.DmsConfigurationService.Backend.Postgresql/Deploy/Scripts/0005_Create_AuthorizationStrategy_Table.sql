@@ -5,7 +5,6 @@
 
 CREATE TABLE IF NOT EXISTS "dmscs"."AuthorizationStrategy" (
     "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "TenantId" BIGINT,
     "AuthorizationStrategyName" VARCHAR(255) NOT NULL,
     "DisplayName" VARCHAR(255) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -36,7 +35,6 @@ BEGIN
 END$$;
 
 COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."Id" IS 'Authorization Strategy Identifier.';
-COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."TenantId" IS 'Tenant id';
 COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."AuthorizationStrategyName" IS 'Authorization Strategy Name';
 COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."DisplayName" IS 'Display Name';
 COMMENT ON COLUMN "dmscs"."AuthorizationStrategy"."CreatedAt" IS 'Timestamp when the record was created (UTC)';

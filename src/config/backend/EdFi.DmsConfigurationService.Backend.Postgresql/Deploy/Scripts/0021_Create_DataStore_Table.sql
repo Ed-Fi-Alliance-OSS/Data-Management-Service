@@ -5,7 +5,6 @@
 
 CREATE TABLE IF NOT EXISTS "dmscs"."DataStore" (
     "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "TenantId" BIGINT,
     "DataStoreType" VARCHAR(50) NOT NULL,
     "Name" VARCHAR(256) NOT NULL,
     "ConnectionString" BYTEA,
@@ -27,7 +26,6 @@ BEGIN
     END IF;
 END$$;
 
-COMMENT ON COLUMN "dmscs"."DataStore"."TenantId" IS 'Tenant id';
 COMMENT ON COLUMN "dmscs"."DataStore"."CreatedAt" IS 'Timestamp when the record was created (UTC)';
 COMMENT ON COLUMN "dmscs"."DataStore"."CreatedBy" IS 'User or client ID who created the record';
 COMMENT ON COLUMN "dmscs"."DataStore"."LastModifiedAt" IS 'Timestamp when the record was last modified (UTC)';

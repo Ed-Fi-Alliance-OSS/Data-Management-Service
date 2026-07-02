@@ -5,7 +5,6 @@
 
 CREATE TABLE IF NOT EXISTS "dmscs"."ResourceClaim" (
     "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "TenantId" BIGINT,
     "ResourceName" VARCHAR(255) NOT NULL,
     "ClaimName" VARCHAR(255) NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -36,7 +35,6 @@ BEGIN
 END$$;
 
 COMMENT ON COLUMN "dmscs"."ResourceClaim"."Id" IS 'Resource Claim Identifier';
-COMMENT ON COLUMN "dmscs"."ResourceClaim"."TenantId" IS 'Tenant id';
 COMMENT ON COLUMN "dmscs"."ResourceClaim"."ResourceName" IS 'Resource Name';
 COMMENT ON COLUMN "dmscs"."ResourceClaim"."ClaimName" IS 'Claim Name';
 COMMENT ON COLUMN "dmscs"."ResourceClaim"."CreatedAt" IS 'Timestamp when the record was created (UTC)';

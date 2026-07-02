@@ -5,7 +5,6 @@
 
 CREATE TABLE IF NOT EXISTS "dmscs"."Vendor" (
     "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "TenantId" BIGINT,
     "Company" VARCHAR(256) NOT NULL,
     "ContactName" VARCHAR(128),
     "ContactEmailAddress" VARCHAR(320),
@@ -16,7 +15,6 @@ CREATE TABLE IF NOT EXISTS "dmscs"."Vendor" (
 );
 
 COMMENT ON COLUMN "dmscs"."Vendor"."Id" IS 'Vendor or company id';
-COMMENT ON COLUMN "dmscs"."Vendor"."TenantId" IS 'Tenant id';
 COMMENT ON COLUMN "dmscs"."Vendor"."Company" IS 'Vendor or company name';
 COMMENT ON COLUMN "dmscs"."Vendor"."ContactName" IS 'Vendor contact name';
 COMMENT ON COLUMN "dmscs"."Vendor"."ContactEmailAddress" IS 'Vendor contact email id';

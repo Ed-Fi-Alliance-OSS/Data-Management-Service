@@ -6,7 +6,6 @@
 CREATE TABLE IF NOT EXISTS "dmscs"."ClaimSet"
 (
     "Id" BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
-    "TenantId" BIGINT,
     "ClaimSetName" VARCHAR(256) NOT NULL,
     "IsSystemReserved" BOOLEAN NOT NULL,
     "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -38,9 +37,6 @@ END$$;
 
 COMMENT ON COLUMN "dmscs"."ClaimSet"."Id"
     IS 'ClaimSet id';
-
-COMMENT ON COLUMN "dmscs"."ClaimSet"."TenantId"
-    IS 'Tenant id';
 
 COMMENT ON COLUMN "dmscs"."ClaimSet"."ClaimSetName"
     IS 'Claim set name and must be unique';

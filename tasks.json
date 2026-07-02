@@ -491,6 +491,6 @@
       "rg -n 'ADD COLUMN \"TenantId\"|FK_(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim|DataStore)_Tenant|IX_(Vendor|ClaimSet|AuthorizationStrategy|ResourceClaim|DataStore)_TenantId' src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0025_Add_TenantId_To_Tables.sql",
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_CMS_PostgreSQL_database_shape\""
     ],
-    "completed": false
+    "completed": true
   }
 ]
