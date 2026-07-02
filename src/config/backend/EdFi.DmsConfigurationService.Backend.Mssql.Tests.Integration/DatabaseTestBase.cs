@@ -60,6 +60,7 @@ public abstract class DatabaseTestBase
                     new("dmscs", "claimshierarchy"),
                     new("dmscs", "datastore"),
                     new("dmscs", "datastorecontext"),
+                    new("dmscs", "tenant"),
                     new("dmscs", "openiddictapplication"),
                     new("dmscs", "openiddictapplicationscope"),
                     new("dmscs", "openiddictscope"),
