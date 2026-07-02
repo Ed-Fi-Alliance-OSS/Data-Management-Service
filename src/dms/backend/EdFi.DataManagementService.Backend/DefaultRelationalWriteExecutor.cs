@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
+    IEtagComposer etagComposer,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
@@ -52,7 +54,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         targetLookupResolver,
         currentStateLoader,
         currentEtagPreconditionChecker,
-        readMaterializer
+        etagComposer
     );
 
     private readonly RelationalWriteMergeOrchestrator _mergeOrchestrator = new(

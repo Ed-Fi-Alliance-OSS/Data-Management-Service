@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -51,14 +52,14 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
-    IRelationalReadMaterializer readMaterializer
+    IEtagComposer etagComposer
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
 
-    private readonly IRelationalReadMaterializer _readMaterializer =
-        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IEtagComposer _etagComposer =
+        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
 
     public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
         MappingSet mappingSet,
@@ -127,16 +128,18 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                request.ReadPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
+        // If-Match compares the state-significant projection of the composed etag (ContentVersion,
+        // schemaEpoch, profileCode). format and linkFlag are projected out; a DELETE carries no
+        // readable profile, so profileCode resolves to "no profile".
+        var currentEtag = _etagComposer.Compose(
+            currentState.DocumentMetadata.ContentVersion,
+            VariantKeyFactory.Create(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(null),
+                linksEnabled: true
             )
         );
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
         var refreshedTargetContext = request.TargetContext with
         {
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
@@ -146,7 +149,11 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             currentState,
             refreshedTargetContext,
             currentEtag,
-            string.Equals(request.Precondition.Value, currentEtag, StringComparison.Ordinal)
+            string.Equals(
+                EtagMatchProjection.Of(request.Precondition.Value),
+                EtagMatchProjection.Of(currentEtag),
+                StringComparison.Ordinal
+            )
         );
     }
 
