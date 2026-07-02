@@ -26,7 +26,7 @@ public class ProfileTests : DatabaseTest
         foreach (var name in names)
         {
             await Connection!.ExecuteAsync(
-                @"DELETE FROM dmscs.Profile WHERE ProfileName = @Name;",
+                @"DELETE FROM ""dmscs"".""Profile"" WHERE ""ProfileName"" = @Name;",
                 new { Name = name }
             );
         }

@@ -32,7 +32,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     private IClaimsUploadService _claimsUploadService = null!;
     private IResourceClaimMetadataRepository _resourceClaimMetadataRepository = null!;
 
-    // dmscs.ResourceClaim is a shared baseline that ClearClaimsTablesAsync does NOT clear (other
+    // "dmscs"."ResourceClaim" is a shared baseline that ClearClaimsTablesAsync does NOT clear (other
     // fixtures' projection-integrity checks depend on it). Snapshot it at setup and restore at
     // teardown so loader-path seeding tests never leak synthetic rows into that baseline.
     private IReadOnlyList<string> _resourceClaimBaseline = [];
@@ -161,7 +161,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     {
         await using var connection = await DataSource!.OpenConnectionAsync();
         IEnumerable<string> names = await connection.QueryAsync<string>(
-            "SELECT ClaimName FROM dmscs.ResourceClaim"
+            "SELECT \"ClaimName\" FROM \"dmscs\".\"ResourceClaim\""
         );
         return names.ToList();
     }
@@ -175,7 +175,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         await using var connection = await DataSource!.OpenConnectionAsync();
         await connection.ExecuteAsync(
-            "DELETE FROM dmscs.ResourceClaim WHERE ClaimName <> ALL(@Baseline)",
+            "DELETE FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" <> ALL(@Baseline)",
             new { Baseline = _resourceClaimBaseline.ToArray() }
         );
     }
@@ -196,7 +196,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         // Arrange
         await using var connection = await DataSource!.OpenConnectionAsync();
         await connection.ExecuteAsync(
-            "INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved) VALUES ('TestClaim', true)"
+            "INSERT INTO \"dmscs\".\"ClaimSet\" (\"ClaimSetName\", \"IsSystemReserved\") VALUES ('TestClaim', true)"
         );
 
         // Act
@@ -211,7 +211,9 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     {
         // Arrange
         await using var connection = await DataSource!.OpenConnectionAsync();
-        await connection.ExecuteAsync("INSERT INTO dmscs.ClaimsHierarchy (Hierarchy) VALUES ('[]'::jsonb)");
+        await connection.ExecuteAsync(
+            "INSERT INTO \"dmscs\".\"ClaimsHierarchy\" (\"Hierarchy\") VALUES ('[]'::jsonb)"
+        );
 
         // Act
         var result = await _claimsDataLoader.AreClaimsTablesEmptyAsync();
@@ -248,7 +250,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         await using (var arrangeConnection = await DataSource!.OpenConnectionAsync())
         {
             await arrangeConnection.ExecuteAsync(
-                "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+                "DELETE FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" LIKE @Prefix",
                 likeFilter
             );
         }
@@ -274,14 +276,14 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         await using var connection = await DataSource!.OpenConnectionAsync();
         var count = await connection.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            "SELECT COUNT(*) FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" LIKE @Prefix",
             likeFilter
         );
         Assert.That(count, Is.EqualTo(2));
 
         // Cleanup the synthetic rows so the shared test database is left clean.
         await connection.ExecuteAsync(
-            "DELETE FROM dmscs.ResourceClaim WHERE ClaimName LIKE @Prefix",
+            "DELETE FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" LIKE @Prefix",
             likeFilter
         );
     }
@@ -301,7 +303,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         await using (var arrange = await DataSource!.OpenConnectionAsync())
         {
             bool alreadySeeded = await arrange.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ResourceClaim WHERE ClaimName = @ClaimName)",
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" = @ClaimName)",
                 new { ClaimName = newClaimName }
             );
             Assert.That(
@@ -349,7 +351,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         await using var connection = await DataSource!.OpenConnectionAsync();
         string? seededResourceName = await connection.ExecuteScalarAsync<string?>(
-            "SELECT ResourceName FROM dmscs.ResourceClaim WHERE ClaimName = @ClaimName",
+            "SELECT \"ResourceName\" FROM \"dmscs\".\"ResourceClaim\" WHERE \"ClaimName\" = @ClaimName",
             new { ClaimName = newClaimName }
         );
         Assert.That(
@@ -437,7 +439,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         await using var connection = await DataSource!.OpenConnectionAsync();
         var loadedClaimSets = await connection.QueryAsync<string>(
-            "SELECT ClaimSetName FROM dmscs.ClaimSet ORDER BY ClaimSetName"
+            "SELECT \"ClaimSetName\" FROM \"dmscs\".\"ClaimSet\" ORDER BY \"ClaimSetName\""
         );
 
         foreach (var expectedClaimSet in expectedClaimSets)
@@ -481,7 +483,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         await using var connection = await DataSource!.OpenConnectionAsync();
         var systemReservedCount = await connection.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM dmscs.ClaimSet WHERE IsSystemReserved = true"
+            "SELECT COUNT(*) FROM \"dmscs\".\"ClaimSet\" WHERE \"IsSystemReserved\" = true"
         );
 
         // All claim sets in the default Claims.json are system reserved
@@ -571,7 +573,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             // Verify custom claim set is in database
             await using var connection = await DataSource!.OpenConnectionAsync();
             var customClaimExists = await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'CustomTestClaimSet')"
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'CustomTestClaimSet')"
             );
             Assert.That(customClaimExists, Is.True);
         }
@@ -627,7 +629,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             // Verify custom claim exists
             await using var connection = await DataSource!.OpenConnectionAsync();
             var customExists = await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'TempCustomClaimSet')"
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'TempCustomClaimSet')"
             );
             Assert.That(customExists, Is.True);
 
@@ -640,12 +642,12 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
             // Verify custom claim set is removed and standard ones are restored
             var customExistsAfterReload = await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'TempCustomClaimSet')"
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'TempCustomClaimSet')"
             );
             Assert.That(customExistsAfterReload, Is.False);
 
             var standardClaimExists = await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'SISVendor')"
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'SISVendor')"
             );
             Assert.That(standardClaimExists, Is.True);
         }
@@ -744,7 +746,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             // Verify custom claim set exists
             await using var connection = await DataSource!.OpenConnectionAsync();
             var customExists = await connection.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'HybridCustomClaimSet')"
+                "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'HybridCustomClaimSet')"
             );
             Assert.That(customExists, Is.True);
         }
@@ -856,13 +858,13 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
                 // Verify temp custom claim is removed
                 var tempCustomExists = await connection.ExecuteScalarAsync<bool>(
-                    "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'TempHybridClaimSet')"
+                    "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'TempHybridClaimSet')"
                 );
                 Assert.That(tempCustomExists, Is.False);
 
                 // Verify standard claims are restored
                 var standardClaimCount = await connection.ExecuteScalarAsync<int>(
-                    "SELECT COUNT(*) FROM dmscs.ClaimSet WHERE IsSystemReserved = true"
+                    "SELECT COUNT(*) FROM \"dmscs\".\"ClaimSet\" WHERE \"IsSystemReserved\" = true"
                 );
                 Assert.That(standardClaimCount, Is.EqualTo(EmbeddedClaimSetCount));
 
@@ -989,13 +991,13 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                 // Verify filesystem claim exists
                 await using var connection = await DataSource!.OpenConnectionAsync();
                 var filesystemClaimExists = await connection.ExecuteScalarAsync<bool>(
-                    "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'FilesystemOnlyClaimSet')"
+                    "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'FilesystemOnlyClaimSet')"
                 );
                 Assert.That(filesystemClaimExists, Is.True);
 
                 // Verify embedded claims are replaced
                 var embeddedClaimExists = await connection.ExecuteScalarAsync<bool>(
-                    "SELECT EXISTS(SELECT 1 FROM dmscs.ClaimSet WHERE ClaimSetName = 'SISVendor')"
+                    "SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = 'SISVendor')"
                 );
                 Assert.That(embeddedClaimExists, Is.False);
             }

@@ -45,8 +45,8 @@ public class ClaimSetRepository(
     private string ClaimSetWhereClause(string? tableAlias = null)
     {
         var isSystemReservedColumn = string.IsNullOrEmpty(tableAlias)
-            ? "IsSystemReserved"
-            : $"{tableAlias}.IsSystemReserved";
+            ? "\"IsSystemReserved\""
+            : $"{tableAlias}.\"IsSystemReserved\"";
         return $"({isSystemReservedColumn} = true OR {TenantContext.TenantWhereClause(tableAlias)})";
     }
 
@@ -95,8 +95,8 @@ public class ClaimSetRepository(
         try
         {
             string sql = $"""
-                SELECT Id, AuthorizationStrategyName, DisplayName
-                FROM dmscs.AuthorizationStrategy
+                SELECT "Id", "AuthorizationStrategyName", "DisplayName"
+                FROM "dmscs"."AuthorizationStrategy"
                 WHERE {TenantContext.TenantWhereClause()};
                 """;
 
@@ -105,9 +105,9 @@ public class ClaimSetRepository(
             var authStratResponse = authorizationStrategies
                 .Select(row => new AuthorizationStrategy
                 {
-                    Id = row.id,
-                    AuthorizationStrategyName = row.authorizationstrategyname,
-                    DisplayName = row.displayname,
+                    Id = row.Id,
+                    AuthorizationStrategyName = row.AuthorizationStrategyName,
+                    DisplayName = row.DisplayName,
                 })
                 .ToList();
 
@@ -129,9 +129,9 @@ public class ClaimSetRepository(
         try
         {
             string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                   INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved", "CreatedBy", "TenantId")
                    VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
-                   RETURNING Id;
+                   RETURNING "Id";
                 """;
 
             var parameters = new
@@ -148,7 +148,9 @@ public class ClaimSetRepository(
             return new ClaimSetInsertResult.Success(id);
         }
         catch (PostgresException ex)
-            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -167,9 +169,9 @@ public class ClaimSetRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "c.Id",
-        ["name"] = "c.ClaimSetName",
-        ["claimSetName"] = "c.ClaimSetName",
+        ["id"] = "c.\"Id\"",
+        ["name"] = "c.\"ClaimSetName\"",
+        ["claimSetName"] = "c.\"ClaimSetName\"",
     };
 
     private static string BuildOrderByClause(ClaimSetQuery query)
@@ -178,7 +180,7 @@ public class ClaimSetRepository(
         {
             return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
         }
-        return "ORDER BY c.Id";
+        return "ORDER BY c.\"Id\"";
     }
 
     private static string BuildFilterClause(ClaimSetQuery query)
@@ -186,11 +188,11 @@ public class ClaimSetRepository(
         var conditions = new List<string>();
         if (query.Id.HasValue)
         {
-            conditions.Add("c.Id = @Id");
+            conditions.Add("c.\"Id\" = @Id");
         }
         if (query.Name is not null)
         {
-            conditions.Add("c.ClaimSetName = @Name");
+            conditions.Add("c.\"ClaimSetName\" = @Name");
         }
         return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -203,14 +205,14 @@ public class ClaimSetRepository(
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query);
             string sql = $"""
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a
-                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
-                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                SELECT c."Id", c."ClaimSetName", c."IsSystemReserved"
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a."ApplicationName"))
+                        FROM "dmscs"."Application" a
+                        INNER JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                        WHERE a."ClaimSetName" = c."ClaimSetName" AND {TenantContext.TenantWhereClause(
                     "v"
-                )}) as applications
-                FROM dmscs.ClaimSet c
+                )}) AS "Applications"
+                FROM "dmscs"."ClaimSet" c
                 WHERE {ClaimSetWhereClause("c")}{filterClause}
                 {orderByClause}
                 {query.BuildPagingClause()};
@@ -231,10 +233,10 @@ public class ClaimSetRepository(
             var items = claimSets
                 .Select(row => new ClaimSetResponse
                 {
-                    Id = row.id,
-                    Name = row.claimsetname,
-                    IsSystemReserved = row.issystemreserved,
-                    Applications = ParseApplications(row.applications),
+                    Id = row.Id,
+                    Name = row.ClaimSetName,
+                    IsSystemReserved = row.IsSystemReserved,
+                    Applications = ParseApplications(row.Applications),
                 })
                 .ToList();
 
@@ -254,15 +256,15 @@ public class ClaimSetRepository(
         try
         {
             string sql = $"""
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a
-                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
-                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                SELECT c."Id", c."ClaimSetName", c."IsSystemReserved"
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a."ApplicationName"))
+                        FROM "dmscs"."Application" a
+                        INNER JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                        WHERE a."ClaimSetName" = c."ClaimSetName" AND {TenantContext.TenantWhereClause(
                     "v"
-                )}) as applications
-                FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {ClaimSetWhereClause("c")}
+                )}) AS "Applications"
+                FROM "dmscs"."ClaimSet" c
+                WHERE c."Id" = @Id AND {ClaimSetWhereClause("c")}
                 """;
 
             var claimSets = (
@@ -304,9 +306,9 @@ public class ClaimSetRepository(
         {
             // Get the current claim set (including system-reserved for proper error messages)
             string getClaimSetSql = $"""
-                SELECT ClaimSetName, IsSystemReserved
-                FROM dmscs.ClaimSet
-                WHERE Id = @Id AND {ClaimSetWhereClause()};
+                SELECT "ClaimSetName", "IsSystemReserved"
+                FROM "dmscs"."ClaimSet"
+                WHERE "Id" = @Id AND {ClaimSetWhereClause()};
                 """;
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
@@ -327,9 +329,9 @@ public class ClaimSetRepository(
             string? oldClaimSetName = existingClaimSet.claimSetName;
 
             string renameClaimSetSql = $"""
-                UPDATE dmscs.ClaimSet
-                SET ClaimSetName=@ClaimSetName, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                UPDATE "dmscs"."ClaimSet"
+                SET "ClaimSetName"=@ClaimSetName, "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             string newClaimSetName = command.Name;
@@ -354,11 +356,11 @@ public class ClaimSetRepository(
 
             // Update applications belonging to vendors in the same tenant
             string updateApplicationSql = $"""
-                UPDATE dmscs.Application a
-                SET ClaimSetName = @NewClaimSetName
-                FROM dmscs.Vendor v
-                WHERE a.VendorId = v.Id
-                  AND a.ClaimSetName = @OldClaimSetName
+                UPDATE "dmscs"."Application" a
+                SET "ClaimSetName" = @NewClaimSetName
+                FROM "dmscs"."Vendor" v
+                WHERE a."VendorId" = v."Id"
+                  AND a."ClaimSetName" = @OldClaimSetName
                   AND {TenantContext.TenantWhereClause("v")};
                 """;
 
@@ -432,7 +434,9 @@ public class ClaimSetRepository(
             return result;
         }
         catch (PostgresException ex)
-            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -518,9 +522,9 @@ public class ClaimSetRepository(
         {
             // Get the current claim set (including system-reserved for proper error messages)
             string getClaimSetSql = $"""
-                SELECT ClaimSetName, IsSystemReserved
-                FROM dmscs.ClaimSet
-                WHERE Id = @Id AND {ClaimSetWhereClause()};
+                SELECT "ClaimSetName", "IsSystemReserved"
+                FROM "dmscs"."ClaimSet"
+                WHERE "Id" = @Id AND {ClaimSetWhereClause()};
                 """;
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
@@ -541,7 +545,7 @@ public class ClaimSetRepository(
             }
 
             string sql = $"""
-                DELETE FROM dmscs.ClaimSet WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
+                DELETE FROM "dmscs"."ClaimSet" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()}
                 """;
             int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId }, transaction);
 
@@ -625,15 +629,15 @@ public class ClaimSetRepository(
         try
         {
             string sql = $"""
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a
-                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
-                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                SELECT c."Id", c."ClaimSetName", c."IsSystemReserved"
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a."ApplicationName"))
+                        FROM "dmscs"."Application" a
+                        INNER JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                        WHERE a."ClaimSetName" = c."ClaimSetName" AND {TenantContext.TenantWhereClause(
                     "v"
-                )}) as applications
-                FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {ClaimSetWhereClause("c")}
+                )}) AS "Applications"
+                FROM "dmscs"."ClaimSet" c
+                WHERE c."Id" = @Id AND {ClaimSetWhereClause("c")}
                 """;
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id, TenantId });
 
@@ -697,10 +701,10 @@ public class ClaimSetRepository(
         try
         {
             string insertSql = """
-                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved", "CreatedBy", "TenantId")
                 VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
-                ON CONFLICT (ClaimSetName) DO NOTHING
-                RETURNING Id, IsSystemReserved, TenantId;
+                ON CONFLICT ON CONSTRAINT "UX_ClaimSet_TenantId_ClaimSetName" DO NOTHING
+                RETURNING "Id", "IsSystemReserved", "TenantId";
                 """;
 
             var claimSet = await connection.QuerySingleOrDefaultAsync<ClaimSetImportLookupResult>(
@@ -717,15 +721,15 @@ public class ClaimSetRepository(
 
             if (claimSet is null)
             {
-                string existingSql = """
-                    SELECT Id, IsSystemReserved, TenantId
-                    FROM dmscs.ClaimSet
-                    WHERE ClaimSetName = @ClaimSetName;
+                string existingSql = $"""
+                    SELECT "Id", "IsSystemReserved", "TenantId"
+                    FROM "dmscs"."ClaimSet"
+                    WHERE "ClaimSetName" = @ClaimSetName AND {TenantContext.TenantWhereClause()};
                     """;
 
                 claimSet = await connection.QuerySingleOrDefaultAsync<ClaimSetImportLookupResult>(
                     existingSql,
-                    new { ClaimSetName = command.Name },
+                    new { ClaimSetName = command.Name, TenantId },
                     transaction
                 );
             }
@@ -768,7 +772,7 @@ public class ClaimSetRepository(
                 ),
             };
 
-            if (claimImportResult != null)
+            if (claimImportResult is not null)
             {
                 return claimImportResult;
             }
@@ -818,7 +822,7 @@ public class ClaimSetRepository(
 
                         success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
 
-                        if (success == null)
+                        if (success is null)
                         {
                             throw new Exception(
                                 "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
@@ -880,7 +884,9 @@ public class ClaimSetRepository(
             return new ClaimSetImportResult.Success(claimSetId, skippedClaims);
         }
         catch (PostgresException ex)
-            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -905,9 +911,9 @@ public class ClaimSetRepository(
         {
             // Include system-reserved claimsets so users can copy from them
             string selectSql = $"""
-                SELECT ClaimSetName, IsSystemReserved
-                FROM dmscs.ClaimSet
-                WHERE Id = @OriginalId AND {ClaimSetWhereClause()};
+                SELECT "ClaimSetName", "IsSystemReserved"
+                FROM "dmscs"."ClaimSet"
+                WHERE "Id" = @OriginalId AND {ClaimSetWhereClause()};
                 """;
 
             var originalClaimSet = await connection.QuerySingleOrDefaultAsync(
@@ -923,9 +929,9 @@ public class ClaimSetRepository(
             }
 
             string insertSql = """
-                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved", "CreatedBy", "TenantId")
                 VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             long newId = await connection.ExecuteScalarAsync<long>(
@@ -944,7 +950,7 @@ public class ClaimSetRepository(
             var copyResult = hierarchyResult switch
             {
                 ClaimsHierarchyGetResult.Success success => await CloneAndSaveHierarchy(
-                    (string)originalClaimSet.claimsetname,
+                    (string)originalClaimSet.ClaimSetName,
                     command.Name,
                     success.Claims,
                     success.LastModifiedDate,
@@ -973,7 +979,9 @@ public class ClaimSetRepository(
             return copyResult;
         }
         catch (PostgresException ex)
-            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_ClaimSet_TenantId_ClaimSetName"
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -1023,13 +1031,13 @@ public class ClaimSetRepository(
 
     private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
     {
-        var claimSetName = (string)row.claimsetname;
+        var claimSetName = (string)row.ClaimSetName;
         return new ClaimSetResponse
         {
-            Id = row.id,
+            Id = row.Id,
             Name = claimSetName,
-            IsSystemReserved = row.issystemreserved,
-            Applications = ParseApplications(row.applications),
+            IsSystemReserved = row.IsSystemReserved,
+            Applications = ParseApplications(row.Applications),
             ResourceClaims = BuildResourceClaims(claimSetName, hierarchy),
         };
     }

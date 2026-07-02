@@ -135,7 +135,8 @@ public class ClaimsDocumentRepository(
     {
         try
         {
-            const string Sql = "SELECT Id, Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
+            const string Sql =
+                "SELECT \"Id\", \"Hierarchy\", \"LastModifiedDate\" FROM \"dmscs\".\"ClaimsHierarchy\"";
 
             List<(long id, string hierarchyJson, DateTime lastModifiedDate)> hierarchyTuples = (
                 await connection.QueryAsync<(long id, string hierarchyJson, DateTime lastModifiedDate)>(
@@ -158,7 +159,7 @@ public class ClaimsDocumentRepository(
                 hierarchyTuples[0].hierarchyJson
             );
 
-            if (hierarchy == null)
+            if (hierarchy is null)
             {
                 return new ClaimsHierarchyGetResult.FailureUnknown(
                     "Unable to deserialize claim set hierarchy"
@@ -201,11 +202,11 @@ public class ClaimsDocumentRepository(
         NpgsqlTransaction transaction
     )
     {
-        const string Sql =
-            @"
-            DELETE FROM dmscs.ClaimSet
-            WHERE IsSystemReserved = false
-            RETURNING Id";
+        const string Sql = """
+            DELETE FROM "dmscs"."ClaimSet"
+            WHERE "IsSystemReserved" = false
+            RETURNING "Id"
+            """;
 
         IEnumerable<long> deletedIds = await connection.QueryAsync<long>(Sql, transaction: transaction);
         int deletedCount = deletedIds.Count();
@@ -233,18 +234,18 @@ public class ClaimsDocumentRepository(
             return 0;
         }
 
-        const string InsertSql =
-            @"
-            INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+        const string InsertSql = """
+            INSERT INTO "dmscs"."ClaimSet" ("ClaimSetName", "IsSystemReserved")
             VALUES (@ClaimSetName, @IsSystemReserved)
-            ON CONFLICT (ClaimSetName) DO NOTHING
-            RETURNING Id";
+            ON CONFLICT ON CONSTRAINT "UX_ClaimSet_TenantId_ClaimSetName" DO NOTHING
+            RETURNING "Id"
+            """;
 
         int insertedCount = 0;
 
         foreach (JsonNode? claimSetNode in claimSetsArray)
         {
-            if (claimSetNode == null)
+            if (claimSetNode is null)
             {
                 continue;
             }
@@ -309,7 +310,7 @@ public class ClaimsDocumentRepository(
                 _jsonSerializerOptions
             );
 
-            if (claims == null)
+            if (claims is null)
             {
                 logger.LogWarning("Failed to deserialize claims hierarchy");
                 return false;
@@ -319,12 +320,12 @@ public class ClaimsDocumentRepository(
 
             // Since we already retrieved the hierarchy at the beginning of the transaction,
             // we know it exists. Use optimistic concurrency control with ID and timestamp.
-            const string UpdateSql =
-                @"
-                UPDATE dmscs.ClaimsHierarchy
-                SET hierarchy = @Hierarchy::jsonb,
-                    lastmodifieddate = now()
-                WHERE id = @Id AND lastmodifieddate = @LastModifiedDate";
+            const string UpdateSql = """
+                UPDATE "dmscs"."ClaimsHierarchy"
+                SET "Hierarchy" = @Hierarchy::jsonb,
+                    "LastModifiedDate" = now()
+                WHERE "Id" = @Id AND "LastModifiedDate" = @LastModifiedDate
+                """;
 
             int affectedRows = await connection.ExecuteAsync(
                 UpdateSql,

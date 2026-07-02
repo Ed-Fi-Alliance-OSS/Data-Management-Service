@@ -35,18 +35,18 @@ public abstract class DatabaseTestBase
             {
                 TablesToInclude =
                 [
-                    new("dmscs", "vendor"),
-                    new("dmscs", "vendornamespaceprefix"),
-                    new("dmscs", "application"),
-                    new("dmscs", "applicationeducationorganization"),
-                    new("dmscs", "apiclient"),
-                    new("dmscs", "apiclientdatastore"),
-                    new("dmscs", "claimset"),
-                    new("dmscs", "claimshierarchy"),
-                    new("dmscs", "datastore"),
-                    new("dmscs", "datastorecontext"),
-                    new("dmscs", "openiddictapplication"),
-                    new("dmscs", "openiddictapplicationscope"),
+                    new("dmscs", "Vendor"),
+                    new("dmscs", "VendorNamespacePrefix"),
+                    new("dmscs", "Application"),
+                    new("dmscs", "ApplicationEducationOrganization"),
+                    new("dmscs", "ApiClient"),
+                    new("dmscs", "ApiClientDataStore"),
+                    new("dmscs", "ClaimSet"),
+                    new("dmscs", "ClaimsHierarchy"),
+                    new("dmscs", "DataStore"),
+                    new("dmscs", "DataStoreContext"),
+                    new("dmscs", "OpenIddictApplication"),
+                    new("dmscs", "OpenIddictApplicationScope"),
                 ],
                 DbAdapter = DbAdapter.Postgres,
             }
@@ -73,8 +73,8 @@ public abstract class DatabaseTestBase
     protected async Task ClearClaimsTablesAsync()
     {
         await using var connection = await DataSource!.OpenConnectionAsync();
-        await connection.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
-        await connection.ExecuteAsync("DELETE FROM dmscs.ClaimSet");
+        await connection.ExecuteAsync("DELETE FROM \"dmscs\".\"ClaimsHierarchy\"");
+        await connection.ExecuteAsync("DELETE FROM \"dmscs\".\"ClaimSet\"");
     }
 
     /// <summary>
@@ -83,9 +83,11 @@ public abstract class DatabaseTestBase
     protected async Task<(int claimSetCount, int hierarchyCount)> GetClaimsTableCountsAsync()
     {
         await using var connection = await DataSource!.OpenConnectionAsync();
-        var claimSetCount = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dmscs.ClaimSet");
+        var claimSetCount = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM \"dmscs\".\"ClaimSet\""
+        );
         var hierarchyCount = await connection.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM dmscs.ClaimsHierarchy"
+            "SELECT COUNT(*) FROM \"dmscs\".\"ClaimsHierarchy\""
         );
         return (claimSetCount, hierarchyCount);
     }
@@ -106,7 +108,7 @@ public abstract class DatabaseTestBase
     {
         await using var connection = await DataSource!.OpenConnectionAsync();
         return await connection.QueryAsync<string>(
-            "SELECT ClaimSetName FROM dmscs.ClaimSet ORDER BY ClaimSetName"
+            "SELECT \"ClaimSetName\" FROM \"dmscs\".\"ClaimSet\" ORDER BY \"ClaimSetName\""
         );
     }
 
@@ -117,7 +119,7 @@ public abstract class DatabaseTestBase
     {
         await using var connection = await DataSource!.OpenConnectionAsync();
         var count = await connection.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM dmscs.ClaimSet WHERE ClaimSetName = @claimSetName",
+            "SELECT COUNT(*) FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = @claimSetName",
             new { claimSetName }
         );
         return count > 0;

@@ -45,3 +45,9 @@ DMS-1244 - completed CMS PostgreSQL OpenIddict install-script quoted identifier 
 - Files changed: OpenIddict deploy scripts 0012-0019, tasks.json, progress.txt.
 - Verification: old OpenIddict lowercase/old-name guard clean; psql throwaway db on localhost:5435 applied all deploy scripts twice and found 8 OpenIddict tables plus expected PK/UX/FK and IX_OpenIddictToken_* objects; exact task dotnet test filter ran but matched no tests; git diff --check clean.
 - Notes: OpenIddict repository SQL still uses unquoted dmscs.OpenIddict* names and remains the next OpenIddict-specific repository task.
+
+DMS-1244 - completed CMS PostgreSQL core repository quoted identifier task.
+- Key decisions: quote core dmscs schema/table/column/order identifiers in repository SQL; update tenant predicate helper to emit quoted TenantId predicates; move ClaimSet/ResourceClaim import conflict paths to tenant-aware UX_* constraints.
+- Files changed: core CMS PostgreSQL repositories, claims-loader SQL helpers, TenantContextExtensions, affected PostgreSQL integration test direct SQL, tasks.json, progress.txt.
+- Verification: csharpier on changed CMS backend/test files; repository unquoted/old-name guards clean; Backend.Tests.Unit passed 321/321; PostgreSQL integration passed 234/234 excluding the known OpenIddictDataRepository case; full PostgreSQL integration passed 234/235 with only dmscs.openiddictapplication failure from next OpenIddict repository task.
+- Notes: local edfi_configurationservice test DB needed dmscs schema and public."dmscs_SchemaVersions" reset after stale lowercase/PascalCase mix; next task should quote OpenIddictDataRepository/OpenIddictTokenRepository.

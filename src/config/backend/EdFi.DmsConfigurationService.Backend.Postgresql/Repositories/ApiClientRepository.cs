@@ -32,9 +32,9 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
                 VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             long apiClientId = await connection.ExecuteScalarAsync<long>(
@@ -54,7 +54,7 @@ public class ApiClientRepository(
             if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
@@ -72,13 +72,15 @@ public class ApiClientRepository(
             await transaction.CommitAsync();
             return new ApiClientInsertResult.Success(apiClientId);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_application"))
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClient_Application"))
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureApplicationNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
@@ -97,13 +99,13 @@ public class ApiClientRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "Id",
-        ["applicationId"] = "ApplicationId",
-        ["name"] = "Name",
+        ["id"] = "\"Id\"",
+        ["applicationId"] = "\"ApplicationId\"",
+        ["name"] = "\"Name\"",
     };
 
     private static string ResolveOrderByColumn(ApiClientQuery query) =>
-        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "Id";
+        query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col) ? col : "\"Id\"";
 
     private static string BuildOrderByClause(ApiClientQuery query)
     {
@@ -116,7 +118,7 @@ public class ApiClientRepository(
         var conditions = new List<string>();
         if (query.ApplicationId.HasValue)
         {
-            conditions.Add("ApplicationId = @ApplicationId");
+            conditions.Add("\"ApplicationId\" = @ApplicationId");
         }
         return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -132,10 +134,10 @@ public class ApiClientRepository(
             string outerCol = ResolveOrderByColumn(query);
             string direction = query.IsDescending ? "DESC" : "ASC";
             string sql = $"""
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DataStoreId
-                FROM (SELECT * FROM dmscs.ApiClient {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
-                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
+                SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       acd."DataStoreId"
+                FROM (SELECT * FROM "dmscs"."ApiClient" {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
+                LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 ORDER BY ac.{outerCol} {direction};
                 """;
 
@@ -143,7 +145,7 @@ public class ApiClientRepository(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -184,18 +186,18 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DataStoreId
-                FROM dmscs.ApiClient ac
-                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                WHERE ac.ClientId = @ClientId;
+                SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       acd."DataStoreId"
+                FROM "dmscs"."ApiClient" ac
+                LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
+                WHERE ac."ClientId" = @ClientId;
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -215,7 +217,7 @@ public class ApiClientRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApiClient != null
+            return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
                 : new ApiClientGetResult.FailureNotFound();
         }
@@ -233,18 +235,18 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DataStoreId
-                FROM dmscs.ApiClient ac
-                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
-                WHERE ac.Id = @Id;
+                SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       acd."DataStoreId"
+                FROM "dmscs"."ApiClient" ac
+                LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
+                WHERE ac."Id" = @Id;
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -264,7 +266,7 @@ public class ApiClientRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApiClient != null
+            return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
                 : new ApiClientGetResult.FailureNotFound();
         }
@@ -283,7 +285,7 @@ public class ApiClientRepository(
         try
         {
             // Check if ApiClient exists
-            string checkSql = "SELECT COUNT(1) FROM dmscs.ApiClient WHERE Id = @Id;";
+            string checkSql = "SELECT COUNT(1) FROM \"dmscs\".\"ApiClient\" WHERE \"Id\" = @Id;";
             int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { command.Id }, transaction);
             if (exists == 0)
             {
@@ -293,11 +295,11 @@ public class ApiClientRepository(
 
             // Update ApiClient record
             string updateSql = """
-                UPDATE dmscs.ApiClient
-                SET ApplicationId = @ApplicationId, Name = @Name, IsApproved = @IsApproved,
-                    ClientUuid = COALESCE(@ClientUuid, ClientUuid),
-                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id;
+                UPDATE "dmscs"."ApiClient"
+                SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
+                    "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
+                    "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
+                WHERE "Id" = @Id;
                 """;
 
             await connection.ExecuteAsync(
@@ -316,14 +318,14 @@ public class ApiClientRepository(
             );
 
             // Delete existing data store mappings
-            string deleteSql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @Id;";
+            string deleteSql = "DELETE FROM \"dmscs\".\"ApiClientDataStore\" WHERE \"ApiClientId\" = @Id;";
             await connection.ExecuteAsync(deleteSql, new { command.Id }, transaction);
 
             // Insert new data store mappings
             if (command.DataStoreIds.Length > 0)
             {
                 string insertSql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
@@ -341,13 +343,15 @@ public class ApiClientRepository(
             await transaction.CommitAsync();
             return new ApiClientUpdateResult.Success();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_application"))
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClient_Application"))
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientUpdateResult.FailureApplicationNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
@@ -369,7 +373,7 @@ public class ApiClientRepository(
         try
         {
             // Check if ApiClient exists
-            string checkSql = "SELECT COUNT(1) FROM dmscs.ApiClient WHERE Id = @Id;";
+            string checkSql = "SELECT COUNT(1) FROM \"dmscs\".\"ApiClient\" WHERE \"Id\" = @Id;";
             int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { Id = id }, transaction);
             if (exists == 0)
             {
@@ -378,11 +382,12 @@ public class ApiClientRepository(
             }
 
             // Delete data store mappings first (due to foreign key constraint)
-            string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @Id;";
+            string deleteMappingsSql =
+                "DELETE FROM \"dmscs\".\"ApiClientDataStore\" WHERE \"ApiClientId\" = @Id;";
             await connection.ExecuteAsync(deleteMappingsSql, new { Id = id }, transaction);
 
             // Delete ApiClient record
-            string deleteSql = "DELETE FROM dmscs.ApiClient WHERE Id = @Id;";
+            string deleteSql = "DELETE FROM \"dmscs\".\"ApiClient\" WHERE \"Id\" = @Id;";
             await connection.ExecuteAsync(deleteSql, new { Id = id }, transaction);
 
             await transaction.CommitAsync();
