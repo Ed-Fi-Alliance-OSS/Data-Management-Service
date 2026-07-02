@@ -27,9 +27,14 @@ param (
     $IdentityProvider="self-contained"
 )
 
+Import-Module ./env-utility.psm1 -Force
+$envValues = ReadValuesFromEnvFile $EnvironmentFile
+$datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
+$databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+
 $files = @(
     "-f",
-    "postgresql.yml",
+    $databaseComposeFile,
     "-f",
     "local-config.yml",
     "-f",
@@ -64,8 +69,6 @@ else {
         }
     }
     # Identity provider configuration
-    Import-Module ./env-utility.psm1 -Force
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
     $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
     $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
     Write-Output "Identity Provider $IdentityProvider"
@@ -107,15 +110,17 @@ else {
     {
     	Write-Output "Starting self-contained initialization script..."
         Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+        $dbType = if ($datastore -eq "mssql") { "MSSQL" } else { "Postgresql" }
+        $dbUser = if ($datastore -eq "mssql") { "sa" } else { "postgres" }
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser
     }
 }

@@ -12,6 +12,7 @@ Feature: DataStoreDerivatives endpoints
                   }
                   """
 
+        @MssqlRepresentative
         Scenario: 02 Ensure clients can create a dataStoreDerivative with ReadReplica type
              When a POST request is made to "/v3/dataStoreDerivatives" with
                   """

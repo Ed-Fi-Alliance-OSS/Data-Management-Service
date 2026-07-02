@@ -7,17 +7,24 @@
 set -e
 set +x
 
-# Safely extract a few environment variables from the admin connection string
-host=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-port=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-username=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+datastore=$(echo "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
-until pg_isready -h ${host} -p ${port} -U ${username}; do
-  echo "Waiting for PostgreSQL to start..."
-  sleep 2
-done
+if [ "$datastore" = "postgresql" ]; then
+  # Safely extract a few environment variables from the admin connection string
+  host=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+  port=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+  username=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
-echo "PostgreSQL is ready."
+  until pg_isready -h ${host} -p ${port} -U ${username}; do
+    echo "Waiting for PostgreSQL to start..."
+    sleep 2
+  done
+
+  echo "PostgreSQL is ready."
+else
+  echo "Datastore is '$datastore'; skipping the PostgreSQL readiness check."
+fi
+
 echo "Running EdFi.DmsConfigurationService.Frontend.AspNetCore..."
 dotnet EdFi.DmsConfigurationService.Frontend.AspNetCore.dll
 

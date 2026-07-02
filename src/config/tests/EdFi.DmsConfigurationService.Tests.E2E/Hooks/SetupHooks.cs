@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Tests.E2E.Management;
+using Microsoft.Data.SqlClient;
 using Npgsql;
 using Reqnroll;
 
@@ -16,6 +17,17 @@ public static class SetupHooks
     private const string PgAdminPassword = "abcdefgh1!";
     private const ushort DbPortExternal = 5435;
     private const string DatabaseName = "edfi_configurationservice";
+
+    private const string MssqlSaUser = "sa";
+    private const string MssqlSaPassword = "abcdefgh1!";
+    private const ushort MssqlDbPortExternal = 1435;
+
+    private static bool UseMssql =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("DMS_CONFIG_DATASTORE"),
+            "mssql",
+            StringComparison.OrdinalIgnoreCase
+        );
 
     // HTTP Basic auth on /connect/token is only supported in self-contained
     // (OpenIddict) mode; keycloak mode expects credentials in the form body. Scope
@@ -53,41 +65,82 @@ public static class SetupHooks
     {
         try
         {
-            var hostConnectionString =
-                $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
-            using var conn = new NpgsqlConnection(hostConnectionString);
-            await conn.OpenAsync();
-
-            // Delete in reverse dependency order
-            await DeleteData(@"""dmscs"".""DataStoreContext""");
-            await DeleteData(@"""dmscs"".""DataStore""");
-            await DeleteData(@"""dmscs"".""ApiClientDataStore""");
-            await DeleteData(@"""dmscs"".""ApiClient""");
-            await DeleteData(@"""dmscs"".""Application""");
-            await DeleteData(@"""dmscs"".""Vendor""");
-            // Clean up test-created claimsets (not system-reserved ones)
-            await DeleteTestClaimSets();
-
-            async Task DeleteData(string tableName)
+            if (!UseMssql)
             {
-                var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);
-                await deleteRefCmd.ExecuteNonQueryAsync();
+                var hostConnectionString =
+                    $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
+                using var conn = new NpgsqlConnection(hostConnectionString);
+                await conn.OpenAsync();
+
+                // Delete in reverse dependency order
+                await DeleteData(@"""dmscs"".""DataStoreContext""");
+                await DeleteData(@"""dmscs"".""DataStore""");
+                await DeleteData(@"""dmscs"".""ApiClientDataStore""");
+                await DeleteData(@"""dmscs"".""ApiClient""");
+                await DeleteData(@"""dmscs"".""Application""");
+                await DeleteData(@"""dmscs"".""Vendor""");
+                // Clean up test-created claimsets (not system-reserved ones)
+                await DeleteTestClaimSets();
+
+                async Task DeleteData(string tableName)
+                {
+                    var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);
+                    await deleteRefCmd.ExecuteNonQueryAsync();
+                }
+
+                async Task DeleteTestClaimSets()
+                {
+                    // Delete only non-system-reserved claimsets created by tests
+                    var deleteTestClaimSetsCmd = new NpgsqlCommand(
+                        """
+                        DELETE FROM "dmscs"."ClaimSet"
+                        WHERE "ClaimSetName" IN ('TestClaimSet1', 'TestClaimSet2', 'TestClaimSet3',
+                                              'TestClaimSet4', 'AcademicHonorClaimSet',
+                                              'NewClaimSet', 'ImportedClaimSet')
+                        AND "IsSystemReserved" = false;
+                        """,
+                        conn
+                    );
+                    await deleteTestClaimSetsCmd.ExecuteNonQueryAsync();
+                }
             }
-
-            async Task DeleteTestClaimSets()
+            else
             {
-                // Delete only non-system-reserved claimsets created by tests
-                var deleteTestClaimSetsCmd = new NpgsqlCommand(
-                    """
-                    DELETE FROM "dmscs"."ClaimSet"
-                    WHERE "ClaimSetName" IN ('TestClaimSet1', 'TestClaimSet2', 'TestClaimSet3',
-                                          'TestClaimSet4', 'AcademicHonorClaimSet',
-                                          'NewClaimSet', 'ImportedClaimSet')
-                    AND "IsSystemReserved" = false;
-                    """,
-                    conn
-                );
-                await deleteTestClaimSetsCmd.ExecuteNonQueryAsync();
+                var mssqlConnectionString =
+                    $"Server=localhost,{MssqlDbPortExternal};User Id={MssqlSaUser};Password={MssqlSaPassword};TrustServerCertificate=true;Database={DatabaseName};";
+                using var conn = new SqlConnection(mssqlConnectionString);
+                await conn.OpenAsync();
+
+                // Delete in reverse dependency order
+                await DeleteData("dmscs.DataStoreContext");
+                await DeleteData("dmscs.DataStore");
+                await DeleteData("dmscs.ApiClientDataStore");
+                await DeleteData("dmscs.ApiClient");
+                await DeleteData("dmscs.Application");
+                await DeleteData("dmscs.Vendor");
+                // Clean up test-created claimsets (not system-reserved ones)
+                await DeleteTestClaimSets();
+
+                async Task DeleteData(string tableName)
+                {
+                    var deleteRefCmd = new SqlCommand($"DELETE FROM {tableName};", conn);
+                    await deleteRefCmd.ExecuteNonQueryAsync();
+                }
+
+                async Task DeleteTestClaimSets()
+                {
+                    // Delete only non-system-reserved claimsets created by tests
+                    var deleteTestClaimSetsCmd = new SqlCommand(
+                        @"
+                        DELETE FROM dmscs.ClaimSet
+                        WHERE ClaimSetName IN ('TestClaimSet1', 'TestClaimSet2', 'TestClaimSet3',
+                                              'TestClaimSet4', 'AcademicHonorClaimSet',
+                                              'NewClaimSet', 'ImportedClaimSet')
+                        AND IsSystemReserved = 0;",
+                        conn
+                    );
+                    await deleteTestClaimSetsCmd.ExecuteNonQueryAsync();
+                }
             }
         }
         catch (Exception)

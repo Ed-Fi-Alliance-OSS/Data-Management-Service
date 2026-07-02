@@ -40,6 +40,7 @@ Feature: Vendors endpoints
                       }]
                   """
 
+        @MssqlRepresentative
         Scenario: 02 Ensure clients can create a vendor
              When a POST request is made to "/v3/vendors" with
                   """
@@ -69,6 +70,7 @@ Feature: Vendors endpoints
                   }
                   """
 
+        @MssqlRepresentative
         Scenario: 03 Verify retrieving a single vendor by ID
              When a POST request is made to "/v3/vendors" with
                   """

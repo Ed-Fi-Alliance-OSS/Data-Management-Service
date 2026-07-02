@@ -102,7 +102,15 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained"
+    $IdentityProvider="self-contained",
+
+    # Environment file for the E2E docker-compose stack
+    [string]
+    $EnvironmentFile = "./.env.config.e2e",
+
+    # Optional dotnet test --filter expression applied to E2E test runs
+    [string]
+    $E2ETestFilter = ""
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
@@ -215,7 +223,11 @@ function RunTests {
         $Filter,
 
         [string]
-        $IdentityProvider
+        $IdentityProvider,
+
+        # Optional dotnet test --filter expression
+        [string]
+        $TestFilter
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
@@ -253,13 +265,20 @@ function RunTests {
             $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
             $trx = "$testResults/$fileNameNoExt"
 
+            $filterArgs = @()
+            if (-not [string]::IsNullOrEmpty($TestFilter)) {
+                $filterArgs += "--filter"
+                $filterArgs += "$TestFilter"
+            }
+
             Invoke-Execute {
                 dotnet test $target `
                     --no-build `
                     --no-restore `
                     --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
-                    --nologo
+                    --nologo `
+                    @filterArgs
             }
         }
     }
@@ -274,7 +293,7 @@ function IntegrationTests {
 }
 
 function RunE2E {
-    Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
+    Invoke-Execute { RunTests -Filter "*.Tests.E2E" -TestFilter $E2ETestFilter }
 }
 
 function E2ETests {
@@ -289,10 +308,16 @@ function E2ETests {
         try {
             Push-Location eng/docker-compose/
             if ($SkipDockerBuild) {
-                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider
             }
             else {
-                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider
+            }
+
+            Import-Module ./env-utility.psm1 -Force
+            $envValues = ReadValuesFromEnvFile $EnvironmentFile
+            if ($envValues["DMS_CONFIG_DATASTORE"]) {
+                $env:DMS_CONFIG_DATASTORE = $envValues["DMS_CONFIG_DATASTORE"]
             }
         }
         finally {

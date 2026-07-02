@@ -32,6 +32,7 @@ Feature: DataStores endpoints
                       }]
                   """
 
+        @MssqlRepresentative
         Scenario: 02 Ensure clients can create a dataStore
              When a POST request is made to "/v3/dataStores" with
                   """

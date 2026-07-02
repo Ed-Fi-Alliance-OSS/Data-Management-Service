@@ -160,6 +160,7 @@ Feature: Applications endpoints
                       }]
                   """
 
+        @MssqlRepresentative
         Scenario: 02 Ensure clients can POST and GET application
              When a POST request is made to "/v3/applications" with
                   """

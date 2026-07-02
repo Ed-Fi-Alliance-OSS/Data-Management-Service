@@ -4,6 +4,7 @@ Feature: ResourceClaims endpoints
             Given valid credentials
               And token received
 
+        @MssqlRepresentative
         Scenario: 01 Ensure clients can GET resource claims list
              When a GET request is made to "/v3/resourceClaims"
              Then it should respond with 200
@@ -19,6 +20,7 @@ Feature: ResourceClaims endpoints
              Then it should respond with 200
               And the response body is a non-empty array
 
+        @MssqlRepresentative
         Scenario: 04 Ensure clients can GET a resource claim by ID
              When a GET request is made to "/v3/resourceClaims/1"
              Then it should respond with 200

@@ -382,11 +382,16 @@ function Invoke-DbQuery {
         $user = $params['User Id']
         $password = Resolve-EnvValue $DbPassword
 
-        $escapedSql = $Sql.Replace('"', '\"')
-        $execCmd = 'docker exec {0} /opt/mssql-tools18/bin/sqlcmd -S localhost -U {1} -P "{2}" -d {3} -C -h -1 -W -Q "{4}"' -f $MssqlContainerName, $user, $password, $db, $escapedSql
-
         Write-Verbose "Executing sqlcmd against $MssqlContainerName"
-        Invoke-Expression $execCmd
+        # Invoke docker directly (no Invoke-Expression) so the SQL travels as one
+        # argument with no shell re-parsing; -b makes sqlcmd exit nonzero on SQL
+        # errors so failures throw instead of leaking error text into results;
+        # -I sets QUOTED_IDENTIFIER ON, required by XML data type methods.
+        $output = docker exec $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -P $password -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "sqlcmd failed (exit $LASTEXITCODE): $output"
+        }
+        return $output
     }
     else {
         Write-Error "Unsupported database type: $($script:DbType)"
