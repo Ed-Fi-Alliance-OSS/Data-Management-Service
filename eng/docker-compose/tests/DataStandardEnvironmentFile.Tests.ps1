@@ -153,4 +153,24 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         { Resolve-DataStandardEnvironmentFile -DataStandardVersion "9.9" -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot } |
             Should -Throw "*no overlay for data standard version '9.9'*"
     }
+
+    It "composes a prefixed overlay and reflects the prefix in the derived name" {
+        # The bootstrap wrapper passes -OverlayPrefix ".env.bootstrap" to select the
+        # local-bootstrap surfaces; the derived file name carries the prefix segment so both
+        # derivations coexist under .derived/.
+        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.bootstrap.ds61") -Value "DMS_CONFIG_DATA_STANDARD_VERSION=6.1`nSCHEMA_PACKAGES='[]'`n" -NoNewline
+
+        $result = Resolve-DataStandardEnvironmentFile -DataStandardVersion "6.1" -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -OverlayPrefix ".env.bootstrap"
+
+        [System.IO.Path]::GetFileName($result) | Should -Be ".env.base.bootstrap.ds61"
+        $values = ReadValuesFromEnvFile $result
+        $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+    }
+
+    It "fails fast when the prefixed overlay is missing without falling back to the shared overlay" {
+        # .env.ds61 exists in the fixture, but the bootstrap prefix must not silently fall back
+        # to the shared E2E-surface overlay.
+        { Resolve-DataStandardEnvironmentFile -DataStandardVersion "6.1" -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -OverlayPrefix ".env.bootstrap" } |
+            Should -Throw "*no overlay for data standard version '6.1'*"
+    }
 }

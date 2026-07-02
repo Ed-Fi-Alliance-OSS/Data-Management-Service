@@ -56,16 +56,25 @@ RUN version_args=""; \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25d6c60672e74b21bb6334f1402f71bae2d2cf02307163cd AS runtimebase
 
-# Install OpenSSL on the 3.5 line and runtime helpers
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8
+# Install OpenSSL on the 3.5 line and runtime helpers. icu-libs is required by
+# Microsoft.Data.SqlClient (the MSSQL backend), which does not support Globalization
+# Invariant Mode; the Alpine base image otherwise ships without ICU.
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8 icu-libs
 
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
+# Microsoft.Data.SqlClient (MSSQL backend) does not support Globalization Invariant Mode,
+# which the Alpine base image enables by default. ICU is installed in runtimebase above.
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 WORKDIR /app
 
 COPY --from=build /app/Frontend/*.dll ./
+# runtimes/ exists in the publish output because Microsoft.Data.SqlClient (via Backend.Mssql)
+# ships RID-specific assets; its Linux implementation loads from runtimes/unix/. If the Mssql
+# backend reference is ever removed from the Frontend project, this COPY will fail the build.
+COPY --from=build /app/Frontend/runtimes/ ./runtimes/
 COPY --from=build /app/Frontend/ApiSchema/ ./ApiSchema/
 COPY --from=build /app/Frontend/*.pdb ./
 COPY --from=build /app/Frontend/appsettings.json ./

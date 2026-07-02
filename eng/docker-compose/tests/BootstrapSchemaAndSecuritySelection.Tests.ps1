@@ -313,7 +313,7 @@ exit $ExitCode
         New-FixtureNupkgForSchema `
             -FeedFolder $feedFolder `
             -PackageId "EdFi.DataStandard52.ApiSchema" `
-            -Version "1.0.329" `
+            -Version "1.0.332" `
             -ProjectName "Ed-Fi" `
             -ProjectEndpointName "ed-fi" `
             -IsExtensionProject $false | Out-Null
@@ -324,7 +324,7 @@ exit $ExitCode
             New-FixtureNupkgForSchema `
                 -FeedFolder $feedFolder `
                 -PackageId "EdFi.DataStandard52.$title.ApiSchema" `
-                -Version "1.0.329" `
+                -Version "1.0.332" `
                 -ProjectName $title `
                 -ProjectEndpointName $lower `
                 -IsExtensionProject $true | Out-Null
@@ -594,11 +594,25 @@ exit $ExitCode
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
         }
 
-        It "requires caller-supplied claims for unmapped extensions such as TPDM" {
+        It "treats TPDM as a known embedded-claims extension requiring no fragment or caller claims" {
+            # TPDM's claims hierarchy ships embedded in the CMS base claims (ds52 Claims.json),
+            # so unlike Sample/Homograph the catalog maps it with NO FragmentFileName: the claims
+            # phase must succeed without a caller-supplied ClaimsDirectoryPath and stage nothing.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("TPDM"))
 
+            Invoke-PrepareClaim
+            $manifest = Get-RootManifest
+
+            $manifest.claims.mode | Should -Be "Embedded"
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Count |
+                Should -Be 0
+        }
+
+        It "requires caller-supplied claims for unmapped custom extensions" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Contoso"))
+
             { Invoke-PrepareClaim } |
-                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*TPDM*"
+                Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Contoso*"
         }
 
         It "stages caller fragments and records expected verification checks with the fragment's raw resource name" {
@@ -1646,6 +1660,32 @@ exit 0
                     $content = Get-Content -LiteralPath $_.FullName -Raw
                     $content | Should -Not -Match $legacyDmsEnvironmentVariablePattern -Because "$($_.Name) must not reintroduce the legacy DMS backend selection or startup provisioning surface"
                 }
+        }
+
+        It "tracked env files and the schema catalog agree on a single ApiSchema package version" {
+            # The ApiSchema package version pin is duplicated across every env file's
+            # SCHEMA_PACKAGES value and the catalog's core fallback pin. A missed file during a
+            # version bump silently runs a mixed package set (or, on the catalog fallback path,
+            # provisions a schema whose effective hash mismatches the runtime). Tracked files
+            # only: local untracked .env copies are developer state, not repo contract.
+            $trackedEnvFiles = @(git -C $script:sourceDockerComposeRoot ls-files ".env*" 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $trackedEnvFiles.Count -eq 0) {
+                Set-ItResult -Skipped -Because "git is unavailable or returned no tracked env files"
+                return
+            }
+
+            $versions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+            foreach ($fileName in $trackedEnvFiles) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Raw
+                foreach ($match in [regex]::Matches($content, '"version"\s*:\s*"([0-9.]+)"')) {
+                    $null = $versions.Add($match.Groups[1].Value)
+                }
+            }
+
+            $versions.Count | Should -Be 1 -Because "every env file's SCHEMA_PACKAGES entries must pin the same ApiSchema package version (found: $($versions -join ', '))"
+
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+            (Get-StandardCorePackage).Version | Should -Be @($versions)[0] -Because "the catalog core fallback pin must match the env files' SCHEMA_PACKAGES version"
         }
 
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {

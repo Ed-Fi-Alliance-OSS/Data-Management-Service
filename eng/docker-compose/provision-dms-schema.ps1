@@ -7,13 +7,15 @@
 
 <#
 .SYNOPSIS
-    DMS-1151 schema provisioning phase (PostgreSQL-only).
+    Schema provisioning phase. Supports PostgreSQL and SQL Server data stores.
 .DESCRIPTION
     Invokes SchemaTools against each distinct effective target database from the
-    selected CMS instances. Hard-codes --dialect pgsql; MSSQL keysets are rejected
-    by Resolve-TargetDialect with an actionable error. MSSQL targets are out of
-    scope for DMS-1151; revisit if/when the bootstrap epic adds MSSQL support in
-    a successor story.
+    selected CMS instances. The dialect (--dialect pgsql|mssql) is auto-detected from
+    the shape of the data store connection string CMS hands back: PostgreSQL uses
+    host/database/username keys, SQL Server uses Server/Database/User Id keys. The
+    Docker-internal database host is translated to the host-side mapped port before
+    SchemaTools runs (dms-postgresql -> localhost:POSTGRES_PORT,
+    dms-mssql -> localhost,MSSQL_PORT).
 
     See command-boundaries.md Section 3.5 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -284,21 +286,99 @@ function Resolve-TargetDialect {
         $Builder
     )
 
-    # DMS-916 / DMS-1151 currently provisions only PostgreSQL. Reject MSSQL-style key sets
-    # early so an inadvertent provider mismatch surfaces with an actionable error rather
-    # than a cryptic SchemaTools failure.
-    $mssqlMarkers = @("server", "initial catalog", "user id", "trusted_connection")
+    # The data store connection string CMS hands back determines the dialect: SQL Server uses
+    # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
+    # username. SchemaTools provisions both (dms-schema ddl provision --dialect pgsql|mssql).
+    $mssqlMarkers = @("server", "data source", "initial catalog", "user id", "trusted_connection")
     foreach ($marker in $mssqlMarkers) {
         if ($Builder.ContainsKey($marker)) {
-            throw "CMS data store connection string uses MSSQL-style key '$(Format-LogSafeText $marker)'. Only PostgreSQL provisioning is supported."
+            return "mssql"
         }
     }
 
-    if (-not $Builder.ContainsKey("host") -and -not $Builder.ContainsKey("server")) {
-        throw "CMS data store connection string is missing a host key. Cannot determine the provisioning dialect."
+    if (-not $Builder.ContainsKey("host")) {
+        throw "CMS data store connection string is missing both a PostgreSQL 'host' key and any SQL Server key. Cannot determine the provisioning dialect."
     }
 
     return "pgsql"
+}
+
+function Convert-MssqlCmsConnectionStringToHostSideTarget {
+    <#
+    .SYNOPSIS
+    Builds an effective host-side SQL Server provisioning target from a CMS-stored data store
+    connection string. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
+    host-side localhost,MSSQL_PORT while preserving the user, password, database, and every
+    other stored option. A non-Docker server (e.g. an external SQL Server configured per
+    instance) is preserved as-is.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $EnvValues
+    )
+
+    # SQL Server accepts either Database or Initial Catalog for the database name.
+    $databaseName = Get-ConnectionStringValue -Builder $Builder -Keys @("database", "initial catalog")
+    if ([string]::IsNullOrWhiteSpace($databaseName)) {
+        throw "CMS data store connection string did not contain a database name."
+    }
+
+    $server = Get-ConnectionStringValue -Builder $Builder -Keys @("server", "data source")
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw "CMS data store connection string is missing the server key."
+    }
+
+    $instanceUser = Get-ConnectionStringValue -Builder $Builder -Keys @("user id", "uid")
+    if ([string]::IsNullOrWhiteSpace($instanceUser)) {
+        throw "CMS data store connection string is missing the user id key."
+    }
+
+    # SQL Server encodes host and port together as "host,port" (and named instances as
+    # "host\instance"). Split off the host to decide whether this is the Docker-internal target.
+    $serverHost = ($server -split ',')[0].Trim()
+
+    $effectiveServer = $server
+    if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1433"
+        $effectiveServer = "localhost,$mssqlPort"
+    }
+
+    # Mutate only the server; every other stored option (password, TrustServerCertificate,
+    # Encrypt, a password containing ';' or '=', etc.) is carried through verbatim and correctly
+    # re-quoted by the builder. Set whichever server key the source used so we never duplicate it.
+    $serverKey = if ($Builder.ContainsKey("data source")) { "data source" } else { "server" }
+    Set-ConnectionStringValue -Builder $Builder -Key $serverKey -Value $effectiveServer
+
+    $hostConnectionString = $Builder.get_ConnectionString()
+
+    # The port is encoded inside the server value for SQL Server; surface it for the summary.
+    $effectivePort =
+        if ($effectiveServer -match ',') { (($effectiveServer -split ',', 2)[1]).Trim() }
+        else { "1433" }
+
+    # TargetKey identifies an effective provisioning target so two instances pointing at the same
+    # physical database share a single SchemaTools invocation. The server value already encodes
+    # host + port.
+    $targetKey = ("{0}|{1}|{2}|{3}" -f
+        "mssql",
+        $effectiveServer.ToLowerInvariant(),
+        $databaseName.ToLowerInvariant(),
+        $instanceUser.ToLowerInvariant())
+
+    return [pscustomobject]@{
+        Dialect = "mssql"
+        Host = $effectiveServer
+        Port = $effectivePort
+        Username = $instanceUser
+        DatabaseName = $databaseName
+        HostConnectionString = $hostConnectionString
+        TargetKey = $targetKey
+    }
 }
 
 function Convert-CmsConnectionStringToHostSideTarget {
@@ -308,7 +388,8 @@ function Convert-CmsConnectionStringToHostSideTarget {
     connection string. Translates the Docker-internal PostgreSQL hostname/port to the host-side
     mapped port while preserving the instance-specific username, password, and database name.
     Non-Docker hosts (e.g. external PostgreSQL servers configured per instance) are preserved
-    as-is.
+    as-is. SQL Server connection strings are dispatched to
+    Convert-MssqlCmsConnectionStringToHostSideTarget.
     #>
     param(
         [Parameter(Mandatory)]
@@ -323,8 +404,11 @@ function Convert-CmsConnectionStringToHostSideTarget {
     $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
     $dialect = Resolve-TargetDialect -Builder $builder
 
-    # initial catalog is an MSSQL marker already rejected by Resolve-TargetDialect, so the
-    # surviving PostgreSQL keys are database / host / username.
+    if ($dialect -eq "mssql") {
+        return Convert-MssqlCmsConnectionStringToHostSideTarget -Builder $builder -EnvValues $EnvValues
+    }
+
+    # PostgreSQL path: the surviving keys are database / host / username.
     $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
         throw "CMS data store connection string did not contain a database name."
@@ -608,7 +692,11 @@ function Invoke-DmsSchemaProvision {
         $ConnectionString,
 
         [string]
-        $DatabaseName
+        $DatabaseName,
+
+        [ValidateSet("pgsql", "mssql")]
+        [string]
+        $Dialect = "pgsql"
     )
 
     $arguments = @("ddl", "provision")
@@ -617,7 +705,7 @@ function Invoke-DmsSchemaProvision {
     }
     $arguments += @(
         "--connection-string", $ConnectionString,
-        "--dialect", "pgsql",
+        "--dialect", $Dialect,
         "--create-database"
     )
 
@@ -856,7 +944,8 @@ function Invoke-ProvisionDmsSchema {
             -ToolPath $schemaTool `
             -SchemaPaths $schemaPaths `
             -ConnectionString $target.HostConnectionString `
-            -DatabaseName $target.DatabaseName
+            -DatabaseName $target.DatabaseName `
+            -Dialect $target.Dialect
 
         $null = $provisionedTargets.Add([pscustomobject]@{
             DatabaseName = $target.DatabaseName

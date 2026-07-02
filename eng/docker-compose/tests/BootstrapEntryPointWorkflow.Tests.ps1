@@ -54,7 +54,13 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
 
             foreach ($fileName in @(
                 "bootstrap-wrapper.psm1",
-                "bootstrap-local-dms.ps1"
+                "bootstrap-local-dms.ps1",
+                # The wrapper always composes the local-bootstrap data-standard overlay
+                # (default 5.2) onto the base env via env-utility, so every wrapper
+                # invocation needs the utility module and the overlay files.
+                "env-utility.psm1",
+                ".env.bootstrap.ds52",
+                ".env.bootstrap.ds61"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
@@ -661,6 +667,120 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             $condition = $guardMatch.Groups["condition"].Value
             $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+        }
+    }
+
+    Context "MSSQL datastore engine compose selection (DMS-1238)" {
+        It "start-local-dms.ps1 declares a -DatabaseEngine parameter validated to postgresql/mssql" {
+            $params = Get-DeclaredScriptParameters -Path (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            )
+            $params | Should -Contain "DatabaseEngine"
+
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+            $startScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]'
+        }
+
+        It "start-local-dms.ps1 always includes postgresql.yml (CMS + identity stay on PostgreSQL)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*"postgresql\.yml"'
+        }
+
+        It "start-local-dms.ps1 composes mssql.yml only under the mssql engine guard" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'if \(\$DatabaseEngine -eq "mssql"\)\s*\{[^}]*\$files \+= @\("-f", "mssql\.yml"\)'
+        }
+
+        It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+        }
+    }
+
+    Context "Bootstrap -DataStandardVersion local surface selection" {
+        It "bootstrap entry points declare -DataStandardVersion validated to 5.2/6.1 defaulting to 5.2" {
+            foreach ($name in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $params = Get-DeclaredScriptParameters -Path (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                )
+                $params | Should -Contain "DataStandardVersion"
+
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                ) -Raw
+                $source | Should -Match '\[ValidateSet\("5\.2",\s*"6\.1"\)\]\s*\[string\]\$DataStandardVersion = "5\.2"'
+            }
+        }
+
+        It "the wrapper declares the same validated 5.2 default (defaults do not cross PSBoundParameters)" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            $wrapperSource | Should -Match '\[ValidateSet\("5\.2",\s*"6\.1"\)\]\s*\[string\]\$DataStandardVersion = "5\.2"'
+        }
+
+        It "the wrapper composes the local-bootstrap overlay into the gitignored .derived directory" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            # env-utility must be imported inside the composition block: the wrapper's other
+            # env-utility imports live inside helper functions that run AFTER this block.
+            $wrapperSource | Should -Match '(?s)Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force\s*\$baseEnvFile = Resolve-DataStandardEnvironmentFile'
+            $wrapperSource | Should -Match '-DataStandardVersion \$DataStandardVersion'
+            $wrapperSource | Should -Match '-OverlayPrefix "\.env\.bootstrap"'
+        }
+
+        It "the wrapper never forwards -DataStandardVersion to a start script" {
+            # The start scripts' own -DataStandardVersion composes the SHARED .env.ds<NN> overlays
+            # (E2E/SDK surfaces including Sample/Homograph); forwarding it would re-compose that
+            # surface over the local-bootstrap derived env. The start phases must receive the
+            # derived file via -EnvironmentFile only.
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            $wrapperSource | Should -Not -Match '(startArgs|healthWaitArgs|dmsStartArgs)\.DataStandardVersion'
+            $wrapperSource | Should -Not -Match '(startArgs|healthWaitArgs|dmsStartArgs)\["DataStandardVersion"\]'
+        }
+
+        It "local-bootstrap overlays carry the minimal surfaces: DS 5.2 core+TPDM, DS 6.1 core only" {
+            $ds52Overlay = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot ".env.bootstrap.ds52"
+            ) -Raw
+            $ds61Overlay = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot ".env.bootstrap.ds61"
+            ) -Raw
+
+            $ds52Names = @([regex]::Matches($ds52Overlay, '"name":"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+            $ds52Names | Should -Be @("EdFi.DataStandard52.ApiSchema", "EdFi.DataStandard52.TPDM.ApiSchema")
+
+            $ds61Names = @([regex]::Matches($ds61Overlay, '"name":"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+            $ds61Names | Should -Be @("EdFi.DataStandard61.ApiSchema")
+
+            $ds52Overlay | Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2$'
+            $ds61Overlay | Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=6\.1$'
+
+            # Single-line SCHEMA_PACKAGES keeps overlay composition trivial (base multi-line block
+            # is removed wholesale before the overlay is appended).
+            $ds52SchemaLines = @($ds52Overlay -split "`n" | Where-Object { $_ -match "^SCHEMA_PACKAGES=" })
+            $ds52SchemaLines.Count | Should -Be 1
+            $ds52SchemaLines[0] | Should -Match "\]'\s*$"
+            $ds61SchemaLines = @($ds61Overlay -split "`n" | Where-Object { $_ -match "^SCHEMA_PACKAGES=" })
+            $ds61SchemaLines.Count | Should -Be 1
+            $ds61SchemaLines[0] | Should -Match "\]'\s*$"
         }
     }
 

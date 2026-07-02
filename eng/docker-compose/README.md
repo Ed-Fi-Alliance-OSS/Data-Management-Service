@@ -20,10 +20,11 @@ start up different configurations:
 1. `kafka.yml` covers Kafka
 2. `kafka-ui.yml` covers KafkaUI
 3. `postgresql.yml` starts only PostgreSQL
-4. `local-dms.yml` runs the DMS from local source code.
-5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-6. `keycloak.yml` runs KeyCloak (identity provider).
-7. `swagger-ui.yml` covers SwaggerUI
+4. `mssql.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
+5. `local-dms.yml` runs the DMS from local source code.
+6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+7. `keycloak.yml` runs KeyCloak (identity provider).
+8. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -133,6 +134,74 @@ image from source code.
 ./start-local-dms.ps1 -r
 ```
 
+## Running on the MSSQL backend
+
+The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
+`-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
+`start-local-dms.ps1` (infrastructure), together with the MSSQL environment file:
+
+```pwsh
+# Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -EnableSwaggerUI -LoadSeedData
+
+# Tear down (delete volumes)
+./start-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -d -v
+```
+
+`mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
+image used in CI, publishing port `1433`. Defaults (`MSSQL_SA_PASSWORD`, `MSSQL_PORT`,
+`MSSQL_DB_NAME`) live in `.env.mssql.relational`.
+
+A few things are specific to the MSSQL path:
+
+* **It is dual-database.** Only the DMS datastore moves to SQL Server. The Configuration
+  Service and the self-contained (OpenIddict) identity provider have no MSSQL backend and
+  continue to run on PostgreSQL, so `-DatabaseEngine mssql` composes **both** `mssql.yml`
+  (DMS) and `postgresql.yml` (CMS + identity). `DMS_CONFIG_DATASTORE` stays `postgresql`.
+* **Relational backend only.** MSSQL is supported through the relational backend
+  (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
+  which auto-detects the SQL Server dialect from the data-store connection string and invokes
+  `dms-schema ddl provision --dialect mssql --create-database`.
+* **No Debezium CDC.** The relational backend serves both writes and queries directly from
+  SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
+* **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
+  it is database-engine agnostic.
+
+After the stack is up, run the smoke tests the same way as for PostgreSQL:
+
+```pwsh
+../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
+```
+
+## Selecting a Data Standard version (bootstrap)
+
+`bootstrap-local-dms.ps1` (and `bootstrap-published-dms.ps1`) accept `-DataStandardVersion` to
+select the Data Standard without hand-editing environment files. The wrapper composes a
+local-bootstrap overlay (`.env.bootstrap.ds52` / `.env.bootstrap.ds61`) onto `-EnvironmentFile`
+(derived file written to the gitignored `.derived/`), and every phase — schema staging, claims,
+provisioning, and the DMS container itself — runs from the composed result:
+
+```pwsh
+# DS 5.2 (core + TPDM) on MSSQL
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 5.2 -EnableSwaggerUI
+
+# DS 6.1 (core only; TPDM is folded into core in 6.1) on MSSQL
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 6.1 -EnableSwaggerUI
+```
+
+Notes:
+
+* **Surfaces are minimal by design**: DS 5.2 stages core + TPDM; DS 6.1 stages core only. These
+  local-bootstrap overlays are deliberately distinct from the shared `.env.ds52` / `.env.ds61`
+  overlays used by the *start scripts'* `-DataStandardVersion`, which carry the E2E/SDK surfaces
+  (including the Sample/Homograph test extensions required by CI).
+* `-DataStandardVersion` defaults to `5.2` and the overlay is **always** composed — every
+  bootstrap run goes through the same canonical surface regardless of the base env file's own
+  `SCHEMA_PACKAGES` value.
+* **Always tear down (`-d -v -RemoveBootstrap`) before switching Data Standard versions** — the
+  provisioned database and staged workspace are version-specific, and DMS refuses to start
+  against a database whose effective schema hash does not match.
+
 ## Schema Selection
 
 DMS supports two modes for staging the ApiSchema bootstrap workspace. Both modes produce the
@@ -188,11 +257,12 @@ elsewhere).
 ```
 
 > [!NOTE]
-> Legacy `SCHEMA_PACKAGES` entries (unqualified IDs such as `EdFi.Sample.ApiSchema` at
-> `1.0.328`) may still appear in `.env*` files during the migration. Those entries are NOT the
-> standard-mode selector. Standard mode resolves the DS-qualified asset-only core package
-> (`EdFi.DataStandard52.ApiSchema` at `1.0.329`) and DMS consumes the staged `.bootstrap/ApiSchema`
-> workspace — `SCHEMA_PACKAGES` is ignored by standard mode.
+> Standard mode is driven by the effective env file's `SCHEMA_PACKAGES` value: prepare resolves
+> and stages every listed package (core plus any extensions, each at its own pinned version) so
+> the staged `.bootstrap/ApiSchema` workspace's effective schema hash matches what the DMS
+> container downloads at startup. Only when prepare runs without an env file (direct diagnostic
+> invocation with no `-EnvironmentFile`, or an env file lacking `SCHEMA_PACKAGES`) does it fall
+> back to the catalog-pinned core-only default (`EdFi.DataStandard52.ApiSchema` at `1.0.332`).
 
 ### Expert mode (filesystem)
 
