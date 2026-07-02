@@ -193,8 +193,10 @@ pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
 It prints the **API key/secret** for the single-tenant app and each tenant — record them in your
 **private** vault / credentials doc, **never** in this repo (`docs/infrastructure.md` is tracked).
 
-After bootstrap, provision the relational schema (dms-schema; see `provision/README.md`), then
-start the DMS services: `./up.sh st-dms mt-dms`. They reach `/health` 200 once the schema exists.
+After bootstrap, stage the ApiSchema workspace into `compose/.bootstrap/ApiSchema` and provision
+the relational schema (dms-schema; see `provision/README.md` "What `setup-env.ps1` does NOT do"),
+then start the DMS services: `./up.sh st-dms mt-dms` (it refuses while the workspace is unstaged).
+They reach `/health` 200 once the schema exists.
 
 ---
 

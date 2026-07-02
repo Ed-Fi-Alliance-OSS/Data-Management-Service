@@ -30,9 +30,10 @@ x-dms-common-env: &dms-common-env
   # Advertised OAuth token endpoint: DMS echoes this value verbatim into the Discovery API
   # (urls.oauth) and the OpenAPI security scheme (tokenUrl), so it MUST be reachable by external
   # clients -- hence the PUBLIC Keycloak URL via the gateway /auth route, not an internal hostname.
-  # It is also the /oauth/token proxy's forward target; that proxy now hairpins to the public URL
-  # (so it only works with a publicly-trusted cert) -- clients should authenticate against this
-  # Keycloak URL directly. JWT validation is unaffected (it uses JwtAuthentication__MetadataAddress).
+  # It is also the /oauth/token proxy's forward target; that forward resolves in-network (the
+  # gateway carries a ${PUBLIC_HOST} network alias) and trusts the gateway cert via SSL_CERT_FILE
+  # below, so it works with the self-signed cert too. JWT validation is unaffected (it uses
+  # JwtAuthentication__MetadataAddress).
   AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
   AppSettings__DeployDatabaseOnStartup: "false"  # DMS data DBs are provisioned out-of-band by the dms-schema tool, not on startup
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
@@ -63,6 +64,9 @@ x-dms-common-env: &dms-common-env
   JwtAuthentication__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   JwtAuthentication__ClientRole: "dms-client"
   JwtAuthentication__ClockSkewSeconds: "30"
+  # Trust the (possibly self-signed) gateway cert for the /oauth/token proxy forward above;
+  # see the note on the same variable in the CMS block.
+  SSL_CERT_FILE: "/gateway-tls/server.crt"
 
 # ---------------------------------------------------------------------------
 # Shared Configuration Service environment.
@@ -81,6 +85,13 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__AllowRegistration: "false"
   IdentitySettings__ConfigServiceRole: "cms-client"
   IdentitySettings__ClientRole: "dms-client"
+  # CMS derives BOTH its JWT metadata address and its Keycloak backchannel base URL (token +
+  # admin API calls) from this Authority -- unlike DMS there is no internal-metadata override,
+  # and it must stay the PUBLIC URL because token issuer validation compares it to the `iss`
+  # Keycloak mints from KC_HOSTNAME. So the public URL has to be reachable AND trusted from
+  # inside the CMS containers: the gateway's ${PUBLIC_HOST} network alias resolves it in-network,
+  # and SSL_CERT_FILE (below) trusts the gateway cert even when it is self-signed. Without both,
+  # CMS token validation and Keycloak admin calls fail before bootstrap can create anything.
   IdentitySettings__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
   IdentitySettings__Audience: "${DMS_JWT_AUDIENCE:-account}"
   IdentitySettings__ClientId: "${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}"
@@ -101,6 +112,10 @@ x-cms-common-env: &cms-common-env
   # configured source into an already-populated config DB). Keep "false" for the review;
   # flip to "true" only to refresh claims (e.g. after pulling a newer image), then back.
   ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: "${DMS_CONFIG_ENABLE_CLAIMS_RELOAD:-false}"
+  # OpenSSL (and therefore .NET) adds this file as an extra CA anchor without displacing the
+  # image's default CA directory, so the self-signed gateway cert is trusted for the in-network
+  # calls to https://${PUBLIC_HOST}/auth/... described above. Harmless with a Let's Encrypt cert.
+  SSL_CERT_FILE: "/gateway-tls/server.crt"
   Serilog__MinimumLevel__Default: "${DMS_CONFIG_LOG_LEVEL:-Information}"
 
 x-app-defaults: &app-defaults
@@ -152,6 +167,7 @@ services:
       ConfigurationServiceSettings__BaseUrl: "http://st-config:8081"
     volumes:
       - ./.bootstrap/ApiSchema:/app/ApiSchema:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -172,6 +188,7 @@ services:
       DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st_config;"
     volumes:
       - ./claims:/app/additional-claims:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -198,6 +215,7 @@ services:
       ConfigurationServiceSettings__BaseUrl: "http://mt-config:8081"
     volumes:
       - ./.bootstrap/ApiSchema:/app/ApiSchema:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -218,6 +236,7 @@ services:
       DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt_config;"
     volumes:
       - ./claims:/app/additional-claims:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -263,7 +282,15 @@ services:
       - st-config
       - mt-dms
       - mt-config
-    networks: [dms-sec]
+    # Alias the public hostname to the gateway INSIDE the Docker network: CMS/DMS backchannel
+    # calls to https://${PUBLIC_HOST}/auth/... resolve straight to the gateway instead of
+    # hairpinning through the VM's public IP, and local names that don't resolve externally
+    # still work in-network. (Inert for PUBLIC_HOST=localhost -- /etc/hosts wins there; see
+    # the note in .env.example.)
+    networks:
+      dms-sec:
+        aliases:
+          - "${PUBLIC_HOST:-localhost}"
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
 

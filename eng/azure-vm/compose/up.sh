@@ -23,5 +23,21 @@ if [ ! -f ssl/server.crt ]; then
   ./ssl/generate-certificate.sh "${PUBLIC_HOST:-localhost}"
 fi
 
+# The DMS services bind-mount ./.bootstrap/ApiSchema at /app/ApiSchema and read the API schema
+# exclusively from there. Docker auto-creates the directory empty if it was never staged, and a
+# DMS booted against an empty schema directory fails startup/health -- refuse before that happens.
+starts_dms=false
+if [ "$#" -eq 0 ]; then
+  starts_dms=true
+else
+  case " $* " in *" st-dms "* | *" mt-dms "*) starts_dms=true ;; esac
+fi
+if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json' 2>/dev/null | grep -q .; then
+  echo "ERROR: .bootstrap/ApiSchema is missing or has no staged schema files, so the DMS services cannot start."
+  echo "Stage it first: eng/docker-compose/prepare-dms-schema.ps1 writes eng/docker-compose/.bootstrap/ApiSchema;"
+  echo "copy that folder to compose/.bootstrap/ApiSchema. See ../docs/infrastructure.md 'Provisioning method'."
+  exit 1
+fi
+
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d "$@"
 echo "Started. For first-time stand-up order (bootstrap + schema before the DMS services), see provision/README.md."

@@ -145,14 +145,21 @@ Order used to stand the environment up (and that a re-deploy should follow):
    keycloak.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin
    gateway`). `postgres/init-databases.sh` creates the empty databases. (Bare `./up.sh` starts the
    **full** stack including the DMS — only safe once bootstrap + schema already exist, e.g. a restart.)
-2. **Provision the relational schema** into each DMS data DB (`edfi_st`, `edfi_mt`,
-   `edfi_mt_t2`) with the `dms-schema` tool, against the same `ApiSchema.json` that is
-   mounted into the DMS containers. (`dms-schema` is build-from-source — see issue 5.)
-3. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
+2. **Stage the ApiSchema workspace** at `compose/.bootstrap/ApiSchema`:
+   `eng/docker-compose/prepare-dms-schema.ps1` writes the normalized workspace to
+   `eng/docker-compose/.bootstrap/ApiSchema` (it needs the `dms-schema` tool — see issue 5);
+   copy that folder to `eng/azure-vm/compose/.bootstrap/ApiSchema`. The DMS services mount it
+   read-only at `/app/ApiSchema` and will not start without it — if it were never staged, Docker
+   would create the mount empty and DMS would fail startup/health, so `setup-env.ps1 -StartDms`
+   and `up.sh` refuse to start the DMS services until it contains staged schema files.
+3. **Provision the relational schema** into each DMS data DB (`edfi_st`, `edfi_mt`,
+   `edfi_mt_t2`) with the `dms-schema` tool, against the same staged ApiSchema workspace that
+   is mounted into the DMS containers.
+4. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
    tenants / data stores, and the review applications. This **must run before the DMS
    services start** (issue 3).
-4. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
-5. **Seed data:**
+5. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
+6. **Seed data:**
    - **single-tenant** (`edfi_st`): API bulk-load (ODS BulkLoadClient), descriptors first
      then resources; or restore a *relational* populated template via `seed/grandbend.sh`.
    - **multi-tenant** (`edfi_mt` = tenant1, `edfi_mt_t2` = tenant2): API bulk-load works directly

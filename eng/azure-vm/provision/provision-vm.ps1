@@ -26,7 +26,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-function Invoke-Az { param([string[]]$Args) az @Args; if ($LASTEXITCODE -ne 0) { throw "az $($Args -join ' ') failed ($LASTEXITCODE)" } }
+# Parameter must NOT be named $Args: in a simple function the automatic $args variable
+# (unbound arguments -- empty here) overwrites a bound parameter of that name after binding,
+# so `az @Args` would splat nothing and every call would run bare `az`.
+function Invoke-Az { param([string[]]$AzArgs) az @AzArgs; if ($LASTEXITCODE -ne 0) { throw "az $($AzArgs -join ' ') failed ($LASTEXITCODE)" } }
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw "Azure CLI (az) not found. Install it and run 'az login'." }
 az account show -o none 2>$null; if ($LASTEXITCODE -ne 0) { throw "Not logged in. Run 'az login' first." }

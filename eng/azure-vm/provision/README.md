@@ -41,8 +41,10 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 
 `setup-env.ps1` generates secrets into `.env`, obtains the TLS cert (omit `-LetsEncryptEmail` for
 self-signed), starts identity + CMS, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants,
-data stores, the review apps). It does **not** start the DMS services — provision the relational
-schema (below), then start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`).
+data stores, the review apps). It does **not** start the DMS services — stage the ApiSchema
+workspace and provision the relational schema (below), then start them with
+`setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`); both refuse to start the DMS services
+while `compose/.bootstrap/ApiSchema` is unstaged.
 Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
 Re-running `setup-env.ps1` is safe: secrets are written only when `.env` is first created (pass
@@ -72,6 +74,12 @@ skips bootstrap, so it only starts the DMS services.
 `setup-env.ps1` automates only the VM-side secrets/cert/start/bootstrap. The rest is manual per
 [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed):
 
+- **ApiSchema workspace** — the DMS services mount `compose/.bootstrap/ApiSchema` read-only at
+  `/app/ApiSchema` and read the API schema exclusively from there. Stage it with
+  `eng/docker-compose/prepare-dms-schema.ps1` (writes `eng/docker-compose/.bootstrap/ApiSchema`;
+  copy that folder to `compose/.bootstrap/ApiSchema`). `-StartDms` and `up.sh` refuse to start the
+  DMS services while it is unstaged — Docker would otherwise mount it empty and DMS would fail
+  startup/health even with the databases provisioned.
 - **Relational schema** — the DMS runs `DeployDatabaseOnStartup=false`; provision each data DB with
   `dms-schema` (build-from-source; publishing it is **OPT-2**, unfiled), **or** restore the relational
   populated template (**DMS-1159**, e.g. `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).

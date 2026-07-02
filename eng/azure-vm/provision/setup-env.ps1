@@ -18,7 +18,9 @@
 # ⚠️ GAP: this does NOT provision the relational schema (dms-schema), stage
 #    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
 #    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
-#    provision the schema, then start them with -StartDms (or `./up.sh st-dms mt-dms`).
+#    stage the ApiSchema workspace, provision the schema, then start them with -StartDms (or
+#    `./up.sh st-dms mt-dms`) -- both refuse to start the DMS services while
+#    compose/.bootstrap/ApiSchema is unstaged, since Docker would silently mount it empty.
 #    See provision/README.md "What setup-env.ps1 does NOT do" and docs/infrastructure.md
 #    "Provisioning method".
 #
@@ -84,8 +86,18 @@ function Set-EnvValue([string]$File, [string]$Key, [string]$Value) {
 # --- 1. repo ----------------------------------------------------------------
 if (-not (Test-Path $RepoDir)) {
     if (-not $RepoUrl) { throw "RepoDir '$RepoDir' not found and no -RepoUrl provided. Clone the repo first (see provision/README.md)." }
-    Write-Host "Cloning $RepoUrl -> $RepoDir" -ForegroundColor Cyan
-    git clone $RepoUrl $RepoDir
+    # $RepoDir is the eng/azure-vm folder INSIDE the repo, so the clone target is the repo root
+    # above it. Cloning straight into $RepoDir would nest this folder at $RepoDir/eng/azure-vm
+    # and the compose-dir check below would fail.
+    $cloneRoot = ($RepoDir -replace '\\', '/').TrimEnd('/') -replace '/eng/azure-vm$', ''
+    Write-Host "Cloning $RepoUrl -> $cloneRoot" -ForegroundColor Cyan
+    git clone $RepoUrl $cloneRoot
+    if ($LASTEXITCODE -ne 0) { throw "git clone of '$RepoUrl' failed ($LASTEXITCODE)." }
+    if (-not (Test-Path (Join-Path $RepoDir "compose"))) {
+        # A custom -RepoDir that doesn't follow the .../eng/azure-vm shape was cloned into
+        # directly; point $RepoDir at the deployment folder inside the fresh clone.
+        $RepoDir = Join-Path $cloneRoot "eng/azure-vm"
+    }
 }
 $composeDir = Join-Path $RepoDir "compose"
 if (-not (Test-Path $composeDir)) { throw "compose dir not found at $composeDir" }
@@ -203,11 +215,23 @@ try {
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
     # The DMS data DBs use the relational backend and are provisioned OUT OF BAND with the
-    # dms-schema tool (docs/infrastructure.md "Provisioning method", step 2). This script does
+    # dms-schema tool (docs/infrastructure.md "Provisioning method", step 3). This script does
     # NOT provision schema, so by default it does not start the DMS services -- a DMS booted
     # against an unprovisioned data DB will not pass /health. Provision the schema, then re-run
     # with -StartDms (or `./up.sh st-dms mt-dms`).
     if ($StartDms) {
+        # The DMS services bind-mount ./.bootstrap/ApiSchema at /app/ApiSchema and read the API
+        # schema exclusively from there (AppSettings__UseApiSchemaPath=true). Docker auto-creates
+        # the directory empty if it was never staged, and a DMS booted against an empty schema
+        # directory fails startup/health even with the databases provisioned -- so refuse early.
+        $apiSchemaDir = Join-Path $composeDir ".bootstrap/ApiSchema"
+        $apiSchemaStaged = (Test-Path $apiSchemaDir) -and
+            @(Get-ChildItem $apiSchemaDir -Recurse -File -Filter "*.json" -ErrorAction SilentlyContinue).Count -gt 0
+        if (-not $apiSchemaStaged) {
+            throw ("ApiSchema workspace not staged: '$apiSchemaDir' is missing or has no *.json files. " +
+                "Stage it first (eng/docker-compose/prepare-dms-schema.ps1 writes eng/docker-compose/.bootstrap/ApiSchema; " +
+                "copy that folder here), then re-run with -StartDms. See docs/infrastructure.md 'Provisioning method'.")
+        }
         Write-Host "Starting DMS services..." -ForegroundColor Cyan
         docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
         Write-Host "Waiting for DMS services to report healthy (requires provisioned schema)..." -ForegroundColor Cyan
@@ -225,8 +249,11 @@ try {
     }
     else {
         Write-Host "`nNext steps (manual):" -ForegroundColor Yellow
-        Write-Host "  1. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema; see docs/infrastructure.md)."
-        Write-Host "  2. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
+        Write-Host "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
+        Write-Host "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
+        Write-Host "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema, against the same staged"
+        Write-Host "     workspace; see docs/infrastructure.md)."
+        Write-Host "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }
 
     Write-Host "`n== Setup complete ==" -ForegroundColor Green
