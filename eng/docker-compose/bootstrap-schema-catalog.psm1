@@ -53,7 +53,7 @@ $script:StandardFeedUrl = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Allia
 $script:StandardCorePackageId = "EdFi.DataStandard52.ApiSchema"
 $script:StandardCoreProjectName = "Ed-Fi"
 $script:StandardCoreEndpointName = "ed-fi"
-$script:StandardPackageVersion = "1.0.329"
+$script:StandardPackageVersion = "1.0.332"
 
 # Known extension claims metadata keyed by Title-cased project name (matching the projectName
 # field in bootstrap-api-schema-manifest.json, which sources its value from ApiSchema.json). The map

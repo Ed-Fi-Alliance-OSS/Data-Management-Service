@@ -435,13 +435,11 @@ function Invoke-BootstrapWrapper {
         # -EnvironmentFile instead. env-utility is imported here because the wrapper's other
         # imports live inside helper functions that run after this block.
         Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
-        $overlayToken = Get-DataStandardOverlayToken -DataStandardVersion $DataStandardVersion
-        $bootstrapOverlayPath = Join-Path $PSScriptRoot ".env.bootstrap.$overlayToken"
-        $derivedBaseName = [System.IO.Path]::GetFileName($baseEnvFile)
-        $baseEnvFile = New-DataStandardDerivedEnvFile `
+        $baseEnvFile = Resolve-DataStandardEnvironmentFile `
+            -DataStandardVersion $DataStandardVersion `
             -BaseEnvironmentFile $baseEnvFile `
-            -OverlayEnvironmentFile $bootstrapOverlayPath `
-            -TargetPath (Join-Path $PSScriptRoot ".derived/$derivedBaseName.bootstrap.$overlayToken")
+            -DockerComposeRoot $PSScriptRoot `
+            -OverlayPrefix ".env.bootstrap"
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
         # derived-env materialization so an unsupported env-file value fails without writing .env.derived.

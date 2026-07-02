@@ -260,11 +260,12 @@ elsewhere).
 ```
 
 > [!NOTE]
-> Legacy `SCHEMA_PACKAGES` entries (unqualified IDs such as `EdFi.Sample.ApiSchema` at
-> `1.0.328`) may still appear in `.env*` files during the migration. Those entries are NOT the
-> standard-mode selector. Standard mode resolves the DS-qualified asset-only core package
-> (`EdFi.DataStandard52.ApiSchema` at `1.0.329`) and DMS consumes the staged `.bootstrap/ApiSchema`
-> workspace — `SCHEMA_PACKAGES` is ignored by standard mode.
+> Standard mode is driven by the effective env file's `SCHEMA_PACKAGES` value: prepare resolves
+> and stages every listed package (core plus any extensions, each at its own pinned version) so
+> the staged `.bootstrap/ApiSchema` workspace's effective schema hash matches what the DMS
+> container downloads at startup. Only when prepare runs without an env file (direct diagnostic
+> invocation with no `-EnvironmentFile`, or an env file lacking `SCHEMA_PACKAGES`) does it fall
+> back to the catalog-pinned core-only default (`EdFi.DataStandard52.ApiSchema` at `1.0.332`).
 
 ### Expert mode (filesystem)
 

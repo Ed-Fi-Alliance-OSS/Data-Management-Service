@@ -738,11 +738,9 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
 
             # env-utility must be imported inside the composition block: the wrapper's other
             # env-utility imports live inside helper functions that run AFTER this block.
-            $wrapperSource | Should -Match '(?s)Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force\s*\$overlayToken = Get-DataStandardOverlayToken'
-            $wrapperSource | Should -Match 'Get-DataStandardOverlayToken -DataStandardVersion \$DataStandardVersion'
-            $wrapperSource | Should -Match '"\.env\.bootstrap\.\$overlayToken"'
-            $wrapperSource | Should -Match 'New-DataStandardDerivedEnvFile'
-            $wrapperSource | Should -Match '"\.derived/\$derivedBaseName\.bootstrap\.\$overlayToken"'
+            $wrapperSource | Should -Match '(?s)Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force\s*\$baseEnvFile = Resolve-DataStandardEnvironmentFile'
+            $wrapperSource | Should -Match '-DataStandardVersion \$DataStandardVersion'
+            $wrapperSource | Should -Match '-OverlayPrefix "\.env\.bootstrap"'
         }
 
         It "the wrapper never forwards -DataStandardVersion to a start script" {

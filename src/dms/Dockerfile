@@ -71,6 +71,9 @@ ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 WORKDIR /app
 
 COPY --from=build /app/Frontend/*.dll ./
+# runtimes/ exists in the publish output because Microsoft.Data.SqlClient (via Backend.Mssql)
+# ships RID-specific assets; its Linux implementation loads from runtimes/unix/. If the Mssql
+# backend reference is ever removed from the Frontend project, this COPY will fail the build.
 COPY --from=build /app/Frontend/runtimes/ ./runtimes/
 COPY --from=build /app/Frontend/ApiSchema/ ./ApiSchema/
 COPY --from=build /app/Frontend/*.pdb ./
