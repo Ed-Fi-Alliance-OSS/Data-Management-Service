@@ -13,6 +13,7 @@ using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -525,7 +526,15 @@ public static class AspNetCoreFrontend
         }
         foreach (var header in frontendResponse.Headers)
         {
-            httpContext.Response.Headers.Append(header.Key, header.Value);
+            // The _etag is stored as an opaque, unquoted value in the JSON body; serve it on the
+            // ETag response header as a quoted strong validator (RFC 7232 §2.3). Other headers pass
+            // through verbatim. An empty etag emits no header value.
+            var headerValue =
+                string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(header.Value)
+                    ? EtagValue.ToHeaderValue(header.Value)
+                    : header.Value;
+            httpContext.Response.Headers.Append(header.Key, headerValue);
         }
 
         return Results.Content(
