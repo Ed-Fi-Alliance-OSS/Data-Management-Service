@@ -81,3 +81,9 @@ DMS-1244 - completed backend redesign docs naming update task.
 - Files changed: summary.md, change-queries.md, ddl-generation.md, update-tracking.md, tasks.json, progress.txt.
 - Verification: docs Old_/New_/GetMax guard clean; git diff --check clean for touched docs.
 - Notes: remaining open task is final DMS-1244 verification.
+
+DMS-1244 - completed final verification task.
+- Key decisions: keep broad Old_/New_ guard results as reviewed false positives for non-tracked-change test names and America/New_York; fix stale relational-model manifest assertion to expect OldStudent_DocumentId; remove noisy Old_ explanatory comment text.
+- Files changed: DerivedModelSetManifestEmitterTests.cs, DerivedModelSetManifestEmitter.cs, csharpier-only DataStoreTests.cs and ChangeQueryStepDefinitions.cs, tasks.json, progress.txt.
+- Verification: csharpier src/config src/dms; CMS/PostgreSQL/GetMax/docs/cache guards clean except reviewed broad New_ false positives; git diff --check clean; CMS backend unit 321/321; CMS PostgreSQL integration 241/241; RelationalModel unit 865/865; DDL unit 970/971 with known skip; Backend ChangeQueries 67/67.
+- Notes: all tasks in tasks.json now complete.
