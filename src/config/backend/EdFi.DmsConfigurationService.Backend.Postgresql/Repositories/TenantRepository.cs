@@ -28,9 +28,9 @@ public class TenantRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.Tenant (Name, CreatedBy)
+                INSERT INTO "dmscs"."Tenant" ("Name", "CreatedBy")
                 VALUES (@Name, @CreatedBy)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             var id = await connection.ExecuteScalarAsync<long>(
@@ -39,7 +39,7 @@ public class TenantRepository(
             );
             return new TenantInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_tenant_name"))
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("UX_Tenant_Name"))
         {
             logger.LogWarning(ex, "Tenant name must be unique");
             return new TenantInsertResult.FailureDuplicateName();
@@ -56,8 +56,8 @@ public class TenantRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "Id",
-        ["name"] = "Name",
+        ["id"] = "\"Id\"",
+        ["name"] = "\"Name\"",
     };
 
     private static string BuildOrderByClause(PagingQuery query)
@@ -67,7 +67,7 @@ public class TenantRepository(
             return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
         }
 
-        return "ORDER BY Id";
+        return "ORDER BY \"Id\"";
     }
 
     public async Task<TenantQueryResult> QueryTenant(PagingQuery query)
@@ -79,8 +79,8 @@ public class TenantRepository(
         {
             string orderByClause = BuildOrderByClause(query);
             var sql = $"""
-                SELECT Id, Name
-                FROM dmscs.Tenant
+                SELECT "Id", "Name"
+                FROM "dmscs"."Tenant"
                 {orderByClause}
                 {query.BuildPagingClause()};
                 """;
@@ -103,14 +103,14 @@ public class TenantRepository(
         try
         {
             var sql = """
-                SELECT Id, Name
-                FROM dmscs.Tenant
-                WHERE Id = @Id;
+                SELECT "Id", "Name"
+                FROM "dmscs"."Tenant"
+                WHERE "Id" = @Id;
                 """;
 
             var tenant = await connection.QuerySingleOrDefaultAsync<TenantResponse>(sql, new { Id = id });
 
-            return tenant == null
+            return tenant is null
                 ? new TenantGetResult.FailureNotFound()
                 : new TenantGetResult.Success(tenant);
         }
@@ -130,14 +130,14 @@ public class TenantRepository(
         {
             // Case-insensitive tenant lookup to support any casing in requests
             var sql = """
-                SELECT Id, Name
-                FROM dmscs.Tenant
-                WHERE LOWER(Name) = LOWER(@Name);
+                SELECT "Id", "Name"
+                FROM "dmscs"."Tenant"
+                WHERE LOWER("Name") = LOWER(@Name);
                 """;
 
             var tenant = await connection.QuerySingleOrDefaultAsync<TenantResponse>(sql, new { Name = name });
 
-            return tenant == null
+            return tenant is null
                 ? new TenantGetByNameResult.FailureNotFound()
                 : new TenantGetByNameResult.Success(tenant);
         }

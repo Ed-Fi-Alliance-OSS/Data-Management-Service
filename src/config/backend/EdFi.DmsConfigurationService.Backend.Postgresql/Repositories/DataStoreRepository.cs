@@ -36,9 +36,9 @@ public class DataStoreRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.DataStore (DataStoreType, Name, ConnectionString, CreatedBy, TenantId)
+                INSERT INTO "dmscs"."DataStore" ("DataStoreType", "Name", "ConnectionString", "CreatedBy", "TenantId")
                 VALUES (@DataStoreType, @Name, @ConnectionString, @CreatedBy, @TenantId)
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             var parameters = new
@@ -65,9 +65,9 @@ public class DataStoreRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "Id",
-        ["dataStoreType"] = "DataStoreType",
-        ["name"] = "Name",
+        ["id"] = "\"Id\"",
+        ["dataStoreType"] = "\"DataStoreType\"",
+        ["name"] = "\"Name\"",
     };
 
     private static string BuildOrderByClause(DataStoreQuery query)
@@ -76,7 +76,7 @@ public class DataStoreRepository(
         {
             return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
         }
-        return "ORDER BY Id";
+        return "ORDER BY \"Id\"";
     }
 
     private static string BuildFilterClause(DataStoreQuery query)
@@ -84,15 +84,15 @@ public class DataStoreRepository(
         var conditions = new List<string>();
         if (query.Id.HasValue)
         {
-            conditions.Add("Id = @Id");
+            conditions.Add("\"Id\" = @Id");
         }
         if (query.Name is not null)
         {
-            conditions.Add("Name = @Name");
+            conditions.Add("\"Name\" = @Name");
         }
         if (query.DataStoreType is not null)
         {
-            conditions.Add("DataStoreType = @DataStoreType");
+            conditions.Add("\"DataStoreType\" = @DataStoreType");
         }
         return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -105,8 +105,8 @@ public class DataStoreRepository(
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query);
             var sql = $"""
-                SELECT Id, DataStoreType, Name, ConnectionString, TenantId
-                FROM dmscs.DataStore
+                SELECT "Id", "DataStoreType", "Name", "ConnectionString", "TenantId"
+                FROM "dmscs"."DataStore"
                 WHERE {TenantContext.TenantWhereClause()}{filterClause}
                 {orderByClause}
                 {query.BuildPagingClause()};
@@ -206,9 +206,9 @@ public class DataStoreRepository(
         try
         {
             var sql = $"""
-                SELECT Id, DataStoreType, Name, ConnectionString, TenantId
-                FROM dmscs.DataStore
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                SELECT "Id", "DataStoreType", "Name", "ConnectionString", "TenantId"
+                FROM "dmscs"."DataStore"
+                WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
@@ -218,7 +218,7 @@ public class DataStoreRepository(
                 byte[]? ConnectionString,
                 long? TenantId
             )?>(sql, new { Id = id, TenantId });
-            if (result == null)
+            if (result is null)
             {
                 return new DataStoreGetResult.FailureNotFound();
             }
@@ -276,10 +276,10 @@ public class DataStoreRepository(
         try
         {
             var sql = $"""
-                UPDATE dmscs.DataStore
-                SET DataStoreType = @DataStoreType, Name = @Name, ConnectionString = @ConnectionString,
-                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                UPDATE "dmscs"."DataStore"
+                SET "DataStoreType" = @DataStoreType, "Name" = @Name, "ConnectionString" = @ConnectionString,
+                    "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
+                WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             var parameters = new
@@ -312,7 +312,8 @@ public class DataStoreRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
+            var sql =
+                $"DELETE FROM \"dmscs\".\"DataStore\" WHERE \"Id\" = @Id AND {TenantContext.TenantWhereClause()};";
 
             var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             if (affectedRows > 0)
@@ -339,9 +340,9 @@ public class DataStoreRepository(
         try
         {
             var sql = $"""
-                SELECT Id
-                FROM dmscs.DataStore
-                WHERE Id = ANY(@Ids) AND {TenantContext.TenantWhereClause()};
+                SELECT "Id"
+                FROM "dmscs"."DataStore"
+                WHERE "Id" = ANY(@Ids) AND {TenantContext.TenantWhereClause()};
                 """;
 
             var existingIds = await connection.QueryAsync<long>(sql, new { Ids = ids, TenantId });
@@ -363,27 +364,27 @@ public class DataStoreRepository(
         try
         {
             var sql = $"""
-                SELECT application.*, aeo.EducationOrganizationId, acds.DataStoreId
+                SELECT application.*, aeo."EducationOrganizationId", acds."DataStoreId"
                 FROM (
-                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId,
+                    SELECT DISTINCT a."Id", a."ApplicationName", a."ClaimSetName", a."VendorId",
                         -- Enabled: application is enabled only if ALL its ApiClients linked to this data store are approved
-                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
-                         FROM dmscs.ApiClient ac2
-                         JOIN dmscs.ApiClientDataStore acds2 ON acds2.ApiClientId = ac2.Id
-                         WHERE ac2.ApplicationId = a.Id AND acds2.DataStoreId = @DataStoreId) AS Enabled
-                    FROM dmscs.ApiClientDataStore acds
-                    JOIN dmscs.ApiClient ac ON ac.Id = acds.ApiClientId
-                    JOIN dmscs.Application a ON a.Id = ac.ApplicationId
-                    JOIN dmscs.DataStore ds ON ds.Id = acds.DataStoreId
-                    WHERE acds.DataStoreId = @DataStoreId AND {TenantContext.TenantWhereClause(
+                        (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                         FROM "dmscs"."ApiClient" ac2
+                         JOIN "dmscs"."ApiClientDataStore" acds2 ON acds2."ApiClientId" = ac2."Id"
+                         WHERE ac2."ApplicationId" = a."Id" AND acds2."DataStoreId" = @DataStoreId) AS "Enabled"
+                    FROM "dmscs"."ApiClientDataStore" acds
+                    JOIN "dmscs"."ApiClient" ac ON ac."Id" = acds."ApiClientId"
+                    JOIN "dmscs"."Application" a ON a."Id" = ac."ApplicationId"
+                    JOIN "dmscs"."DataStore" ds ON ds."Id" = acds."DataStoreId"
+                    WHERE acds."DataStoreId" = @DataStoreId AND {TenantContext.TenantWhereClause(
                     tableAlias: "ds"
                 )}
-                    ORDER BY a.Id LIMIT @Limit OFFSET @Offset
+                    ORDER BY a."Id" LIMIT @Limit OFFSET @Offset
                 ) application
-                LEFT JOIN dmscs.ApplicationEducationOrganization aeo ON aeo.ApplicationId = application.Id
-                JOIN dmscs.ApiClient ac ON ac.ApplicationId = application.Id
-                JOIN dmscs.ApiClientDataStore acds ON acds.ApiClientId = ac.Id
-                JOIN dmscs.DataStore ds ON ds.Id = acds.DataStoreId
+                LEFT JOIN "dmscs"."ApplicationEducationOrganization" aeo ON aeo."ApplicationId" = application."Id"
+                JOIN "dmscs"."ApiClient" ac ON ac."ApplicationId" = application."Id"
+                JOIN "dmscs"."ApiClientDataStore" acds ON acds."ApiClientId" = ac."Id"
+                JOIN "dmscs"."DataStore" ds ON ds."Id" = acds."DataStoreId"
                 WHERE {TenantContext.TenantWhereClause(tableAlias: "ds")}
                 """;
 
@@ -417,7 +418,7 @@ public class DataStoreRepository(
                         VendorId = application.VendorId,
                         Enabled = application.Enabled,
                         EducationOrganizationIds = group
-                            .Where(row => row.EducationOrganizationId != null)
+                            .Where(row => row.EducationOrganizationId is not null)
                             .Select(row => row.EducationOrganizationId!.Value)
                             .Distinct()
                             .ToList(),
@@ -431,10 +432,10 @@ public class DataStoreRepository(
                 var applicationIds = applications.Select(a => a.Id).ToArray();
                 string sqlProfiles = """
                         SELECT
-                            ap.ApplicationId,
-                            ap.ProfileId
-                        FROM dmscs.ApplicationProfile ap
-                        WHERE ap.ApplicationId = ANY(@ApplicationIds);
+                            ap."ApplicationId",
+                            ap."ProfileId"
+                        FROM "dmscs"."ApplicationProfile" ap
+                        WHERE ap."ApplicationId" = ANY(@ApplicationIds);
                     """;
 
                 var profileRows = await connection.QueryAsync<(long ApplicationId, long ProfileId)>(
@@ -445,7 +446,7 @@ public class DataStoreRepository(
                 foreach (var profileRow in profileRows)
                 {
                     var app = applications.Find(a => a.Id == profileRow.ApplicationId);
-                    if (app != null && !app.ProfileIds.Contains(profileRow.ProfileId))
+                    if (app is not null && !app.ProfileIds.Contains(profileRow.ProfileId))
                     {
                         app.ProfileIds.Add(profileRow.ProfileId);
                     }
@@ -455,8 +456,8 @@ public class DataStoreRepository(
             if (applications.Count == 0)
             {
                 var dataStoreExists = await connection.ExecuteScalarAsync<bool>(
-                    $"SELECT EXISTS(SELECT 1 FROM dmscs.DataStore WHERE Id = @dataStoreId AND {TenantContext.TenantWhereClause()})",
-                    new { dataStoreId }
+                    $"SELECT EXISTS(SELECT 1 FROM \"dmscs\".\"DataStore\" WHERE \"Id\" = @dataStoreId AND {TenantContext.TenantWhereClause()})",
+                    new { dataStoreId, TenantId }
                 );
 
                 if (!dataStoreExists)

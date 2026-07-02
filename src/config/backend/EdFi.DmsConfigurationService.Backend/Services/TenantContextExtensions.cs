@@ -12,15 +12,15 @@ public static class TenantContextExtensions
 {
     /// <summary>
     /// Gets the SQL WHERE clause condition for tenant filtering.
-    /// Returns "TenantId = @TenantId" when multi-tenant mode is active,
-    /// or "TenantId IS NULL" when in non-multi-tenant mode.
+    /// Returns ""TenantId" = @TenantId" when multi-tenant mode is active,
+    /// or ""TenantId" IS NULL" when in non-multi-tenant mode.
     /// </summary>
     /// <param name="tenantContext">The tenant context.</param>
-    /// <param name="tableAlias">Optional table alias to prefix the TenantId column (e.g., "v" produces "v.TenantId").</param>
+    /// <param name="tableAlias">Optional table alias to prefix the TenantId column (e.g., "v" produces "v"."TenantId").</param>
     /// <returns>The SQL condition string for tenant filtering.</returns>
     public static string TenantWhereClause(this TenantContext tenantContext, string? tableAlias = null)
     {
-        var column = string.IsNullOrEmpty(tableAlias) ? "TenantId" : $"{tableAlias}.TenantId";
+        var column = string.IsNullOrEmpty(tableAlias) ? "\"TenantId\"" : $"{tableAlias}.\"TenantId\"";
         return tenantContext switch
         {
             TenantContext.Multitenant => $"{column} = @TenantId",

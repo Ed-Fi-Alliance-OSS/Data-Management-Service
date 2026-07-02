@@ -45,12 +45,12 @@ public class ClaimsHierarchyTests : DatabaseTest
 
         // Insert 2 hierarchies
         int recordsAffected = await conn.ExecuteAsync(
-            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES ('{}'::jsonb, now())"
+            "INSERT INTO \"dmscs\".\"ClaimsHierarchy\" (\"Hierarchy\", \"LastModifiedDate\") VALUES ('{}'::jsonb, now())"
         );
         recordsAffected.Should().Be(1);
 
         recordsAffected = await conn.ExecuteAsync(
-            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES ('{}'::jsonb, now())"
+            "INSERT INTO \"dmscs\".\"ClaimsHierarchy\" (\"Hierarchy\", \"LastModifiedDate\") VALUES ('{}'::jsonb, now())"
         );
         recordsAffected.Should().Be(1);
 
@@ -93,7 +93,7 @@ public class ClaimsHierarchyTests : DatabaseTest
 
         // Insert the single hierarchy
         int recordsAffected = await conn.ExecuteAsync(
-            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES (@HierarchyJson::jsonb, now())",
+            "INSERT INTO \"dmscs\".\"ClaimsHierarchy\" (\"Hierarchy\", \"LastModifiedDate\") VALUES (@HierarchyJson::jsonb, now())",
             new { HierarchyJson = hierarchyJson }
         );
         recordsAffected.Should().Be(1);

@@ -383,12 +383,12 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
         [SetUp]
         public async Task SetUp()
         {
-            // Insert a custom hierarchy that has a URI not present in dmscs.ResourceClaim
+            // Insert a custom hierarchy that has a URI not present in ResourceClaim metadata.
             await using var conn = new NpgsqlConnection(
                 Configuration.DatabaseOptions.Value.DatabaseConnection
             );
             await conn.OpenAsync();
-            await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
+            await conn.ExecuteAsync("DELETE FROM \"dmscs\".\"ClaimsHierarchy\"");
             const string OrphanJson = """
                 [
                   {
@@ -409,7 +409,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 ]
                 """;
             await conn.ExecuteAsync(
-                "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
+                "INSERT INTO \"dmscs\".\"ClaimsHierarchy\"(\"Hierarchy\") VALUES (@Hierarchy::jsonb)",
                 new { Hierarchy = OrphanJson }
             );
         }
@@ -454,12 +454,12 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
         [SetUp]
         public async Task SetUp()
         {
-            // 'types' (Id=1) IS in dmscs.ResourceClaim but action "UnknownAction" is not in GetActions()
+            // 'types' (Id=1) IS in ResourceClaim metadata but action "UnknownAction" is not in GetActions()
             await using var conn = new NpgsqlConnection(
                 Configuration.DatabaseOptions.Value.DatabaseConnection
             );
             await conn.OpenAsync();
-            await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
+            await conn.ExecuteAsync("DELETE FROM \"dmscs\".\"ClaimsHierarchy\"");
             const string BadActionJson = """
                 [
                   {
@@ -480,7 +480,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 ]
                 """;
             await conn.ExecuteAsync(
-                "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
+                "INSERT INTO \"dmscs\".\"ClaimsHierarchy\"(\"Hierarchy\") VALUES (@Hierarchy::jsonb)",
                 new { Hierarchy = BadActionJson }
             );
         }
@@ -513,7 +513,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 Configuration.DatabaseOptions.Value.DatabaseConnection
             );
             await conn.OpenAsync();
-            await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
+            await conn.ExecuteAsync("DELETE FROM \"dmscs\".\"ClaimsHierarchy\"");
             const string BadStrategyJson = """
                 [
                   {
@@ -534,7 +534,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 ]
                 """;
             await conn.ExecuteAsync(
-                "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
+                "INSERT INTO \"dmscs\".\"ClaimsHierarchy\"(\"Hierarchy\") VALUES (@Hierarchy::jsonb)",
                 new { Hierarchy = BadStrategyJson }
             );
         }
@@ -655,7 +655,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 Configuration.DatabaseOptions.Value.DatabaseConnection
             );
             await connection.ExecuteAsync(
-                "INSERT INTO dmscs.ClaimsHierarchy (Hierarchy) VALUES (@hierarchy::jsonb)",
+                "INSERT INTO \"dmscs\".\"ClaimsHierarchy\" (\"Hierarchy\") VALUES (@hierarchy::jsonb)",
                 new { hierarchy = """[{"name":"http://duplicate.claim","claimSets":[]}]""" }
             );
         }

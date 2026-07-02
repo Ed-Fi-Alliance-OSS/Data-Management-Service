@@ -27,10 +27,10 @@ public class DataStoreContextRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "Id",
-        ["dataStoreId"] = "DataStoreId",
-        ["contextKey"] = "ContextKey",
-        ["contextValue"] = "ContextValue",
+        ["id"] = "\"Id\"",
+        ["dataStoreId"] = "\"DataStoreId\"",
+        ["contextKey"] = "\"ContextKey\"",
+        ["contextValue"] = "\"ContextValue\"",
     };
 
     private static string BuildOrderByClause(PagingQuery query)
@@ -40,7 +40,7 @@ public class DataStoreContextRepository(
             return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
         }
 
-        return "ORDER BY Id";
+        return "ORDER BY \"Id\"";
     }
 
     private TenantContext TenantContext => tenantContextProvider.Context;
@@ -56,13 +56,13 @@ public class DataStoreContextRepository(
         try
         {
             var sql = $"""
-                INSERT INTO dmscs.DataStoreContext (DataStoreId, ContextKey, ContextValue, CreatedBy)
+                INSERT INTO "dmscs"."DataStoreContext" ("DataStoreId", "ContextKey", "ContextValue", "CreatedBy")
                 SELECT @DataStoreId, @ContextKey, @ContextValue, @CreatedBy
                 WHERE EXISTS (
-                    SELECT 1 FROM dmscs.DataStore
-                    WHERE Id = @DataStoreId AND {TenantContext.TenantWhereClause()}
+                    SELECT 1 FROM "dmscs"."DataStore"
+                    WHERE "Id" = @DataStoreId AND {TenantContext.TenantWhereClause()}
                 )
-                RETURNING Id;
+                RETURNING "Id";
                 """;
 
             var id = await connection.ExecuteScalarAsync<long?>(
@@ -77,7 +77,7 @@ public class DataStoreContextRepository(
                 }
             );
 
-            if (id == null)
+            if (id is null)
             {
                 return new DataStoreContextInsertResult.FailureDataStoreNotFound();
             }
@@ -85,7 +85,7 @@ public class DataStoreContextRepository(
             return new DataStoreContextInsertResult.Success(id.Value);
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("idx_datastore_context_unique"))
+            when (ex.SqlState == "23505" && ex.Message.Contains("UX_DataStoreContext_DataStoreId_ContextKey"))
         {
             logger.LogWarning(
                 ex,
@@ -113,9 +113,9 @@ public class DataStoreContextRepository(
         {
             string orderByClause = BuildOrderByClause(query);
             var sql = $"""
-                SELECT rc.Id, rc.DataStoreId, rc.ContextKey, rc.ContextValue
-                FROM dmscs.DataStoreContext rc
-                JOIN dmscs.DataStore ds ON rc.DataStoreId = ds.Id
+                SELECT rc."Id", rc."DataStoreId", rc."ContextKey", rc."ContextValue"
+                FROM "dmscs"."DataStoreContext" rc
+                JOIN "dmscs"."DataStore" ds ON rc."DataStoreId" = ds."Id"
                 WHERE {TenantContext.TenantWhereClause("ds")}
                 {orderByClause}
                 {query.BuildPagingClause()};
@@ -146,10 +146,10 @@ public class DataStoreContextRepository(
         try
         {
             var sql = $"""
-                SELECT rc.Id, rc.DataStoreId, rc.ContextKey, rc.ContextValue
-                FROM dmscs.DataStoreContext rc
-                JOIN dmscs.DataStore ds ON rc.DataStoreId = ds.Id
-                WHERE rc.Id = @Id AND {TenantContext.TenantWhereClause("ds")};
+                SELECT rc."Id", rc."DataStoreId", rc."ContextKey", rc."ContextValue"
+                FROM "dmscs"."DataStoreContext" rc
+                JOIN "dmscs"."DataStore" ds ON rc."DataStoreId" = ds."Id"
+                WHERE rc."Id" = @Id AND {TenantContext.TenantWhereClause("ds")};
                 """;
 
             var dataStoreContext = await connection.QuerySingleOrDefaultAsync<DataStoreContextResponse>(
@@ -157,7 +157,7 @@ public class DataStoreContextRepository(
                 new { Id = id, TenantId }
             );
 
-            return dataStoreContext != null
+            return dataStoreContext is not null
                 ? new DataStoreContextGetResult.Success(dataStoreContext)
                 : new DataStoreContextGetResult.FailureNotFound();
         }
@@ -177,16 +177,16 @@ public class DataStoreContextRepository(
         try
         {
             var sql = $"""
-                UPDATE dmscs.DataStoreContext rc
-                SET DataStoreId = @DataStoreId, ContextKey = @ContextKey, ContextValue = @ContextValue,
-                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                FROM dmscs.DataStore ds
-                WHERE rc.Id = @Id
-                  AND rc.DataStoreId = ds.Id
+                UPDATE "dmscs"."DataStoreContext" rc
+                SET "DataStoreId" = @DataStoreId, "ContextKey" = @ContextKey, "ContextValue" = @ContextValue,
+                    "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
+                FROM "dmscs"."DataStore" ds
+                WHERE rc."Id" = @Id
+                  AND rc."DataStoreId" = ds."Id"
                   AND {TenantContext.TenantWhereClause("ds")}
                   AND EXISTS (
-                      SELECT 1 FROM dmscs.DataStore
-                      WHERE Id = @DataStoreId AND {TenantContext.TenantWhereClause()}
+                      SELECT 1 FROM "dmscs"."DataStore"
+                      WHERE "Id" = @DataStoreId AND {TenantContext.TenantWhereClause()}
                   );
                 """;
 
@@ -218,7 +218,7 @@ public class DataStoreContextRepository(
             return new DataStoreContextUpdateResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == "23505" && ex.Message.Contains("idx_datastore_context_unique"))
+            when (ex.SqlState == "23505" && ex.Message.Contains("UX_DataStoreContext_DataStoreId_ContextKey"))
         {
             logger.LogWarning(
                 ex,
@@ -245,10 +245,10 @@ public class DataStoreContextRepository(
         try
         {
             var sql = $"""
-                DELETE FROM dmscs.DataStoreContext
-                WHERE Id = @Id
-                  AND DataStoreId IN (
-                      SELECT Id FROM dmscs.DataStore WHERE {TenantContext.TenantWhereClause()}
+                DELETE FROM "dmscs"."DataStoreContext"
+                WHERE "Id" = @Id
+                  AND "DataStoreId" IN (
+                      SELECT "Id" FROM "dmscs"."DataStore" WHERE {TenantContext.TenantWhereClause()}
                   );
                 """;
 
@@ -273,11 +273,11 @@ public class DataStoreContextRepository(
         try
         {
             var sql = $"""
-                SELECT rc.Id, rc.DataStoreId, rc.ContextKey, rc.ContextValue
-                FROM dmscs.DataStoreContext rc
-                JOIN dmscs.DataStore ds ON rc.DataStoreId = ds.Id
-                WHERE rc.DataStoreId = @DataStoreId AND {TenantContext.TenantWhereClause("ds")}
-                ORDER BY rc.ContextKey;
+                SELECT rc."Id", rc."DataStoreId", rc."ContextKey", rc."ContextValue"
+                FROM "dmscs"."DataStoreContext" rc
+                JOIN "dmscs"."DataStore" ds ON rc."DataStoreId" = ds."Id"
+                WHERE rc."DataStoreId" = @DataStoreId AND {TenantContext.TenantWhereClause("ds")}
+                ORDER BY rc."ContextKey";
                 """;
             var dataStoreContexts = await connection.QueryAsync<DataStoreContextResponse>(
                 sql,
@@ -301,17 +301,17 @@ public class DataStoreContextRepository(
         await connection.OpenAsync();
         try
         {
-            if (dataStoreIds == null || dataStoreIds.Count == 0)
+            if (dataStoreIds is null || dataStoreIds.Count == 0)
             {
                 return new DataStoreContextQueryByDataStoreIdsResult.Success([]);
             }
 
             var sql = $"""
-                SELECT rc.Id, rc.DataStoreId, rc.ContextKey, rc.ContextValue
-                FROM dmscs.DataStoreContext rc
-                JOIN dmscs.DataStore ds ON rc.DataStoreId = ds.Id
-                WHERE rc.DataStoreId = ANY(@DataStoreIds) AND {TenantContext.TenantWhereClause("ds")}
-                ORDER BY rc.DataStoreId, rc.ContextKey;
+                SELECT rc."Id", rc."DataStoreId", rc."ContextKey", rc."ContextValue"
+                FROM "dmscs"."DataStoreContext" rc
+                JOIN "dmscs"."DataStore" ds ON rc."DataStoreId" = ds."Id"
+                WHERE rc."DataStoreId" = ANY(@DataStoreIds) AND {TenantContext.TenantWhereClause("ds")}
+                ORDER BY rc."DataStoreId", rc."ContextKey";
                 """;
             var dataStoreContexts = await connection.QueryAsync<DataStoreContextResponse>(
                 sql,
@@ -330,9 +330,9 @@ public class DataStoreContextRepository(
     private async Task<bool> ContextExistsForTenant(NpgsqlConnection connection, long id)
     {
         var sql = $"""
-            SELECT COUNT(1) FROM dmscs.DataStoreContext rc
-            JOIN dmscs.DataStore ds ON rc.DataStoreId = ds.Id
-            WHERE rc.Id = @Id AND {TenantContext.TenantWhereClause("ds")};
+            SELECT COUNT(1) FROM "dmscs"."DataStoreContext" rc
+            JOIN "dmscs"."DataStore" ds ON rc."DataStoreId" = ds."Id"
+            WHERE rc."Id" = @Id AND {TenantContext.TenantWhereClause("ds")};
             """;
 
         return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }) > 0;
