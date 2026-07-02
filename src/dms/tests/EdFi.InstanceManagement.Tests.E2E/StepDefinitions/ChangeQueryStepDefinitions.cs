@@ -74,7 +74,9 @@ public class ChangeQueryStepDefinitions(InstanceManagementContext context)
             );
     }
 
-    [Then("the newest change version for tenant {string} instance {string} is greater than captured {string}")]
+    [Then(
+        "the newest change version for tenant {string} instance {string} is greater than captured {string}"
+    )]
     public async Task ThenNewestChangeVersionGreaterThanCaptured(
         string tenantName,
         string instanceRoute,
@@ -112,11 +114,7 @@ public class ChangeQueryStepDefinitions(InstanceManagementContext context)
     }
 
     [When("a GET request is made to deletes for tenant {string} instance {string} resource {string}")]
-    public async Task WhenAGetRequestIsMadeToDeletes(
-        string tenantName,
-        string instanceRoute,
-        string resource
-    )
+    public async Task WhenAGetRequestIsMadeToDeletes(string tenantName, string instanceRoute, string resource)
     {
         var (districtId, schoolYear) = SplitRoute(instanceRoute);
         using var client = NewTenantClient(tenantName);

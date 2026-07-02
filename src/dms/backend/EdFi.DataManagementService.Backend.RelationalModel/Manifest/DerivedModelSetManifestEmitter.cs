@@ -774,7 +774,7 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStartObject();
             writer.WriteString("alias", column.Alias);
             writer.WriteString("column", column.Column.Value);
-            // Written only when the projection is renamed (`Old_X AS X`) so existing
+            // Written only when a tracked-change projection is renamed so existing
             // people-auth-view manifest output is byte-identical.
             if (column.OutputName is { } outputName)
             {
