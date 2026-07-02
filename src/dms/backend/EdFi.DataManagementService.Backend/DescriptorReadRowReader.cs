@@ -10,6 +10,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed record DescriptorReadRow(
     long DocumentId,
     Guid DocumentUuid,
+    long ContentVersion,
     DateTimeOffset ContentLastModifiedAt,
     short ResourceKeyId,
     string? Namespace,
@@ -31,6 +32,7 @@ internal static class DescriptorReadRowReader
 {
     private const string DocumentIdColumnName = "DocumentId";
     private const string DocumentUuidColumnName = "DocumentUuid";
+    private const string ContentVersionColumnName = "ContentVersion";
     private const string ContentLastModifiedAtColumnName = "ContentLastModifiedAt";
     private const string ResourceKeyIdColumnName = "ResourceKeyId";
     private const string NamespaceColumnName = "Namespace";
@@ -86,11 +88,13 @@ internal static class DescriptorReadRowReader
 
         var documentId = reader.GetRequiredFieldValue<long>(DocumentIdColumnName);
         var documentUuid = reader.GetRequiredFieldValue<Guid>(DocumentUuidColumnName);
+        var contentVersion = reader.GetRequiredFieldValue<long>(ContentVersionColumnName);
         var resourceKeyId = reader.GetRequiredFieldValue<short>(ResourceKeyIdColumnName);
 
         return new DescriptorReadRow(
             DocumentId: documentId,
             DocumentUuid: documentUuid,
+            ContentVersion: contentVersion,
             ContentLastModifiedAt: ReadRequiredDateTimeOffsetFieldValue(
                 reader,
                 ContentLastModifiedAtColumnName,

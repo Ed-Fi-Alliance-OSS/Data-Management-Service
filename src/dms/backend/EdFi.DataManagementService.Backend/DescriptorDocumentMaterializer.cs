@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
@@ -19,10 +20,13 @@ internal static class DescriptorDocumentMaterializer
 
     public static JsonObject Materialize(
         DescriptorReadRow descriptorRow,
-        RelationalGetRequestReadMode readMode
+        RelationalGetRequestReadMode readMode,
+        IEtagComposer etagComposer,
+        VariantKey variantKey
     )
     {
         ArgumentNullException.ThrowIfNull(descriptorRow);
+        ArgumentNullException.ThrowIfNull(etagComposer);
 
         var descriptorBody = BuildDescriptorBody(descriptorRow);
 
@@ -34,7 +38,7 @@ internal static class DescriptorDocumentMaterializer
         var externalResponse = (JsonObject)descriptorBody.DeepClone();
 
         externalResponse[IdPropertyName] = descriptorRow.DocumentUuid.ToString();
-        externalResponse[EtagPropertyName] = RelationalApiMetadataFormatter.FormatEtag(descriptorBody);
+        externalResponse[EtagPropertyName] = etagComposer.Compose(descriptorRow.ContentVersion, variantKey);
         externalResponse[LastModifiedDatePropertyName] =
             descriptorRow.ContentLastModifiedAt.UtcDateTime.ToString(
                 LastModifiedDateFormat,
