@@ -4,56 +4,66 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 
-CREATE TABLE IF NOT EXISTS dmscs.OpenIddictApplication (
-    Id uuid NOT NULL PRIMARY KEY,
-    ClientId varchar(100) NOT NULL UNIQUE,
-    ClientSecret varchar(256),
-    DisplayName varchar(200),
-    RedirectUris varchar(200)[],
-    PostLogoutRedirectUris varchar(200)[],
-    Permissions varchar(100)[],
-    Requirements varchar(100)[],
-    Type varchar(50),
-    CreatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CreatedBy VARCHAR(256),
-    LastModifiedAt TIMESTAMP,
-    ModifiedBy VARCHAR(256),
-    ProtocolMappers jsonb
+CREATE TABLE IF NOT EXISTS "dmscs"."OpenIddictApplication" (
+    "Id" uuid NOT NULL,
+    "ClientId" varchar(100) NOT NULL,
+    "ClientSecret" varchar(256),
+    "DisplayName" varchar(200),
+    "RedirectUris" varchar(200)[],
+    "PostLogoutRedirectUris" varchar(200)[],
+    "Permissions" varchar(100)[],
+    "Requirements" varchar(100)[],
+    "Type" varchar(50),
+    "CreatedAt" timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    "CreatedBy" VARCHAR(256),
+    "LastModifiedAt" TIMESTAMP,
+    "ModifiedBy" VARCHAR(256),
+    "ProtocolMappers" jsonb
 );
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'PK_OpenIddictApplication'
+          AND conrelid = '"dmscs"."OpenIddictApplication"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."OpenIddictApplication" ADD CONSTRAINT "PK_OpenIddictApplication" PRIMARY KEY ("Id");
+    END IF;
 
-COMMENT ON TABLE dmscs.OpenIddictApplication IS 'OpenIddict applications (clients) storage.';
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'UX_OpenIddictApplication_ClientId'
+          AND conrelid = '"dmscs"."OpenIddictApplication"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."OpenIddictApplication" ADD CONSTRAINT "UX_OpenIddictApplication_ClientId" UNIQUE ("ClientId");
+    END IF;
+END$$;
 
+COMMENT ON TABLE "dmscs"."OpenIddictApplication" IS 'OpenIddict applications (clients) storage.';
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.Id IS 'Application unique identifier.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."Id" IS 'Application unique identifier.';
 
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."ClientId" IS 'Client identifier.';
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.ClientId IS 'Client identifier.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."ClientSecret" IS 'Client secret.';
 
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."DisplayName" IS 'Display name for the application.';
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.ClientSecret IS 'Client secret.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."RedirectUris" IS 'Allowed redirect URIs.';
 
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."PostLogoutRedirectUris" IS 'Allowed post-logout redirect URIs.';
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.DisplayName IS 'Display name for the application.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."Permissions" IS 'Permissions granted to the application.';
 
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."Requirements" IS 'Requirements for the application.';
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.RedirectUris IS 'Allowed redirect URIs.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."Type" IS 'Application type (public/confidential).';
 
-
-COMMENT ON COLUMN dmscs.OpenIddictApplication.PostLogoutRedirectUris IS 'Allowed post-logout redirect URIs.';
-
-
-COMMENT ON COLUMN dmscs.OpenIddictApplication.Permissions IS 'Permissions granted to the application.';
-
-
-COMMENT ON COLUMN dmscs.OpenIddictApplication.Requirements IS 'Requirements for the application.';
-
-
-COMMENT ON COLUMN dmscs.OpenIddictApplication.Type IS 'Application type (public/confidential).';
-
-
-COMMENT ON COLUMN dmscs.OpenIddictApplication.CreatedAt IS 'Timestamp when the record was created (UTC)';
-COMMENT ON COLUMN dmscs.OpenIddictApplication.CreatedBy IS 'User or client ID who created the record';
-COMMENT ON COLUMN dmscs.OpenIddictApplication.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
-COMMENT ON COLUMN dmscs.OpenIddictApplication.ModifiedBy IS 'User or client ID who last modified the record';
-COMMENT ON COLUMN dmscs.OpenIddictApplication.ProtocolMappers IS 'Protocol mappers for the client, stored as JSON.';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."CreatedAt" IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."CreatedBy" IS 'User or client ID who created the record';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."LastModifiedAt" IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."ModifiedBy" IS 'User or client ID who last modified the record';
+COMMENT ON COLUMN "dmscs"."OpenIddictApplication"."ProtocolMappers" IS 'Protocol mappers for the client, stored as JSON.';

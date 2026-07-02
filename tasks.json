@@ -69,7 +69,7 @@
       "rg -n \"dmscs\\.open|dmscs\\.OpenIddict|openiddict[a-z_]*|pk_|fk_|uq_|idx_\" src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts",
       "dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~OpenIddict|FullyQualifiedName~Database\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
