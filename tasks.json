@@ -208,7 +208,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Golden|FullyQualifiedName~Manifest\"",
       "git diff -- src/dms/backend/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation",
