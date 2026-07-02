@@ -267,7 +267,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                         request.MappingSet,
                         request.ExistingDocumentReadPlan!,
                         targetContext,
-                        ifMatch
+                        ifMatch,
+                        request.ProfileWriteContext?.ProfileName
                     ),
                     writeSession,
                     cancellationToken

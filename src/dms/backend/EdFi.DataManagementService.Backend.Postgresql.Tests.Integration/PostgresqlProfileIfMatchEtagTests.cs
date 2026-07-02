@@ -60,8 +60,15 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
         );
     }
 
+    // Matches the writable profile name used by CreateWritableProfileContext so a profiled read etag
+    // and a subsequent profiled write share the same profileCode (state-significant for If-Match).
+    public const string ReadableProfileName = "root-only-profile";
+
     public static ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
-        new(HiddenOrderReadableProfileContentType, NamingStressIdentityPropertyNames);
+        new(HiddenOrderReadableProfileContentType, NamingStressIdentityPropertyNames)
+        {
+            ProfileName = ReadableProfileName,
+        };
 
     public static BackendProfileWriteContext CreateWritableProfileContext(
         MappingSet mappingSet,
@@ -392,7 +399,7 @@ public class Given_A_Postgresql_Profiled_Put_Using_The_Current_Profiled_Get_Etag
     }
 
     [Test]
-    public void It_preserves_the_full_resource_etag_for_profiled_get_and_query_reads()
+    public void It_serves_profile_sensitive_etags_consistent_within_each_representation()
     {
         var unprofiledGetDocument = PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(
             _unprofiledGetBeforeUpdate
@@ -410,27 +417,40 @@ public class Given_A_Postgresql_Profiled_Put_Using_The_Current_Profiled_Get_Etag
         profiledGetDocument["order"].Should().BeNull();
         profiledQueryDocument["order"].Should().BeNull();
 
-        PostgresqlProfileIfMatchEtagTestSupport
-            .GetEtag(profiledGetDocument)
-            .Should()
-            .Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetDocument))
-            .And.Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledQueryDocument))
-            .And.Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(profiledQueryDocument));
+        var unprofiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetDocument);
+        var profiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(profiledGetDocument);
+
+        // GET and query agree within the same representation (same profileCode).
+        PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledQueryDocument).Should().Be(unprofiledEtag);
+        PostgresqlProfileIfMatchEtagTestSupport.GetEtag(profiledQueryDocument).Should().Be(profiledEtag);
+
+        // But the profiled representation is a distinct strong validator (different profileCode),
+        // while both reflect the same underlying ContentVersion.
+        profiledEtag.Should().NotBe(unprofiledEtag);
+        ContentVersionComponent(profiledEtag).Should().Be(ContentVersionComponent(unprofiledEtag));
     }
 
     [Test]
-    public void It_returns_the_committed_full_resource_etag_from_the_profiled_put()
+    public void It_returns_the_committed_profiled_etag_from_the_profiled_put()
     {
         var updateSuccess = _profiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>().Subject;
         var unprofiledGetAfterUpdateDocument = PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(
             _unprofiledGetAfterUpdate
         );
+        var unprofiledEtagAfterUpdate = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            unprofiledGetAfterUpdateDocument
+        );
 
         updateSuccess.ETag.Should().NotBeNull();
-        updateSuccess
-            .ETag.Should()
-            .Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetAfterUpdateDocument));
+        // The profiled PUT's etag reflects the same post-update ContentVersion as the unprofiled GET,
+        // but carries the profile's distinct profileCode.
+        ContentVersionComponent(updateSuccess.ETag!)
+            .Should()
+            .Be(ContentVersionComponent(unprofiledEtagAfterUpdate));
+        updateSuccess.ETag.Should().NotBe(unprofiledEtagAfterUpdate);
     }
+
+    private static string ContentVersionComponent(string etag) => etag.Split('-')[0];
 }
 
 [TestFixture]
@@ -591,15 +611,19 @@ public class Given_A_Postgresql_Profiled_Put_With_A_Stale_Profiled_Etag_After_A_
         profiledGetBeforeHiddenChangeDocument["order"].Should().BeNull();
         profiledGetAfterHiddenChangeDocument["order"].Should().BeNull();
 
+        // The profiled representation is a distinct strong validator from the unprofiled one
+        // (different profileCode), before and after the hidden change.
         PostgresqlProfileIfMatchEtagTestSupport
             .GetEtag(profiledGetBeforeHiddenChangeDocument)
             .Should()
-            .Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetBeforeHiddenChangeDocument));
+            .NotBe(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetBeforeHiddenChangeDocument));
 
+        // A hidden persisted field change bumps ContentVersion, so the profiled etag changes too,
+        // while remaining distinct from the unprofiled representation.
         PostgresqlProfileIfMatchEtagTestSupport
             .GetEtag(profiledGetAfterHiddenChangeDocument)
             .Should()
-            .Be(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetAfterHiddenChangeDocument))
+            .NotBe(PostgresqlProfileIfMatchEtagTestSupport.GetEtag(unprofiledGetAfterHiddenChangeDocument))
             .And.NotBe(
                 PostgresqlProfileIfMatchEtagTestSupport.GetEtag(profiledGetBeforeHiddenChangeDocument)
             );

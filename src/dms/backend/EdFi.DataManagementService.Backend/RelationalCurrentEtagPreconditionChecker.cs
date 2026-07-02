@@ -16,13 +16,15 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
         MappingSet mappingSet,
         ResourceReadPlan readPlan,
         RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition
+        WritePrecondition.IfMatch precondition,
+        string? profileName = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
         Precondition = precondition ?? throw new ArgumentNullException(nameof(precondition));
+        ProfileName = profileName;
     }
 
     public MappingSet MappingSet { get; init; }
@@ -32,6 +34,13 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
 
     public WritePrecondition.IfMatch Precondition { get; init; }
+
+    /// <summary>
+    /// The readable-profile name of the representation the client is acting on, or <see langword="null"/>
+    /// when no profile applies (e.g. a DELETE). Drives the <c>profileCode</c> of the composed etag,
+    /// which is state-significant for the If-Match comparison.
+    /// </summary>
+    public string? ProfileName { get; init; }
 }
 
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
@@ -129,14 +138,14 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         }
 
         // If-Match compares the state-significant projection of the composed etag (ContentVersion,
-        // schemaEpoch, profileCode). format and linkFlag are projected out; a DELETE carries no
-        // readable profile, so profileCode resolves to "no profile".
+        // schemaEpoch, profileCode). format and linkFlag are projected out; profileCode comes from the
+        // request's profile (null for a DELETE, or the write profile for a profiled update).
         var currentEtag = _etagComposer.Compose(
             currentState.DocumentMetadata.ContentVersion,
             VariantKeyFactory.Create(
                 request.MappingSet.Key.EffectiveSchemaHash,
                 ResponseFormat.Json,
-                ProfileVariantCode.Of(null),
+                ProfileVariantCode.Of(request.ProfileName),
                 linksEnabled: true
             )
         );
