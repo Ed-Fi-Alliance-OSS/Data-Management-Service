@@ -156,6 +156,8 @@ public class ApiServiceJwtAuthenticationTests
 
         // Assert
         steps.Should().HaveCount(5); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDataStoreMiddleware
+        steps[0].Should().BeOfType<RequestResponseLoggingMiddleware>();
+        steps[1].Should().BeOfType<CoreExceptionLoggingMiddleware>();
         steps[2].Should().BeOfType<TenantValidationMiddleware>();
         steps[3].Should().BeOfType<JwtAuthenticationMiddleware>();
         steps[4].Should().BeOfType<ResolveDataStoreMiddleware>();

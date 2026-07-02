@@ -13,6 +13,16 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Utilities;
 public class LoggingSanitizerTests
 {
     [TestFixture]
+    public class Given_SanitizeForLogging_With_Line_Endings : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_removes_line_endings_before_returning_log_values()
+        {
+            LoggingSanitizer.SanitizeForLogging("trace\r\nid\nwith\runsafe").Should().Be("traceidwithunsafe");
+        }
+    }
+
+    [TestFixture]
     public class Given_SanitizeForConsole_With_Newlines : LoggingSanitizerTests
     {
         private string _result = string.Empty;

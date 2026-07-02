@@ -22,6 +22,8 @@ public static class LogSanitizer
             return string.Empty;
         }
 
+        input = input.ReplaceLineEndings(string.Empty);
+
         // First pass: check if sanitization is needed and count safe characters
         int safeCount = 0;
         bool needsSanitization = false;
