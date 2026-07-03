@@ -2,8 +2,10 @@
 @realm = edfi
 @key = REPLACE_WITH_SINGLE_TENANT_KEY
 @secret = REPLACE_WITH_SINGLE_TENANT_SECRET
-# If a secret contains characters REST Client treats as variables ({{ }}), pre-encode the
-# Basic header instead: set `@basic = <base64(key:secret)>` and use `Authorization: Basic {{basic}}`.
+# The raw `Basic key:secret` form below is base64-encoded automatically by VS Code REST Client.
+# Pre-encode it instead (set `@basic = <base64(key:secret)>`, use `Authorization: Basic {{basic}}`)
+# if a secret contains characters REST Client treats as variables ({{ }}) or your client does
+# not auto-encode the raw form.
 
 ### Discovery (no auth)
 GET {{base}}/st-dms

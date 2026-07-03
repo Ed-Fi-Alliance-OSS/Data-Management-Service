@@ -48,9 +48,11 @@ function Get-SecureChar([string]$Set) {
 }
 function New-ComplexSecret([int]$Length = 40) {
     # Meets CMS/Keycloak complexity: lower, upper, digit, special; 32-128 chars.
-    # Special set avoids characters significant in .env / connection strings / URLs.
+    # Special set avoids characters significant in .env / connection strings / URLs AND in
+    # form-urlencoded bodies ('+' decodes to a space, '%' starts an escape sequence), so the
+    # secrets can be pasted into token requests without percent-encoding.
     $lower = 'abcdefghijkmnopqrstuvwxyz'; $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-    $digit = '23456789'; $special = '!@#%^*-_+.'
+    $digit = '23456789'; $special = '!@#^*-_.'
     $all = $lower + $upper + $digit + $special
     $chars = [System.Collections.Generic.List[char]]::new()
     # Guarantee at least one character from each required class.

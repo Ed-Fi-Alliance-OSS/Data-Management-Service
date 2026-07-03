@@ -3,9 +3,11 @@
 @tenant = tenant1
 @schoolYear = 2025
 
-# API client credentials (from bootstrap.ps1 output). If a secret contains characters REST
-# Client treats as variables ({{ }}), pre-encode the Basic header: set @basic = base64(key:secret)
-# and use `Authorization: Basic {{basic}}`. To test tenant2, set @tenant = tenant2 and its creds.
+# API client credentials (from bootstrap.ps1 output). The raw `Basic key:secret` form below is
+# base64-encoded automatically by VS Code REST Client. Pre-encode it instead (set
+# @basic = base64(key:secret), use `Authorization: Basic {{basic}}`) if a secret contains
+# characters REST Client treats as variables ({{ }}) or your client does not auto-encode the
+# raw form. To test tenant2, set @tenant = tenant2 and its creds.
 @key = REPLACE_WITH_TENANT_KEY
 @secret = REPLACE_WITH_TENANT_SECRET
 
@@ -14,9 +16,12 @@
 @adminSecret = REPLACE_WITH_BOOTSTRAP_ADMIN_SECRET
 
 ### Discovery (no auth)
+# NOTE: do NOT follow urls.oauth from this response -- for /mt-dms the DMS wrongly appends
+# /{tenant}/{schoolYear} to the token URL (docs/infrastructure.md issue 11). Use the token
+# request below instead.
 GET {{base}}/mt-dms
 
-### DMS app token -- shared Keycloak realm (advertised in Discovery)
+### DMS app token -- shared Keycloak realm
 # @name token
 POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
 Authorization: Basic {{key}}:{{secret}}
@@ -34,6 +39,9 @@ Authorization: Bearer {{token.response.body.access_token}}
 
 ### CMS admin token
 # @name cmsToken
+# client_secret is sent form-urlencoded below: '+' decodes to a space and '%' starts an escape,
+# so if the secret contains either (possible in .env files generated before setup-env.ps1
+# dropped them from its special-character set), percent-encode those characters in this body.
 POST {{base}}/mt-config/connect/token
 Content-Type: application/x-www-form-urlencoded
 
