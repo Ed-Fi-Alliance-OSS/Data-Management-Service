@@ -212,8 +212,7 @@ Feature: OWASP critical attack path protections
                   | Accept | */*   |
              Then it should respond with 404 or 405
 
-        @relational-backend
-        @relational-ci-shard-3
+        @e2e-ci-shard-3
         Scenario: 14 Oversized request body is rejected with payload too large
              When a POST request larger than 11 MB is made to "/ed-fi/schools"
              Then the direct response should be 413
