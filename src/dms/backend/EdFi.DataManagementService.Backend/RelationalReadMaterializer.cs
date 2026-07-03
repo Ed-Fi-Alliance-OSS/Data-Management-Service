@@ -244,12 +244,7 @@ internal sealed class RelationalReadMaterializer(
         }
 
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
-        documentObject[EtagPropertyName] = ComposeOrHashEtag(
-            documentObject,
-            documentMetadata,
-            etagVariant,
-            mappingSet
-        );
+        documentObject[EtagPropertyName] = ComposeEtag(documentMetadata, etagVariant, mappingSet);
         documentObject[LastModifiedDatePropertyName] = documentMetadata
             .ContentLastModifiedAt.ToUniversalTime()
             .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
@@ -257,28 +252,30 @@ internal sealed class RelationalReadMaterializer(
         return documentObject;
     }
 
-    // When the caller supplies representation inputs and a mapping set, the served _etag is composed
-    // as "{ContentVersion}-{variantKey}" (no hashing). Callers that have not yet been converted pass
-    // no EtagVariant and fall back to the legacy content hash over the link-bearing intermediate.
-    private string ComposeOrHashEtag(
-        JsonObject documentObject,
+    // Every ExternalResponse read call site supplies representation inputs and a mapping set, so the
+    // served _etag is always composed as "{ContentVersion}-{variantKey}" (no hashing). Absence of
+    // either indicates a wiring bug in the caller.
+    private string ComposeEtag(
         DocumentMetadataRow documentMetadata,
         EtagVariantInputs? etagVariant,
         MappingSet? mappingSet
     )
     {
-        if (etagVariant is { } variant && mappingSet is { } mappingSetValue)
+        if (etagVariant is not { } variant || mappingSet is not { } mappingSetValue)
         {
-            var variantKey = VariantKeyFactory.Create(
-                mappingSetValue.Key.EffectiveSchemaHash,
-                variant.Format,
-                ProfileVariantCode.Of(variant.ProfileName),
-                _linksOptions.Enabled
+            throw new InvalidOperationException(
+                "Relational external response materialization requires both EtagVariant and MappingSet "
+                    + "to compose the _etag."
             );
-
-            return _etagComposer.Compose(documentMetadata.ContentVersion, variantKey);
         }
 
-        return RelationalApiMetadataFormatter.FormatEtag(documentObject);
+        var variantKey = VariantKeyFactory.Create(
+            mappingSetValue.Key.EffectiveSchemaHash,
+            variant.Format,
+            ProfileVariantCode.Of(variant.ProfileName),
+            _linksOptions.Enabled
+        );
+
+        return _etagComposer.Compose(documentMetadata.ContentVersion, variantKey);
     }
 }
