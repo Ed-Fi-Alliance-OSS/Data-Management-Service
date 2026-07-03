@@ -1010,7 +1010,8 @@ function Build-Template {
         -RequestedDataStoreId ($PSBoundParameters.ContainsKey('DataStoreId') ? $DataStoreId : $null) `
         -DatabaseNameBound ($PSBoundParameters.ContainsKey('DataStoreDatabaseName'))
     if ($null -eq $targetDataStoreId) {
-        $targetDataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DataStoreDatabaseName
+        $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+        $targetDataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresCredential $postgresCredential -PostgresDbName $DataStoreDatabaseName
     }
 
     # Create Bootstrap application and assign to the data store

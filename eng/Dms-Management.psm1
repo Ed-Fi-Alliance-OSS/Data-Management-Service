@@ -101,6 +101,16 @@ function Invoke-Api {
     }
 }
 
+<#
+    .SYNOPSIS
+        Extracts HTTP status and body details from an error record.
+
+    .PARAMETER ErrorRecord
+        The error record produced by a failed HTTP request.
+
+    .OUTPUTS
+        [hashtable] Returns StatusCode and Body entries for the failed response.
+#>
 function Get-HttpErrorResponse {
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -172,6 +182,48 @@ function ConvertTo-FormBody {
     return ($Data.GetEnumerator() | ForEach-Object {
         "$($_.Key)=$([uri]::EscapeDataString($_.Value))"
     }) -join "&"
+}
+
+<#
+    .SYNOPSIS
+        Creates a PostgreSQL credential from a username and secret.
+
+    .DESCRIPTION
+        Builds a PSCredential for helpers that need to pass PostgreSQL connection details
+        through to the Configuration Service.
+
+    .PARAMETER UserName
+        The PostgreSQL username.
+
+    .PARAMETER Secret
+        The PostgreSQL secret.
+
+    .OUTPUTS
+        [System.Management.Automation.PSCredential]
+
+    .EXAMPLE
+        $credential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $env:POSTGRES_PASSWORD
+#>
+function ConvertTo-PostgresCredential {
+    [CmdletBinding()]
+    [OutputType([System.Management.Automation.PSCredential])]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$UserName,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Secret
+    )
+
+    $secureSecret = [System.Security.SecureString]::new()
+    foreach ($character in $Secret.ToCharArray()) {
+        $secureSecret.AppendChar($character)
+    }
+    $secureSecret.MakeReadOnly()
+
+    return [System.Management.Automation.PSCredential]::new($UserName, $secureSecret)
 }
 
 <#
@@ -451,6 +503,7 @@ function Wait-CmsClientAvailable {
 #>
 function Add-Vendor {
     [CmdletBinding()]
+    [OutputType([long])]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
@@ -543,6 +596,7 @@ function Add-Vendor {
 #>
 function Add-Application {
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
@@ -703,8 +757,8 @@ function Get-CurrentSchoolYear {
 .PARAMETER Name
     The name of the data store. Defaults to "Local Data Store".
 
-.PARAMETER PostgresPassword
-    The PostgreSQL password (mandatory).
+.PARAMETER PostgresCredential
+    The PostgreSQL credential (mandatory).
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -714,9 +768,6 @@ function Get-CurrentSchoolYear {
 
 .PARAMETER PostgresPort
     The PostgreSQL port. Defaults to 5432 for Docker internal port.
-
-.PARAMETER PostgresUser
-    The PostgreSQL username. Defaults to "postgres".
 
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
@@ -730,11 +781,13 @@ function Get-CurrentSchoolYear {
 
 .EXAMPLE
     # Create data store
-    $dataStoreId = Add-DataStore -AccessToken $token -PostgresPassword "secret123"
+    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret "secret123"
+    $dataStoreId = Add-DataStore -AccessToken $token -PostgresCredential $postgresCredential
 
 .EXAMPLE
     # Create data store with tenant
-    $dataStoreId = Add-DataStore -AccessToken $token -PostgresPassword "secret123" -Tenant "Tenant1"
+    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret "secret123"
+    $dataStoreId = Add-DataStore -AccessToken $token -PostgresCredential $postgresCredential -Tenant "Tenant1"
 #>
 function Add-DataStore {
     [CmdletBinding()]
@@ -749,7 +802,8 @@ function Add-DataStore {
         [string]$Name = "Local Data Store",
 
         [Parameter(Mandatory = $true)]
-        [string]$PostgresPassword,
+        [ValidateNotNull()]
+        [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
         [string]$PostgresDbName = "edfi_datamanagementservice",
@@ -759,9 +813,6 @@ function Add-DataStore {
 
         [int]$PostgresPort = 5432,
 
-        [ValidateNotNullOrEmpty()]
-        [string]$PostgresUser = "postgres",
-
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
 
@@ -769,7 +820,9 @@ function Add-DataStore {
     )
 
     # Build connection string from individual parameters
-    $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$PostgresUser;password=$PostgresPassword;database=$PostgresDbName;"
+    $postgresUser = $PostgresCredential.UserName
+    $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
+    $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$postgresUser;password=$postgresPassword;database=$PostgresDbName;"
 
     $dataStoreData = @{
         dataStoreType = $DataStoreType
@@ -957,8 +1010,8 @@ function Add-DataStoreContext {
 .PARAMETER EndYear
     The last school year in the range (mandatory).
 
-.PARAMETER PostgresPassword
-    The PostgreSQL password (mandatory).
+.PARAMETER PostgresCredential
+    The PostgreSQL credential (mandatory).
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -968,9 +1021,6 @@ function Add-DataStoreContext {
 
 .PARAMETER PostgresPort
     The PostgreSQL port. Defaults to 5432.
-
-.PARAMETER PostgresUser
-    The PostgreSQL username. Defaults to "postgres".
 
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
@@ -984,9 +1034,11 @@ function Add-DataStoreContext {
 
 .EXAMPLE
     # Create data stores for years 2022-2026
-    $dataStores = Add-DmsSchoolYearInstances -AccessToken $token -StartYear 2022 -EndYear 2026 -PostgresPassword "secret123"
+    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret "secret123"
+    $dataStores = Add-DmsSchoolYearInstances -AccessToken $token -StartYear 2022 -EndYear 2026 -PostgresCredential $postgresCredential
 #>
 function Add-DmsSchoolYearInstances {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'The exported helper name is retained for existing bootstrap scripts.')]
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
@@ -999,7 +1051,8 @@ function Add-DmsSchoolYearInstances {
         [int]$EndYear,
 
         [Parameter(Mandatory = $true)]
-        [string]$PostgresPassword,
+        [ValidateNotNull()]
+        [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
         [string]$PostgresDbName = "edfi_datamanagementservice",
@@ -1008,9 +1061,6 @@ function Add-DmsSchoolYearInstances {
         [string]$PostgresHost = "dms-postgresql",
 
         [int]$PostgresPort = 5432,
-
-        [ValidateNotNullOrEmpty()]
-        [string]$PostgresUser = "postgres",
 
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
@@ -1035,11 +1085,10 @@ function Add-DmsSchoolYearInstances {
             -CmsUrl $CmsUrl `
             -DataStoreType "SchoolYear" `
             -Name "School Year $year" `
-            -PostgresPassword $PostgresPassword `
+            -PostgresCredential $PostgresCredential `
             -PostgresDbName $PostgresDbName `
             -PostgresHost $PostgresHost `
             -PostgresPort $PostgresPort `
-            -PostgresUser $PostgresUser `
             -AccessToken $AccessToken `
             -Tenant $Tenant
 
@@ -1522,4 +1571,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

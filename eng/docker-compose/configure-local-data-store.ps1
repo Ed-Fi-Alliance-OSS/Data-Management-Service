@@ -301,6 +301,7 @@ function Invoke-ConfigureLocalDataStore {
             $DataStoreDatabaseName
         }
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
     if ($NoDataStore) {
@@ -327,9 +328,8 @@ function Invoke-ConfigureLocalDataStore {
             -AccessToken $configToken `
             -StartYear $schoolYears[0] `
             -EndYear $schoolYears[-1] `
-            -PostgresPassword $postgresPassword `
+            -PostgresCredential $postgresCredential `
             -PostgresDbName $postgresDbName `
-            -PostgresUser $postgresUser `
             -Tenant $tenant
 
         $dataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
@@ -362,9 +362,8 @@ function Invoke-ConfigureLocalDataStore {
     $dataStoreId = Add-DataStore `
         -CmsUrl $cmsUrl `
         -AccessToken $configToken `
-        -PostgresPassword $postgresPassword `
+        -PostgresCredential $postgresCredential `
         -PostgresDbName $postgresDbName `
-        -PostgresUser $postgresUser `
         -Name "Local Development Data Store" `
         -DataStoreType "Development" `
         -Tenant $tenant

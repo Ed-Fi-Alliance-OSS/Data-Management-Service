@@ -172,11 +172,12 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
 
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
+    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
 
     $verificationDataStoreId = Add-DataStore `
         -CmsUrl $CmsUrl `
         -AccessToken $cmsToken `
-        -PostgresPassword $PostgresPassword `
+        -PostgresCredential $postgresCredential `
         -PostgresDbName $VerificationDatabaseName `
         -Name "Template Restore Verification" `
         -DataStoreType "Verification"

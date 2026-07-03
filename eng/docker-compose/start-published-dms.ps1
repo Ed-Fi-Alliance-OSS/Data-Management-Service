@@ -490,6 +490,14 @@ else {
                 else {
                     $DataStoreDatabaseName
                 }
+            $postgresUser =
+                if ([string]::IsNullOrWhiteSpace([string]$envValues.POSTGRES_USER)) {
+                    "postgres"
+                }
+                else {
+                    [string]$envValues.POSTGRES_USER
+                }
+            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
             # Handle school year range data stores
             if ($SchoolYearRange) {
@@ -506,7 +514,7 @@ else {
                         -AccessToken $configToken `
                         -StartYear $startYear `
                         -EndYear $endYear `
-                        -PostgresPassword $envValues.POSTGRES_PASSWORD `
+                        -PostgresCredential $postgresCredential `
                         -PostgresDbName $postgresDbName `
                         -Tenant $tenant
 
@@ -521,7 +529,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }
