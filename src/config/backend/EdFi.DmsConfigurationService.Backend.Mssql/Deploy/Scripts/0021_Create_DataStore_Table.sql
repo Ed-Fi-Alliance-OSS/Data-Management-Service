@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.DataStore', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.DataStore (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_DataStore PRIMARY KEY,
         DataStoreType NVARCHAR(50) NOT NULL,
         Name NVARCHAR(256) NOT NULL,
         ConnectionString VARBINARY(MAX),

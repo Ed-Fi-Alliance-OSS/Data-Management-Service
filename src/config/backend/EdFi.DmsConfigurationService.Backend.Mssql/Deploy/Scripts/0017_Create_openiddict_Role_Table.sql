@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.OpenIddictRole', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictRole (
-        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-        Name NVARCHAR(100) NOT NULL CONSTRAINT uq_openiddictrole_name UNIQUE,
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_OpenIddictRole PRIMARY KEY,
+        Name NVARCHAR(100) NOT NULL CONSTRAINT UX_OpenIddictRole_Name UNIQUE,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,

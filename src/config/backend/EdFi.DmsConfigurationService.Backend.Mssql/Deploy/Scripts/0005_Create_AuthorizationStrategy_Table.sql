@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.AuthorizationStrategy', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.AuthorizationStrategy (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_AuthorizationStrategy PRIMARY KEY,
         AuthorizationStrategyName NVARCHAR(255) NOT NULL,
         DisplayName NVARCHAR(255) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -16,5 +16,5 @@ BEGIN
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'uq_authorizationstrategyname' AND parent_object_id = OBJECT_ID('dmscs.AuthorizationStrategy'))
-    ALTER TABLE dmscs.AuthorizationStrategy ADD CONSTRAINT uq_authorizationstrategyname UNIQUE (AuthorizationStrategyName);
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_AuthorizationStrategy_AuthorizationStrategyName' AND parent_object_id = OBJECT_ID('dmscs.AuthorizationStrategy'))
+    ALTER TABLE dmscs.AuthorizationStrategy ADD CONSTRAINT UX_AuthorizationStrategy_AuthorizationStrategyName UNIQUE (AuthorizationStrategyName);

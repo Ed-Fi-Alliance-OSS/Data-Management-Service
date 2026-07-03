@@ -11,8 +11,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql;
 /// Maps SqlException error numbers to the constraint-violation categories the
 /// repositories translate into result types. Error 2627 is a unique/primary-key
 /// constraint violation, 2601 a unique-index violation, 547 a foreign-key violation.
-/// Constraint, index, and foreign-key names are created lowercase in the schema so the
-/// name literals here match the ones the PostgreSQL repositories use.
+/// Constraint, index, and foreign-key names follow the standardized PascalCase
+/// conventions (PK_/UX_/FK_/IX_) so the name literals here match the ones the
+/// PostgreSQL repositories use.
 /// </summary>
 internal static class MssqlExceptionExtensions
 {

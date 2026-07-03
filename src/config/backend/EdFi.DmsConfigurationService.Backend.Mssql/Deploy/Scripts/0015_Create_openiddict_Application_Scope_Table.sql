@@ -12,8 +12,8 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT openiddictapplicationscope_pkey PRIMARY KEY (ApplicationId, ScopeId),
-        CONSTRAINT fk_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.OpenIddictApplication(Id) ON DELETE CASCADE,
-        CONSTRAINT fk_scope FOREIGN KEY (ScopeId) REFERENCES dmscs.OpenIddictScope(Id) ON DELETE CASCADE
+        CONSTRAINT PK_OpenIddictApplicationScope PRIMARY KEY (ApplicationId, ScopeId),
+        CONSTRAINT FK_OpenIddictApplicationScope_OpenIddictApplication FOREIGN KEY (ApplicationId) REFERENCES dmscs.OpenIddictApplication(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_OpenIddictApplicationScope_OpenIddictScope FOREIGN KEY (ScopeId) REFERENCES dmscs.OpenIddictScope(Id) ON DELETE CASCADE
     );
 END;

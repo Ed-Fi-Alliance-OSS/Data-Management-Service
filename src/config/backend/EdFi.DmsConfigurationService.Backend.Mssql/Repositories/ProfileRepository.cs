@@ -40,7 +40,7 @@ public class ProfileRepository(
             );
             return new ProfileInsertResult.Success(id);
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("uq_profile_name"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_Profile_ProfileName"))
         {
             logger.LogWarning(
                 ex,
@@ -84,7 +84,7 @@ public class ProfileRepository(
             }
             return new ProfileUpdateResult.Success();
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("uq_profile_name"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_Profile_ProfileName"))
         {
             logger.LogWarning(
                 ex,
@@ -232,7 +232,7 @@ public class ProfileRepository(
             }
             return new ProfileDeleteResult.Success();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_applicationprofile_profile"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApplicationProfile_Profile"))
         {
             logger.LogWarning(
                 ex,

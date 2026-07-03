@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.OpenIddictAuthorization', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictAuthorization (
-        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_OpenIddictAuthorization PRIMARY KEY,
         ApplicationId UNIQUEIDENTIFIER NOT NULL,
         Subject NVARCHAR(100) NOT NULL,
         Status NVARCHAR(50) NOT NULL,

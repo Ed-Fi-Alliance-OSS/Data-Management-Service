@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.ResourceClaim', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ResourceClaim (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_ResourceClaim PRIMARY KEY,
         ResourceName NVARCHAR(255) NOT NULL,
         ClaimName NVARCHAR(255) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -16,5 +16,5 @@ BEGIN
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'uq_claimname' AND parent_object_id = OBJECT_ID('dmscs.ResourceClaim'))
-    ALTER TABLE dmscs.ResourceClaim ADD CONSTRAINT uq_claimname UNIQUE (ClaimName);
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_ResourceClaim_ClaimName' AND parent_object_id = OBJECT_ID('dmscs.ResourceClaim'))
+    ALTER TABLE dmscs.ResourceClaim ADD CONSTRAINT UX_ResourceClaim_ClaimName UNIQUE (ClaimName);

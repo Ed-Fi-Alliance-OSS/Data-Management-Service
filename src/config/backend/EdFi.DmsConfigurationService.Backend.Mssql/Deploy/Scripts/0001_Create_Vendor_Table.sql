@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.Vendor', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.Vendor (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_Vendor PRIMARY KEY,
         Company NVARCHAR(256) NOT NULL,
         ContactName NVARCHAR(128),
         ContactEmailAddress NVARCHAR(320),
@@ -17,8 +17,8 @@ BEGIN
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'uq_company' AND parent_object_id = OBJECT_ID('dmscs.Vendor'))
-    ALTER TABLE dmscs.Vendor ADD CONSTRAINT uq_company UNIQUE (Company);
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_Vendor_Company' AND parent_object_id = OBJECT_ID('dmscs.Vendor'))
+    ALTER TABLE dmscs.Vendor ADD CONSTRAINT UX_Vendor_Company UNIQUE (Company);
 
 IF OBJECT_ID('dmscs.VendorNamespacePrefix', 'U') IS NULL
 BEGIN
@@ -29,7 +29,7 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT pk_vendornamespaceprefix PRIMARY KEY (VendorId, NamespacePrefix),
-        CONSTRAINT fk_vendor_namespaceprefix FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(Id) ON DELETE CASCADE
+        CONSTRAINT PK_VendorNamespacePrefix PRIMARY KEY (VendorId, NamespacePrefix),
+        CONSTRAINT FK_VendorNamespacePrefix_Vendor FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(Id) ON DELETE CASCADE
     );
 END;

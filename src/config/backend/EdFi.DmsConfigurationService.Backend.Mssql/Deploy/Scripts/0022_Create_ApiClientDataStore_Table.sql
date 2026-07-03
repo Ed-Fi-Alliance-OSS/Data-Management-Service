@@ -12,8 +12,8 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT pk_apiclientdatastore PRIMARY KEY (ApiClientId, DataStoreId),
-        CONSTRAINT fk_apiclient FOREIGN KEY (ApiClientId) REFERENCES dmscs.ApiClient(Id) ON DELETE CASCADE,
-        CONSTRAINT fk_datastore FOREIGN KEY (DataStoreId) REFERENCES dmscs.DataStore(Id) ON DELETE CASCADE
+        CONSTRAINT PK_ApiClientDataStore PRIMARY KEY (ApiClientId, DataStoreId),
+        CONSTRAINT FK_ApiClientDataStore_ApiClient FOREIGN KEY (ApiClientId) REFERENCES dmscs.ApiClient(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ApiClientDataStore_DataStore FOREIGN KEY (DataStoreId) REFERENCES dmscs.DataStore(Id) ON DELETE CASCADE
     );
 END;

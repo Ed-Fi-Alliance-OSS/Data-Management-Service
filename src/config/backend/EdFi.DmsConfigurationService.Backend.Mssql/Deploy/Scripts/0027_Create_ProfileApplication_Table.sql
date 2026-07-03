@@ -14,8 +14,8 @@ BEGIN
         ProfileId BIGINT NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
-        PRIMARY KEY (ApplicationId, ProfileId),
-        CONSTRAINT fk_applicationprofile_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE,
-        CONSTRAINT fk_applicationprofile_profile FOREIGN KEY (ProfileId) REFERENCES dmscs.Profile(Id)
+        CONSTRAINT PK_ApplicationProfile PRIMARY KEY (ApplicationId, ProfileId),
+        CONSTRAINT FK_ApplicationProfile_Application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ApplicationProfile_Profile FOREIGN KEY (ProfileId) REFERENCES dmscs.Profile(Id)
     );
 END;

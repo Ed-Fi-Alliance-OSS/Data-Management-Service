@@ -81,7 +81,7 @@ public class DataStoreDerivativeRepository(
 
             return new DataStoreDerivativeInsertResult.Success(id.Value);
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastorederivative_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_DataStoreDerivative_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
@@ -232,7 +232,7 @@ public class DataStoreDerivativeRepository(
 
             return new DataStoreDerivativeUpdateResult.Success();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastorederivative_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_DataStoreDerivative_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation();

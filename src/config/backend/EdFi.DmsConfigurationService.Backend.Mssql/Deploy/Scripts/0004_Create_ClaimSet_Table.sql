@@ -13,9 +13,9 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT claimset_pkey PRIMARY KEY (Id)
+        CONSTRAINT PK_ClaimSet PRIMARY KEY (Id)
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_claimsetname' AND object_id = OBJECT_ID('dmscs.ClaimSet'))
-    CREATE UNIQUE INDEX idx_claimsetname ON dmscs.ClaimSet (ClaimSetName);
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_ClaimSet_ClaimSetName' AND parent_object_id = OBJECT_ID('dmscs.ClaimSet'))
+    ALTER TABLE dmscs.ClaimSet ADD CONSTRAINT UX_ClaimSet_ClaimSetName UNIQUE (ClaimSetName);

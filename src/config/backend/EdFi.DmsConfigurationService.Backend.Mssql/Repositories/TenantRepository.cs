@@ -39,7 +39,7 @@ public class TenantRepository(
             );
             return new TenantInsertResult.Success(id);
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("uq_tenant_name"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_Tenant_Name"))
         {
             logger.LogWarning(ex, "Tenant name must be unique");
             return new TenantInsertResult.FailureDuplicateName();

@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.OpenIddictToken', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictToken (
-        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_OpenIddictToken PRIMARY KEY,
         ApplicationId UNIQUEIDENTIFIER,
         AuthorizationId UNIQUEIDENTIFIER,
         CreationDate DATETIME2 DEFAULT SYSUTCDATETIME(),
@@ -25,14 +25,14 @@ BEGIN
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_openiddicttoken_applicationid' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
-    CREATE INDEX idx_openiddicttoken_applicationid ON dmscs.OpenIddictToken (ApplicationId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_OpenIddictToken_ApplicationId' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
+    CREATE INDEX IX_OpenIddictToken_ApplicationId ON dmscs.OpenIddictToken (ApplicationId);
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_openiddicttoken_subject' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
-    CREATE INDEX idx_openiddicttoken_subject ON dmscs.OpenIddictToken (Subject);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_OpenIddictToken_Subject' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
+    CREATE INDEX IX_OpenIddictToken_Subject ON dmscs.OpenIddictToken (Subject);
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_openiddicttoken_referenceid' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
-    CREATE INDEX idx_openiddicttoken_referenceid ON dmscs.OpenIddictToken (ReferenceId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_OpenIddictToken_ReferenceId' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
+    CREATE INDEX IX_OpenIddictToken_ReferenceId ON dmscs.OpenIddictToken (ReferenceId);
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_openiddicttoken_expirationdate' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
-    CREATE INDEX idx_openiddicttoken_expirationdate ON dmscs.OpenIddictToken (ExpirationDate);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_OpenIddictToken_ExpirationDate' AND object_id = OBJECT_ID('dmscs.OpenIddictToken'))
+    CREATE INDEX IX_OpenIddictToken_ExpirationDate ON dmscs.OpenIddictToken (ExpirationDate);

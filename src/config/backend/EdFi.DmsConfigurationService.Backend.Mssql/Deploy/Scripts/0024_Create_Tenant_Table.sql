@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.Tenant', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.Tenant (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_Tenant PRIMARY KEY,
         Name NVARCHAR(256) NOT NULL,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),
@@ -15,5 +15,5 @@ BEGIN
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'uq_tenant_name' AND parent_object_id = OBJECT_ID('dmscs.Tenant'))
-    ALTER TABLE dmscs.Tenant ADD CONSTRAINT uq_tenant_name UNIQUE (Name);
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE name = 'UX_Tenant_Name' AND parent_object_id = OBJECT_ID('dmscs.Tenant'))
+    ALTER TABLE dmscs.Tenant ADD CONSTRAINT UX_Tenant_Name UNIQUE (Name);

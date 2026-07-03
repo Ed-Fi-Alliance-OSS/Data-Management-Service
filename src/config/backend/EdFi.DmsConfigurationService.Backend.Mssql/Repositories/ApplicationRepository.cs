@@ -122,25 +122,25 @@ public class ApplicationRepository(
             await transaction.CommitAsync();
             return new ApplicationInsertResult.Success(id);
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_vendor"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_Application_Vendor"))
         {
             logger.LogWarning(ex, "Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDataStoreNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_applicationprofile_profile"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApplicationProfile_Profile"))
         {
             logger.LogWarning(ex, "Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureProfileNotFound();
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_vendor_applicationname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_Application_VendorId_ApplicationName"))
         {
             logger.LogWarning(
                 ex,
@@ -493,25 +493,25 @@ public class ApplicationRepository(
 
             return new ApplicationUpdateResult.Success();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_vendor"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_Application_Vendor"))
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Update application failure: Data store not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_applicationprofile_profile"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApplicationProfile_Profile"))
         {
             logger.LogWarning(ex, "Update application failure: Profile not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureProfileNotFound();
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_vendor_applicationname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_Application_VendorId_ApplicationName"))
         {
             logger.LogWarning(
                 ex,

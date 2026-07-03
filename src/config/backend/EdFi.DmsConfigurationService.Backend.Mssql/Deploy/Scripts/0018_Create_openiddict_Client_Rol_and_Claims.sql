@@ -12,8 +12,8 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        PRIMARY KEY (ClientId, RoleId),
-        CONSTRAINT fk_openiddictclientrole_client FOREIGN KEY (ClientId) REFERENCES dmscs.OpenIddictApplication(Id) ON DELETE CASCADE,
-        CONSTRAINT fk_openiddictclientrole_role FOREIGN KEY (RoleId) REFERENCES dmscs.OpenIddictRole(Id) ON DELETE CASCADE
+        CONSTRAINT PK_OpenIddictClientRole PRIMARY KEY (ClientId, RoleId),
+        CONSTRAINT FK_OpenIddictClientRole_OpenIddictApplication FOREIGN KEY (ClientId) REFERENCES dmscs.OpenIddictApplication(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_OpenIddictClientRole_OpenIddictRole FOREIGN KEY (RoleId) REFERENCES dmscs.OpenIddictRole(Id) ON DELETE CASCADE
     );
 END;

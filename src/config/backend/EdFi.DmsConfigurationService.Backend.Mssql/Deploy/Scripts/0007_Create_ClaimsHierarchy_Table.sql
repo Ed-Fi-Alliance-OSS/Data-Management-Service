@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.ClaimsHierarchy', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ClaimsHierarchy (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_ClaimsHierarchy PRIMARY KEY,
         Hierarchy NVARCHAR(MAX) NOT NULL,
         LastModifiedDate DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),

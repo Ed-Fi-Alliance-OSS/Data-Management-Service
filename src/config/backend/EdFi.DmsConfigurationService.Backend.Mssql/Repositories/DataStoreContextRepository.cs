@@ -84,7 +84,7 @@ public class DataStoreContextRepository(
 
             return new DataStoreContextInsertResult.Success(id.Value);
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_datastore_context_unique"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_DataStoreContext_DataStoreId_ContextKey"))
         {
             logger.LogWarning(
                 ex,
@@ -216,7 +216,7 @@ public class DataStoreContextRepository(
 
             return new DataStoreContextUpdateResult.Success();
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_datastore_context_unique"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_DataStoreContext_DataStoreId_ContextKey"))
         {
             logger.LogWarning(
                 ex,

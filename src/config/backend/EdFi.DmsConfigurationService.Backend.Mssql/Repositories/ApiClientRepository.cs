@@ -72,13 +72,13 @@ public class ApiClientRepository(
             await transaction.CommitAsync();
             return new ApiClientInsertResult.Success(apiClientId);
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_apiclient_application"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClient_Application"))
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureApplicationNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
@@ -341,13 +341,13 @@ public class ApiClientRepository(
             await transaction.CommitAsync();
             return new ApiClientUpdateResult.Success();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_apiclient_application"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClient_Application"))
         {
             logger.LogWarning(ex, "Application not found");
             await transaction.RollbackAsync();
             return new ApiClientUpdateResult.FailureApplicationNotFound();
         }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("fk_datastore"))
+        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
         {
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();

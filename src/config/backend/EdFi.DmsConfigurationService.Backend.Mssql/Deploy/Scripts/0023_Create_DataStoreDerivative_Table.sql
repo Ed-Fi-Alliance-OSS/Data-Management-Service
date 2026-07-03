@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.DataStoreDerivative', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.DataStoreDerivative (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_DataStoreDerivative PRIMARY KEY,
         DataStoreId BIGINT NOT NULL,
         DerivativeType NVARCHAR(50) NOT NULL,
         ConnectionString VARBINARY(MAX),
@@ -14,9 +14,9 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT fk_datastorederivative_datastore FOREIGN KEY (DataStoreId) REFERENCES dmscs.DataStore(Id) ON DELETE CASCADE
+        CONSTRAINT FK_DataStoreDerivative_DataStore FOREIGN KEY (DataStoreId) REFERENCES dmscs.DataStore(Id) ON DELETE CASCADE
     );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_datastorederivative_datastoreid' AND object_id = OBJECT_ID('dmscs.DataStoreDerivative'))
-    CREATE INDEX idx_datastorederivative_datastoreid ON dmscs.DataStoreDerivative (DataStoreId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_DataStoreDerivative_DataStoreId' AND object_id = OBJECT_ID('dmscs.DataStoreDerivative'))
+    CREATE INDEX IX_DataStoreDerivative_DataStoreId ON dmscs.DataStoreDerivative (DataStoreId);

@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.OpenIddictScope', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictScope (
-        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-        Name NVARCHAR(100) NOT NULL CONSTRAINT uq_openiddictscope_name UNIQUE,
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_OpenIddictScope PRIMARY KEY,
+        Name NVARCHAR(100) NOT NULL CONSTRAINT UX_OpenIddictScope_Name UNIQUE,
         Description NVARCHAR(200),
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),

@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.ApiClient', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.ApiClient (
-        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        Id BIGINT IDENTITY(1,1) CONSTRAINT PK_ApiClient PRIMARY KEY,
         ApplicationId BIGINT NOT NULL,
         Name NVARCHAR(50) NOT NULL,
         IsApproved BIT NOT NULL DEFAULT 0,
@@ -16,6 +16,6 @@ BEGIN
         CreatedBy NVARCHAR(256),
         LastModifiedAt DATETIME2,
         ModifiedBy NVARCHAR(256),
-        CONSTRAINT fk_apiclient_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE
+        CONSTRAINT FK_ApiClient_Application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE
     );
 END;

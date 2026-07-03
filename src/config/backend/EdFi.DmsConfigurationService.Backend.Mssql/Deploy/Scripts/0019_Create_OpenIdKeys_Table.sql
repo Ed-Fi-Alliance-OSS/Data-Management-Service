@@ -6,7 +6,7 @@
 IF OBJECT_ID('dmscs.OpenIddictKey', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictKey (
-        Id INT IDENTITY(1,1) PRIMARY KEY,
+        Id INT IDENTITY(1,1) CONSTRAINT PK_OpenIddictKey PRIMARY KEY,
         KeyId NVARCHAR(64) NOT NULL,
         PublicKey VARBINARY(MAX) NOT NULL,
         PrivateKey VARBINARY(MAX) NOT NULL, -- ENCRYPTBYPASSPHRASE ciphertext

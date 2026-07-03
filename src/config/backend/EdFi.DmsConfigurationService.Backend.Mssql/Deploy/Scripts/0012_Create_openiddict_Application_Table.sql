@@ -6,8 +6,8 @@
 IF OBJECT_ID('dmscs.OpenIddictApplication', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.OpenIddictApplication (
-        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-        ClientId NVARCHAR(100) NOT NULL CONSTRAINT uq_openiddictapplication_clientid UNIQUE,
+        Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_OpenIddictApplication PRIMARY KEY,
+        ClientId NVARCHAR(100) NOT NULL CONSTRAINT UX_OpenIddictApplication_ClientId UNIQUE,
         ClientSecret NVARCHAR(256),
         DisplayName NVARCHAR(200),
         RedirectUris NVARCHAR(MAX),

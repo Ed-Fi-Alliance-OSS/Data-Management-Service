@@ -147,7 +147,7 @@ public class ClaimSetRepository(
 
             return new ClaimSetInsertResult.Success(id);
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_claimsetname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_ClaimSet_ClaimSetName"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -432,7 +432,7 @@ public class ClaimSetRepository(
 
             return result;
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_claimsetname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_ClaimSet_ClaimSetName"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -880,7 +880,7 @@ public class ClaimSetRepository(
             await transaction.CommitAsync();
             return new ClaimSetImportResult.Success(claimSetId, skippedClaims);
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_claimsetname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_ClaimSet_ClaimSetName"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -972,7 +972,7 @@ public class ClaimSetRepository(
 
             return copyResult;
         }
-        catch (SqlException ex) when (ex.IsUniqueViolation("idx_claimsetname"))
+        catch (SqlException ex) when (ex.IsUniqueViolation("UX_ClaimSet_ClaimSetName"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
