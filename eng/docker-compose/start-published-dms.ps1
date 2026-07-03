@@ -133,7 +133,7 @@ Import-Module ./env-utility.psm1 -Force
 # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
 $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
-$identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
+$identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
@@ -452,7 +452,7 @@ else {
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
-        $null = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
+        $null = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl
 
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Credential values were returned to the caller and were not written to logs."

@@ -95,7 +95,7 @@ function New-OpenIddictApplication {
     $appId = [guid]::NewGuid().ToString()
     $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
-    $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret -Iterations $iterations
+    $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $ClientSecret -Iterations $iterations
     $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictApplication" ("Id", "ClientId", "ClientSecret", "DisplayName", "Type")
 VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')

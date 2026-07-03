@@ -23,17 +23,19 @@
 
 .DESCRIPTION
 
-.PARAMETER Password
-    The plain text password to hash.
+.PARAMETER PlainTextSecret
+    The plain text secret to hash.
 
 .OUTPUTS
     System.String. Base64-encoded password hash.
 #>
 function New-AspNetPasswordHash {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates a hash in memory; callers decide whether to persist it.')]
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Password,
+        [string]$PlainTextSecret,
         [int]$Iterations = 210000
     )
     $version = 1
@@ -42,7 +44,7 @@ function New-AspNetPasswordHash {
     $salt = New-Object byte[] $saltLength
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($salt)
 
-    $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($Password)
+    $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainTextSecret)
     $pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
         $passwordBytes, $salt, $Iterations, [System.Security.Cryptography.HashAlgorithmName]::SHA256
     )
@@ -84,6 +86,8 @@ function New-AspNetPasswordHash {
     System.Management.Automation.PSCustomObject with PublicKey and PrivateKey properties.
 #>
 function New-OpenIddictKeyPair {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates a key pair in memory; callers decide whether to persist it.')]
+    [OutputType([pscustomobject])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
@@ -138,6 +142,8 @@ function New-OpenIddictKeyPair {
     System.String. SQL INSERT statement for the OpenIddict key.
 #>
 function New-OpenIddictKeyInsertSql {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
@@ -190,6 +196,8 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
     System.String. SQL UPDATE statement for the client secret.
 #>
 function New-ClientSecretUpdateSql {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -200,7 +208,7 @@ function New-ClientSecretUpdateSql {
     )
 
     try {
-        $hashedSecret = New-AspNetPasswordHash -Password $PlainTextSecret
+        $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $PlainTextSecret
 
         $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"

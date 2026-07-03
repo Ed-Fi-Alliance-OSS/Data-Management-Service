@@ -138,7 +138,7 @@ function Resolve-BootstrapAdminClient {
     }
 }
 
-function Resolve-IdentityClientSecrets {
+function Resolve-IdentityClientSecretConfiguration {
     <#
     .SYNOPSIS
         Returns the parameters used to register the local identity clients so that both the
@@ -174,6 +174,8 @@ function Resolve-IdentityClientSecrets {
         ClientSecretMaximumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH" -DefaultValue "128")
     }
 }
+
+Set-Alias -Name Resolve-IdentityClientSecrets -Value Resolve-IdentityClientSecretConfiguration
 
 function Resolve-CmsBaseUrl {
     <#

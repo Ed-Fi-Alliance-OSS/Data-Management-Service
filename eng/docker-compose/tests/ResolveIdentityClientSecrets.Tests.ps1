@@ -14,20 +14,20 @@ BeforeAll {
     $script:defaultSecret = "ValidClientSecret1234567890!Abcd"
 }
 
-Describe "Resolve-IdentityClientSecrets" {
+Describe "Resolve-IdentityClientSecretConfiguration" {
     Context "when env-file values are provided" {
         It "returns CONFIG_SERVICE_CLIENT_SECRET for the CMSReadOnlyAccess client" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
             $result.CmsReadOnlyAccessClientSecret | Should -Be "OverrideReadOnly1234567890!Abcd"
         }
 
         It "returns DMS_CONFIG_IDENTITY_CLIENT_SECRET for the DmsConfigurationService client" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{ DMS_CONFIG_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIG_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
             $result.DmsConfigurationServiceClientSecret | Should -Be "OverrideFullAccess123456789!Abcd"
         }
 
         It "resolves both clients independently" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
                 CONFIG_SERVICE_CLIENT_SECRET     = "ReadOnlySecret1234567890!Abcdef"
                 DMS_CONFIG_IDENTITY_CLIENT_SECRET = "FullAccessSecret1234567890!Abcd"
             }
@@ -36,7 +36,7 @@ Describe "Resolve-IdentityClientSecrets" {
         }
 
         It "resolves custom client-secret length bounds from the env file" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
                 DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
                 DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
             }
@@ -47,18 +47,18 @@ Describe "Resolve-IdentityClientSecrets" {
 
     Context "when env-file values are missing or blank" {
         It "falls back to the local-dev default for both clients" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{}
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{}
             $result.CmsReadOnlyAccessClientSecret | Should -Be $script:defaultSecret
             $result.DmsConfigurationServiceClientSecret | Should -Be $script:defaultSecret
         }
 
         It "treats a whitespace-only value as missing" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "   " }
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "   " }
             $result.CmsReadOnlyAccessClientSecret | Should -Be $script:defaultSecret
         }
 
         It "falls back to the default 32/128 length bounds" {
-            $result = Resolve-IdentityClientSecrets -EnvValues @{}
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{}
             $result.ClientSecretMinimumLength | Should -Be 32
             $result.ClientSecretMaximumLength | Should -Be 128
         }
@@ -76,7 +76,7 @@ Describe "Start scripts register identity clients with env-file secrets" {
         # The per-client bindings asserted below reference $identityClientSecrets, so the script
         # must populate it from the env file via the shared resolver.
         $content = Get-Content -LiteralPath $ScriptPath -Raw
-        $content | Should -Match '\$identityClientSecrets\s*=\s*Resolve-IdentityClientSecrets\s+-EnvValues\s+\$envValues'
+        $content | Should -Match '\$identityClientSecrets\s*=\s*Resolve-IdentityClientSecretConfiguration\s+-EnvValues\s+\$envValues'
     }
 
     It "binds each client registration to the matching resolved secret and bounds in <Name>" -ForEach $cases {

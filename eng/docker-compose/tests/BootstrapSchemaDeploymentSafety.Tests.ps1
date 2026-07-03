@@ -900,11 +900,11 @@ exit $ExitCode
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
-function Get-SmokeTestCredentials {
+function Get-SmokeTestCredential {
     param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
     Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
-Export-ModuleMember -Function Get-SmokeTestCredentials
+Export-ModuleMember -Function Get-SmokeTestCredential
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
 
             . $script:repo.ConfigureScript
@@ -933,11 +933,11 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
-function Get-SmokeTestCredentials {
+function Get-SmokeTestCredential {
     param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
     Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
-Export-ModuleMember -Function Get-SmokeTestCredentials
+Export-ModuleMember -Function Get-SmokeTestCredential
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
 
             . $script:repo.ConfigureScript

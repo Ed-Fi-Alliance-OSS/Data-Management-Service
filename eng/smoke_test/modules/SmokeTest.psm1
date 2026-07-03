@@ -82,8 +82,9 @@ function Invoke-SmokeTestUtility {
     &dotnet $path $options
 }
 
-function Get-SmokeTestCredentials {
+function Get-SmokeTestCredential {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Operator-facing smoke-test helper intentionally writes progress to the console.')]
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param (
         [string]
@@ -173,4 +174,6 @@ function Get-SmokeTestCredentials {
     }
 }
 
-Export-ModuleMember *
+Set-Alias -Name Get-SmokeTestCredentials -Value Get-SmokeTestCredential
+
+Export-ModuleMember -Function * -Alias Get-SmokeTestCredentials

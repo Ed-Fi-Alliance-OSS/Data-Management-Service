@@ -311,7 +311,7 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
+            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -346,7 +346,7 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
+            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -371,7 +371,7 @@ function Invoke-ConfigureLocalDataStore {
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
+        Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 

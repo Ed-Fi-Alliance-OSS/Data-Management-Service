@@ -25,7 +25,7 @@ Write-Host "=== OpenIddict-Crypto Module Example Usage ===" -ForegroundColor Gre
 # Example 1: Generate a password hash
 Write-Host "`n1. Generating ASP.NET Core Identity compatible password hash:" -ForegroundColor Yellow
 $plainSecret = "ValidClientSecret1234567890!Abcd"
-$hashedSecret = New-AspNetPasswordHash -Password $plainSecret
+$hashedSecret = New-AspNetPasswordHash -PlainTextSecret $plainSecret
 Write-Host "Plain text: $plainSecret"
 Write-Host "Hashed: $hashedSecret"
 

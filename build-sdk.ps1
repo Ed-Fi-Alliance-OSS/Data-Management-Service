@@ -114,7 +114,7 @@ function GenerateSdk {
     }
 
     # Normalize operationId to camelCase without underscores (for the left side of mapping)
-    function Normalize-OperationId {
+    function ConvertTo-NormalizedOperationId {
         param($opId)
         $parts = $opId -split '_'
         $camel = $parts[0] + ($parts[1..($parts.Count-1)] | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) } | ForEach-Object { $_ }) -join ''
@@ -122,14 +122,14 @@ function GenerateSdk {
     }
 
     # Capitalize the first character of the string
-    function Capitalize-FirstChar {
+    function ConvertTo-CapitalizedFirstCharacter {
         param($s)
         if ($s.Length -eq 0) { return $s }
         return $s.Substring(0,1).ToUpper() + $s.Substring(1)
     }
 
     # Build mappings string: left = normalized, right = original with first char uppercased
-    $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
+    $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(ConvertTo-NormalizedOperationId $_)=$(ConvertTo-CapitalizedFirstCharacter $_)" }) -join ","
     # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
 
     & java -Xmx5g -jar $codeGenJar generate `

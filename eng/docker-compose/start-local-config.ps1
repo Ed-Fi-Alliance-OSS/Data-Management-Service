@@ -66,7 +66,7 @@ else {
     # Identity provider configuration
     Import-Module ./env-utility.psm1 -Force
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    $identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
     $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
     Write-Output "Identity Provider $IdentityProvider"
     if($IdentityProvider -eq "keycloak")
