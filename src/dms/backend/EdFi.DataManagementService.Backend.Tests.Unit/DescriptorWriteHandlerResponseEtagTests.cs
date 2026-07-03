@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -22,10 +23,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Response_Etags
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
+    private static readonly IEtagComposer _etagComposer = new EtagComposer();
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
 
     [Test]
-    public async Task It_returns_the_canonical_hash_etag_for_descriptor_post_creates()
+    public async Task It_returns_the_composed_etag_for_descriptor_post_creates()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -34,6 +36,7 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(42L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -45,7 +48,7 @@ public class Given_Descriptor_Write_Response_Etags
         result
             .Should()
             .BeEquivalentTo(
-                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedCanonicalHashEtag(request))
+                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedComposedDescriptorEtag(42L))
             );
         result
             .Should()
@@ -60,11 +63,11 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .NotContain("RETURNING \"DocumentId\", \"ContentVersion\"");
+            .Contain("RETURNING \"DocumentId\", \"ContentVersion\"");
     }
 
     [Test]
-    public async Task It_hashes_descriptor_write_responses_from_canonical_field_order()
+    public async Task It_composes_descriptor_write_responses_independent_of_request_field_order()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -73,6 +76,7 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(42L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -88,12 +92,12 @@ public class Given_Descriptor_Write_Response_Etags
         result
             .Should()
             .BeEquivalentTo(
-                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedCanonicalHashEtag(request))
+                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedComposedDescriptorEtag(42L))
             );
     }
 
     [Test]
-    public async Task It_returns_the_canonical_hash_etag_for_descriptor_post_as_update()
+    public async Task It_returns_the_composed_etag_for_descriptor_post_as_update()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -105,6 +109,7 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -112,7 +117,9 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         result
             .Should()
             .BeOfType<UpsertResult.UpdateSuccess>()
@@ -130,7 +137,7 @@ public class Given_Descriptor_Write_Response_Etags
     }
 
     [Test]
-    public async Task It_returns_the_current_hash_etag_for_descriptor_post_as_update_no_ops_without_an_update_command()
+    public async Task It_returns_the_current_composed_etag_for_descriptor_post_as_update_no_ops_without_an_update_command()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -147,7 +154,9 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(44L))
+            );
         result
             .Should()
             .BeOfType<UpsertResult.UpdateSuccess>()
@@ -162,7 +171,7 @@ public class Given_Descriptor_Write_Response_Etags
     }
 
     [Test]
-    public async Task It_returns_the_canonical_hash_etag_for_descriptor_put_no_ops_without_an_update_command()
+    public async Task It_returns_the_current_composed_etag_for_descriptor_put_no_ops_without_an_update_command()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -179,7 +188,9 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(44L))
+            );
         result
             .Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
@@ -192,7 +203,7 @@ public class Given_Descriptor_Write_Response_Etags
     }
 
     [Test]
-    public async Task It_returns_the_canonical_hash_etag_for_descriptor_put_updates()
+    public async Task It_returns_the_composed_etag_for_descriptor_put_updates()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -204,6 +215,7 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -215,7 +227,9 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         result
             .Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
@@ -231,9 +245,15 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
-    private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(
-            DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        _etagComposer.Compose(
+            contentVersion,
+            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+        );
+
+    private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
         );
 
     private static DescriptorWriteHandler CreateSut(
@@ -246,7 +266,8 @@ public class Given_Descriptor_Write_Response_Etags
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
-            NullLogger<DescriptorWriteHandler>.Instance
+            NullLogger<DescriptorWriteHandler>.Instance,
+            _etagComposer
         );
     }
 

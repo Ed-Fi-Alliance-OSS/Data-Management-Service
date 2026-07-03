@@ -151,7 +151,191 @@ public class Given_MssqlDescriptorWriteHandler
         stampsAfterNoOp.ContentLastModifiedAt.Should().Be(stampsAfterInsert.ContentLastModifiedAt);
     }
 
+    [Test]
+    public async Task It_returns_descriptor_write_etags_matching_follow_up_get_by_id()
+    {
+        using var scope = CreateConfiguredScope();
+        var writeHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var readHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
+
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity"
+            }
+            """
+        );
+        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+
+        ((UpsertResult.InsertSuccess)createResult)
+            .ETag.Should()
+            .MatchRegex(
+                @"^\d+-[a-z0-9]{1,8}\.j\._\.n$",
+                "the descriptor write etag is composed as {ContentVersion}-{schemaEpoch}.j._.n (no profile, links off)"
+            );
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            createResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var upsertRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity Upsert",
+                "description": "Updated through POST"
+            }
+            """
+        );
+        var upsertResult = await writeHandler.HandlePostAsync(upsertRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            upsertResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Parity",
+                "shortDescription": "Parity PUT",
+                "description": "Updated through PUT"
+            }
+            """
+        );
+        var putResult = await writeHandler.HandlePutAsync(putRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            putResult,
+            await GetDescriptorByIdAsync(
+                readHandler,
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid
+            )
+        );
+    }
+
+    [Test]
+    public async Task It_deletes_a_descriptor_when_if_match_exactly_matches_the_current_etag()
+    {
+        var handler = ResolveHandler();
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var success = (UpsertResult.InsertSuccess)insertResult;
+        success.ETag.Should().NotBeNull();
+
+        var result = await handler.HandleDeleteAsync(
+            CreateDeleteRequest(
+                _database.Fixture.SchoolTypeDescriptorResource,
+                success.NewDocumentUuid,
+                new WritePrecondition.IfMatch(success.ETag!)
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_when_descriptor_delete_if_match_mismatches()
+    {
+        var handler = ResolveHandler();
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        var result = await handler.HandleDeleteAsync(
+            CreateDeleteRequest(
+                _database.Fixture.SchoolTypeDescriptorResource,
+                documentUuid,
+                new WritePrecondition.IfMatch("\"stale-etag\"")
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var probe = connection.CreateCommand();
+        probe.CommandText = "SELECT 1 FROM [dms].[Document] WHERE [DocumentUuid] = @documentUuid";
+        probe.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
+        var stillThere = await probe.ExecuteScalarAsync();
+        stillThere.Should().NotBeNull("mismatched If-Match must not delete the descriptor row");
+    }
+
     // ── Helper methods ──────────────────────────────────────────────────
+
+    private async Task<GetResult> GetDescriptorByIdAsync(
+        IDescriptorReadHandler handler,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid
+    )
+    {
+        return await handler
+            .HandleGetByIdAsync(
+                new DescriptorGetByIdRequest(
+                    _database.MappingSet,
+                    resource,
+                    documentUuid,
+                    RelationalGetRequestReadMode.ExternalResponse,
+                    authorizationStrategyEvaluators: [],
+                    readableProfileProjectionContext: null,
+                    traceId: new TraceId("test-trace")
+                )
+            )
+            .ConfigureAwait(false);
+    }
+
+    private DescriptorDeleteRequest CreateDeleteRequest(
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        WritePrecondition? writePrecondition = null
+    )
+    {
+        return new DescriptorDeleteRequest(
+            _database.MappingSet,
+            resource,
+            documentUuid,
+            new TraceId("test-trace")
+        )
+        {
+            WritePrecondition = writePrecondition ?? new WritePrecondition.None(),
+        };
+    }
 
     private async Task<DocumentTrackingStamps> ReadTrackingStampsAsync(DocumentUuid documentUuid)
     {
