@@ -1656,7 +1656,7 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
         Invoke-Api @invokeParams
     }
 
-    if (-not ($response | Where-Object { $_.name -eq "SeedLoader" })) {
+    if (-not ($response | Where-Object { $_.claimSetName -eq "SeedLoader" })) {
         throw "CMS does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Config image and re-run."
     }
 }

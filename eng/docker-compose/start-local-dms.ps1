@@ -500,12 +500,15 @@ else {
             Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
-        if ($EnableKafkaUI) {
+        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
+        }
+        elseif ($EnableKafkaUI -and $DatabaseEngine -eq "mssql") {
+            Write-Output "Skipping Kafka UI: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         # Claims-ready gate: prove CMS has applied the expected claims content before

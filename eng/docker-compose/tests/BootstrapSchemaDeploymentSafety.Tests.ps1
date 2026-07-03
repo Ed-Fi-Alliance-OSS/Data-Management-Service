@@ -1581,6 +1581,48 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
         }
     }
 
+    Context "Resolve-TargetDialect" {
+        It "resolves a SQL Server connection string (Server key) to mssql" {
+            . $script:repo.ProvisionScript
+
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'Server=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;TrustServerCertificate=true;'
+
+            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
+        }
+
+        It "resolves a SQL Server connection string (Data Source key) to mssql" {
+            . $script:repo.ProvisionScript
+
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'Data Source=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;'
+
+            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
+        }
+
+        It "resolves a PostgreSQL connection string that uses the User Id alias for Username to pgsql" {
+            . $script:repo.ProvisionScript
+
+            # "User Id" is a legal Npgsql alias for Username, so it also matches the mssql "user
+            # id" marker. Host is never a valid SqlClient key, so its presence must take
+            # precedence and resolve to pgsql rather than being misrouted to mssql.
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'Host=localhost;Port=5432;User Id=postgres;Password=x;Database=edfi;'
+
+            Resolve-TargetDialect -Builder $builder | Should -Be "pgsql"
+        }
+
+        It "throws when neither a PostgreSQL host key nor any SQL Server key is present" {
+            . $script:repo.ProvisionScript
+
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'username=postgres;password=secret-pass;database=no_host_db;'
+
+            { Resolve-TargetDialect -Builder $builder } |
+                Should -Throw -ExpectedMessage "*missing both a PostgreSQL 'host' key and any SQL Server key*"
+        }
+    }
+
     Context "configure result contract" {
         It "returns SelectedDataStoreIds plus DataStoreIds" {
             . $script:repo.ConfigureScript

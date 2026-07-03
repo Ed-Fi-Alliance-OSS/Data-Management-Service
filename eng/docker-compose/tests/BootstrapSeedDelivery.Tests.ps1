@@ -22,10 +22,13 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         function script:Copy-WrapperCompositionPrerequisites {
             param([string]$DockerComposeRoot)
 
-            # Invoke-BootstrapWrapper always composes the default Data Standard bootstrap overlay
-            # onto the effective env file, so every isolated fixture that executes the wrapper must
-            # carry the composition utility module, the tracked bootstrap overlay files, and a base
-            # env file for the composition to read (mirroring the tracked .env.example).
+            # Invoke-BootstrapWrapper composes the default Data Standard bootstrap overlay onto the
+            # effective env file for bootstrap-local-dms.ps1 always, and for
+            # bootstrap-published-dms.ps1 only when -DataStandardVersion is explicitly supplied.
+            # Every isolated fixture that executes either wrapper still needs the composition
+            # utility module, the tracked bootstrap overlay files, and a base env file for the
+            # composition to read (mirroring the tracked .env.example) so the paths that do compose
+            # succeed.
             foreach ($fileName in @("env-utility.psm1", ".env.bootstrap.ds52", ".env.bootstrap.ds61")) {
                 Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $DockerComposeRoot -Force
             }
@@ -1141,8 +1144,8 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             # confusing 401/403 noise from BulkLoadClient later. The preflight must fail fast here.
             $invokerWithoutSeedLoader = {
                 @(
-                    [pscustomobject]@{ id = 1; name = "EdFiSandbox" },
-                    [pscustomobject]@{ id = 2; name = "BootstrapDescriptorsandEdOrgs" }
+                    [pscustomobject]@{ id = 1; claimSetName = "EdFiSandbox" },
+                    [pscustomobject]@{ id = 2; claimSetName = "BootstrapDescriptorsandEdOrgs" }
                 )
             }
             {
@@ -1154,8 +1157,8 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             $invokerWithSeedLoader = {
                 @(
-                    [pscustomobject]@{ id = 1; name = "EdFiSandbox" },
-                    [pscustomobject]@{ id = 7; name = "SeedLoader" }
+                    [pscustomobject]@{ id = 1; claimSetName = "EdFiSandbox" },
+                    [pscustomobject]@{ id = 7; claimSetName = "SeedLoader" }
                 )
             }
             {

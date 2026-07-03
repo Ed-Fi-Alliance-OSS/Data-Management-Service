@@ -289,6 +289,14 @@ function Resolve-TargetDialect {
     # The data store connection string CMS hands back determines the dialect: SQL Server uses
     # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
     # username. SchemaTools provisions both (dms-schema ddl provision --dialect pgsql|mssql).
+    # host is checked first because it is never a valid SqlClient key, so its presence is a
+    # definitive PostgreSQL marker. User Id is ambiguous: it is also a valid Npgsql alias for
+    # Username, so a PostgreSQL connection string that uses that alias would otherwise be
+    # misrouted to mssql if the marker loop ran first.
+    if ($Builder.ContainsKey("host")) {
+        return "pgsql"
+    }
+
     $mssqlMarkers = @("server", "data source", "initial catalog", "user id", "trusted_connection")
     foreach ($marker in $mssqlMarkers) {
         if ($Builder.ContainsKey($marker)) {
@@ -296,11 +304,7 @@ function Resolve-TargetDialect {
         }
     }
 
-    if (-not $Builder.ContainsKey("host")) {
-        throw "CMS data store connection string is missing both a PostgreSQL 'host' key and any SQL Server key. Cannot determine the provisioning dialect."
-    }
-
-    return "pgsql"
+    throw "CMS data store connection string is missing both a PostgreSQL 'host' key and any SQL Server key. Cannot determine the provisioning dialect."
 }
 
 function Convert-MssqlCmsConnectionStringToHostSideTarget {

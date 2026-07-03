@@ -706,6 +706,15 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
 
             $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
         }
+
+        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
+            $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
+        }
     }
 
     Context "Bootstrap -DataStandardVersion local surface selection" {
@@ -741,6 +750,15 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             $wrapperSource | Should -Match '(?s)Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force\s*\$baseEnvFile = Resolve-DataStandardEnvironmentFile'
             $wrapperSource | Should -Match '-DataStandardVersion \$DataStandardVersion'
             $wrapperSource | Should -Match '-OverlayPrefix "\.env\.bootstrap"'
+        }
+
+        It "the wrapper gates overlay composition to always-on for start-local-dms.ps1 and explicit-only for start-published-dms.ps1" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            $wrapperSource | Should -Match '\$composeDataStandardOverlay\s*=\s*\(\$StartScriptName\s+-eq\s+"start-local-dms\.ps1"\)\s*-or\s*\r?\n\s*\$PSBoundParameters\.ContainsKey\(''DataStandardVersion''\)'
+            $wrapperSource | Should -Match '(?s)if \(\$composeDataStandardOverlay\)\s*\{.*?Resolve-DataStandardEnvironmentFile'
         }
 
         It "the wrapper never forwards -DataStandardVersion to a start script" {
@@ -781,6 +799,117 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             $ds61SchemaLines = @($ds61Overlay -split "`n" | Where-Object { $_ -match "^SCHEMA_PACKAGES=" })
             $ds61SchemaLines.Count | Should -Be 1
             $ds61SchemaLines[0] | Should -Match "\]'\s*$"
+        }
+    }
+
+    Context "Bootstrap -DataStandardVersion overlay composition gating per entry point" {
+        BeforeAll {
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+
+            # Builds an isolated repo carrying only the named wrapper entry script, its shared
+            # wrapper module, and the composition prerequisites (env-utility + bootstrap overlays).
+            # The stubbed start script copies whatever -EnvironmentFile the wrapper forwards to it
+            # so the test can inspect the effective env file's composed (or uncomposed) contents.
+            # No configure/provision/prepare siblings are staged, so the wrapper's isolated-fixture
+            # degrade path returns immediately after this single start invocation (mirrors the
+            # BootstrapSeedDelivery.Tests.ps1 published-wrapper fixtures).
+            function script:New-CompositionProbeRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScriptName,
+
+                    [Parameter(Mandatory)]
+                    [string]$BaseSchemaPackagesValue
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScriptName,
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+SCHEMA_PACKAGES='$BaseSchemaPackagesValue'
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $capturedEnvPath = Join-Path $repoRoot "captured.env"
+                $startScriptName = $WrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot        = $repoRoot
+                    WrapperScript   = Join-Path $dockerComposeRoot $WrapperEntryScriptName
+                    CapturedEnvPath = $capturedEnvPath
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:compositionProbeRepo -and (Test-Path -LiteralPath $script:compositionProbeRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:compositionProbeRepo.RepoRoot -Recurse -Force
+            }
+            $script:compositionProbeRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 composes the overlay by default, overriding a custom base SCHEMA_PACKAGES" {
+            $script:compositionProbeRepo = New-CompositionProbeRepo `
+                -WrapperEntryScriptName "bootstrap-local-dms.ps1" `
+                -BaseSchemaPackagesValue '[{"name":"Custom.Base.Package","version":"9.9.9"}]'
+
+            & $script:compositionProbeRepo.WrapperScript
+
+            $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
+            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "5.2"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard52.ApiSchema*"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -Not -BeLike "*Custom.Base.Package*" -Because "the local entry point always composes the default overlay over a custom base SCHEMA_PACKAGES"
+        }
+
+        It "bootstrap-published-dms.ps1 composes the overlay when -DataStandardVersion is explicitly supplied" {
+            $script:compositionProbeRepo = New-CompositionProbeRepo `
+                -WrapperEntryScriptName "bootstrap-published-dms.ps1" `
+                -BaseSchemaPackagesValue '[{"name":"Custom.Base.Package","version":"9.9.9"}]'
+
+            & $script:compositionProbeRepo.WrapperScript -DataStandardVersion "6.1"
+
+            $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
+            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard61.ApiSchema*"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -Not -BeLike "*Custom.Base.Package*" -Because "an explicit -DataStandardVersion composes the overlay even on the published entry point"
+        }
+
+        It "bootstrap-published-dms.ps1 does not compose the overlay and leaves a custom base SCHEMA_PACKAGES untouched when -DataStandardVersion is omitted" {
+            $script:compositionProbeRepo = New-CompositionProbeRepo `
+                -WrapperEntryScriptName "bootstrap-published-dms.ps1" `
+                -BaseSchemaPackagesValue '[{"name":"Custom.Base.Package","version":"9.9.9"}]'
+
+            & $script:compositionProbeRepo.WrapperScript
+
+            $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
+            $capturedValues.ContainsKey("DMS_CONFIG_DATA_STANDARD_VERSION") | Should -BeFalse -Because "no overlay was composed, so no overlay-only key was introduced"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*Custom.Base.Package*" -Because "omitting -DataStandardVersion on the published entry point must leave the base env file's own SCHEMA_PACKAGES driving the run"
         }
     }
 

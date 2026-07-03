@@ -176,10 +176,11 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 ## Selecting a Data Standard version (bootstrap)
 
 `bootstrap-local-dms.ps1` (and `bootstrap-published-dms.ps1`) accept `-DataStandardVersion` to
-select the Data Standard without hand-editing environment files. The wrapper composes a
-local-bootstrap overlay (`.env.bootstrap.ds52` / `.env.bootstrap.ds61`) onto `-EnvironmentFile`
-(derived file written to the gitignored `.derived/`), and every phase — schema staging, claims,
-provisioning, and the DMS container itself — runs from the composed result:
+select the Data Standard without hand-editing environment files. When the overlay is composed
+(see the composition-gating note below), it is layered as a local-bootstrap overlay
+(`.env.bootstrap.ds52` / `.env.bootstrap.ds61`) onto `-EnvironmentFile` (derived file written to
+the gitignored `.derived/`), and every phase — schema staging, claims, provisioning, and the DMS
+container itself — runs from the composed result:
 
 ```pwsh
 # DS 5.2 (core + TPDM) on MSSQL
@@ -195,9 +196,12 @@ Notes:
   local-bootstrap overlays are deliberately distinct from the shared `.env.ds52` / `.env.ds61`
   overlays used by the *start scripts'* `-DataStandardVersion`, which carry the E2E/SDK surfaces
   (including the Sample/Homograph test extensions required by CI).
-* `-DataStandardVersion` defaults to `5.2` and the overlay is **always** composed — every
-  bootstrap run goes through the same canonical surface regardless of the base env file's own
-  `SCHEMA_PACKAGES` value.
+* `-DataStandardVersion` defaults to `5.2`, but composition is gated per entry point:
+  `bootstrap-local-dms.ps1` **always** composes the overlay, so every local run goes through the
+  same canonical surface regardless of the base env file's own `SCHEMA_PACKAGES` value.
+  `bootstrap-published-dms.ps1` composes the overlay **only when `-DataStandardVersion` is
+  explicitly passed**; otherwise the base env file's own `SCHEMA_PACKAGES` drives the run
+  unchanged.
 * **Always tear down (`-d -v -RemoveBootstrap`) before switching Data Standard versions** — the
   provisioned database and staged workspace are version-specific, and DMS refuses to start
   against a database whose effective schema hash does not match.
