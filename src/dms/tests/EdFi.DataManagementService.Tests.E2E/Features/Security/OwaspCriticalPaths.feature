@@ -368,3 +368,31 @@ Feature: OWASP critical attack path protections
               And the response body should not contain "System."
               And the response body should not contain " at EdFi."
               And the response body should not contain "signature" ignoring case
+
+        # A 401 authentication failure returns the design-doc / ODS problem-details contract
+        # (urn:ed-fi:api:security:authentication / "Authentication Failed"), not the legacy
+        # urn:ed-fi:api:unauthorized / "Unauthorized" shape.
+        @e2e-ci-shard-3
+        Scenario: 23 Authentication failure returns the ODS/DMS problem-details contract
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+              And the token signature is manipulated
+             When a GET request is made to "/ed-fi/schools"
+             Then it should respond with 401
+              And the response headers include
+                  """
+                  {
+                      "Content-Type": "application/problem+json"
+                  }
+                  """
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "errors": [
+                          "Invalid token"
+                      ]
+                  }
+                  """
