@@ -6,10 +6,8 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
@@ -43,28 +41,10 @@ public static class RelationalGetIntegrationTestHelper
             JsonNode.Parse(requestBodyJson)?.AsObject()
             ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
 
-        expectedDocument["_etag"] = CreateExpectedEtag(requestBodyJson, resourceInfo, mappingSet);
         expectedDocument["id"] = documentUuid.ToString();
         expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
 
         return expectedDocument;
-    }
-
-    public static string CreateExpectedEtag(
-        string requestBodyJson,
-        BaseResourceInfo resourceInfo,
-        MappingSet mappingSet
-    )
-    {
-        var expectedDocument =
-            JsonNode.Parse(requestBodyJson)
-            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
-        var readPlan = mappingSet.GetReadPlanOrThrow(
-            new QualifiedResourceName(resourceInfo.ProjectName.Value, resourceInfo.ResourceName.Value)
-        );
-        var canonicalDocument = DocumentReconstituter.ReorderToReadPlanOrder(expectedDocument, readPlan);
-
-        return ResourceEtagFormatter.FormatEtag(canonicalDocument);
     }
 
     public static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>

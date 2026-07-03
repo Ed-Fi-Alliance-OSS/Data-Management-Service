@@ -127,7 +127,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1121,7 +1121,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1171,20 +1171,10 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(
-                        persistedTarget.DocumentUuid,
-                        ExpectedCommittedResponseEtag(committedResponse)
-                    ),
+                    new UpsertResult.InsertSuccess(persistedTarget.DocumentUuid, ComposedWriteResultEtag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.InsertSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
         _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _committedRepresentationReader.CapturedRequest.Should().BeEquivalentTo(request);
         _committedRepresentationReader.CapturedPersistedTarget.Should().BeEquivalentTo(persistedTarget);
@@ -1230,7 +1220,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -1276,21 +1266,11 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateSuccess(
-                        persistedTarget.DocumentUuid,
-                        ExpectedCommittedResponseEtag(committedResponse)
-                    ),
+                    new UpdateResult.UpdateSuccess(persistedTarget.DocumentUuid, ComposedWriteResultEtag),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -1336,7 +1316,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1369,7 +1349,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1429,7 +1409,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1534,7 +1514,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1743,7 +1723,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1784,7 +1764,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ExpectedEtag(request)),
+                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ComposedWriteResultEtag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -1845,7 +1825,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -1985,7 +1965,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2038,7 +2018,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2130,7 +2110,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2817,7 +2797,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -3655,12 +3635,7 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ExpectedCommittedResponseEtag(committedResponse));
-        updateResult
-            .Result.Should()
-            .BeOfType<UpdateResult.UpdateSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
+            .Be(ComposedWriteResultEtag);
     }
 
     [Test]
@@ -4234,12 +4209,7 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpsertResult.InsertSuccess>()
             .Which.ETag.Should()
-            .Be(ExpectedCommittedResponseEtag(committedResponse));
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.InsertSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
+            .Be(ComposedWriteResultEtag);
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
@@ -4288,14 +4258,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ExpectedCommittedResponseEtag(committedResponse));
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
+            .Be(ComposedWriteResultEtag);
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -4359,14 +4322,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ExpectedCommittedResponseEtag(committedResponse));
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.UpdateSuccess>()
-            .Which.ETag.Should()
-            .NotBe(ExpectedSelectedBodyEtag(request));
+            .Be(ComposedWriteResultEtag);
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -5204,7 +5160,7 @@ public class Given_Default_Relational_Write_Executor
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         var updateSuccess = upsertResult.Result.Should().BeOfType<UpsertResult.UpdateSuccess>().Subject;
         updateSuccess.ExistingDocumentUuid.Should().Be(existingDocumentUuid);
-        updateSuccess.ETag.Should().Be(ExpectedEtag(request));
+        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         GetSubjectRuntimeValue(
@@ -5778,7 +5734,7 @@ public class Given_Default_Relational_Write_Executor
         updateSuccess
             .ExistingDocumentUuid.Should()
             .Be(new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")));
-        updateSuccess.ETag.Should().Be(ExpectedEtag(request));
+        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag);
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
@@ -6258,7 +6214,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ExpectedEtag(request)
+                        ComposedWriteResultEtag
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -7310,14 +7266,11 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static string ExpectedEtag(RelationalWriteExecutorRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody);
-
-    private static string ExpectedSelectedBodyEtag(RelationalWriteExecutorRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody);
-
-    private static string ExpectedCommittedResponseEtag(JsonNode committedResponse) =>
-        RelationalApiMetadataFormatter.FormatEtag(committedResponse);
+    // A deterministic composed-shaped write-result etag. The committed-representation reader is faked
+    // here, so the executor simply propagates whatever etag that reader supplies for the persisted
+    // (committed) state; these tests verify that propagation, not the etag format. Any stable opaque
+    // value produced without the etag formatter suffices.
+    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
 
     // The composed current etag the write If-Match path produces for a request at a given
     // ContentVersion: schema epoch from the mapping set, JSON format, the write profile (or none),
@@ -7344,7 +7297,7 @@ public class Given_Default_Relational_Write_Executor
         var committedObject = (JsonObject)committedResponse;
         committedObject["id"] = persistedTarget.DocumentUuid.Value.ToString();
         committedObject["_lastModifiedDate"] = "2026-04-02T12:00:00Z";
-        committedObject["_etag"] = ExpectedCommittedResponseEtag(committedObject);
+        committedObject["_etag"] = ComposedWriteResultEtag;
 
         return committedObject;
     }

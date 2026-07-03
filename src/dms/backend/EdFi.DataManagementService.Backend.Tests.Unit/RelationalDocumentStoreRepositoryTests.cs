@@ -45,6 +45,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
+
+    // A deterministic composed-shaped write-result etag. These tests verify that the repository passes
+    // the write handler's/executor's etag through unchanged (and that it is neither the client's stale
+    // request etag nor a stamp-style validator), not the etag format, so any stable opaque value that is
+    // produced without the etag formatter suffices.
+    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -5184,7 +5190,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Lincoln High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -5265,7 +5271,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Post As Update High");
+        var committedEtag = ComposedWriteResultEtag;
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
@@ -5325,7 +5331,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_put_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Roosevelt High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -5540,7 +5546,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(documentUuid, CreateCommittedReadbackEtag("Mixed"))
+                        new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -5597,7 +5603,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(documentUuid, CreateCommittedReadbackEtag("Mixed"))
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -5640,7 +5646,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_post_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5711,7 +5717,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_post_as_update_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized Existing High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         _targetLookupService.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
@@ -5785,7 +5791,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_people_post_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized People");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5867,7 +5873,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_builds_create_new_people_post_plan_with_self_person_subjects_ineligible()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Self People");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5939,7 +5945,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_treats_no_further_authorization_required_as_a_post_preflight_no_op()
     {
-        var committedEtag = CreateCommittedReadbackEtag("No Further High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5998,10 +6004,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(
-                            documentUuid,
-                            CreateCommittedReadbackEtag("Namespaced")
-                        )
+                        new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -6224,10 +6227,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(
-                            documentUuid,
-                            CreateCommittedReadbackEtag("Namespaced")
-                        )
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -6360,7 +6360,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_forwards_authorized_put_relationship_plans_to_the_write_executor_after_target_lookup()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var committedEtag = CreateCommittedReadbackEtag("Authorized PUT High");
+        var committedEtag = ComposedWriteResultEtag;
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -7010,7 +7010,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateDescriptorRequestBody();
-        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
+        var descriptorResponseEtag = ComposedWriteResultEtag;
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
 
@@ -7107,7 +7107,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateDescriptorRequestBody("Updated Charter");
-        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
+        var descriptorResponseEtag = ComposedWriteResultEtag;
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
 
@@ -9567,23 +9567,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             }
             """
         )!;
-    }
-
-    private static string CreateCommittedReadbackEtag(string name, int schoolId = 255901)
-    {
-        return RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse($$"""{"schoolId":{{schoolId}},"name":"{{name}}"}""")!
-        );
-    }
-
-    private static string CreateDescriptorResponseEtag(JsonNode requestBody)
-    {
-        return RelationalApiMetadataFormatter.FormatEtag(
-            DescriptorWriteBodyExtractor.Extract(
-                requestBody,
-                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
-            )
-        );
     }
 
     private static DocumentReference CreateDocumentReference(BaseResourceInfo targetResource, string path)
