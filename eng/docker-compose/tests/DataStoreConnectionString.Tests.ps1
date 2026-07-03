@@ -65,6 +65,18 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
         $script:configureSource | Should -Match '\$DatabaseEngine'
     }
 
+    It "composes the MSSQL engine overlay after resolving the environment file and before reading env values" {
+        $resolveIndex = $script:configureSource.IndexOf('$resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile')
+        $engineIndex = $script:configureSource.IndexOf('$resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile')
+        $readValuesIndex = $script:configureSource.IndexOf('$envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile')
+
+        $resolveIndex | Should -BeGreaterThan -1
+        $engineIndex | Should -BeGreaterThan $resolveIndex
+        $readValuesIndex | Should -BeGreaterThan $engineIndex
+
+        $script:configureSource | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$resolvedEnvironmentFile -DockerComposeRoot \$PSScriptRoot'
+    }
+
     It "builds the MSSQL data-store connection string via New-DataStoreConnectionString for the mssql engine" {
         $script:configureSource | Should -Match 'if \(\$DatabaseEngine -eq "mssql"\)'
         $script:configureSource | Should -Match 'New-DataStoreConnectionString'

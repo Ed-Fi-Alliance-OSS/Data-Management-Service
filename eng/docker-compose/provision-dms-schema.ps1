@@ -26,7 +26,17 @@ param(
     [string]$EnvironmentFile,
     [Alias("InstanceId")]
     [long[]]$DataStoreId = @(),
-    [int[]]$SchoolYear = @()
+    [int[]]$SchoolYear = @(),
+
+    # Database engine overlay selector for direct invocation of this script. Composes the
+    # .env.mssql overlay onto -EnvironmentFile (Resolve-DatabaseEngineEnvironmentFile) so the
+    # dialect guard in New-ProvisionTarget and the host-side connection-string translation in
+    # Convert-CmsConnectionStringToHostSideTarget see the same engine the caller intends. The
+    # bootstrap wrapper does not pass this parameter: its -EnvironmentFile is already composed,
+    # and the default "postgresql" is a no-op via Resolve-DatabaseEngineEnvironmentFile's
+    # idempotency guard (an env already carrying DMS_DATASTORE=mssql is returned unchanged).
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql"
 )
 
 $ErrorActionPreference = "Stop"
@@ -933,7 +943,11 @@ function Invoke-ProvisionDmsSchema {
         $DataStoreId = @(),
 
         [int[]]
-        $SchoolYear = @()
+        $SchoolYear = @(),
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine = "postgresql"
     )
 
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
@@ -941,6 +955,12 @@ function Invoke-ProvisionDmsSchema {
     }
 
     $resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile
+    # Compose the MSSQL engine overlay for -DatabaseEngine mssql; mirrors
+    # configure-local-data-store.ps1 and start-local-dms.ps1. Direct invocation with
+    # -DatabaseEngine mssql layers the overlay onto a custom -EnvironmentFile; wrapper-forwarded
+    # files are already composed and no-op via the DMS_DATASTORE guard in
+    # Resolve-DatabaseEngineEnvironmentFile.
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
@@ -1023,4 +1043,5 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 Invoke-ProvisionDmsSchema `
     -EnvironmentFile $EnvironmentFile `
     -DataStoreId $DataStoreId `
-    -SchoolYear $SchoolYear
+    -SchoolYear $SchoolYear `
+    -DatabaseEngine $DatabaseEngine

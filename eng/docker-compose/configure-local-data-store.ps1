@@ -15,8 +15,10 @@ param(
     [switch]$AddSmokeTestCredentials,
 
     # Database engine for the DMS datastore. "mssql" registers an MSSQL-shaped data-store
-    # connection string (Server=dms-mssql;...) instead of the PostgreSQL form. The
-    # Configuration Service itself always runs on PostgreSQL.
+    # connection string (Server=dms-mssql;...) instead of the PostgreSQL form, and composes the
+    # .env.mssql overlay onto -EnvironmentFile (no-op when the env is already composed, e.g. via
+    # the bootstrap wrapper) so the MSSQL_* values used here come from the same source as the
+    # other phases. The Configuration Service itself always runs on PostgreSQL.
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql"
 )
@@ -260,6 +262,12 @@ function Invoke-ConfigureLocalDataStore {
     )
 
     $resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile
+    # Compose the MSSQL engine overlay for -DatabaseEngine mssql; this covers direct invocation of
+    # this script with a custom -EnvironmentFile (still gets the overlay layered on top) and the
+    # bootstrap wrapper path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already
+    # composed via DMS_DATASTORE=mssql and returns the file unchanged, avoiding a
+    # derived-of-derived file).
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"

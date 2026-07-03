@@ -107,11 +107,10 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         $script:overlayValues["MSSQL_PORT"] | Should -Not -BeNullOrEmpty
     }
 
-    It "builds SQL Server connection strings referencing the MSSQL credentials" {
-        $script:overlayValues["DATABASE_CONNECTION_STRING"] | Should -Match "^Server=dms-mssql;.*TrustServerCertificate=true;$"
-        $script:overlayValues["DATABASE_CONNECTION_STRING"] | Should -Match '\$\{MSSQL_DB_NAME\}'
-        $script:overlayValues["DATABASE_CONNECTION_STRING"] | Should -Match '\$\{MSSQL_SA_PASSWORD\}'
+    It "builds a SQL Server admin connection string referencing the MSSQL credentials" {
         $script:overlayValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match "^Server=dms-mssql;.*TrustServerCertificate=true;$"
+        $script:overlayValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '\$\{MSSQL_DB_NAME\}'
+        $script:overlayValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '\$\{MSSQL_SA_PASSWORD\}'
     }
 
     It "does not duplicate SCHEMA_PACKAGES or other keys already carried by the base environment file" {
@@ -121,5 +120,17 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         $script:overlayValues.ContainsKey("DATABASE_TEMPLATE_PACKAGE") | Should -BeFalse
         $script:overlayValues.ContainsKey("POSTGRES_PASSWORD") | Should -BeFalse
         $script:overlayValues.ContainsKey("DATABASE_ISOLATION_LEVEL") | Should -BeFalse
+    }
+
+    It "does not carry a non-admin DATABASE_CONNECTION_STRING or identity-provider token endpoints" {
+        # The non-admin DATABASE_CONNECTION_STRING is dead: local-dms.yml passes only
+        # DATABASE_CONNECTION_STRING_ADMIN into the DMS container. The token-endpoint overrides
+        # are engine-agnostic (the DMS container's in-network /oauth/token proxy target is the
+        # same for both database engines), so they belong in the base environment file, not
+        # this overlay.
+        $script:overlayValues.ContainsKey("DATABASE_CONNECTION_STRING") | Should -BeFalse
+        $script:overlayValues.ContainsKey("KEYCLOAK_OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
+        $script:overlayValues.ContainsKey("SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
+        $script:overlayValues.ContainsKey("OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
     }
 }

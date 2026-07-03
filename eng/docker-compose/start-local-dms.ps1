@@ -84,9 +84,11 @@ param (
     [Switch]
     $v,
 
-    # Environment file
+    # Environment file. When omitted, resolves eng/docker-compose/.env, falling back to the
+    # tracked .env.example (the shared local-settings contract used by the phase commands), so
+    # direct invocations - including teardown - work on a clean checkout with no hand-created .env.
     [string]
-    $EnvironmentFile = "./.env",
+    $EnvironmentFile = "",
 
     # Force a rebuild
     [Switch]
@@ -156,8 +158,9 @@ param (
     # "mssql" composes mssql.yml alongside postgresql.yml — the Configuration Service and
     # self-contained identity have no MSSQL backend and remain on PostgreSQL — and runs the
     # relational backend with no Debezium CDC (Kafka is PostgreSQL-only and omitted). The
-    # .env.mssql overlay (DMS_DATASTORE=mssql, the SQL Server connection strings) is composed
-    # automatically onto -EnvironmentFile. See mssql.yml and Resolve-DatabaseEngineEnvironmentFile.
+    # .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, the SQL Server admin
+    # connection string) is composed automatically onto -EnvironmentFile. See mssql.yml and
+    # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
     $DatabaseEngine = "postgresql"
@@ -176,16 +179,18 @@ if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhi
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 $originalLocation = Get-Location
-if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
-    if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
+Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+    if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
         # Caller supplied an explicit relative path - resolve against the caller's CWD.
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $originalLocation.Path $EnvironmentFile))
     }
-    else {
-        # Default value - resolve against the script directory so that invoking the
-        # script from any CWD (e.g. the repo root) still finds eng/docker-compose/.env.
-        $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
-    }
+}
+else {
+    # No explicit -EnvironmentFile: shared local-settings resolution (.env, then the tracked
+    # .env.example fallback) so direct invocations - including the documented teardown - work
+    # on a clean checkout with no hand-created .env, matching the phase commands.
+    $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
 $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot

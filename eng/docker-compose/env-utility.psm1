@@ -651,9 +651,8 @@ function Resolve-DatabaseEngineEnvironmentFile {
     .SYNOPSIS
         Returns the effective environment file path for the requested database engine. With the
         default "postgresql" engine the base file is returned unchanged. With "mssql" the
-        .env.mssql overlay (DMS_DATASTORE=mssql, the SQL Server connection strings, and the
-        container-internal identity-provider hostnames the DMS container's own /oauth/token
-        proxy needs) is composed onto the base into a derived file under
+        .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server admin
+        connection string) is composed onto the base into a derived file under
         <DockerComposeRoot>/.derived/ and that path is returned.
 
     .DESCRIPTION

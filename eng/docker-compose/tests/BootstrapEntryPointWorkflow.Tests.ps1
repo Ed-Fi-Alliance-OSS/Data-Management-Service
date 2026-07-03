@@ -731,6 +731,18 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
 
             $startScript | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$EnvironmentFile -DockerComposeRoot \$PSScriptRoot'
         }
+
+        It "start-local-dms.ps1 falls back to shared local-settings env resolution when -EnvironmentFile is omitted" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            # A clean checkout has no hand-created .env; the documented teardown
+            # (start-local-dms.ps1 -DatabaseEngine mssql -d -v) and other direct invocations
+            # must resolve the tracked .env.example fallback instead of throwing on ./.env.
+            $startScript | Should -Match 'Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot \$PSScriptRoot'
+            $startScript | Should -Not -Match '\$EnvironmentFile = "\./\.env"'
+        }
     }
 
     Context "Bootstrap -DataStandardVersion local surface selection" {
@@ -989,14 +1001,13 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $script:engineOverlayProbeRepo = $null
         }
 
-        It "bootstrap-local-dms.ps1 -DatabaseEngine mssql composes DMS_DATASTORE=mssql and the SQL Server connection strings onto the effective env" {
+        It "bootstrap-local-dms.ps1 -DatabaseEngine mssql composes DMS_DATASTORE=mssql and the SQL Server admin connection string onto the effective env" {
             $script:engineOverlayProbeRepo = New-EngineOverlayProbeRepo
 
             & $script:engineOverlayProbeRepo.WrapperScript -DatabaseEngine mssql
 
             $capturedValues = ReadValuesFromEnvFile $script:engineOverlayProbeRepo.CapturedEnvPath
             $capturedValues["DMS_DATASTORE"] | Should -Be "mssql"
-            $capturedValues["DATABASE_CONNECTION_STRING"] | Should -Match "^Server=dms-mssql;"
             $capturedValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match "^Server=dms-mssql;"
             $capturedValues["MSSQL_SA_PASSWORD"] | Should -Not -BeNullOrEmpty
 

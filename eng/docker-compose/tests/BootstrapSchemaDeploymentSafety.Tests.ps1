@@ -48,7 +48,9 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 # The wrapper always composes the local-bootstrap data-standard overlay
                 # (default 5.2) onto the base env, so wrapper invocations need the overlays.
                 ".env.bootstrap.ds52",
-                ".env.bootstrap.ds61"
+                ".env.bootstrap.ds61",
+                # provision-dms-schema.ps1's -DatabaseEngine mssql composes this overlay.
+                ".env.mssql"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
@@ -253,17 +255,32 @@ exit $ExitCode
     }
 
     Context "public script contracts" {
-        It "provision-dms-schema.ps1 exposes only the selector and env parameters" {
+        It "provision-dms-schema.ps1 exposes only the selector, env, and engine overlay parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
             $params | Should -Contain "DataStoreId"
             $params | Should -Contain "SchoolYear"
+            $params | Should -Contain "DatabaseEngine"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "SeedTemplate"
             $params | Should -Not -Contain "LoadSeedData"
             $params | Should -Not -Contain "ApiSchemaPath"
-            $params.Count | Should -Be 3
+            $params.Count | Should -Be 4
+        }
+
+        It "provision-dms-schema.ps1 composes the MSSQL engine overlay after resolving the environment file and before reading env values" {
+            $content = Get-Content -LiteralPath $script:repo.ProvisionScript -Raw
+
+            $resolveIndex = $content.IndexOf('$resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile')
+            $engineIndex = $content.IndexOf('$resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile')
+            $readValuesIndex = $content.IndexOf('$envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile')
+
+            $resolveIndex | Should -BeGreaterThan -1
+            $engineIndex | Should -BeGreaterThan $resolveIndex
+            $readValuesIndex | Should -BeGreaterThan $engineIndex
+
+            $content | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$resolvedEnvironmentFile -DockerComposeRoot \$PSScriptRoot'
         }
 
         It "provision-e2e-database.ps1 exposes neutral reset and provision parameters" {
@@ -915,6 +932,38 @@ exit $ExitCode
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(10) } |
+                Should -Not -Throw
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "mssql"
+        }
+
+        It "passes the dialect guard for -DatabaseEngine mssql against a base env without DMS_DATASTORE" {
+            # $script:repo.EnvFile carries no DMS_DATASTORE at all (see New-IsolatedBootstrapRepo).
+            # Direct invocation with -DatabaseEngine mssql must compose the .env.mssql overlay
+            # (DMS_DATASTORE=mssql) onto it before Resolve-ExpectedProvisioningDialect reads the
+            # effective environment, so an mssql-dialect data store is accepted rather than
+            # rejected against the postgresql default.
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 11
+                        name = "ComposedMssql"
+                        connectionString = 'Server=dms-mssql,1433;Database=composed_mssql;User Id=sa;Password=${POSTGRES_PASSWORD};TrustServerCertificate=true;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(11) -DatabaseEngine mssql } |
                 Should -Not -Throw
             $captured = @(Get-Content -LiteralPath $capturePath)
             $captured | Should -Contain "mssql"

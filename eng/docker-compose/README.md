@@ -150,13 +150,14 @@ The local stack can run the DMS datastore on SQL Server instead of PostgreSQL us
 
 `mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
 image used in CI, publishing port `1433`. `-DatabaseEngine mssql` composes the `.env.mssql`
-overlay (`MSSQL_SA_PASSWORD`, `MSSQL_PORT`, `MSSQL_DB_NAME`, `DMS_DATASTORE=mssql`, and the SQL
-Server connection strings) onto the base environment file automatically — the same composition
-mechanism used by `-DataStandardVersion` (see "Selecting a Data Standard version" below), so
-every phase (configure, provision, and the DMS container itself) sees a consistent engine
-selection. Everything else (`SCHEMA_PACKAGES`, PostgreSQL credentials for CMS/identity, Kafka,
-Keycloak, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
-override those base settings, and the overlay still composes on top of it.
+overlay (`DMS_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL Server admin connection string)
+onto the base environment file automatically — the same composition mechanism used by
+`-DataStandardVersion` (see "Selecting a Data Standard version" below), so every phase
+(configure, provision, and the DMS container itself) sees a consistent engine selection.
+Everything else (`SCHEMA_PACKAGES`, PostgreSQL credentials for CMS/identity, Kafka, Keycloak,
+identity-provider token endpoints, etc.) still comes from the base environment file; pass
+`-EnvironmentFile` only to override those base settings, and the overlay still composes on top
+of it.
 
 A few things are specific to the MSSQL path:
 
@@ -308,6 +309,11 @@ Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases manually:
 ./provision-dms-schema.ps1
 ./start-local-dms.ps1 -DmsOnly
 ```
+
+Each of the four commands above accepts `-DatabaseEngine mssql` (default `postgresql`); pass it
+consistently on all four to run this manual flow against the SQL Server datastore — every phase
+composes the same `.env.mssql` overlay (see "Running on the MSSQL backend" above), so a
+mismatched flag on any one command leaves that phase reading the wrong engine.
 
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.
