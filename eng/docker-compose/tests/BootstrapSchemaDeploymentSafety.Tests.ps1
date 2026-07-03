@@ -854,6 +854,71 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*staged schema workspace fingerprint mismatch*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
+
+        It "fails fast when a selected data store's dialect does not match the environment's DMS_DATASTORE" {
+            # configure-local-data-store.ps1 -NoDataStore can silently reuse a route-unqualified
+            # CMS data store from a previous run without checking its connection-string dialect.
+            # A stale PostgreSQL data store combined with an env configured for DMS_DATASTORE=mssql
+            # must fail fast here rather than provisioning against the wrong engine.
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-engine-mismatch.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mssql"
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 9
+                        name = "StalePostgres"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=stale_pg;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
+                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
+
+        It "provisions normally when a selected data store's dialect matches the environment's DMS_DATASTORE" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-engine-match.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mssql"
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 10
+                        name = "MatchedMssql"
+                        connectionString = 'Server=dms-mssql,1433;Database=matched_mssql;User Id=sa;Password=${POSTGRES_PASSWORD};TrustServerCertificate=true;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(10) } |
+                Should -Not -Throw
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "mssql"
+        }
     }
 
     Context "instance configuration" {
@@ -1373,6 +1438,10 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
             $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-engine.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mssql"
 
             . $script:repo.ProvisionScript
 
@@ -1389,7 +1458,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             # SchemaTools is invoked with the mssql dialect, auto-detected from the connection string.
@@ -1412,6 +1481,10 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
             $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-engine-external.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mssql"
 
             . $script:repo.ProvisionScript
 
@@ -1428,7 +1501,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $captured | Should -Contain "mssql"
@@ -1612,14 +1685,36 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             Resolve-TargetDialect -Builder $builder | Should -Be "pgsql"
         }
 
+        It "resolves a PostgreSQL connection string that uses the Server alias for Host to pgsql" {
+            . $script:repo.ProvisionScript
+
+            # "Server" is a legal Npgsql alias for Host, so a PostgreSQL connection string built
+            # from that alias (with no "host" key at all) would otherwise be misrouted to mssql
+            # by the Server marker below. Port and Username are never valid SqlClient keys, so
+            # their presence here is definitive and must take precedence.
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'Server=my-pg;Port=5432;Username=u;Password=p;Database=d;'
+
+            Resolve-TargetDialect -Builder $builder | Should -Be "pgsql"
+        }
+
+        It "resolves a SQL Server connection string (Initial Catalog/User Id/TrustServerCertificate) to mssql" {
+            . $script:repo.ProvisionScript
+
+            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
+                'Server=dms-mssql,1433;Initial Catalog=db1;User Id=sa;TrustServerCertificate=true;Password=foo;'
+
+            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
+        }
+
         It "throws when neither a PostgreSQL host key nor any SQL Server key is present" {
             . $script:repo.ProvisionScript
 
             $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'username=postgres;password=secret-pass;database=no_host_db;'
+                'password=secret-pass;database=no_host_db;'
 
             { Resolve-TargetDialect -Builder $builder } |
-                Should -Throw -ExpectedMessage "*missing both a PostgreSQL 'host' key and any SQL Server key*"
+                Should -Throw -ExpectedMessage "*carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key*"
         }
     }
 
@@ -2097,8 +2192,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 )
             }
 
+            # "username" is a definitive PostgreSQL marker, so this resolves to pgsql and then
+            # fails further along, on the missing host key specifically, rather than on
+            # dialect resolution itself.
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
-                Should -Throw -ExpectedMessage "*missing both a PostgreSQL 'host' key and any SQL Server key*"
+                Should -Throw -ExpectedMessage "*missing the host key*"
         }
     }
 

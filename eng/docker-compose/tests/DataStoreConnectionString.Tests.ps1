@@ -83,4 +83,12 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
         # up on the default password while leaving the resolved connection string blank.
         $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "Abcdefgh1!"'
     }
+
+    It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
+        # Mirrors the PostgreSQL $postgresDbName resolution so per-instance database names
+        # passed via -DataStoreDatabaseName are not silently overridden by the env default
+        # on the mssql branch.
+        $script:configureSource | Should -Match '\$mssqlDbName\s*=\s*\r?\n\s*if \(\[string\]::IsNullOrWhiteSpace\(\$DataStoreDatabaseName\)\)'
+        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"'
+    }
 }

@@ -288,13 +288,28 @@ function Resolve-TargetDialect {
 
     # The data store connection string CMS hands back determines the dialect: SQL Server uses
     # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
-    # username. SchemaTools provisions both (dms-schema ddl provision --dialect pgsql|mssql).
-    # host is checked first because it is never a valid SqlClient key, so its presence is a
-    # definitive PostgreSQL marker. User Id is ambiguous: it is also a valid Npgsql alias for
-    # Username, so a PostgreSQL connection string that uses that alias would otherwise be
-    # misrouted to mssql if the marker loop ran first.
-    if ($Builder.ContainsKey("host")) {
-        return "pgsql"
+    # username / port / sslmode. SchemaTools provisions both (dms-schema ddl provision
+    # --dialect pgsql|mssql).
+    #
+    # host, username, port, and sslmode are checked first and are each a definitive PostgreSQL
+    # marker: none of the four is a valid SqlClient connection-string keyword. SqlClient
+    # identifies the user via User ID/UID (not Username), encodes the port inside
+    # "Server=host,port" rather than a standalone Port key, and controls encryption via
+    # Encrypt/TrustServerCertificate rather than SSL Mode. This also fixes a PostgreSQL
+    # connection string that uses Server (a legal Npgsql alias for Host) instead of Host: it
+    # still carries one of these four definitive keys and resolves to pgsql before the mssql
+    # marker loop below ever sees the ambiguous Server key.
+    #
+    # Residual assumption: Server and User Id are themselves ambiguous (each is also a legal
+    # Npgsql alias for Host/Username respectively), so a connection string carrying only
+    # ambiguous alias keys and none of the four definitive PostgreSQL keys - e.g. Server= plus
+    # User Id= with no host/username/port/sslmode - is genuinely indistinguishable from SQL
+    # Server and defaults to mssql via the marker loop below.
+    $definitivePostgresqlMarkers = @("host", "username", "port", "sslmode")
+    foreach ($marker in $definitivePostgresqlMarkers) {
+        if ($Builder.ContainsKey($marker)) {
+            return "pgsql"
+        }
     }
 
     $mssqlMarkers = @("server", "data source", "initial catalog", "user id", "trusted_connection")
@@ -304,7 +319,29 @@ function Resolve-TargetDialect {
         }
     }
 
-    throw "CMS data store connection string is missing both a PostgreSQL 'host' key and any SQL Server key. Cannot determine the provisioning dialect."
+    throw "CMS data store connection string carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key. Cannot determine the provisioning dialect."
+}
+
+function Resolve-ExpectedProvisioningDialect {
+    <#
+    .SYNOPSIS
+    Resolves the SchemaTools dialect the effective environment expects for provisioning targets,
+    from the effective DMS_DATASTORE value: mssql -> mssql, postgresql -> pgsql. A missing or
+    blank value defaults to postgresql -> pgsql, matching local-dms.yml's compose-level default
+    (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}).
+    #>
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    $engineValue = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_DATASTORE" -DefaultValue "postgresql"
+    $expectedDialect = if ($engineValue -eq "mssql") { "mssql" } else { "pgsql" }
+
+    return [pscustomobject]@{
+        EngineValue = $engineValue
+        ExpectedDialect = $expectedDialect
+    }
 }
 
 function Convert-MssqlCmsConnectionStringToHostSideTarget {
@@ -662,6 +699,19 @@ function New-ProvisionTarget {
     $target = Convert-CmsConnectionStringToHostSideTarget `
         -ConnectionString $resolvedConnectionString `
         -EnvValues $EnvValues
+
+    # configure-local-data-store.ps1 -NoDataStore can select a pre-existing route-unqualified
+    # CMS data store without checking its connection-string dialect, so a stale data store from
+    # a previous run with the other database engine can otherwise be provisioned silently while
+    # DMS itself starts against DMS_DATASTORE from this same environment. Catch the mismatch
+    # here, where the connection string has already been decrypted (if needed) and its dialect
+    # resolved.
+    $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
+    if ($target.Dialect -ne $expectedProvisioningDialect.ExpectedDialect) {
+        $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName), database=$(Format-LogSafeText $target.DatabaseName)) resolved to dialect '$(Format-LogSafeText $target.Dialect)', but the environment's DMS_DATASTORE is '$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' (expected dialect '$(Format-LogSafeText $expectedProvisioningDialect.ExpectedDialect)'). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+    }
+
     $routeContexts = @(
         Get-ProvisionRouteContexts -Instance $Instance | ForEach-Object {
             [pscustomobject]@{

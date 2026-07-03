@@ -322,7 +322,13 @@ function Invoke-ConfigureLocalDataStore {
     $dataStoreConnectionString = ""
     if ($DatabaseEngine -eq "mssql") {
         $mssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "Abcdefgh1!"
-        $mssqlDbName = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+        $mssqlDbName =
+            if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+                Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+            }
+            else {
+                $DataStoreDatabaseName
+            }
         $dataStoreConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "mssql" `
             -DbHost "dms-mssql" `
