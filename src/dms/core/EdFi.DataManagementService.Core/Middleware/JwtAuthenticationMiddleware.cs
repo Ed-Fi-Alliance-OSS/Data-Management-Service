@@ -85,9 +85,9 @@ internal class JwtAuthenticationMiddleware(
     {
         var problemDetails = new
         {
-            detail = "Authorization failed",
-            type = "urn:ed-fi:api:unauthorized",
-            title = "Unauthorized",
+            detail = "The caller could not be authenticated.",
+            type = "urn:ed-fi:api:security:authentication",
+            title = "Authentication Failed",
             status = 401,
             correlationId = traceId.Value,
             errors = new[] { errorDetail },

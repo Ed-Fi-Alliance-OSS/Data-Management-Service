@@ -198,6 +198,12 @@ public class JwtAuthenticationMiddlewareTests
             // Ensures the response body is a proper JsonNode object, not a serialized string.
             _requestInfo.FrontendResponse.Body.Should().BeOfType<JsonObject>();
         }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Invalid token");
+        }
     }
 
     [TestFixture]
@@ -249,6 +255,12 @@ public class JwtAuthenticationMiddlewareTests
         public void It_includes_error_detail_in_response_body()
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
         }
     }
 
@@ -304,6 +316,12 @@ public class JwtAuthenticationMiddlewareTests
         public void It_includes_error_detail_in_response_body()
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
         }
     }
 

@@ -15,6 +15,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -105,6 +106,12 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             _requestInfo.FrontendResponse!.Body?.ToString().Should().Contain("Bearer token required");
         }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
+        }
     }
 
     [TestFixture]
@@ -153,6 +160,12 @@ public class JwtRoleAuthenticationMiddlewareTests
         public void It_returns_401_unauthorized()
         {
             _requestInfo.FrontendResponse!.StatusCode.Should().Be(401);
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
         }
     }
 
@@ -211,6 +224,12 @@ public class JwtRoleAuthenticationMiddlewareTests
         public void It_returns_401_unauthorized()
         {
             _requestInfo.FrontendResponse!.StatusCode.Should().Be(401);
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Invalid token");
         }
     }
 

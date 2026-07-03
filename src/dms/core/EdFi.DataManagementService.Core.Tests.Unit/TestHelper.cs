@@ -3,15 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.Handler;
 using FakeItEasy;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -83,5 +86,23 @@ public static class TestHelper
         services.AddTransient<ILogger<ResolveMappingSetMiddleware>>(_ =>
             NullLogger<ResolveMappingSetMiddleware>.Instance
         );
+    }
+
+    /// <summary>
+    /// Asserts that a 401 response body matches the design-doc / ODS authentication
+    /// problem-details contract (urn:ed-fi:api:security:authentication), carrying the
+    /// given scenario message in the errors array.
+    /// </summary>
+    public static void AssertUnauthorizedProblemDetails(IFrontendResponse response, string expectedError)
+    {
+        response.Body.Should().NotBeNull();
+        JsonNode body = response.Body!;
+
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
+        body["title"]!.GetValue<string>().Should().Be("Authentication Failed");
+        body["detail"]!.GetValue<string>().Should().Be("The caller could not be authenticated.");
+        body["status"]!.GetValue<int>().Should().Be(401);
+
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Contain(expectedError);
     }
 }
