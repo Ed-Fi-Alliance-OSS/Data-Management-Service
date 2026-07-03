@@ -204,7 +204,9 @@ param(
     # Database engine for the DMS datastore. "mssql" composes mssql.yml alongside postgresql.yml
     # and runs the relational backend; the Configuration Service and self-contained identity stay
     # on PostgreSQL (no MSSQL backend). Forwarded to start-local-dms.ps1 and
-    # configure-local-data-store.ps1. Use with -EnvironmentFile ./.env.mssql.relational.
+    # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql, the SQL
+    # Server connection strings) is composed automatically onto -EnvironmentFile, so no
+    # -EnvironmentFile is needed for a turnkey MSSQL deploy.
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 

@@ -459,6 +459,25 @@ function Invoke-BootstrapWrapper {
                 -OverlayPrefix ".env.bootstrap"
         }
 
+        # Database engine selection: compose the MSSQL engine overlay (.env.mssql) onto the base
+        # env whenever -DatabaseEngine mssql is requested, so identity resolution, the configure
+        # phase (which always receives -DatabaseEngine), and the start phases all see
+        # DMS_DATASTORE=mssql and the SQL Server connection strings from one canonical path.
+        # Without this, the CMS data store could be provisioned for MSSQL while the DMS container
+        # itself still starts on its postgresql default (local-dms.yml AppSettings__Datastore
+        # comes only from the env file). Applied AFTER the data-standard overlay above so
+        # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
+        # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
+        # env-utility sibling module.
+        $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
+        if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
+            Import-Module $envUtilityPathForEngineOverlay -Force
+            $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DockerComposeRoot $PSScriptRoot
+        }
+
         # Resolve identity provider once and forward the same value to both phases. This runs before
         # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
         # The start

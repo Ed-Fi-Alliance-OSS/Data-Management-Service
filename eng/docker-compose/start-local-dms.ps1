@@ -155,8 +155,9 @@ param (
     # Database engine for the DMS datastore. "postgresql" (default) uses postgresql.yml.
     # "mssql" composes mssql.yml alongside postgresql.yml — the Configuration Service and
     # self-contained identity have no MSSQL backend and remain on PostgreSQL — and runs the
-    # relational backend with no Debezium CDC (Kafka is PostgreSQL-only and omitted).
-    # See mssql.yml and .env.mssql.relational.
+    # relational backend with no Debezium CDC (Kafka is PostgreSQL-only and omitted). The
+    # .env.mssql overlay (DMS_DATASTORE=mssql, the SQL Server connection strings) is composed
+    # automatically onto -EnvironmentFile. See mssql.yml and Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
     $DatabaseEngine = "postgresql"
@@ -197,6 +198,11 @@ Import-Module ./env-utility.psm1 -Force
 # Compose the data-standard overlay onto the base env file when a version is requested; with no
 # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
 $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
+# Compose the MSSQL engine overlay for -DatabaseEngine mssql; this covers both direct invocation
+# (a custom -EnvironmentFile still gets the overlay layered on top) and the bootstrap wrapper
+# path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
+# DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues

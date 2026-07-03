@@ -138,19 +138,25 @@ image from source code.
 
 The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
 `-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
-`start-local-dms.ps1` (infrastructure), together with the MSSQL environment file:
+`start-local-dms.ps1` (infrastructure) — no `-EnvironmentFile` is required:
 
 ```pwsh
 # Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
-./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -EnableSwaggerUI -LoadSeedData
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
 
 # Tear down (delete volumes)
-./start-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -d -v
+./start-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
 `mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
-image used in CI, publishing port `1433`. Defaults (`MSSQL_SA_PASSWORD`, `MSSQL_PORT`,
-`MSSQL_DB_NAME`) live in `.env.mssql.relational`.
+image used in CI, publishing port `1433`. `-DatabaseEngine mssql` composes the `.env.mssql`
+overlay (`MSSQL_SA_PASSWORD`, `MSSQL_PORT`, `MSSQL_DB_NAME`, `DMS_DATASTORE=mssql`, and the SQL
+Server connection strings) onto the base environment file automatically — the same composition
+mechanism used by `-DataStandardVersion` (see "Selecting a Data Standard version" below), so
+every phase (configure, provision, and the DMS container itself) sees a consistent engine
+selection. Everything else (`SCHEMA_PACKAGES`, PostgreSQL credentials for CMS/identity, Kafka,
+Keycloak, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
+override those base settings, and the overlay still composes on top of it.
 
 A few things are specific to the MSSQL path:
 
@@ -184,10 +190,10 @@ container itself — runs from the composed result:
 
 ```pwsh
 # DS 5.2 (core + TPDM) on MSSQL
-./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 5.2 -EnableSwaggerUI
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -DataStandardVersion 5.2 -EnableSwaggerUI
 
 # DS 6.1 (core only; TPDM is folded into core in 6.1) on MSSQL
-./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile ./.env.mssql.relational -DataStandardVersion 6.1 -EnableSwaggerUI
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -DataStandardVersion 6.1 -EnableSwaggerUI
 ```
 
 Notes:

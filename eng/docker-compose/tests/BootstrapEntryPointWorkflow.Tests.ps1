@@ -715,6 +715,22 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
             $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
         }
+
+        It "start-local-dms.ps1 composes the MSSQL engine overlay after the data-standard overlay and before reading env values" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $dataStandardIndex = $startScript.IndexOf('$EnvironmentFile = Resolve-DataStandardEnvironmentFile')
+            $engineIndex = $startScript.IndexOf('$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile')
+            $readValuesIndex = $startScript.IndexOf('$envValues = ReadValuesFromEnvFile $EnvironmentFile')
+
+            $dataStandardIndex | Should -BeGreaterThan -1
+            $engineIndex | Should -BeGreaterThan $dataStandardIndex
+            $readValuesIndex | Should -BeGreaterThan $engineIndex
+
+            $startScript | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$EnvironmentFile -DockerComposeRoot \$PSScriptRoot'
+        }
     }
 
     Context "Bootstrap -DataStandardVersion local surface selection" {
@@ -910,6 +926,95 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
             $capturedValues.ContainsKey("DMS_CONFIG_DATA_STANDARD_VERSION") | Should -BeFalse -Because "no overlay was composed, so no overlay-only key was introduced"
             $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*Custom.Base.Package*" -Because "omitting -DataStandardVersion on the published entry point must leave the base env file's own SCHEMA_PACKAGES driving the run"
+        }
+    }
+
+    Context "MSSQL engine overlay composition via the wrapper (DMS-1238)" {
+        BeforeAll {
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+
+            # Same isolated-fixture shape as the -DataStandardVersion composition probe above: a
+            # stubbed start-local-dms.ps1 copies whatever -EnvironmentFile the wrapper forwards to
+            # it so the test can inspect the effective (composed) env file's contents.
+            function script:New-EngineOverlayProbeRepo {
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    "bootstrap-local-dms.ps1",
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    ".env.mssql"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_DATASTORE=postgresql
+SCHEMA_PACKAGES='[{"version":"1.0.332","name":"EdFi.DataStandard52.ApiSchema"},{"version":"1.0.332","name":"EdFi.DataStandard52.TPDM.ApiSchema"}]'
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $capturedEnvPath = Join-Path $repoRoot "captured.env"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot        = $repoRoot
+                    WrapperScript   = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
+                    CapturedEnvPath = $capturedEnvPath
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:engineOverlayProbeRepo -and (Test-Path -LiteralPath $script:engineOverlayProbeRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:engineOverlayProbeRepo.RepoRoot -Recurse -Force
+            }
+            $script:engineOverlayProbeRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 -DatabaseEngine mssql composes DMS_DATASTORE=mssql and the SQL Server connection strings onto the effective env" {
+            $script:engineOverlayProbeRepo = New-EngineOverlayProbeRepo
+
+            & $script:engineOverlayProbeRepo.WrapperScript -DatabaseEngine mssql
+
+            $capturedValues = ReadValuesFromEnvFile $script:engineOverlayProbeRepo.CapturedEnvPath
+            $capturedValues["DMS_DATASTORE"] | Should -Be "mssql"
+            $capturedValues["DATABASE_CONNECTION_STRING"] | Should -Match "^Server=dms-mssql;"
+            $capturedValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match "^Server=dms-mssql;"
+            $capturedValues["MSSQL_SA_PASSWORD"] | Should -Not -BeNullOrEmpty
+
+            # The data-standard overlay (always composed for the local entry point) must still take
+            # effect: the two overlays touch disjoint keys and must not clobber one another.
+            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "5.2"
+            $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard52.ApiSchema*"
+        }
+
+        It "bootstrap-local-dms.ps1 without -DatabaseEngine (postgresql default) composes nothing new" {
+            $script:engineOverlayProbeRepo = New-EngineOverlayProbeRepo
+
+            & $script:engineOverlayProbeRepo.WrapperScript
+
+            $capturedValues = ReadValuesFromEnvFile $script:engineOverlayProbeRepo.CapturedEnvPath
+            $capturedValues["DMS_DATASTORE"] | Should -Be "postgresql"
+            $capturedValues.ContainsKey("MSSQL_SA_PASSWORD") | Should -BeFalse -Because "the postgresql engine (default) must not introduce any MSSQL-only keys"
+            $capturedValues.ContainsKey("DATABASE_CONNECTION_STRING") | Should -BeFalse
         }
     }
 

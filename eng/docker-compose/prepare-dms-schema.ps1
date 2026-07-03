@@ -60,7 +60,7 @@
     and stages it into the bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.mssql.relational -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.e2e -SchemaToolPath $schemaToolExe
     Standard mode, driven by SCHEMA_PACKAGES. Resolves and stages every package listed in the env
     file's SCHEMA_PACKAGES value (core plus any extensions) so the staged workspace matches the
     package set the DMS container entrypoint downloads for that same env file.

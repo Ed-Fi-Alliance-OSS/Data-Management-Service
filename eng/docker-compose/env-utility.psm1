@@ -645,3 +645,68 @@ function Resolve-DataStandardEnvironmentFile {
         -OverlayEnvironmentFile $overlayPath `
         -TargetPath $derivedPath
 }
+
+function Resolve-DatabaseEngineEnvironmentFile {
+    <#
+    .SYNOPSIS
+        Returns the effective environment file path for the requested database engine. With the
+        default "postgresql" engine the base file is returned unchanged. With "mssql" the
+        .env.mssql overlay (DMS_DATASTORE=mssql, the SQL Server connection strings, and the
+        container-internal identity-provider hostnames the DMS container's own /oauth/token
+        proxy needs) is composed onto the base into a derived file under
+        <DockerComposeRoot>/.derived/ and that path is returned.
+
+    .DESCRIPTION
+        Reuses New-DataStandardDerivedEnvFile's generic base+overlay composition (it is not
+        specific to data-standard overlays despite the name) so DMS_DATASTORE and the
+        SQL Server connection strings reach every phase - configure, provision, and the start
+        scripts - from one canonical path. Without this, a run could provision an MSSQL data
+        store in CMS while the DMS container itself still starts on its postgresql default
+        (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
+
+        Idempotency guard: when the base file already carries DMS_DATASTORE=mssql (an earlier
+        phase - typically the bootstrap wrapper - already composed the overlay onto it) the base
+        file is returned unchanged instead of composing a derived-of-derived file.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" (default; no-op) or "mssql".
+
+    .PARAMETER BaseEnvironmentFile
+        Absolute path to the base env file. Must exist.
+
+    .PARAMETER DockerComposeRoot
+        Directory holding .env.mssql and the .derived output. Defaults to this module's
+        directory (eng/docker-compose).
+    #>
+    param(
+        [string]$DatabaseEngine = "postgresql",
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [string]$DockerComposeRoot
+    )
+
+    if ($DatabaseEngine -ne "mssql") {
+        return $BaseEnvironmentFile
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) {
+        $DockerComposeRoot = $PSScriptRoot
+    }
+
+    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    if ((Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql") {
+        return $BaseEnvironmentFile
+    }
+
+    $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
+    if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
+        throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
+    }
+
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+
+    return New-DataStandardDerivedEnvFile `
+        -BaseEnvironmentFile $BaseEnvironmentFile `
+        -OverlayEnvironmentFile $overlayPath `
+        -TargetPath $derivedPath
+}
