@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
@@ -23,6 +24,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Preconditions
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
+    private static readonly IEtagComposer _etagComposer = new EtagComposer();
 
     [Test]
     public async Task It_re_resolves_descriptor_post_creates_inside_the_write_session_before_returning_precondition_failed()
@@ -63,13 +65,13 @@ public class Given_Descriptor_Write_Preconditions
             PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -84,7 +86,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -109,6 +113,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
@@ -142,8 +147,7 @@ public class Given_Descriptor_Write_Preconditions
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -178,7 +182,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
         var result = await sut.HandlePostAsync(request);
 
@@ -206,7 +210,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
         var result = await sut.HandlePutAsync(request);
 
@@ -234,6 +238,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(46L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -241,7 +246,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(46L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -263,6 +270,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(46L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -270,7 +278,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(46L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -377,13 +387,13 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -398,7 +408,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -416,8 +428,7 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -494,8 +505,7 @@ public class Given_Descriptor_Write_Preconditions
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -542,8 +552,7 @@ public class Given_Descriptor_Write_Preconditions
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(dialect);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -618,8 +627,7 @@ public class Given_Descriptor_Write_Preconditions
             .Returns(referencingResource);
 
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -651,24 +659,16 @@ public class Given_Descriptor_Write_Preconditions
             .MustHaveHappenedOnceExactly();
     }
 
-    private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(
-            DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        _etagComposer.Compose(
+            contentVersion,
+            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
 
-    private static ExtractedDescriptorBody CreatePersistedDescriptorBody(string description = "Charter")
-    {
-        return new ExtractedDescriptorBody(
-            "uri://ed-fi.org/SchoolTypeDescriptor",
-            "Charter",
-            "Charter",
-            description,
-            new DateOnly(2024, 1, 1),
-            null,
-            "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-            _descriptorResource.ResourceName
+    private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
         );
-    }
 
     private static InMemoryRelationalResultSet CreateResolvedExistingDocumentRow(DocumentUuid documentUuid)
     {
@@ -711,7 +711,8 @@ public class Given_Descriptor_Write_Preconditions
             classifier ?? new NoOpRelationalWriteExceptionClassifier(),
             deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
-            NullLogger<DescriptorWriteHandler>.Instance
+            NullLogger<DescriptorWriteHandler>.Instance,
+            _etagComposer
         );
     }
 
