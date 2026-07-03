@@ -863,8 +863,6 @@ function New-DataStoreConnectionString {
 #>
 function Add-DataStore {
     [CmdletBinding()]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The credentials are read as plaintext from the environment file and must be embedded as plaintext in the PostgreSQL connection string; SecureString/PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The password is read as plaintext from the environment file and must be embedded as plaintext in the PostgreSQL connection string; SecureString adds no protection across that boundary.')]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
@@ -1122,9 +1120,6 @@ function Add-DataStoreContext {
 function Add-DmsSchoolYearInstances {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'The exported helper name is retained for existing bootstrap scripts.')]
     [CmdletBinding()]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function creates one data store per school year and matches the exported bootstrap API.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The credentials are read as plaintext from the environment file and forwarded to Add-DataStore, which embeds them as plaintext in the connection string; SecureString/PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The password is read as plaintext from the environment file and forwarded to Add-DataStore, which embeds it as plaintext in the connection string; SecureString adds no protection across that boundary.')]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
