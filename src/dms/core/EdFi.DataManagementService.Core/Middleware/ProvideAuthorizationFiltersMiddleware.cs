@@ -35,10 +35,9 @@ internal class ProvideAuthorizationFiltersMiddleware(ILogger _logger) : IPipelin
                 );
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: (int)HttpStatusCode.Unauthorized,
-                    Body: FailureResponse.ForUnauthorized(
+                    Body: FailureResponse.ForAuthenticationFailure(
                         requestInfo.FrontendRequest.TraceId,
-                        error: "Unauthorized",
-                        description: "No authorization information found. Ensure valid JWT token is provided."
+                        ["No authorization information found. Ensure valid JWT token is provided."]
                     ),
                     Headers: [],
                     ContentType: "application/problem+json"

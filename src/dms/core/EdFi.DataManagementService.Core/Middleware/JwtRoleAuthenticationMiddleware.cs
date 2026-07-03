@@ -8,6 +8,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,18 +35,29 @@ internal class JwtRoleAuthenticationMiddleware(
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Extract Authorization header
-        if (
-            !requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
-            || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-        )
+        if (!requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader))
         {
             logger.LogDebug(
-                "Missing or invalid Authorization header - {TraceId}",
+                "Missing Authorization header - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateUnauthorizedResponse(
-                "Bearer token required",
+                "Authorization header is missing.",
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
+
+        if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogDebug(
+                "Unsupported Authorization header scheme - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
+                "Unknown Authorization header scheme.",
                 requestInfo.FrontendRequest.TraceId
             );
             return;
@@ -105,19 +117,9 @@ internal class JwtRoleAuthenticationMiddleware(
     /// </summary>
     private static FrontendResponse CreateUnauthorizedResponse(string errorDetail, TraceId traceId)
     {
-        var problemDetails = new
-        {
-            detail = "The caller could not be authenticated.",
-            type = "urn:ed-fi:api:security:authentication",
-            title = "Authentication Failed",
-            status = 401,
-            correlationId = traceId.Value,
-            errors = new[] { errorDetail },
-        };
-
         return new FrontendResponse(
             StatusCode: 401,
-            Body: JsonSerializer.SerializeToNode(problemDetails),
+            Body: FailureResponse.ForAuthenticationFailure(traceId, [errorDetail]),
             Headers: new Dictionary<string, string>
             {
                 ["WWW-Authenticate"] = $"Bearer error=\"invalid_token\"",

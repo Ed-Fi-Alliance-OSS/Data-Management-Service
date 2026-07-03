@@ -187,12 +187,6 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
-        {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Invalid token");
-        }
-
-        [Test]
         public void It_returns_body_as_JsonObject_not_string()
         {
             // Ensures the response body is a proper JsonNode object, not a serialized string.
@@ -252,15 +246,12 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
-        {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
-        }
-
-        [Test]
         public void It_returns_the_authentication_failed_problem_details()
         {
-            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
+            AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse!,
+                "Authorization header is missing."
+            );
         }
     }
 
@@ -313,15 +304,12 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
-        {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
-        }
-
-        [Test]
         public void It_returns_the_authentication_failed_problem_details()
         {
-            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Bearer token required");
+            AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse!,
+                "Unknown Authorization header scheme."
+            );
         }
     }
 

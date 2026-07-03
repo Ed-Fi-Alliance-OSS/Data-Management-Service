@@ -179,7 +179,8 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
             JsonObject body = _requestInfo.FrontendResponse.Body!.AsObject();
-            body["title"]!.GetValue<string>().Should().Be("Unauthorized");
+            body["title"]!.GetValue<string>().Should().Be("Authentication Failed");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
         }
     }
 }
