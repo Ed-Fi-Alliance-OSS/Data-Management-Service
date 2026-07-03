@@ -41,25 +41,28 @@ internal class JwtAuthenticationMiddleware(
             return;
         }
 
-        if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        AuthorizationHeaderResult headerResult = AuthorizationHeaderParser.Parse(authHeader);
+        if (!headerResult.IsValid)
         {
             logger.LogDebug(
-                "Unsupported Authorization header scheme - {TraceId}",
+                "Invalid Authorization header ({ErrorDetail}) - {TraceId}",
+                headerResult.ErrorDetail,
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateUnauthorizedResponse(
-                "Unknown Authorization header scheme.",
+                headerResult.ErrorDetail!,
                 requestInfo.FrontendRequest.TraceId
             );
             return;
         }
 
+        string token = headerResult.Token!;
+
         // Validate token and extract client authorizations
         (ClaimsPrincipal? principal, ClientAuthorizations? clientAuthorizations) =
             await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                authHeader,
-                "Bearer ".Length,
+                token,
                 CancellationToken.None
             );
 

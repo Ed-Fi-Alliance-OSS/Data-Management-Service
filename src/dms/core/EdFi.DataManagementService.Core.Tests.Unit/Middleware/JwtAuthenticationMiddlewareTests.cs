@@ -313,6 +313,67 @@ public class JwtAuthenticationMiddlewareTests
         }
     }
 
+    [TestFixture("Bearer ", "Missing Authorization header bearer token value.")]
+    [TestFixture("Bearer", "Missing Authorization header bearer token value.")]
+    [TestFixture("Bearer   ", "Missing Authorization header bearer token value.")]
+    [TestFixture("   ", "Invalid Authorization header.")]
+    [Parallelizable]
+    public class Given_A_Request_With_A_Malformed_Bearer_Authorization_Header(
+        string _authHeader,
+        string _expectedError
+    ) : JwtAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = false;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontendRequest = new FrontendRequest(
+                Path: "/ed-fi/students",
+                Body: null,
+                Form: null,
+                Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = _authHeader,
+                },
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            var (middleware, _) = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_the_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_401_unauthorized()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, _expectedError);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Request_With_Case_Insensitive_Authorization_Header : JwtAuthenticationMiddlewareTests
