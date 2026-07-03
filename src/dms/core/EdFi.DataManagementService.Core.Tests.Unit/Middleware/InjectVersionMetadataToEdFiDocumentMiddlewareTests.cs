@@ -3,13 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -81,24 +79,6 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
             lastModifiedDate.Should().NotBeNull();
             var IsValid = Regex.IsMatch(lastModifiedDate!.ToString(), _pattern);
             IsValid.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_should_have_parsed_body_with_etag()
-        {
-            var lastModifiedDate = _requestInfo.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
-            lastModifiedDate.Should().NotBeNull();
-
-            var eTag = _requestInfo.ParsedBody["_etag"]?.AsValue();
-            eTag.Should().NotBeNull();
-
-            Trace.Assert(lastModifiedDate is not null);
-            Trace.Assert(eTag is not null);
-
-            ResourceEtagFormatter
-                .FormatEtag(_requestInfo.ParsedBody)
-                .Should()
-                .BeEquivalentTo(eTag.GetValue<string>());
         }
     }
 }

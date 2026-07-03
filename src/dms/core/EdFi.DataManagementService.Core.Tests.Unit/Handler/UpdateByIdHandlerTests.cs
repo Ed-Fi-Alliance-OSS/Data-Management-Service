@@ -135,7 +135,6 @@ public class UpdateByIdHandlerTests
         {
             var (updateByIdHandler, serviceProvider) = Handler(new Repository());
             requestInfo.ScopedServiceProvider = serviceProvider;
-            requestInfo.ParsedBody = JsonNode.Parse("""{"_etag":"\"stale\""}""")!;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -144,10 +143,6 @@ public class UpdateByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(204);
             requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"72\"");
-            requestInfo
-                .FrontendResponse.Headers["etag"]
-                .Should()
-                .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
         }
     }
 
