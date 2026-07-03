@@ -596,9 +596,10 @@ Typical structure:
       - PostgreSQL:
         - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
         - abstract targets: `ON UPDATE CASCADE`
-      - SQL Server:
-        - all reference composite FKs use `ON UPDATE NO ACTION` (concrete + abstract targets)
-        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table, updating canonical/storage columns only
+      - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
+        - surviving live edge per referenced table: full composite FK with `ON UPDATE CASCADE`
+        - pruned edges: `ON UPDATE NO ACTION` — full composite FK when covered by a surviving cascade, else a `DocumentId`-only FK plus deterministic `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table (updating canonical/storage columns only) when the pruned edge remains live
+        - derivation fails fast when a table has two or more uncovered live cascade paths
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -655,7 +656,7 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
     - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
+    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on the surviving edge, `ON UPDATE NO ACTION` on pruned edges (with `TriggerKindParameters.MssqlIdentityPropagationTrigger` fan-out only where a pruned edge remains live); see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained; `allowIdentityUpdates` applies to concrete targets.
 
 Required: `{schema}.{AbstractResource}_View` union view
 

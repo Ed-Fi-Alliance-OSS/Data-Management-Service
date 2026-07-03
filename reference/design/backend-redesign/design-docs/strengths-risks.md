@@ -64,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible edges), and
+- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server foreign-key pruning — `ON UPDATE CASCADE` on surviving edges, `NO ACTION` on pruned edges, `TriggerKindParameters.MssqlIdentityPropagationTrigger` fallback only where a pruned edge remains live; see [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -79,9 +79,10 @@ Mitigations / guidance:
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
-SQL Server may reject FK graphs with “cycles or multiple cascade paths”. This is why the design does not use SQL Server update cascades for reference composite FKs. The DDL generator must:
-- emit `ON UPDATE NO ACTION` for all SQL Server reference composite FKs, and
-- emit deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
+SQL Server may reject FK graphs with “cycles or multiple cascade paths” (confirmed: error 1785). The design handles this with **foreign-key pruning** rather than by disabling all update cascades. The DDL generator must:
+- classify each cascade-eligible edge and emit `ON UPDATE CASCADE` (full composite FK) on the one surviving live edge into each referenced table,
+- emit `ON UPDATE NO ACTION` on pruned edges — keeping the full composite FK when the pruned edge is covered by a surviving cascade, and falling back to a `DocumentId`-only FK plus deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` propagation only where a pruned edge remains live, and
+- fail derivation fast when a table has two or more uncovered live cascade paths (no safe pruning). See [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
 - extra trigger complexity,
@@ -89,7 +90,7 @@ Risks:
 - key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 
 Mitigations:
-- Include SQL Server `ON UPDATE NO ACTION` + propagation-trigger emission checks in DDL generation verification.
+- Include SQL Server FK-pruning classification + fail-fast checks (and full-composite RI restoration on kept/covered edges) in DDL generation verification; see [mssql-cascading.md](mssql-cascading.md).
 - Benchmark representative “hub” resources on both engines.
 
 ### Key unification complexity (Generated aliases + synthetic presence flags)

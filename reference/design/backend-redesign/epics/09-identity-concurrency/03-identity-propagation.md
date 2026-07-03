@@ -15,6 +15,7 @@ Implement strict identity maintenance for identity updates without application-m
 Align with:
 - `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 - `reference/design/backend-redesign/design-docs/data-model.md`
+- `reference/design/backend-redesign/design-docs/mssql-cascading.md` (SQL Server foreign-key pruning + fail-fast)
 
 ## Acceptance Criteria
 
@@ -27,7 +28,7 @@ Align with:
 
 1. Emit/validate DDL for identity-component propagation:
    - composite FKs with `ON UPDATE CASCADE` where allowed, and
-   - `MssqlIdentityPropagationTrigger` where required (SQL Server cascade-path restrictions).
+   - on SQL Server, foreign-key pruning — cascade on the surviving edge, `ON UPDATE NO ACTION` on pruned edges, `MssqlIdentityPropagationTrigger` fallback only where a pruned edge remains live, and fail-fast when no safe pruning exists (SQL Server cascade-path restrictions; see `design-docs/mssql-cascading.md`).
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
 3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.

@@ -230,7 +230,7 @@ The DDL generator must emit document-reference columns and constraints that enab
   - Target columns:
     - `DocumentId`, and
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`.
-  - Use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`.
+  - Use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`. On SQL Server, `ON UPDATE CASCADE` is further limited to the one surviving edge per referenced table under foreign-key pruning (pruned edges use `ON UPDATE NO ACTION`, with a `MssqlIdentityPropagationTrigger` fallback only where a pruned edge remains live, and fail-fast when no safe pruning exists); see [mssql-cascading.md](mssql-cascading.md).
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 

@@ -77,7 +77,8 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
 Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` only when the
-referenced target has `allowIdentityUpdates=true`.
+referenced target has `allowIdentityUpdates=true`. On SQL Server, `ON UPDATE CASCADE` is limited to the one surviving edge
+per referenced table under foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -355,7 +356,7 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation (PostgreSQL cascades and SQL Server `MssqlIdentityPropagationTrigger`): update storage columns only.
+- Identity propagation (PostgreSQL cascades; SQL Server foreign-key pruning — cascade on surviving edges, `MssqlIdentityPropagationTrigger` fallback on pruned-but-live edges; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
 Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:

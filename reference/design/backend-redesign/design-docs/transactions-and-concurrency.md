@@ -116,11 +116,12 @@ DDL generator requirements (derived from ApiSchema):
       only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`).
     - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
       `ON UPDATE CASCADE`.
-  - SQL Server:
-    - concrete and abstract targets: emit `ON UPDATE NO ACTION`.
-    - eligible propagation targets (abstract or concrete `allowIdentityUpdates=true`) are maintained by
-      `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table, fan-out referrer actions,
-      canonical/storage-column updates only).
+  - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
+    - surviving live edge into each referenced table: full composite FK with `ON UPDATE CASCADE`.
+    - pruned edges: `ON UPDATE NO ACTION` — keeping the full composite FK when covered by a surviving cascade, or
+      falling back to a `DocumentId`-only FK plus a `TriggerKindParameters.MssqlIdentityPropagationTrigger` (one trigger
+      per referenced table, fan-out referrer actions, canonical/storage-column updates only) when the pruned edge remains live.
+    - derivation fails fast when a table has two or more uncovered live cascade paths.
 
 When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true` for concrete targets), the
 database propagates updated identity values into all direct referrers’ **canonical/storage columns** (PostgreSQL FK
@@ -256,8 +257,10 @@ This redesign keeps relationships keyed by stable `..._DocumentId`, but also sto
 fields alongside every document reference. Composite-FK update behavior is dialect-specific:
 - PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`
   (`ON UPDATE NO ACTION` otherwise).
-- SQL Server: `ON UPDATE NO ACTION` for all reference composite FKs; eligible propagation uses
-  `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers.
+- SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on the surviving edge per referenced table,
+  `ON UPDATE NO ACTION` on pruned edges, `TriggerKindParameters.MssqlIdentityPropagationTrigger`
+  fallback only where a pruned edge remains live, and fail-fast when no safe pruning exists (see
+  [mssql-cascading.md](mssql-cascading.md)).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -266,9 +269,11 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL supports “cycles or multiple cascade paths” for FK cascades.
-- SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs.
-- For eligible SQL Server propagation edges (abstract targets or concrete `allowIdentityUpdates=true` targets), derive
+- PostgreSQL supports “cycles or multiple cascade paths” for FK cascades, so it keeps `ON UPDATE CASCADE` on every eligible edge.
+- SQL Server rejects multiple cascade paths (error 1785), so it uses **foreign-key pruning**: `ON UPDATE CASCADE` on one
+  surviving live edge per referenced table and `ON UPDATE NO ACTION` on pruned edges, failing fast when no safe pruning
+  exists. See [mssql-cascading.md](mssql-cascading.md).
+- For pruned-but-live SQL Server edges only, derive
   deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers that:
   - fire on the referenced table (`DbTriggerInfo.Table`),
   - fan out to all impacted referrer tables (root and non-root reference sites), and
