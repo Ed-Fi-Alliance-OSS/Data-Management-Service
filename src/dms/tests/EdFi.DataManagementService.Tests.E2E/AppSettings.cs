@@ -12,7 +12,6 @@ public static class AppSettings
     public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
     public const int BytesPerMegabyte = 1024 * 1024;
     public const int DefaultMaxRequestBodySizeMegabytes = 10;
-    public const int DefaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeMegabytes * BytesPerMegabyte;
 
     private const string DefaultDmsPort = "8080";
     private const string DefaultConfigServicePort = "8081";
@@ -25,7 +24,7 @@ public static class AppSettings
     public static string ConfigServicePort => _settings.ConfigServicePort;
     public static string AuthenticationService => _settings.AuthenticationService;
     public static string DataStoreDatabaseName => _settings.DataStoreDatabaseName;
-    public static int MaxRequestBodySizeBytes => _settings.MaxRequestBodySizeBytes;
+    public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
     {
@@ -34,7 +33,7 @@ public static class AppSettings
             GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
             GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
             GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName),
-            GetInt(configuration, nameof(MaxRequestBodySizeBytes), DefaultMaxRequestBodySizeBytes)
+            GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
 
@@ -67,5 +66,5 @@ internal sealed record AppSettingsValues(
     string ConfigServicePort,
     string AuthenticationService,
     string DataStoreDatabaseName,
-    int MaxRequestBodySizeBytes
+    int MaxRequestBodySizeMegabytes
 );

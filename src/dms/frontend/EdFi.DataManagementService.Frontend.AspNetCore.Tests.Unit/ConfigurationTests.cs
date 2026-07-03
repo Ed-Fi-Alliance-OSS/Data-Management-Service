@@ -152,10 +152,15 @@ public class ConfigurationTests
             var kestrelOptions = _factory.Services.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
             var appSettings = _factory.Services.GetRequiredService<IOptions<AppSettings>>().Value;
 
-            appSettings.MaxRequestBodySizeBytes.Should().BeGreaterThan(0);
-            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(formOptions.ValueLengthLimit);
-            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(formOptions.MultipartBodyLengthLimit);
-            ((long)appSettings.MaxRequestBodySizeBytes).Should().Be(kestrelOptions.Limits.MaxRequestBodySize);
+            appSettings
+                .MaxRequestBodySizeMegabytes.Should()
+                .Be(AppSettings.DefaultMaxRequestBodySizeMegabytes);
+
+            long maxRequestBodySizeBytes =
+                (long)appSettings.MaxRequestBodySizeMegabytes * AppSettings.BytesPerMegabyte;
+            maxRequestBodySizeBytes.Should().Be(formOptions.ValueLengthLimit);
+            maxRequestBodySizeBytes.Should().Be(formOptions.MultipartBodyLengthLimit);
+            maxRequestBodySizeBytes.Should().Be(kestrelOptions.Limits.MaxRequestBodySize);
         }
     }
 
@@ -182,7 +187,7 @@ public class ConfigurationTests
                             new Dictionary<string, string?>
                             {
                                 ["AppSettings:AuthenticationService"] = "http://localhost:5126/connect/token",
-                                ["AppSettings:MaxRequestBodySizeBytes"] = "0",
+                                ["AppSettings:MaxRequestBodySizeMegabytes"] = "0",
                                 ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
                             }
                         );
@@ -228,7 +233,7 @@ public class ConfigurationTests
             var startupStatus = JsonNode.Parse(await File.ReadAllTextAsync(_statusFilePath))!.AsObject();
 
             startupStatus["State"]!.GetValue<string>().Should().Be("Failed");
-            startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("MaxRequestBodySizeBytes");
+            startupStatus["ErrorMessage"]!.GetValue<string>().Should().Contain("MaxRequestBodySizeMegabytes");
         }
     }
 

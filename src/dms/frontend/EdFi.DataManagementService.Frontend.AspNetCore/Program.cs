@@ -72,12 +72,13 @@ RunBootstrapPhase(
         }
 
         // Configure request size limits for schema upload using the configured request-body limit.
-        int maxRequestBodySizeBytes = int.TryParse(
-            builder.Configuration["AppSettings:MaxRequestBodySizeBytes"],
-            out int configuredMaxRequestBodySizeBytes
+        int maxRequestBodySizeMegabytes = int.TryParse(
+            builder.Configuration["AppSettings:MaxRequestBodySizeMegabytes"],
+            out int configuredMaxRequestBodySizeMegabytes
         )
-            ? configuredMaxRequestBodySizeBytes
-            : AppSettings.DefaultMaxRequestBodySizeBytes;
+            ? configuredMaxRequestBodySizeMegabytes
+            : AppSettings.DefaultMaxRequestBodySizeMegabytes;
+        int maxRequestBodySizeBytes = maxRequestBodySizeMegabytes * AppSettings.BytesPerMegabyte;
 
         builder.Services.Configure<FormOptions>(options =>
         {

@@ -11,11 +11,10 @@ public class AppSettings
 {
     public const int BytesPerMegabyte = 1024 * 1024;
     public const int DefaultMaxRequestBodySizeMegabytes = 10;
-    public const int DefaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeMegabytes * BytesPerMegabyte;
 
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
-    public int MaxRequestBodySizeBytes { get; set; }
+    public int MaxRequestBodySizeMegabytes { get; set; }
     public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
@@ -63,10 +62,10 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             );
         }
 
-        if (options.MaxRequestBodySizeBytes <= 0)
+        if (options.MaxRequestBodySizeMegabytes <= 0)
         {
             return ValidateOptionsResult.Fail(
-                "AppSettings value MaxRequestBodySizeBytes must be greater than 0"
+                "AppSettings value MaxRequestBodySizeMegabytes must be greater than 0"
             );
         }
 
