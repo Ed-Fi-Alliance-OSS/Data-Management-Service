@@ -102,6 +102,14 @@ if ($analysisPaths.Count -eq 0) {
     exit 0
 }
 
+# PSScriptAnalyzer can intermittently throw a NullReferenceException when rules concurrently analyze
+# Export-ModuleMember declarations. Keep these export-aware rules in separate runs until upstream issue
+# https://github.com/PowerShell/PSScriptAnalyzer/issues/1351 is fixed.
+$exportModuleMemberAnalysisRules = @(
+    "PSProvideCommentHelp",
+    "PSReservedCmdletChar"
+)
+
 function Invoke-ScriptAnalyzerForPath {
     [CmdletBinding()]
     param(
@@ -109,23 +117,17 @@ function Invoke-ScriptAnalyzerForPath {
         [string] $AnalysisPath
     )
 
-    try {
-        return Invoke-ScriptAnalyzer -Path $AnalysisPath -ErrorAction Stop
-    }
-    catch [System.NullReferenceException] {
-        $ruleDiagnostics = @(
-            foreach ($rule in (Get-ScriptAnalyzerRule | Sort-Object RuleName)) {
-                try {
-                    Invoke-ScriptAnalyzer -Path $AnalysisPath -IncludeRule $rule.RuleName -ErrorAction Stop
-                }
-                catch {
-                    $displayPath = ConvertTo-RelativeDisplayPath -Value $AnalysisPath
-                    throw "PSScriptAnalyzer failed for '$displayPath' while running rule '$($rule.RuleName)': $($_.Exception.Message)"
-                }
-            }
-        )
+    $displayPath = ConvertTo-RelativeDisplayPath -Value $AnalysisPath
 
-        return $ruleDiagnostics
+    try {
+        Invoke-ScriptAnalyzer -Path $AnalysisPath -ExcludeRule $exportModuleMemberAnalysisRules -ErrorAction Stop
+
+        foreach ($ruleName in $exportModuleMemberAnalysisRules) {
+            Invoke-ScriptAnalyzer -Path $AnalysisPath -IncludeRule $ruleName -ErrorAction Stop
+        }
+    }
+    catch {
+        throw "PSScriptAnalyzer failed for '$displayPath': $($_.Exception.Message)"
     }
 }
 
