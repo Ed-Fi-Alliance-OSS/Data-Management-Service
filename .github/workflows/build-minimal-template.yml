@@ -161,9 +161,11 @@ jobs:
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
+          $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+          $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
             throw "Failed to register the relational data store."
           }

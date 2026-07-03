@@ -333,9 +333,11 @@ jobs:
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ matrix.environment_file }}"
+          $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+          $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
           if (-not $dataStoreId) {
             throw "Failed to register the smoke test data store."
           }
@@ -374,7 +376,7 @@ jobs:
       - name: Create Smoke Test Credentials
         run: |
           Import-Module ./modules/SmokeTest.psm1 -Force
-          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @([long]$env:SMOKE_DATA_STORE_ID)
+          $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @([long]$env:SMOKE_DATA_STORE_ID)
           # Store credentials in environment variables for subsequent steps
           "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
