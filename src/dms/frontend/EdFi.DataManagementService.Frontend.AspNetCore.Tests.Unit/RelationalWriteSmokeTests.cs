@@ -36,6 +36,11 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [NonParallelizable]
 public class Given_A_Host_Using_The_Relational_Backend
 {
+    // A deterministic composed-shaped write-result etag returned by the fake write executor. This test
+    // verifies the frontend pipeline (the write-result etag flows to the quoted ETag response header),
+    // not the etag format, so any stable opaque value produced without the etag formatter suffices.
+    private const string FakeWriteResultEtag = "1-a1b2c3d4.j._.l";
+
     private const string MinimalApiSchemaJson = """
         {
           "apiSchemaVersion": "1.0.0",
@@ -215,15 +220,12 @@ public class Given_A_Host_Using_The_Relational_Backend
             )
         );
         var responseBody = await response.Content.ReadAsStringAsync();
-        var expectedEtag = RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse("""{"widgetId":101,"widgetName":"Smoke Widget"}""")!
-        );
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
         response.Headers.TryGetValues("ETag", out var etagValues).Should().BeTrue();
         // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3); the write
         // result's opaque etag value is wrapped in double quotes at the HTTP boundary.
-        etagValues.Should().ContainSingle().Which.Should().Be($"\"{expectedEtag}\"");
+        etagValues.Should().ContainSingle().Which.Should().Be($"\"{FakeWriteResultEtag}\"");
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
         _flattener.Inputs.Should().ContainSingle();
@@ -564,17 +566,11 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.InsertSuccess(
-                                documentUuid,
-                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
-                            )
+                            new UpsertResult.InsertSuccess(documentUuid, FakeWriteResultEtag)
                         ),
                     RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(
-                                documentUuid,
-                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
-                            )
+                            new UpsertResult.UpdateSuccess(documentUuid, FakeWriteResultEtag)
                         ),
                     _ => throw new InvalidOperationException(
                         $"Unsupported target context type '{targetContext.GetType().Name}'."
