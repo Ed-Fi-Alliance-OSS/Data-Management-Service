@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -157,9 +157,9 @@ function Get-NugetPackage {
     $versions = Invoke-SemanticSort $package.versions
 
     if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
-        Write-Host -ForegroundColor Yellow "No version specified. Using latest available version."
+        Write-Information "No version specified. Using latest available version." -InformationAction Continue
         $versionSearch = Get-LatestSemanticVersion $versions
-        Write-Host -ForegroundColor Yellow "Using version: $versionSearch"
+        Write-Information "Using version: $versionSearch" -InformationAction Continue
     }
     else {
         # pad this out to three part semver if only partial
@@ -308,7 +308,7 @@ function Get-SmokeTestTool {
     Download the Ed-Fi API SDK dll from NuGet feed.
 
 .DESCRIPTION
-    Downloads the EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 package from the 
+    Downloads the EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 package from the
     Ed-Fi NuGet feed and extracts the EdFi.OdsApi.Sdk.dll file to the sdk directory.
 
 .PARAMETER PackageVersion
@@ -348,7 +348,7 @@ function Get-ApiSdkDll {
     try {
         # Download the NuGet package
         $packageDir = Get-NugetPackage -PackageName $packageName -PackageVersion $PackageVersion -PreRelease
-        
+
         # Find the SDK DLL in the package
         $dllPath = Get-ChildItem -Path $packageDir -Filter "EdFi.OdsApi.Sdk.dll" -Recurse | Select-Object -First 1
 
@@ -463,6 +463,7 @@ function Get-SouthridgeSampleData {
     New-CsprojForNuget -CsprojPath ".\MyPackage.csproj" -Id "MyTool" -Description "A helper tool" -ForceOverwrite
 #>
 function New-CsprojForNuget {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Package helper writes a generated csproj as part of non-interactive build tooling.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -503,6 +504,7 @@ function New-CsprojForNuget {
         TargetFramework                 = "netstandard2.0"
         PackageId                       = $Id
         Version                         = $Version
+        Title                           = $Title
         Authors                         = $Authors
         PackageProjectUrl               = $ProjectUrl
         Copyright                       = $Copyright
@@ -564,7 +566,7 @@ function Add-FileToCsProjForNuget {
             if ($_.target -and $_.source) {
                 $true
             } else {
-                Write-Host "SourceTargetPair entry failed validation: $($_ | Out-String)";
+                Write-Warning "SourceTargetPair entry failed validation: $($_ | Out-String)"
                 $false
             }
         })]

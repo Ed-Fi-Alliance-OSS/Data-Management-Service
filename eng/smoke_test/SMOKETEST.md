@@ -31,7 +31,7 @@ Apis.All and Models.All namespaces. Once the files are rearranged, the
 
 ## Automatic Credential Creation
 
-The SmokeTest module includes a `Get-SmokeTestCredentials` function that
+The SmokeTest module includes a `Get-SmokeTestCredential` function that
 automatically creates the necessary vendor and application credentials for
 smoke testing. This function:
 
@@ -46,7 +46,7 @@ smoke testing. This function:
 
 ```powershell
 Import-Module ./modules/SmokeTest.psm1 -Force
-$credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+$credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081"
 
 # Use the credentials in smoke tests
 ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $credentials.Key -Secret $credentials.Secret

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -17,6 +17,7 @@
     It is the companion to setup-local-cms.ps1.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Teardown script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param()
 
@@ -35,7 +36,7 @@ try {
     # Define the compose files used by CMS (matching start-local-config.ps1)
     $composeFiles = @(
         "-f", "postgresql.yml",
-        "-f", "local-config.yml", 
+        "-f", "local-config.yml",
         "-f", "keycloak.yml"
     )
 
@@ -72,15 +73,15 @@ try {
             Write-Warning "Environment file $envFile not found, using default .env"
             $envFile = "./.env"
         }
-        
+
         # Run docker compose with cs-local project name (matches start-local-config.ps1)
         Write-Host "Running: docker compose $composeFiles --env-file $envFile -p cs-local down -v" -ForegroundColor Gray
         $output = docker compose $composeFiles --env-file $envFile -p cs-local down -v 2>&1
-        
+
         if ($output) {
             $output | ForEach-Object { Write-Host $_ }
         }
-        
+
         if ($LASTEXITCODE -eq 0) {
             Write-Host "cs-local stack stopped successfully." -ForegroundColor Green
         } else {
@@ -90,7 +91,7 @@ try {
     catch {
         Write-Warning "Error stopping cs-local containers: $_"
     }
-    
+
     # Force stop any remaining cs-local containers
     Write-Host "`nForce stopping any remaining cs-local containers..." -ForegroundColor Yellow
     $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local|ed-fi-api-config" }
@@ -155,7 +156,7 @@ try {
             }
         }
     }
-    
+
     if (-not $foundImages) {
         Write-Host "No cs-local images found." -ForegroundColor Green
     }
@@ -190,7 +191,7 @@ try {
     # Verification step
     Write-Host "`nVerifying cs-local cleanup..." -ForegroundColor Yellow
     $verificationFailed = $false
-    
+
     # Check for any remaining cs-local containers
     $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "cs-local|ed-fi-api-config" }
     if ($remainingContainers) {
@@ -202,7 +203,7 @@ try {
     } else {
         Write-Host "✓ All cs-local containers removed" -ForegroundColor Green
     }
-    
+
     # Check for any remaining cs-local volumes
     $remainingVolumes = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "^cs-local_" }
     if ($remainingVolumes) {
@@ -214,15 +215,16 @@ try {
     } else {
         Write-Host "✓ All cs-local volumes removed" -ForegroundColor Green
     }
-    
+
     # Check for any remaining cs-local images
     $remainingImages = @()
     foreach ($imageVariant in $imageVariants) {
-        if (docker images -q $imageVariant 2>$null) {
+        $imageId = docker images -q $imageVariant 2>$null
+        if ($imageId) {
             $remainingImages += $imageVariant
         }
     }
-    
+
     if ($remainingImages) {
         Write-Warning "Found remaining cs-local images:"
         foreach ($image in $remainingImages) {
@@ -232,7 +234,7 @@ try {
     } else {
         Write-Host "✓ All cs-local images removed" -ForegroundColor Green
     }
-    
+
     if ($verificationFailed) {
         Write-Host "`ncs-local teardown completed with warnings!" -ForegroundColor Yellow
         Write-Host "Some resources may need manual cleanup." -ForegroundColor Yellow
@@ -242,7 +244,7 @@ try {
         Write-Host "All cs-local resources have been successfully removed." -ForegroundColor Green
         Write-Host "The dms-local stack (if running) remains unaffected." -ForegroundColor Cyan
     }
-    
+
     Write-Host "To setup the CMS environment again, run: ./setup-local-cms.ps1" -ForegroundColor Cyan
 }
 finally {

@@ -3,6 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Preflight script intentionally writes operator progress and generated command output to the console.')]
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile = "./eng/docker-compose/.env.e2e",

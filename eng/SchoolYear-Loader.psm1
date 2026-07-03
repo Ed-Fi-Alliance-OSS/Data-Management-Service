@@ -46,6 +46,7 @@ Import-Module (Join-Path $PSScriptRoot "Dms-Management.psm1") -Force
     Each school year is posted as a separate API call to the /data/ed-fi/schoolYearTypes endpoint.
 #>
 function Invoke-SchoolYearLoader {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'School-year loader intentionally writes operator progress to the console.')]
     param (
         [int]$StartYear = 1991,
         [int]$EndYear = 2037,

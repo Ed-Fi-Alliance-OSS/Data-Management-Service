@@ -900,11 +900,11 @@ exit $ExitCode
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
-function Get-SmokeTestCredentials {
+function Get-SmokeTestCredential {
     param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
     Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
-Export-ModuleMember -Function Get-SmokeTestCredentials
+Export-ModuleMember -Function Get-SmokeTestCredential
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
 
             . $script:repo.ConfigureScript
@@ -933,11 +933,11 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
-function Get-SmokeTestCredentials {
+function Get-SmokeTestCredential {
     param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
     Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
-Export-ModuleMember -Function Get-SmokeTestCredentials
+Export-ModuleMember -Function Get-SmokeTestCredential
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
 
             . $script:repo.ConfigureScript
@@ -963,14 +963,11 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
                 param(
                     [string] $CmsUrl,
                     [string] $AccessToken,
-                    [string] $PostgresPassword,
+                    [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
-                    [string] $PostgresUser,
                     [string] $Name,
                     [string] $DataStoreType,
                     [string] $Tenant
@@ -994,16 +991,13 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DmsSchoolYearInstances {
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stub intentionally keeps the production-compatible CMS helper signature.')]
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stub does not use or persist the password; it only verifies the database name argument passed by the caller.')]
                 param(
                     [string] $CmsUrl,
                     [string] $AccessToken,
                     [int] $StartYear,
                     [int] $EndYear,
-                    [string] $PostgresPassword,
+                    [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
-                    [string] $PostgresUser,
                     [string] $Tenant
                 )
                 $script:capturedPostgresDbName = $PostgresDbName

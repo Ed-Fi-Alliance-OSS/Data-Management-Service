@@ -3,6 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Local Keycloak bootstrap script passes a development password to HTTP requests and container setup where plaintext is required.')]
 [CmdletBinding()]
 param (
     # Keycloak server url
@@ -41,7 +42,7 @@ param (
     # one number, and one special character, and must be 32 to 128 characters long.
     [string]
     $NewClientSecret = "ValidClientSecret1234567890!Abcd",
-    
+
     [int]
     $ClientSecretMinimumLength = 32,
 
@@ -73,8 +74,23 @@ param (
     $TokenLifespan = 1800
 )
 
-# Make TokenLifespan script-scoped for use in all functions
-$script:TokenLifespan = $script:TokenLifespan
+$script:KeycloakServer = $KeycloakServer
+$script:AdminRealm = $AdminRealm
+$script:Realm = $Realm
+$script:AdminUsername = $AdminUsername
+$script:AdminPassword = $AdminPassword
+$script:AdminClientId = $AdminClientId
+$script:NewClientId = $NewClientId
+$script:NewClientName = $NewClientName
+$script:NewClientSecret = $NewClientSecret
+$script:ClientSecretMinimumLength = $ClientSecretMinimumLength
+$script:ClientSecretMaximumLength = $ClientSecretMaximumLength
+$script:DmsClientRole = $DmsClientRole
+$script:ConfigServiceRole = $ConfigServiceRole
+$script:ClientScopeName = $ClientScopeName
+$script:ClaimName = $ClaimName
+$script:ClaimValue = $ClaimValue
+$script:TokenLifespan = $TokenLifespan
 
 function Test_ClientSecretLength() {
     param([string] $ClientSecret)
@@ -424,6 +440,7 @@ while ($true) {
             break
         }
     } catch {
+        Write-Verbose "Keycloak health check failed: $($_.Exception.Message)"
     }
     Write-Output "Keycloak is not running. Retrying in 5 seconds..."
     Start-Sleep -Seconds 5

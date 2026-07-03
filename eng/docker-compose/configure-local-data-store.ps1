@@ -301,6 +301,7 @@ function Invoke-ConfigureLocalDataStore {
             $DataStoreDatabaseName
         }
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
     if ($NoDataStore) {
@@ -310,7 +311,7 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
+            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -327,9 +328,8 @@ function Invoke-ConfigureLocalDataStore {
             -AccessToken $configToken `
             -StartYear $schoolYears[0] `
             -EndYear $schoolYears[-1] `
-            -PostgresPassword $postgresPassword `
+            -PostgresCredential $postgresCredential `
             -PostgresDbName $postgresDbName `
-            -PostgresUser $postgresUser `
             -Tenant $tenant
 
         $dataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
@@ -346,7 +346,7 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
+            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -362,9 +362,8 @@ function Invoke-ConfigureLocalDataStore {
     $dataStoreId = Add-DataStore `
         -CmsUrl $cmsUrl `
         -AccessToken $configToken `
-        -PostgresPassword $postgresPassword `
+        -PostgresCredential $postgresCredential `
         -PostgresDbName $postgresDbName `
-        -PostgresUser $postgresUser `
         -Name "Local Development Data Store" `
         -DataStoreType "Development" `
         -Tenant $tenant
@@ -372,7 +371,7 @@ function Invoke-ConfigureLocalDataStore {
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
+        Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 

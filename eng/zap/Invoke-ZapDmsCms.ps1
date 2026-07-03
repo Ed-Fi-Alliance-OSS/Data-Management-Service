@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Security scan entry script intentionally writes operator progress and report locations to the console.')]
 param(
     [string]$DmsBaseUrl = "http://localhost:8080",
     [string]$CmsBaseUrl = "http://localhost:8081",
@@ -13,6 +14,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:SysAdminId = $SysAdminId
+$script:SysAdminSecret = $SysAdminSecret
+$script:ZapImage = $ZapImage
+$script:HostAlias = $HostAlias
+$script:IgnoreZapExitCode = $IgnoreZapExitCode
+
 function Assert-DockerAvailable
 {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue))
@@ -23,8 +30,11 @@ function Assert-DockerAvailable
 
 function New-ConfigToken
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Token helper is internal to the non-interactive ZAP scan script and does not expose WhatIf/Confirm semantics.')]
+    param()
+
     $tokenUrl = "$CmsBaseUrl/connect/token"
-    $body = "client_id=$SysAdminId&client_secret=$SysAdminSecret&grant_type=client_credentials&scope=edfi_admin_api/full_access"
+    $body = "client_id=$($script:SysAdminId)&client_secret=$($script:SysAdminSecret)&grant_type=client_credentials&scope=edfi_admin_api/full_access"
 
     $response = Invoke-RestMethod -Method Post -Uri $tokenUrl -ContentType "application/x-www-form-urlencoded" -Body $body
     return $response.access_token
@@ -32,6 +42,7 @@ function New-ConfigToken
 
 function New-DmsClient
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Client provisioning helper is internal to the non-interactive ZAP scan script.')]
     param(
         [string]$ConfigToken,
         [string]$ConnectionString
@@ -72,6 +83,7 @@ function New-DmsClient
 
 function New-DmsToken
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Token helper is internal to the non-interactive ZAP scan script and does not expose WhatIf/Confirm semantics.')]
     param(
         [string]$ClientId,
         [string]$ClientSecret
@@ -97,12 +109,13 @@ function New-DmsToken
 
 function Update-SpecForDockerHost
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Spec rewrite helper operates on a temporary scan copy in a non-interactive ZAP script.')]
     param(
         [string]$SpecPath
     )
 
     $content = Get-Content -Raw -Path $SpecPath
-    $content = $content.Replace("http://localhost", "http://$HostAlias").Replace("https://localhost", "https://$HostAlias")
+    $content = $content.Replace("http://localhost", "http://$($script:HostAlias)").Replace("https://localhost", "https://$($script:HostAlias)")
     Set-Content -Path $SpecPath -Value $content -NoNewline -Encoding utf8
 }
 
@@ -141,7 +154,7 @@ function Invoke-ZapApiScan
         "-z", "$authConfig -config api.disablekey=true"
     )
 
-    if ($IgnoreZapExitCode)
+    if ($script:IgnoreZapExitCode)
     {
         $zapArgs += "-I"
     }
@@ -150,7 +163,7 @@ function Invoke-ZapApiScan
     $volume = "${resolved}:/zap/wrk" -replace "\\", "/"
 
     Write-Host "Running ZAP scan: $ReportPrefix"
-    docker run --rm -v $volume $ZapImage @zapArgs
+    docker run --rm -v $volume $script:ZapImage @zapArgs
 }
 
 Assert-DockerAvailable

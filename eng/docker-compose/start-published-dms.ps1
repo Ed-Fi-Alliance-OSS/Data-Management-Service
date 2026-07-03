@@ -133,7 +133,7 @@ Import-Module ./env-utility.psm1 -Force
 # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
 $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
-$identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
+$identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
@@ -452,7 +452,7 @@ else {
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
-        $null = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
+        $null = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl
 
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Credential values were returned to the caller and were not written to logs."
@@ -490,6 +490,14 @@ else {
                 else {
                     $DataStoreDatabaseName
                 }
+            $postgresUser =
+                if ([string]::IsNullOrWhiteSpace([string]$envValues.POSTGRES_USER)) {
+                    "postgres"
+                }
+                else {
+                    [string]$envValues.POSTGRES_USER
+                }
+            $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
             # Handle school year range data stores
             if ($SchoolYearRange) {
@@ -506,7 +514,7 @@ else {
                         -AccessToken $configToken `
                         -StartYear $startYear `
                         -EndYear $endYear `
-                        -PostgresPassword $envValues.POSTGRES_PASSWORD `
+                        -PostgresCredential $postgresCredential `
                         -PostgresDbName $postgresDbName `
                         -Tenant $tenant
 
@@ -521,7 +529,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }

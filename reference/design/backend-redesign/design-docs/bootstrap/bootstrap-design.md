@@ -1293,9 +1293,9 @@ credential-bootstrap phase.
 
 The existing bootstrap flow spans three files:
 
-- `eng/docker-compose/start-local-dms.ps1` — top-level orchestration; calls `Get-SmokeTestCredentials` when `-AddSmokeTestCredentials` is passed
+- `eng/docker-compose/start-local-dms.ps1` — top-level orchestration; calls `Get-SmokeTestCredential` when `-AddSmokeTestCredentials` is passed
 - `eng/Dms-Management.psm1` — low-level CMS API wrappers: `Add-CmsClient`, `Get-CmsToken`, `Add-Vendor`, `Add-Application`
-- `eng/smoke_test/modules/SmokeTest.psm1` — `Get-SmokeTestCredentials` composes the above into a single call
+- `eng/smoke_test/modules/SmokeTest.psm1` — `Get-SmokeTestCredential` composes the above into a single call
 
 The current five-step sequence is the baseline smoke-test credential flow:
 
@@ -1454,7 +1454,7 @@ already present there and must not invent a synthetic
 |----------|-------------|
 | `SeedLoader` claim set | Add the top-level `SeedLoader` definition and the required core permissions to the embedded claims resource at `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`. **This is a bootstrap blocker** for API-based seeding: if `SeedLoader` metadata is not present in CMS claims data, seed delivery must fail fast before invoking BulkLoadClient. See required permissions table below. |
 | Extension `SeedLoader` coverage | Each bootstrap-managed extension fragment must attach `SeedLoader` permissions for every resource emitted by that extension's built-in seed package, alongside the extension's normal developer-access permissions. |
-| `Add-SeedLoaderCredentials` helper | Wraps the same `Add-CmsClient` -> `Get-CmsToken` -> `Add-Vendor` -> `Add-Application` flow with Seed Loader-specific defaults; alternatively, parameterize `Get-SmokeTestCredentials` to accept a claim set name. |
+| `Add-SeedLoaderCredentials` helper | Wraps the same `Add-CmsClient` -> `Get-CmsToken` -> `Add-Vendor` -> `Add-Application` flow with Seed Loader-specific defaults; alternatively, parameterize `Get-SmokeTestCredential` to accept a claim set name. |
 | Dynamic namespace prefix list | Computed from the standard seed baseline (`uri://ed-fi.org`, `uri://gbisd.edu`) plus the staged extension namespace prefixes recorded in the bootstrap manifest ([Extension Selection and Loading](#8-extension-selection-and-loading)) plus any explicit `-AdditionalNamespacePrefix` values; passed to `Add-Vendor` as a comma-separated string. |
 
 **`SeedLoader` claimset - required resource claim permissions:**
