@@ -341,9 +341,10 @@ With stored representation stamps:
   **state-significant projection**:
   - read the current `ContentVersion` for that `DocumentId` and compose the expected tag from the
     inbound request's representation context;
-  - compare it to the request `_etag`, **excluding** the `format` and `linkFlag` components
-    (representation-encoding only) and **retaining** `ContentVersion`, `schemaEpoch`, and
-    `profileCode` (profile is significant — a cross-profile `If-Match` yields `412`);
+  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, and `linkFlag`
+    components (representation encoding/filtering only) and **retaining** `ContentVersion` and
+    `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
+    longer yields `412` on profile alone);
   - if mismatched on any retained component, return `412 Precondition Failed`.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
@@ -364,10 +365,11 @@ Collection-write note:
   semantic-identity UNIQUE constraints are derived from that compiled identity, and any supported model that still
   cannot produce it must fail before runtime merge execution.
 - Correctness for accepted profile writes relies on the `If-Match` / `ContentVersion` guard
-  described above. Profile is a **significant** input to that guard: different readable profiles
-  yield different `_etag` values, and a cross-profile `If-Match` returns `412` even when
-  `ContentVersion` is unchanged. (`format` and `linkFlag`, by contrast, are excluded from the
-  `If-Match` comparison.) No new API surface is required.
+  described above. Different readable profiles yield different *served* `_etag` values (for
+  conditional-GET cache correctness), but profile is **not** an input to that guard (amended
+  2026-07-04): the `If-Match` comparison uses only `ContentVersion` and `schemaEpoch`, so a
+  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, and `linkFlag` are all
+  excluded from the `If-Match` comparison.) No new API surface is required.
 
 ### Deadlock + retry policy
 
