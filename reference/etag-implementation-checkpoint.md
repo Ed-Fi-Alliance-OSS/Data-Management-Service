@@ -5,14 +5,15 @@ left, and how to continue implementing the ADR
 (`reference/adr-etag-from-content-version.md`) + companion design-doc edits
 (`reference/adr-etag-from-content-version-designdoc-edits.md`).
 
-**Date:** 2026-07-01 · **Author:** Stephen Fuqua, with AI assistance (Claude Opus 4.8).
-Draft work on a branch; nothing merged. ADR still `Proposed — DRAFT` pending team acceptance.
+**Date:** 2026-07-01 (updated 2026-07-03) · **Author:** Stephen Fuqua, with AI assistance (Claude Opus 4.8).
+Draft work on a branch; nothing merged. **ADR accepted 2026-07-03**; all design-doc edits applied.
+**All implementation phases (1–7) are complete.** Only PR + human review + merge remain.
 
 ## Where the work lives
 - **Worktree:** `D:\tanager\DMS-etag-content-version`
-- **Branch:** `etag-content-version` (tracks `origin/main`), currently **ahead 14 commits**, working tree clean.
-- **Plan:** `docs/superpowers/plans/2026-07-01-etag-from-content-version.md`
-- Execution is staged for review (superpowers:executing-plans). Stages 1–3 done; integration layer in progress.
+- **Branch:** `etag-content-version` (tracks `origin/main`), currently **ahead 31 commits**, working tree clean (except the unrelated `link-injection.md` PRD-appendix edit, intentionally left uncommitted).
+- **Plan:** `docs/superpowers/plans/2026-07-01-etag-from-content-version.md` (Phases 1–5, 7); `docs/superpowers/plans/2026-07-02-descriptor-composed-etag.md` (Phase 6).
+- Execution: Phases 1–5/7 via superpowers:executing-plans; Phase 6 via subagent-driven-development. All stages done.
 
 ## The decision being implemented
 `_etag` changes from a SHA-256 content hash to a composed strong validator:
@@ -43,8 +44,13 @@ Under `src/dms/backend/EdFi.DataManagementService.Backend/Etag/`:
 - **Precondition checker** (`RelationalCurrentEtagPreconditionChecker.cs`, serves standard write If-Match AND DELETE): composes current etag + projection compare. Request now carries `ProfileName` (null for DELETE). **This was the source of a real bug** — it previously hard-coded no-profile, 412-ing profiled updates; fixed in `b02b883e`.
 - `DefaultRelationalWriteExecutor` ctor gained `IEtagComposer` (passed to the resolver; still injects `IRelationalReadMaterializer` for the merge orchestrator).
 
-## Test status
-- **Unit — all green:** backend `1844`, core `2558`, frontend `193` (Phase 5 added a header-quoting test; backend not re-run after Phase 5 but unchanged by it).
+## Test status (final, 2026-07-03)
+- **Build:** `src/dms/EdFi.DataManagementService.sln` — 0 warnings, 0 errors (SonarAnalyzer clean).
+- **Unit — all green:** backend `1839`, core `2554` (+1 pre-existing skip), frontend `193` (+2 pre-existing skips).
+- **Integration — targeted, all green (2026-07-03):** PG descriptor read+write `22`; MSSQL descriptor read+write `12`. (Phase 6 only changed the descriptor path; the resource-path etag surface was converted and verified in earlier phases — see below. Per policy, only affected classes were run via `--filter`, never the whole suite.)
+
+### Historical unit counts (pre-Phase-6)
+- **Unit:** backend `1844`, core `2558`, frontend `193` (Phase 5 added a header-quoting test). Counts shifted slightly after Phase 6 deleted the two dead formatters + their unit tests.
 - **PostgreSQL integration: PG-side etag caller updates DONE** (commit `0312d17e`). `RelationalGetIntegrationTestHelper` is now etag-agnostic (`AssertComposedEtag` shape check; `_etag` dropped from canonical body comparison). Verified passing against the running container: the 2 `..._with_readable_profile_projection` smoke tests, 14 affected fixtures (PostAsUpdate/ResourceLinksFlag/ProfileIfMatch/IfMatchCascade/propagated-identity), and 7 descriptor read tests. A partial full-suite run showed 488 passes / 0 assertion failures (only `DROP DATABASE` teardown timeouts from container saturation — infra, not test logic). **Do not run the whole suite at once — target affected tests via `--filter`.**
 - **MSSQL integration: mirror DONE** (commit `ebe5e3b6`). Same composed-etag updates applied to the 4 MSSQL test files (SSA smoke, DS52 survey cascade smoke, ProfileIfMatch, ResourceLinksFlag); SSA link-bearing If-Match now uses `FlipLinkFlag` (dead `CreateLinkBearingResponse`/`AddReferenceLink` removed). Verified passing against a local SQL Server 2022 container (`dms-mssql-etag`) with targeted `--filter` runs: profile (20), SSA smoke (4), DS52 + ResourceLinks (5), and unchanged-but-etag-consuming cascade/caller-agnostic/descriptor tests (10). Descriptor path still hashes (Phase 6). **Target affected tests via `--filter`; do not run the whole suite.**
 
@@ -60,9 +66,9 @@ only for a **null** name; empty string is hashed — so backend-direct tests mus
 1. ~~**Fix `RelationalGetIntegrationTestHelper`** etag handling; re-run PG suite to catch all callers.~~ **DONE** (`0312d17e`).
 2. ~~**Mirror all integration-test updates to MSSQL** (`*.Mssql.Tests.Integration`).~~ **DONE** (`ebe5e3b6`).
 3. ~~**Phase 5 — HTTP quoting:** serve `ETag` header quoted; make `WritePreconditionFactory` quote-tolerant.~~ **DONE** (`da2046bb`). `AspNetCoreFrontend.ToResult` quotes the `ETag` header at the HTTP boundary (body `_etag` and `FrontendResponse.Headers["etag"]` stay unquoted); `WritePreconditionFactory` unquotes inbound `If-Match` via `EtagValue.TryParseHeaderValue` and keeps weak `W/` tags verbatim (→ can't match → 412). These two ship together: a quoted served `ETag` means clients echo a quoted `If-Match`. No server-side `If-None-Match`/conditional-GET exists, so nothing else needed. Updated tests: `AspNetCoreFrontendResponseHeaderTests`, `RelationalWriteSmokeTests` (pipeline), `WritePreconditionFactoryTests`, `DeleteByIdHandlerTests`. Full Core (2558) + Frontend (193) unit suites green.
-4. **Phase 6 — descriptors + dead code: IN PROGRESS** (ADR accepted 2026-07-02; executing subagent-driven per `docs/superpowers/plans/2026-07-02-descriptor-composed-etag.md`). **Done:** T1 `DescriptorVariantKey` (`aa7d0e4f`); T2 descriptor read composed etag (`ac52efc3`). **Resume at T3** (descriptor write + If-Match). **Critical caveat captured in the plan's "Task 3 investigation notes":** descriptor `ContentVersion` is trigger-managed — INSERT copies the insert-time value (so `RETURNING`/`OUTPUT` on the Document INSERT is correct), but UPDATE bumps it via an AFTER trigger (so the write UPDATE must do a follow-up `SELECT Document.ContentVersion`, NOT `OUTPUT`). Remaining after T3: T4 remove read-materializer hash fallback, T5 remove version-middleware `_etag` stamp + handler fallback, T6 delete the two formatters, T7 verify + apply design-doc edits + flip ADR status. Original scope note: descriptors are a **self-consistent hash island** (`DescriptorDocumentMaterializer` read, `DescriptorWriteHandler` 4 sites incl. the If-Match precondition loader at ~2267). Converting requires adding `ContentVersion` to the descriptor read query + `DescriptorReadRow`, threading a descriptor `variantKey`, composing at all sites, reworking the Core `InjectVersionMetadataToEdFiDocumentMiddleware` (+ handler `?? ParsedBody["_etag"]` fallback in Upsert/UpdateById), and removing the materializer hash fallback (`RelationalReadMaterializer:282`) — then delete `ResourceEtagFormatter` + `RelationalApiMetadataFormatter`. **Keep `CanonicalJsonSerializer`** (non-etag caller: `ProjectSchemaMetadataExtractor`). `RelationalCommittedRepresentationReader` is still used (light ContentVersion reader) — do NOT remove.
-5. **Phase 7 — E2E (Task 7.3): DONE** (`03df4f3c`). `etag.feature` is format-agnostic (placeholders + status assertions) and needed no change; the step defs now strip the quoted `ETag` header on capture so it matches the unquoted body `_etag` and round-trips as `If-Match`. `ProfileFiltering.feature` scenarios 07–08 updated for the reversal (profiled etag ≠ full-resource etag). **E2E NOT executed** (needs full DMS+PG+Keycloak stack) — compile-verified only. **Task 7.4 (design-doc edits + flip ADR to Accepted): BLOCKED** — companion file + plan gate it on team acceptance of the ADR (still `Proposed — DRAFT`); a human decision.
-6. Full solution build + all suites; open PR; human review before merge.
+4. **Phase 6 — descriptors + dead code: DONE.** Executed subagent-driven per `docs/superpowers/plans/2026-07-02-descriptor-composed-etag.md`. T1 `DescriptorVariantKey` (`aa7d0e4f`); T2 descriptor read composed etag (`ac52efc3`); T3 descriptor write + If-Match composed etag (`dc88e797`); T4 require EtagVariant+MappingSet on external-response materialization, dropping the read-materializer hash fallback (`27e4509a`); T5 drop the request-body `_etag` hash stamp + handler fallback (`fee0628b`); T6 delete the two dead formatters + migrate 5 test callers (`ddac0fe0`). **Trigger caveat honored:** descriptor `ContentVersion` INSERT uses `RETURNING`/`OUTPUT` (trigger mirrors at insert); UPDATE uses a follow-up `SELECT Document.ContentVersion` (AFTER trigger bumps post-statement). `ResourceEtagFormatter` + `RelationalApiMetadataFormatter` deleted; `git grep` for them returns nothing. `CanonicalJsonSerializer` kept (non-etag caller). `RelationalCommittedRepresentationReader` kept (light ContentVersion reader).
+5. **Phase 7 — E2E (Task 7.3): DONE** (`03df4f3c`). `etag.feature` format-agnostic; step defs strip the quoted `ETag` header on capture. `ProfileFiltering.feature` 07–08 updated for the reversal. **E2E NOT executed** (needs full DMS+PG+Keycloak stack) — compile-verified only. **Task 7.4 (design-doc edits + flip ADR to Accepted): DONE 2026-07-03** (`e75e59d5`). ADR `Status` → Accepted; companion edits file → APPLIED; `update-tracking.md` / `transactions-and-concurrency.md` / `flattening-reconstitution.md` updated (composed `_etag`, normative `variantKey` encoding, projected `If-Match` rules, DocumentCache freshness on `ContentVersion` alone, read path no longer hashes). 3b audit confirmed no residual canonical-JSON-for-`_etag` rationale.
+6. **Remaining: PR + human review + merge only.** Full solution build + all unit suites + targeted PG/MSSQL descriptor integration all green as of 2026-07-03 (see Test status). Next: `superpowers:finishing-a-development-branch`.
 
 ## Known follow-ups / notes
 - **DELETE + profile:** the DELETE precondition composes with no profile (`_`); an If-Match captured under a readable profile will `412` a profile-less DELETE. Edge case, acceptable per ADR discussion.
@@ -104,4 +110,21 @@ d4007c1b feat: add EtagMatchProjection for state-significant If-Match comparison
 b39f0a4b perf: replace write-path hydrate readback with a ContentVersion scalar read
 a6ac43ff test: pass EtagComposer to integration recording materializers
 b02b883e fix: thread profile name into write If-Match precondition; update PG profile etag tests
+0bdd4634 docs: add etag implementation checkpoint for context reset
+0312d17e test: update PG integration etag assertions for composed ContentVersion _etag
+a9eeefd2 docs: mark PG integration etag caller updates done in checkpoint
+ebe5e3b6 test: mirror composed ContentVersion _etag assertions to MSSQL integration
+d170f082 docs: mark MSSQL integration etag mirror done in checkpoint
+da2046bb feat: serve ETag as a quoted strong validator; accept quoted If-Match
+586fbda8 docs: mark Phase 5 (HTTP etag quoting) done in checkpoint
+03df4f3c test: update E2E etag scenarios for composed etag + quoted ETag header
+2f1a7b21 docs: record Phase 7 E2E done + Phase 6/7.4 gating in checkpoint
+aa7d0e4f feat: add DescriptorVariantKey for the fixed descriptor etag variantKey
+ac52efc3 feat: compose descriptor read _etag from ContentVersion + variantKey
+cf2564f9 docs: checkpoint Phase 6 progress (T1+T2 done) and T3 trigger caveat
+dc88e797 feat: descriptor write + If-Match compose ContentVersion etag (no hash)
+27e4509a refactor: require EtagVariant+MappingSet for external-response materialization
+fee0628b refactor: drop request-body _etag hash stamp and handler fallback
+ddac0fe0 refactor: delete dead content-hash etag formatters, migrate test callers
+e75e59d5 docs: accept ContentVersion _etag ADR; align the three design docs
 ```
