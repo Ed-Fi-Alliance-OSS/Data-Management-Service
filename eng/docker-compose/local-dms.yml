@@ -34,6 +34,9 @@ services:
       DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects
       DATABASE_CONNECTION_STRING_ADMIN: ${DATABASE_CONNECTION_STRING_ADMIN:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      RateLimit__PermitLimit: ${DMS_RATE_LIMIT_PERMIT_LIMIT:-5000}
+      RateLimit__QueueLimit: ${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}
+      RateLimit__Window: ${DMS_RATE_LIMIT_WINDOW:-10}
       CircuitBreaker__FailureRatio: ${FAILURE_RATIO:-0.01}
       CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-2}
@@ -58,6 +61,9 @@ services:
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
       AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
+      DOTNET_EnableDiagnostics: ${DMS_DOTNET_ENABLE_DIAGNOSTICS:-1}
+      DOTNET_DiagnosticPorts: ${DMS_DOTNET_DIAGNOSTIC_PORTS:-}
+      TMPDIR: ${DMS_DOTNET_TMPDIR:-/tmp}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}
@@ -70,6 +76,8 @@ services:
       JwtAuthentication__AutomaticRefreshIntervalHours: ${DMS_JWT_AUTOMATIC_REFRESH_INTERVAL_HOURS:-24}
     ports:
       - "127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}"
+    volumes:
+      - ${DMS_DOTNET_DIAGNOSTICS_DIR:-/tmp/dms-dotnet-diagnostics}:/diag
     networks:
       - dms
     restart: unless-stopped

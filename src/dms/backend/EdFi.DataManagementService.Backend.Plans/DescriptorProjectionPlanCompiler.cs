@@ -20,6 +20,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     private static readonly DbColumnName _descriptorIdProjectionColumn = new("DescriptorId");
     private static readonly DbColumnName _uriColumn = new("Uri");
 
+    private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
 
     public IReadOnlyList<DescriptorProjectionPlan> Compile(
@@ -72,7 +73,10 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             new DescriptorProjectionPlan(
                 SelectByKeysetSql: EmitSelectByKeysetSql(deduplicatedSqlSources, keysetTable),
                 ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                SourcesInOrder: compiledSources
+                SourcesInOrder: compiledSources,
+                SelectBySingleDocumentSql: _dialect is SqlDialect.Pgsql
+                    ? EmitSelectBySingleDocumentSql(deduplicatedSqlSources)
+                    : null
             ),
         ];
     }
@@ -130,9 +134,21 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         KeysetTableContract keysetTable
     )
     {
+        return EmitSelectSql(sqlSources, DescriptorProjectionSourceFilter.Keyset(keysetTable));
+    }
+
+    private string EmitSelectBySingleDocumentSql(IReadOnlyList<DescriptorProjectionSqlSource> sqlSources)
+    {
+        return EmitSelectSql(sqlSources, DescriptorProjectionSourceFilter.SingleDocument);
+    }
+
+    private string EmitSelectSql(
+        IReadOnlyList<DescriptorProjectionSqlSource> sqlSources,
+        DescriptorProjectionSourceFilter sourceFilter
+    )
+    {
         const string projectionAlias = "p";
 
-        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var descriptorAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
         var writer = new SqlWriter(_sqlDialect);
@@ -161,11 +177,6 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     var sqlSource = sqlSources[index];
                     var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
-                    var rootScopeLocatorColumn =
-                        RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
-                            tableModel,
-                            "descriptor projection plan"
-                        );
 
                     writer.Append("SELECT ");
 
@@ -177,17 +188,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
                     writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    writer
-                        .Append("INNER JOIN ")
-                        .AppendRelation(keysetTable.Table)
-                        .Append($" {keysetAlias} ON ");
-                    AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-                    writer.Append(" = ");
-                    AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
-                    writer.AppendLine();
-                    writer.Append("WHERE ");
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
-                    writer.AppendLine(" IS NOT NULL");
+                    AppendSourceFilter(writer, tableModel, tableAlias, sqlSource.StorageColumn, sourceFilter);
 
                     if (index + 1 < sqlSources.Count)
                     {
@@ -214,6 +215,49 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
+    }
+
+    private static void AppendSourceFilter(
+        SqlWriter writer,
+        DbTableModel tableModel,
+        string tableAlias,
+        DbColumnName storageColumn,
+        DescriptorProjectionSourceFilter sourceFilter
+    )
+    {
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "descriptor projection plan"
+            );
+
+        if (sourceFilter.KeysetTable is not null)
+        {
+            var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
+
+            writer
+                .Append("INNER JOIN ")
+                .AppendRelation(sourceFilter.KeysetTable.Table)
+                .Append($" {keysetAlias} ON ");
+            AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
+            writer.Append(" = ");
+            AppendQualifiedColumn(writer, keysetAlias, sourceFilter.KeysetTable.DocumentIdColumnName);
+            writer.AppendLine();
+            writer.Append("WHERE ");
+            AppendQualifiedColumn(writer, tableAlias, storageColumn);
+            writer.AppendLine(" IS NOT NULL");
+
+            return;
+        }
+
+        writer.Append("WHERE ");
+        AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
+        writer.Append(" = ");
+        writer.AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
+        writer.AppendLine();
+        writer.Append("AND ");
+        AppendQualifiedColumn(writer, tableAlias, storageColumn);
+        writer.AppendLine(" IS NOT NULL");
     }
 
     private static DbColumnName ResolveStorageColumnOrThrow(
@@ -321,4 +365,16 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         int TableDependencyOrdinal,
         int StorageColumnOrdinal
     );
+
+    private sealed record DescriptorProjectionSourceFilter(KeysetTableContract? KeysetTable)
+    {
+        public static DescriptorProjectionSourceFilter SingleDocument { get; } = new(KeysetTable: null);
+
+        public static DescriptorProjectionSourceFilter Keyset(KeysetTableContract keysetTable)
+        {
+            ArgumentNullException.ThrowIfNull(keysetTable);
+
+            return new DescriptorProjectionSourceFilter(keysetTable);
+        }
+    }
 }

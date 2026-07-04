@@ -153,6 +153,7 @@
                   "name": "ProjectionExample"
                 },
                 "select_by_keyset_sql_sha256": "2c7d98f089384050c948d49eb68e15fa993f19e9ca25a0a2ebde51897df7e673",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SessionTerm_DocumentId",
@@ -208,6 +209,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "ec55cbb077e5ae47b9f42656a155b19c5f137be3445f22a686dbd6854e6155de",
+                "select_by_single_document_sql_sha256": null,
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -354,6 +356,7 @@
                   "name": "SessionTerm"
                 },
                 "select_by_keyset_sql_sha256": "bec8ae3389118e038717d6329dc2a01b2957f1f3859a00baec4d7432338e9fac",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SchoolId",
@@ -534,6 +537,7 @@
                   "name": "ProjectionExample"
                 },
                 "select_by_keyset_sql_sha256": "8d4f2623cc49abd50c4f1f7cf09ef2c77f0e4c356677c3ada3e077db7c1eb15a",
+                "select_by_single_document_sql_sha256": "251ae61ef4e41f545bed368333c1c4d66e244a5c795860646f2adbcc29492882",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SessionTerm_DocumentId",
@@ -589,6 +593,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "79508cb5b93b36d9e38ec41fc861516b25c88ed0317790f135e85d3cc5a95e3b",
+                "select_by_single_document_sql_sha256": "7c7b9b7a02c2324b1f1c2630a922b43c87fa72be649535d891b6e12d92c32801",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -735,6 +740,7 @@
                   "name": "SessionTerm"
                 },
                 "select_by_keyset_sql_sha256": "e43676d6266ea1f946dc8cf502eb9933002961e7526786cfec83f0eb0285b3a5",
+                "select_by_single_document_sql_sha256": "ed42f1f1f0e1b4e9c5e4c7fee3278600d8514a5c76bfa8fcd12bb9e0c77b855c",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SchoolId",

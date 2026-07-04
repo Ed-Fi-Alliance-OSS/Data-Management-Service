@@ -188,6 +188,7 @@
                   "name": "Program"
                 },
                 "select_by_keyset_sql_sha256": "456538fa4ceb51306fd6311920643a6f5d13764dab29e3fd25c649bda403fd27",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "EducationOrganizationCategoryDescriptor_Present",
@@ -283,6 +284,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -411,6 +413,7 @@
                   "name": "Student"
                 },
                 "select_by_keyset_sql_sha256": "f778589c66d2d4b0738878af20aaabd698b845178e51373a6b835f3f91db232c",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "School_DocumentId",
@@ -453,6 +456,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "1e6f27420c22a087723624234a4060ca3d40a50144498c51bab5e3b8cd7ce814",
+                "select_by_single_document_sql_sha256": null,
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -624,6 +628,7 @@
                   "name": "StudentAddressCollection"
                 },
                 "select_by_keyset_sql_sha256": "955e9343b278ac033b96b17bb3023bb59b0c55d3c97e07783a83c23d587319b3",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "StudentUniqueId"
@@ -638,6 +643,7 @@
                   "name": "StudentAddressCollectionAddress"
                 },
                 "select_by_keyset_sql_sha256": "3268d4429e6880043b38a13ac1dfb9683475b0b1e5a30e569f5a280820fcc252",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -855,6 +861,7 @@
                   "name": "Program"
                 },
                 "select_by_keyset_sql_sha256": "b1328a8f36bed7b07828671bad6cb563e72b7cb9cac689ec869576d7028505e1",
+                "select_by_single_document_sql_sha256": "9d9fe987b6e173ff286951294cbb608824cb348f5dced98a6b8cedffb8dfbb49",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "EducationOrganizationCategoryDescriptor_Present",
@@ -950,6 +957,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_by_single_document_sql_sha256": "fa4562f0d5a1410bd98427de623e0945e5bc385fb2fa23a6d7dfa5386db50d83",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -1078,6 +1086,7 @@
                   "name": "Student"
                 },
                 "select_by_keyset_sql_sha256": "07d451d741b8560344dd52a89bef0826ea6849406222b7fe47a3006ac1185cc3",
+                "select_by_single_document_sql_sha256": "10eadc13a7d9dd7fcb290bdd2641a0dc9a2c8f59efb0b3a7869ff8f48c7b2830",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "School_DocumentId",
@@ -1120,6 +1129,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "6403654d6a0c2b5755237eadbe94c250671fda9579be9222d01633dbc07e4cdd",
+                "select_by_single_document_sql_sha256": "bd03bdd80048061c60dd406035c41498aa33eec7e8560cff965487d11cff04e7",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -1291,6 +1301,7 @@
                   "name": "StudentAddressCollection"
                 },
                 "select_by_keyset_sql_sha256": "4906ea98791e308825c5802a9765d6ee1559f828f781ba27fa57695ee3621577",
+                "select_by_single_document_sql_sha256": "90d954235035ec5c0bf62a2c464662eedd692ab74bd6c0210259baddee174382",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "StudentUniqueId"
@@ -1305,6 +1316,7 @@
                   "name": "StudentAddressCollectionAddress"
                 },
                 "select_by_keyset_sql_sha256": "ce0d3fa214d211e9c6c56af170ea04ea26f71009bcfdb7d898291677d0508baa",
+                "select_by_single_document_sql_sha256": "58a402e054cd0f1ba15a3d032ad7b2e352c03c522b277079de4178433f1ace05",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",

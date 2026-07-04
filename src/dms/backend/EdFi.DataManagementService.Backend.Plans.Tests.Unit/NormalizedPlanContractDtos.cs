@@ -501,7 +501,11 @@ internal sealed record ResourceReadPlanDto
 
 internal sealed record KeysetTableContractDto(string TempTableName, string DocumentIdColumnName);
 
-internal sealed record TableReadPlanDto(DbTableNameDto Table, string SelectByKeysetSql);
+internal sealed record TableReadPlanDto(
+    DbTableNameDto Table,
+    string SelectByKeysetSql,
+    string? SelectBySingleDocumentSql = null
+);
 
 internal sealed record ReferenceIdentityProjectionTablePlanDto
 {
@@ -562,7 +566,8 @@ internal sealed record DescriptorProjectionPlanDto
     public DescriptorProjectionPlanDto(
         string SelectByKeysetSql,
         DescriptorProjectionResultShapeDto ResultShape,
-        IEnumerable<DescriptorProjectionSourceDto> SourcesInOrder
+        IEnumerable<DescriptorProjectionSourceDto> SourcesInOrder,
+        string? SelectBySingleDocumentSql = null
     )
     {
         ArgumentNullException.ThrowIfNull(SourcesInOrder);
@@ -570,9 +575,12 @@ internal sealed record DescriptorProjectionPlanDto
         this.SelectByKeysetSql = SelectByKeysetSql;
         this.ResultShape = ResultShape;
         this.SourcesInOrder = [.. SourcesInOrder];
+        this.SelectBySingleDocumentSql = SelectBySingleDocumentSql;
     }
 
     public string SelectByKeysetSql { get; init; }
+
+    public string? SelectBySingleDocumentSql { get; init; }
 
     public DescriptorProjectionResultShapeDto ResultShape { get; init; }
 
@@ -593,7 +601,8 @@ internal sealed record DocumentReferenceLookupPlanDto
     public DocumentReferenceLookupPlanDto(
         string SelectByKeysetSql,
         DocumentReferenceLookupResultShapeDto ResultShape,
-        IEnumerable<DocumentReferenceLookupSourceDto> SourcesInOrder
+        IEnumerable<DocumentReferenceLookupSourceDto> SourcesInOrder,
+        string? SelectBySingleDocumentSql = null
     )
     {
         ArgumentNullException.ThrowIfNull(SourcesInOrder);
@@ -601,9 +610,12 @@ internal sealed record DocumentReferenceLookupPlanDto
         this.SelectByKeysetSql = SelectByKeysetSql;
         this.ResultShape = ResultShape;
         this.SourcesInOrder = [.. SourcesInOrder];
+        this.SelectBySingleDocumentSql = SelectBySingleDocumentSql;
     }
 
     public string SelectByKeysetSql { get; init; }
+
+    public string? SelectBySingleDocumentSql { get; init; }
 
     public DocumentReferenceLookupResultShapeDto ResultShape { get; init; }
 

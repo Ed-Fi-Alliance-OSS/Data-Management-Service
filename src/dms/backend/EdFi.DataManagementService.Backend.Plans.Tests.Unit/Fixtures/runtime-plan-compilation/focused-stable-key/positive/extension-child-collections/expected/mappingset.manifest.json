@@ -64,6 +64,7 @@
                   "name": "Program"
                 },
                 "select_by_keyset_sql_sha256": "a6d821c86b154cbe8b94ef26c63de341beafa513c2f5c7f861b42720f3e32c42",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "ProgramName"
@@ -621,6 +622,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "dc0edc310255b266dd69c3feb07423fa2982345ba263f546ba49a20d2aa17428",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SchoolId"
@@ -635,6 +637,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -649,6 +652,7 @@
                   "name": "SchoolExtensionAddress"
                 },
                 "select_by_keyset_sql_sha256": "dfc172d0fd62794e1c6de277d7e0484e006a8642d1a67c8180e047466841e575",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -665,6 +669,7 @@
                   "name": "SchoolExtensionIntervention"
                 },
                 "select_by_keyset_sql_sha256": "d1321c6a81d7d5db8d4701f13af058adb97ed97a7cbaffdb0e8537b731748e65",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -682,6 +687,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "f07db8ae6f3b7924ec6d24b91e102805a7ac17b2f9c6c947b1804bc3ed0b71cb",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -699,6 +705,7 @@
                   "name": "SchoolExtensionAddressSponsorReference"
                 },
                 "select_by_keyset_sql_sha256": "22a023d696a6dd04c1c1fe3017a7b3e77b7b059832f1ff1b1c2c46526dda843a",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "BaseCollectionItemId",
@@ -719,6 +726,7 @@
                   "name": "SchoolExtensionInterventionVisit"
                 },
                 "select_by_keyset_sql_sha256": "7bac2f36fff3f27af7e125a19acc7a8e0f5cd63f4c4bd5fa7ccdd90360f03746",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -738,6 +746,7 @@
                   "name": "SchoolAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "dbf8a405b7c1691266ffae45718d13b0431ec0b43159cc63309cfa9d74f63425",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -857,6 +866,7 @@
                   "name": "Program"
                 },
                 "select_by_keyset_sql_sha256": "1c58a338797442cf63ae8cff9884f7209de18c782a7629e9fe3ed13a5fc386c0",
+                "select_by_single_document_sql_sha256": "c3b8a536b02bb732ba4fabb7478f3e2055c7ca6d4503ce37c72b6495dd9c795a",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "ProgramName"
@@ -1414,6 +1424,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "fffc1a79a363a4b97e20e086d0330ea9b4f29d7bd8288e65c70772a0daf93f9c",
+                "select_by_single_document_sql_sha256": "261c65922d6d8df5820ba78caaa1cd43e344a1e5097ef06dc668806447ffe974",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SchoolId"
@@ -1428,6 +1439,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_by_single_document_sql_sha256": "fdf80f2b0fdeb44d57a1af5203ada38de0ee37b2acff4bf30db881b5cb0228a2",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -1442,6 +1454,7 @@
                   "name": "SchoolExtensionAddress"
                 },
                 "select_by_keyset_sql_sha256": "27a3a8f4dde6fdf7363ce336ca2c7f770f51c6f1abaaf09971b17869f5ec86d0",
+                "select_by_single_document_sql_sha256": "4f07aa961eca6cf0489fa2c5f0f7b0fb2b9462310ec784e2f63c7a80065bc3e6",
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -1458,6 +1471,7 @@
                   "name": "SchoolExtensionIntervention"
                 },
                 "select_by_keyset_sql_sha256": "3eb4d10cddf900634686910f31582ad6529ed768d80c3bbb9e434fbf670e7a12",
+                "select_by_single_document_sql_sha256": "6bf14f800991274f89b9bf95ff218f586cff24e0b3f05e47c72680fd9f5281e5",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -1475,6 +1489,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "a2b834672562b9bcb68322a01e0fc732f4134febe1617fc42c9d56e8501d87ef",
+                "select_by_single_document_sql_sha256": "090c2cf7fddca3465221bd64abcfffcf91dc3f32f2f8742368ca8c972cf485da",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -1492,6 +1507,7 @@
                   "name": "SchoolExtensionAddressSponsorReference"
                 },
                 "select_by_keyset_sql_sha256": "7a3e9350bab37061dee057db432011678542e0785215050ba3ad42c4626d85a0",
+                "select_by_single_document_sql_sha256": "28fa85bfb1aa476f16aeb786455e9ecbc8a3019a2a4c8dcce01a67f69d6b9542",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "BaseCollectionItemId",
@@ -1512,6 +1528,7 @@
                   "name": "SchoolExtensionInterventionVisit"
                 },
                 "select_by_keyset_sql_sha256": "870dfbcf23c3c0fe9565b63de7f85e51b86d2e544b47146279376e54fc3a168c",
+                "select_by_single_document_sql_sha256": "749d782a1b15d8e838e5522a4349d9ab6a0f941f9438a50435e57f8798e84088",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -1531,6 +1548,7 @@
                   "name": "SchoolAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "926288cd46ec444c861aef1acae47566367414d170dce05d0b0915530d1283ec",
+                "select_by_single_document_sql_sha256": "1c4bad702a572094de4b060b50637e68033caa93ccb2ba03a7e1a72c5b5bbd9e",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",

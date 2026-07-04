@@ -181,6 +181,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -196,6 +197,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -210,6 +212,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "f07db8ae6f3b7924ec6d24b91e102805a7ac17b2f9c6c947b1804bc3ed0b71cb",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -419,6 +422,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_by_single_document_sql_sha256": "fa4562f0d5a1410bd98427de623e0945e5bc385fb2fa23a6d7dfa5386db50d83",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -434,6 +438,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_by_single_document_sql_sha256": "fdf80f2b0fdeb44d57a1af5203ada38de0ee37b2acff4bf30db881b5cb0228a2",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -448,6 +453,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "a2b834672562b9bcb68322a01e0fc732f4134febe1617fc42c9d56e8501d87ef",
+                "select_by_single_document_sql_sha256": "090c2cf7fddca3465221bd64abcfffcf91dc3f32f2f8742368ca8c972cf485da",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",

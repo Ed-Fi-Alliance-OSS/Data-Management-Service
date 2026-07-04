@@ -410,10 +410,13 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         canonicalJson.Should().Contain("\"reference_object_path\": \"$.schoolReference\"");
         canonicalJson.Should().Contain("\"descriptor_projection_plans_in_order\"");
         canonicalJson.Should().Contain("\"descriptor_value_path\": \"$.gradeLevelDescriptor\"");
+        canonicalJson.Should().Contain("\"select_by_single_document_sql\"");
+        canonicalJson.Should().Contain("\"document_reference_lookup\": {");
 
         var sourceTablePlan = _readPlan.TablePlansInDependencyOrder[0];
         var decodedTablePlan = decoded.TablePlansInDependencyOrder[0];
         decodedTablePlan.SelectByKeysetSql.Should().Be(sourceTablePlan.SelectByKeysetSql);
+        decodedTablePlan.SelectBySingleDocumentSql.Should().Be(sourceTablePlan.SelectBySingleDocumentSql);
 
         decoded.KeysetTable.Table.Name.Should().Be(_readPlan.KeysetTable.Table.Name);
         decoded.KeysetTable.DocumentIdColumnName.Should().Be(_readPlan.KeysetTable.DocumentIdColumnName);
@@ -458,6 +461,9 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var sourceDescriptorPlan = _readPlan.DescriptorProjectionPlansInOrder[0];
         var decodedDescriptorPlan = decoded.DescriptorProjectionPlansInOrder[0];
         decodedDescriptorPlan.SelectByKeysetSql.Should().Be(sourceDescriptorPlan.SelectByKeysetSql);
+        decodedDescriptorPlan
+            .SelectBySingleDocumentSql.Should()
+            .Be(sourceDescriptorPlan.SelectBySingleDocumentSql);
         decodedDescriptorPlan.ResultShape.Should().Be(sourceDescriptorPlan.ResultShape);
         decodedDescriptorPlan
             .SourcesInOrder.Select(static source => source.DescriptorIdColumnOrdinal)
@@ -470,6 +476,14 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var decodedDescriptorPath = decodedDescriptorPlan.SourcesInOrder[0].DescriptorValuePath;
         decodedDescriptorPath.Canonical.Should().Be(sourceDescriptorPath.Canonical);
         decodedDescriptorPath.Should().NotBeSameAs(sourceDescriptorPath);
+
+        decoded.DocumentReferenceLookup.Should().NotBeNull();
+        decoded
+            .DocumentReferenceLookup!.SelectByKeysetSql.Should()
+            .Be(_readPlan.DocumentReferenceLookup!.SelectByKeysetSql);
+        decoded
+            .DocumentReferenceLookup.SelectBySingleDocumentSql.Should()
+            .Be(_readPlan.DocumentReferenceLookup.SelectBySingleDocumentSql);
     }
 
     [Test]
@@ -2423,7 +2437,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             [
                 new TableReadPlan(
                     model.Root,
-                    "SELECT r.[DocumentId], r.[School_DocumentId], r.[School_RefSchoolId], r.[School_RefSchoolYear], r.[GradeLevel_DescriptorId]\nFROM [edfi].[StudentSchoolAssociation] r;"
+                    "SELECT r.[DocumentId], r.[School_DocumentId], r.[School_RefSchoolId], r.[School_RefSchoolYear], r.[GradeLevel_DescriptorId]\nFROM [edfi].[StudentSchoolAssociation] r;",
+                    "SELECT r.[DocumentId], r.[School_DocumentId], r.[School_RefSchoolId], r.[School_RefSchoolYear], r.[GradeLevel_DescriptorId]\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE r.[DocumentId] = @DocumentId;"
                 ),
             ],
             ReferenceIdentityProjectionPlansInDependencyOrder:
@@ -2490,7 +2505,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                             ),
                             DescriptorIdColumnOrdinal: 10
                         ),
-                    ]
+                    ],
+                    SelectBySingleDocumentSql: "SELECT r.[GradeLevel_DescriptorId], d.[Uri]\nFROM [edfi].[StudentSchoolAssociation] r\nJOIN [dms].[Descriptor] d ON d.[DescriptorId] = r.[GradeLevel_DescriptorId]\nWHERE r.[DocumentId] = @DocumentId;"
                 ),
             ],
             DocumentReferenceLookup: new DocumentReferenceLookupPlan(
@@ -2510,7 +2526,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                         Table: table,
                         FkColumn: new DbColumnName("Calendar_DocumentId")
                     ),
-                ]
+                ],
+                SelectBySingleDocumentSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\nFROM [dms].[Document] d\nWHERE d.[DocumentId] = @DocumentId\nORDER BY d.[DocumentId] ASC;\n"
             )
         );
     }

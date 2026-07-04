@@ -180,6 +180,496 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
 }
 
 [TestFixture]
+public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
+{
+    private const string RootDescriptorKeysetSql = "SELECT descriptor keyset rows FROM root_descriptor;";
+    private const string RootDescriptorSingleDocumentSql =
+        "SELECT descriptor single-document rows FROM root_descriptor;";
+    private const string ChildDescriptorKeysetSql = "SELECT descriptor keyset rows FROM child_descriptor;";
+    private const string ChildDescriptorSingleDocumentSql =
+        "SELECT descriptor single-document rows FROM child_descriptor;";
+    private const string LookupKeysetSql = "SELECT lookup keyset rows FROM document_reference_lookup;";
+    private const string LookupSingleDocumentSql =
+        "SELECT lookup single-document rows FROM document_reference_lookup;";
+
+    private string _batch = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(
+                SqlDialect.Pgsql,
+                BuildDescriptorPlans(),
+                BuildLookupPlan(),
+                includeSingleDocumentSql: true
+            ),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: true,
+                UseSingleDocumentFastPath: true
+            )
+        );
+    }
+
+    [Test]
+    public void It_should_start_with_direct_document_metadata_select()
+    {
+        _batch
+            .Should()
+            .StartWith(
+                """
+                SELECT
+                    d."DocumentId",
+                    d."DocumentUuid",
+                    d."ContentVersion",
+                    d."IdentityVersion",
+                    d."ContentLastModifiedAt",
+                    d."IdentityLastModifiedAt"
+                FROM "dms"."Document" d
+                WHERE d."DocumentId" = @DocumentId
+                ORDER BY d."DocumentId";
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_pgsql_page_temp_table_work()
+    {
+        _batch.Should().NotContain("DROP TABLE IF EXISTS \"page\"");
+        _batch.Should().NotContain("CREATE TEMP TABLE \"page\"");
+        _batch.Should().NotContain("INSERT INTO \"page\"");
+        _batch.Should().NotContain("INNER JOIN \"page\"");
+        _batch.Should().NotContain("\"page\"");
+    }
+
+    [Test]
+    public void It_should_emit_single_document_result_sets_in_reader_order()
+    {
+        AssertAppearsInOrder(
+            _batch,
+            "FROM \"dms\".\"Document\" d",
+            HydrationBatchBuilderTestHelper.RootSingleDocumentSql,
+            HydrationBatchBuilderTestHelper.ChildSingleDocumentSql,
+            RootDescriptorSingleDocumentSql,
+            ChildDescriptorSingleDocumentSql,
+            LookupSingleDocumentSql
+        );
+
+        _batch.Should().NotContain("SELECT root columns FROM root;");
+        _batch.Should().NotContain("SELECT child columns FROM child;");
+        _batch.Should().NotContain(RootDescriptorKeysetSql);
+        _batch.Should().NotContain(ChildDescriptorKeysetSql);
+        _batch.Should().NotContain(LookupKeysetSql);
+    }
+
+    [Test]
+    public void It_should_honor_descriptor_and_lookup_execution_options()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(
+                SqlDialect.Pgsql,
+                BuildDescriptorPlans(),
+                BuildLookupPlan(),
+                includeSingleDocumentSql: true
+            ),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: false,
+                IncludeDocumentReferenceLookup: false,
+                UseSingleDocumentFastPath: true
+            )
+        );
+
+        batch.Should().Contain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+        batch.Should().Contain(HydrationBatchBuilderTestHelper.ChildSingleDocumentSql);
+        batch.Should().NotContain(RootDescriptorSingleDocumentSql);
+        batch.Should().NotContain(ChildDescriptorSingleDocumentSql);
+        batch.Should().NotContain(LookupSingleDocumentSql);
+    }
+
+    [Test]
+    public void It_should_keep_the_keyset_path_when_the_feature_flag_is_disabled()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(
+                SqlDialect.Pgsql,
+                BuildDescriptorPlans(),
+                BuildLookupPlan(),
+                includeSingleDocumentSql: true
+            ),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: true,
+                UseSingleDocumentFastPath: false
+            )
+        );
+
+        batch.Should().Contain("DROP TABLE IF EXISTS \"page\";");
+        batch.Should().Contain("INSERT INTO \"page\" (\"DocumentId\") VALUES (@DocumentId);");
+        batch.Should().Contain("SELECT root columns FROM root;");
+        batch.Should().Contain("SELECT child columns FROM child;");
+        batch.Should().Contain(RootDescriptorKeysetSql);
+        batch.Should().Contain(LookupKeysetSql);
+        batch.Should().NotContain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+        batch.Should().NotContain(RootDescriptorSingleDocumentSql);
+        batch.Should().NotContain(LookupSingleDocumentSql);
+    }
+
+    [Test]
+    public void It_should_match_the_existing_single_document_keyset_batch_when_the_feature_flag_is_disabled()
+    {
+        var keyset = new PageKeysetSpec.Single(42L);
+        var expectedKeysetBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, BuildDescriptorPlans(), BuildLookupPlan()),
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: true
+            )
+        );
+
+        var disabledFastPathBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(
+                SqlDialect.Pgsql,
+                BuildDescriptorPlans(),
+                BuildLookupPlan(),
+                includeSingleDocumentSql: true
+            ),
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: true,
+                UseSingleDocumentFastPath: false
+            )
+        );
+
+        disabledFastPathBatch.Should().Be(expectedKeysetBatch);
+    }
+
+    [Test]
+    public void It_should_keep_the_keyset_path_for_query_keysets_even_when_the_feature_flag_is_enabled()
+    {
+        var queryPlan = new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r ORDER BY r.\"DocumentId\" LIMIT @limit OFFSET @offset",
+            TotalCountSql: null,
+            PageParametersInOrder:
+            [
+                new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+            ],
+            TotalCountParametersInOrder: null
+        );
+        var keyset = new PageKeysetSpec.Query(
+            queryPlan,
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true),
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        batch.Should().Contain("DROP TABLE IF EXISTS \"page\";");
+        batch.Should().Contain("WITH page_ids AS (");
+        batch.Should().Contain("INSERT INTO \"page\" (\"DocumentId\")");
+        batch.Should().Contain("SELECT root columns FROM root;");
+        batch.Should().NotContain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+    }
+
+    [Test]
+    public void It_should_match_the_existing_query_keyset_batch_when_the_feature_flag_is_enabled()
+    {
+        var queryPlan = new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r ORDER BY r.\"DocumentId\" LIMIT @limit OFFSET @offset",
+            TotalCountSql: null,
+            PageParametersInOrder:
+            [
+                new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+            ],
+            TotalCountParametersInOrder: null
+        );
+        var keyset = new PageKeysetSpec.Query(
+            queryPlan,
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+        var readPlan = BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true);
+
+        var expectedKeysetBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
+        );
+        var fastPathFlaggedBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        fastPathFlaggedBatch.Should().Be(expectedKeysetBatch);
+    }
+
+    [Test]
+    public void It_should_keep_the_keyset_path_for_sql_server_even_when_the_feature_flag_is_enabled()
+    {
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Mssql),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        batch.Should().Contain("CREATE TABLE [#page]");
+        batch.Should().Contain("INSERT INTO [#page] ([DocumentId]) VALUES (@DocumentId);");
+        batch.Should().Contain("SELECT root columns FROM root;");
+        batch.Should().NotContain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+    }
+
+    [Test]
+    public void It_should_match_the_existing_sql_server_keyset_batch_when_the_feature_flag_is_enabled()
+    {
+        var readPlan = BuildTestReadPlan(SqlDialect.Mssql);
+        var keyset = new PageKeysetSpec.Single(42L);
+
+        var expectedKeysetBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
+        );
+        var fastPathFlaggedBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        fastPathFlaggedBatch.Should().Be(expectedKeysetBatch);
+    }
+
+    private static DescriptorProjectionPlan[] BuildDescriptorPlans() =>
+        [
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: RootDescriptorKeysetSql,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: [],
+                SelectBySingleDocumentSql: RootDescriptorSingleDocumentSql
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: ChildDescriptorKeysetSql,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: [],
+                SelectBySingleDocumentSql: ChildDescriptorSingleDocumentSql
+            ),
+        ];
+
+    private static DocumentReferenceLookupPlan BuildLookupPlan() =>
+        new(
+            SelectByKeysetSql: LookupKeysetSql,
+            ResultShape: new DocumentReferenceLookupResultShape(
+                DocumentIdOrdinal: 0,
+                DocumentUuidOrdinal: 1,
+                ResourceKeyIdOrdinal: 2
+            ),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ],
+            SelectBySingleDocumentSql: LookupSingleDocumentSql
+        );
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path_Missing_Sql
+{
+    [Test]
+    public void It_should_throw_when_a_table_plan_is_missing_single_document_sql()
+    {
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(SqlDialect.Pgsql),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Be(
+                "PostgreSQL single-document hydration requires table read plan at index '0' for table 'edfi.School' to provide SelectBySingleDocumentSql."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_when_a_table_plan_has_empty_single_document_sql()
+    {
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(
+                    SqlDialect.Pgsql,
+                    rootSelectBySingleDocumentSql: "   ",
+                    childSelectBySingleDocumentSql: HydrationBatchBuilderTestHelper.ChildSingleDocumentSql
+                ),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("table read plan at index '0'");
+        exception.Message.Should().Contain("SelectBySingleDocumentSql");
+    }
+
+    [Test]
+    public void It_should_throw_when_an_enabled_descriptor_plan_is_missing_single_document_sql()
+    {
+        var descriptorPlan = new DescriptorProjectionPlan(
+            SelectByKeysetSql: "SELECT descriptor keyset rows FROM root_descriptor;",
+            ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+            SourcesInOrder: []
+        );
+
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(
+                    SqlDialect.Pgsql,
+                    descriptorProjectionPlans: [descriptorPlan],
+                    includeSingleDocumentSql: true
+                ),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: true,
+                    UseSingleDocumentFastPath: true
+                )
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Be(
+                "PostgreSQL single-document hydration requires descriptor projection plan at index '0' to provide SelectBySingleDocumentSql."
+            );
+    }
+
+    [Test]
+    public void It_should_not_require_descriptor_single_document_sql_when_descriptor_projection_is_disabled()
+    {
+        var descriptorPlan = new DescriptorProjectionPlan(
+            SelectByKeysetSql: "SELECT descriptor keyset rows FROM root_descriptor;",
+            ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+            SourcesInOrder: []
+        );
+
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(
+                    SqlDialect.Pgsql,
+                    descriptorProjectionPlans: [descriptorPlan],
+                    includeSingleDocumentSql: true
+                ),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: false,
+                    UseSingleDocumentFastPath: true
+                )
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_throw_when_an_enabled_lookup_plan_is_missing_single_document_sql()
+    {
+        var lookupPlan = new DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT lookup keyset rows FROM lookup;",
+            ResultShape: new DocumentReferenceLookupResultShape(0, 1, 2),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ]
+        );
+
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(
+                    SqlDialect.Pgsql,
+                    documentReferenceLookup: lookupPlan,
+                    includeSingleDocumentSql: true
+                ),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: false,
+                    IncludeDocumentReferenceLookup: true,
+                    UseSingleDocumentFastPath: true
+                )
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Be(
+                "PostgreSQL single-document hydration requires document-reference lookup plan to provide SelectBySingleDocumentSql."
+            );
+    }
+
+    [Test]
+    public void It_should_not_require_lookup_single_document_sql_when_lookup_is_disabled()
+    {
+        var lookupPlan = new DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT lookup keyset rows FROM lookup;",
+            ResultShape: new DocumentReferenceLookupResultShape(0, 1, 2),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ]
+        );
+
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(
+                    SqlDialect.Pgsql,
+                    documentReferenceLookup: lookupPlan,
+                    includeSingleDocumentSql: true
+                ),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: false,
+                    IncludeDocumentReferenceLookup: false,
+                    UseSingleDocumentFastPath: true
+                )
+            );
+
+        act.Should().NotThrow();
+    }
+}
+
+[TestFixture]
 public class Given_HydrationBatchBuilder_With_Query_Keyset
 {
     private string _pgsqlBatch = null!;
@@ -816,10 +1306,16 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
 
 internal static class HydrationBatchBuilderTestHelper
 {
+    internal const string RootSingleDocumentSql = "SELECT root single-document columns FROM root;";
+    internal const string ChildSingleDocumentSql = "SELECT child single-document columns FROM child;";
+
     public static ResourceReadPlan BuildTestReadPlan(
         SqlDialect dialect = SqlDialect.Pgsql,
         IReadOnlyList<DescriptorProjectionPlan>? descriptorProjectionPlans = null,
-        DocumentReferenceLookupPlan? documentReferenceLookup = null
+        DocumentReferenceLookupPlan? documentReferenceLookup = null,
+        bool includeSingleDocumentSql = false,
+        string? rootSelectBySingleDocumentSql = null,
+        string? childSelectBySingleDocumentSql = null
     )
     {
         var rootTable = new DbTableModel(
@@ -924,8 +1420,16 @@ internal static class HydrationBatchBuilderTestHelper
         );
 
         // Use stub SelectByKeysetSql values for batch builder testing (SQL shape validation)
-        var rootTablePlan = new TableReadPlan(rootTable, "SELECT root columns FROM root;");
-        var childTablePlan = new TableReadPlan(childTable, "SELECT child columns FROM child;");
+        var rootTablePlan = new TableReadPlan(
+            rootTable,
+            "SELECT root columns FROM root;",
+            rootSelectBySingleDocumentSql ?? (includeSingleDocumentSql ? RootSingleDocumentSql : null)
+        );
+        var childTablePlan = new TableReadPlan(
+            childTable,
+            "SELECT child columns FROM child;",
+            childSelectBySingleDocumentSql ?? (includeSingleDocumentSql ? ChildSingleDocumentSql : null)
+        );
 
         return new ResourceReadPlan(
             Model: model,

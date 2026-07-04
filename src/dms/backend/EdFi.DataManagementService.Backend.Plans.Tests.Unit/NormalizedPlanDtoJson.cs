@@ -207,6 +207,11 @@ internal static class NormalizedPlanDtoJson
                 "select_by_keyset_sql",
                 PlanJsonCanonicalization.NormalizeMultilineText(tablePlan.SelectByKeysetSql)
             );
+            WriteNullableNormalizedSql(
+                writer,
+                "select_by_single_document_sql",
+                tablePlan.SelectBySingleDocumentSql
+            );
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
@@ -254,6 +259,11 @@ internal static class NormalizedPlanDtoJson
                 "select_by_keyset_sql",
                 PlanJsonCanonicalization.NormalizeMultilineText(plan.SelectByKeysetSql)
             );
+            WriteNullableNormalizedSql(
+                writer,
+                "select_by_single_document_sql",
+                plan.SelectBySingleDocumentSql
+            );
             writer.WritePropertyName("result_shape");
             writer.WriteStartObject();
             writer.WriteNumber("descriptor_id_ordinal", plan.ResultShape.DescriptorIdOrdinal);
@@ -279,6 +289,48 @@ internal static class NormalizedPlanDtoJson
         }
         writer.WriteEndArray();
 
+        writer.WritePropertyName("document_reference_lookup");
+        WriteDocumentReferenceLookupPlanOrNull(writer, value.DocumentReferenceLookup);
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteDocumentReferenceLookupPlanOrNull(
+        Utf8JsonWriter writer,
+        DocumentReferenceLookupPlanDto? plan
+    )
+    {
+        if (plan is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString(
+            "select_by_keyset_sql",
+            PlanJsonCanonicalization.NormalizeMultilineText(plan.SelectByKeysetSql)
+        );
+        WriteNullableNormalizedSql(writer, "select_by_single_document_sql", plan.SelectBySingleDocumentSql);
+
+        writer.WritePropertyName("result_shape");
+        writer.WriteStartObject();
+        writer.WriteNumber("document_id_ordinal", plan.ResultShape.DocumentIdOrdinal);
+        writer.WriteNumber("document_uuid_ordinal", plan.ResultShape.DocumentUuidOrdinal);
+        writer.WriteNumber("resource_key_id_ordinal", plan.ResultShape.ResourceKeyIdOrdinal);
+        writer.WriteEndObject();
+
+        writer.WritePropertyName("sources_in_order");
+        writer.WriteStartArray();
+        foreach (var source in plan.SourcesInOrder)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("table");
+            WriteTableName(writer, source.Table);
+            writer.WriteString("fk_column", source.FkColumn);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 
@@ -357,6 +409,17 @@ internal static class NormalizedPlanDtoJson
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteNullableNormalizedSql(Utf8JsonWriter writer, string propertyName, string? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(propertyName);
+            return;
+        }
+
+        writer.WriteString(propertyName, PlanJsonCanonicalization.NormalizeMultilineText(value));
     }
 
     private static void WriteQualifiedResourceName(Utf8JsonWriter writer, QualifiedResourceNameDto value)

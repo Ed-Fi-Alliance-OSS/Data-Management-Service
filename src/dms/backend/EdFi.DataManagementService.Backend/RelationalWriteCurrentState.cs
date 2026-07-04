@@ -99,7 +99,8 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
                 new HydrationExecutionOptions(
                     IncludeDescriptorProjection: request.IncludeDescriptorProjection,
-                    IncludeDocumentReferenceLookup: false
+                    IncludeDocumentReferenceLookup: false,
+                    UseSingleDocumentFastPath: true
                 ),
                 cancellationToken
             )

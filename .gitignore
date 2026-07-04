@@ -65,6 +65,9 @@ artifacts/
 eng/docker-compose/.bootstrap/
 eng/docker-compose/.derived/
 
+# Local data-load credentials
+/dataload-creds.json
+
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 

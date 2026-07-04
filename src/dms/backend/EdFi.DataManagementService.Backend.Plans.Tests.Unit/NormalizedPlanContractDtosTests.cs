@@ -122,7 +122,8 @@ public class Given_NormalizedPlanContractDtos
             [
                 new TableReadPlanDto(
                     Table: table,
-                    SelectByKeysetSql: "SELECT r.[DocumentId], r.[School_DocumentId]\r\nFROM [edfi].[StudentSchoolAssociation] r;"
+                    SelectByKeysetSql: "SELECT r.[DocumentId], r.[School_DocumentId]\r\nFROM [edfi].[StudentSchoolAssociation] r;",
+                    SelectBySingleDocumentSql: "SELECT r.[DocumentId], r.[School_DocumentId]\r\nFROM [edfi].[StudentSchoolAssociation] r\r\nWHERE r.[DocumentId] = @DocumentId;"
                 ),
             ],
             ReferenceIdentityProjectionPlansInDependencyOrder:
@@ -169,9 +170,23 @@ public class Given_NormalizedPlanContractDtos
                             DescriptorResource: new QualifiedResourceNameDto("Ed-Fi", "GradeLevelDescriptor"),
                             DescriptorIdColumnOrdinal: 2
                         ),
-                    ]
+                    ],
+                    SelectBySingleDocumentSql: "SELECT r.[GradeLevel_DescriptorId], d.[Uri]\r\nFROM [edfi].[StudentSchoolAssociation] r\r\nWHERE r.[DocumentId] = @DocumentId;"
                 ),
-            ]
+            ],
+            DocumentReferenceLookup: new DocumentReferenceLookupPlanDto(
+                SelectByKeysetSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\r\nFROM [dms].[Document] d;",
+                ResultShape: new DocumentReferenceLookupResultShapeDto(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 1,
+                    ResourceKeyIdOrdinal: 2
+                ),
+                SourcesInOrder:
+                [
+                    new DocumentReferenceLookupSourceDto(Table: table, FkColumn: "School_DocumentId"),
+                ],
+                SelectBySingleDocumentSql: "SELECT d.[DocumentId], d.[DocumentUuid], d.[ResourceKeyId]\r\nFROM [dms].[Document] d\r\nWHERE d.[DocumentId] = @DocumentId;"
+            )
         );
 
         _queryPlan = new PageDocumentIdSqlPlanDto(
@@ -264,6 +279,11 @@ public class Given_NormalizedPlanContractDtos
         writeHashA.Should().Be(writeHashB).And.HaveLength(64);
         readHashA.Should().Be(readHashB).And.HaveLength(64);
         queryHashA.Should().Be(queryHashB).And.HaveLength(64);
+
+        readJsonA.Should().Contain("\"select_by_single_document_sql\"");
+        readJsonA.Should().Contain("WHERE r.[DocumentId] = @DocumentId;");
+        readJsonA.Should().Contain("\"document_reference_lookup\": {");
+        readJsonA.Should().Contain("\"fk_column\": \"School_DocumentId\"");
     }
 
     [Test]
@@ -291,6 +311,8 @@ public class Given_NormalizedPlanContractDtos
 
         json.Should().Contain("\"reference_identity_projection_plans_in_dependency_order\": []");
         json.Should().Contain("\"descriptor_projection_plans_in_order\": []");
+        json.Should().Contain("\"select_by_single_document_sql\": null");
+        json.Should().Contain("\"document_reference_lookup\": null");
         json.Should().Contain("\"schema\": \"edfi\"");
         json.Should().Contain("\"name\": \"Student\"");
         json.Should().Contain("\"schema\": \"sample\"");

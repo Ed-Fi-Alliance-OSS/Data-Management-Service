@@ -137,6 +137,14 @@ public class Given_MappingSetManifestJsonEmitter
 
             readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
             readPlanSummary.TablePlans.Should().ContainSingle();
+            if (dialect == "pgsql")
+            {
+                readPlanSummary.TablePlans[0].SelectBySingleDocumentSqlSha256.Should().HaveLength(64);
+            }
+            else
+            {
+                readPlanSummary.TablePlans[0].SelectBySingleDocumentSqlSha256.Should().BeNull();
+            }
             readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
             readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
         }
@@ -192,7 +200,9 @@ public class Given_MappingSetManifestJsonEmitter
 
         summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
         _manifest.Should().Contain("\"select_by_keyset_sql_sha256\"");
+        _manifest.Should().Contain("\"select_by_single_document_sql_sha256\"");
         _manifest.Should().NotContain("\"select_by_keyset_sql\":");
+        _manifest.Should().NotContain("\"select_by_single_document_sql\":");
 
         foreach (var dialect in summariesByDialect.Keys)
         {
@@ -205,6 +215,21 @@ public class Given_MappingSetManifestJsonEmitter
             projectionSummary.ReferenceIdentityProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans[0].SelectByKeysetSqlSha256.Should().HaveLength(64);
+
+            if (dialect == "pgsql")
+            {
+                projectionSummary
+                    .DescriptorProjectionPlans[0]
+                    .SelectBySingleDocumentSqlSha256.Should()
+                    .HaveLength(64);
+            }
+            else
+            {
+                projectionSummary
+                    .DescriptorProjectionPlans[0]
+                    .SelectBySingleDocumentSqlSha256.Should()
+                    .BeNull();
+            }
         }
     }
 
@@ -1665,6 +1690,11 @@ public class Given_MappingSetManifestJsonEmitter
             SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
                 descriptorProjectionPlan.SelectByKeysetSql
             ),
+            SelectBySingleDocumentSqlSha256: descriptorProjectionPlan.SelectBySingleDocumentSql is null
+                ? null
+                : PlanManifestConventions.ComputeNormalizedSha256(
+                    descriptorProjectionPlan.SelectBySingleDocumentSql
+                ),
             ResultShape: new DescriptorProjectionResultShapeSummary(
                 DescriptorIdOrdinal: descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal,
                 UriOrdinal: descriptorProjectionPlan.ResultShape.UriOrdinal
@@ -1693,6 +1723,10 @@ public class Given_MappingSetManifestJsonEmitter
             Schema: RequireString(table, "schema"),
             TableName: RequireString(table, "name"),
             SelectByKeysetSqlSha256: RequireString(tablePlan, "select_by_keyset_sql_sha256"),
+            SelectBySingleDocumentSqlSha256: ReadOptionalString(
+                tablePlan,
+                "select_by_single_document_sql_sha256"
+            ),
             SelectListColumnsInOrder: ReadRequiredStringArray(
                 tablePlan["select_list_columns_in_order"],
                 "select_list_columns_in_order"
@@ -1714,6 +1748,9 @@ public class Given_MappingSetManifestJsonEmitter
             SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
                 tablePlan.SelectByKeysetSql
             ),
+            SelectBySingleDocumentSqlSha256: tablePlan.SelectBySingleDocumentSql is null
+                ? null
+                : PlanManifestConventions.ComputeNormalizedSha256(tablePlan.SelectBySingleDocumentSql),
             SelectListColumnsInOrder: ReadPlanSqlShape
                 .ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql)
                 .ToArray(),
@@ -1793,6 +1830,10 @@ public class Given_MappingSetManifestJsonEmitter
 
         return new DescriptorProjectionPlanSummary(
             SelectByKeysetSqlSha256: RequireString(descriptorProjectionPlan, "select_by_keyset_sql_sha256"),
+            SelectBySingleDocumentSqlSha256: ReadOptionalString(
+                descriptorProjectionPlan,
+                "select_by_single_document_sql_sha256"
+            ),
             ResultShape: new DescriptorProjectionResultShapeSummary(
                 DescriptorIdOrdinal: RequireInt(resultShape, "descriptor_id_ordinal"),
                 UriOrdinal: RequireInt(resultShape, "uri_ordinal")
@@ -2254,6 +2295,7 @@ public class Given_MappingSetManifestJsonEmitter
         string Schema,
         string TableName,
         string SelectByKeysetSqlSha256,
+        string? SelectBySingleDocumentSqlSha256,
         IReadOnlyList<string> SelectListColumnsInOrder,
         IReadOnlyList<string> OrderByKeyColumnsInOrder
     );
@@ -2329,6 +2371,7 @@ public class Given_MappingSetManifestJsonEmitter
 
     private sealed record DescriptorProjectionPlanSummary(
         string SelectByKeysetSqlSha256,
+        string? SelectBySingleDocumentSqlSha256,
         DescriptorProjectionResultShapeSummary ResultShape,
         IReadOnlyList<DescriptorProjectionSourceSummary> SourcesInOrder
     );

@@ -15,9 +15,11 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The executor builds a single SQL batch that materializes a keyset temp table, then
-/// returns multiple result sets (document metadata, root rows, child rows, descriptor URI rows)
-/// consumed sequentially via <see cref="DbDataReader.NextResultAsync"/>.
+/// The executor builds a single SQL batch that returns multiple result sets (document metadata,
+/// root rows, child rows, descriptor URI rows, and optional document-reference lookup rows)
+/// consumed sequentially via <see cref="DbDataReader.NextResultAsync"/>. Query and default
+/// single-document batches materialize a keyset relation first; the PostgreSQL single-document
+/// fast path starts directly with document metadata.
 /// </para>
 /// <para>
 /// Takes an already-opened <see cref="DbConnection"/> so callers can manage connection
@@ -137,9 +139,10 @@ public static class HydrationExecutor
 
         await using var reader = await command.ExecuteReaderAsync(ct);
 
-        // The batch begins with temp-table reset/creation + INSERT (keyset materialization).
-        // Both Npgsql and SqlClient skip DDL/DML statements when advancing result sets,
-        // so the reader is positioned at the first SELECT result set automatically.
+        // Keyset batches begin with temp-table reset/creation + INSERT materialization. Both
+        // Npgsql and SqlClient skip DDL/DML statements when advancing result sets, so the reader
+        // is positioned at the first SELECT result set automatically. The PostgreSQL fast path
+        // starts with that same first SELECT result set.
 
         // 1. Optional total count
         long? totalCount = null;

@@ -74,7 +74,8 @@ internal static class NormalizedPlanContractCodec
             TablePlansInDependencyOrder: plan.TablePlansInDependencyOrder.Select(
                 tablePlan => new TableReadPlanDto(
                     Table: EncodeTableName(tablePlan.TableModel.Table),
-                    SelectByKeysetSql: tablePlan.SelectByKeysetSql
+                    SelectByKeysetSql: tablePlan.SelectByKeysetSql,
+                    SelectBySingleDocumentSql: tablePlan.SelectBySingleDocumentSql
                 )
             ),
             ReferenceIdentityProjectionPlansInDependencyOrder: plan.ReferenceIdentityProjectionPlansInDependencyOrder.Select(
@@ -111,7 +112,8 @@ internal static class NormalizedPlanContractCodec
                             DescriptorResource: EncodeQualifiedResourceName(source.DescriptorResource),
                             DescriptorIdColumnOrdinal: source.DescriptorIdColumnOrdinal
                         )
-                    )
+                    ),
+                    SelectBySingleDocumentSql: descriptorProjectionPlan.SelectBySingleDocumentSql
                 )
             ),
             DocumentReferenceLookup: plan.DocumentReferenceLookup is null
@@ -128,7 +130,8 @@ internal static class NormalizedPlanContractCodec
                             Table: EncodeTableName(source.Table),
                             FkColumn: source.FkColumn.Value
                         )
-                    )
+                    ),
+                    SelectBySingleDocumentSql: plan.DocumentReferenceLookup.SelectBySingleDocumentSql
                 )
         );
     }
@@ -526,7 +529,11 @@ internal static class NormalizedPlanContractCodec
             var tablePlanArgument = $"{nameof(ResourceReadPlanDto.TablePlansInDependencyOrder)}[{index}]";
             var tableModel = ResolveTableModel(tablePlanDto.Table, tablesByName, tablePlanArgument);
 
-            decoded[index] = new ExternalPlans.TableReadPlan(tableModel, tablePlanDto.SelectByKeysetSql);
+            decoded[index] = new ExternalPlans.TableReadPlan(
+                tableModel,
+                tablePlanDto.SelectByKeysetSql,
+                tablePlanDto.SelectBySingleDocumentSql
+            );
         }
 
         return decoded;
@@ -715,7 +722,8 @@ internal static class NormalizedPlanContractCodec
             decoded[planIndex] = new ExternalPlans.DescriptorProjectionPlan(
                 SelectByKeysetSql: planDto.SelectByKeysetSql,
                 ResultShape: resultShape,
-                SourcesInOrder: sources
+                SourcesInOrder: sources,
+                SelectBySingleDocumentSql: planDto.SelectBySingleDocumentSql
             );
         }
 
@@ -784,7 +792,8 @@ internal static class NormalizedPlanContractCodec
         return new ExternalPlans.DocumentReferenceLookupPlan(
             SelectByKeysetSql: lookupDto.SelectByKeysetSql,
             ResultShape: resultShape,
-            SourcesInOrder: sources
+            SourcesInOrder: sources,
+            SelectBySingleDocumentSql: lookupDto.SelectBySingleDocumentSql
         );
     }
 

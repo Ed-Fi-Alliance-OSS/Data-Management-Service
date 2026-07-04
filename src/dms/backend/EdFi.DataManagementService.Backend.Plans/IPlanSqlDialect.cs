@@ -39,6 +39,14 @@ internal interface IPlanSqlDialect
     void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
 
     /// <summary>
+    /// Appends a <c>SELECT</c> statement that reads <c>dms.Document</c> metadata for a single
+    /// document id parameter, returning the same metadata columns and order as the keyset form.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="documentIdParameterName">The bare document id parameter name.</param>
+    void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName);
+
+    /// <summary>
     /// Appends a predicate comparison against the supplied table alias and column.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
@@ -60,8 +68,8 @@ internal interface IPlanSqlDialect
 }
 
 /// <summary>
-/// Shared document metadata column names used by <see cref="IPlanSqlDialect.AppendDocumentMetadataSelect"/>
-/// and consumed by ordinal in <see cref="HydrationReader.ReadDocumentMetadataAsync"/>.
+/// Shared document metadata column names used by metadata SELECT emitters and consumed by ordinal
+/// in <see cref="HydrationReader.ReadDocumentMetadataAsync"/>.
 /// </summary>
 /// <remarks>
 /// The ordinal positions defined here form a contract between the SQL emitter and the reader.
@@ -69,7 +77,7 @@ internal interface IPlanSqlDialect
 /// </remarks>
 internal static class DocumentMetadataColumns
 {
-    // Ordinal 0 — supplied by the keyset contract (DocumentIdColumnName)
+    public const string DocumentId = "DocumentId";
     public const string DocumentUuid = "DocumentUuid";
     public const string ContentVersion = "ContentVersion";
     public const string IdentityVersion = "IdentityVersion";
@@ -77,10 +85,11 @@ internal static class DocumentMetadataColumns
     public const string IdentityLastModifiedAt = "IdentityLastModifiedAt";
 
     /// <summary>
-    /// Metadata column names in ordinal order (excluding DocumentId at ordinal 0).
+    /// Metadata column names in reader ordinal order.
     /// </summary>
     public static readonly string[] ColumnsInOrdinalOrder =
     [
+        DocumentId,
         DocumentUuid,
         ContentVersion,
         IdentityVersion,
@@ -98,15 +107,10 @@ internal static class DocumentMetadataColumns
         DbTableName documentTable
     )
     {
-        var quotedDocIdCol = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
+        var quotedDocumentIdColumn = writer.Dialect.QuoteIdentifier(DocumentId);
+        var quotedKeysetDocumentIdColumn = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
 
-        writer.AppendLine("SELECT").Append("    d.").Append(quotedDocIdCol).AppendLine(",");
-
-        for (var i = 0; i < ColumnsInOrdinalOrder.Length; i++)
-        {
-            writer.Append("    d.").Append(writer.Dialect.QuoteIdentifier(ColumnsInOrdinalOrder[i]));
-            writer.AppendLine(i + 1 < ColumnsInOrdinalOrder.Length ? "," : "");
-        }
+        AppendSelectList(writer);
 
         writer
             .Append("FROM ")
@@ -115,12 +119,51 @@ internal static class DocumentMetadataColumns
             .Append("INNER JOIN ")
             .AppendRelation(keyset.Table)
             .Append(" k ON d.")
-            .Append(quotedDocIdCol)
+            .Append(quotedDocumentIdColumn)
             .Append(" = k.")
-            .Append(quotedDocIdCol)
+            .Append(quotedKeysetDocumentIdColumn)
             .AppendLine()
             .Append("ORDER BY d.")
-            .Append(quotedDocIdCol)
+            .Append(quotedDocumentIdColumn)
             .AppendLine(";");
+    }
+
+    /// <summary>
+    /// Appends the shared document metadata SELECT body for a single document id parameter,
+    /// including a deterministic <c>ORDER BY DocumentId</c>.
+    /// </summary>
+    internal static void AppendSingleDocumentMetadataSelectBody(
+        SqlWriter writer,
+        DbTableName documentTable,
+        string documentIdParameterName
+    )
+    {
+        var quotedDocumentIdColumn = writer.Dialect.QuoteIdentifier(DocumentId);
+
+        AppendSelectList(writer);
+
+        writer
+            .Append("FROM ")
+            .AppendTable(documentTable)
+            .AppendLine(" d")
+            .Append("WHERE d.")
+            .Append(quotedDocumentIdColumn)
+            .Append(" = ")
+            .AppendParameter(documentIdParameterName)
+            .AppendLine()
+            .Append("ORDER BY d.")
+            .Append(quotedDocumentIdColumn)
+            .AppendLine(";");
+    }
+
+    private static void AppendSelectList(SqlWriter writer)
+    {
+        writer.AppendLine("SELECT");
+
+        for (var i = 0; i < ColumnsInOrdinalOrder.Length; i++)
+        {
+            writer.Append("    d.").Append(writer.Dialect.QuoteIdentifier(ColumnsInOrdinalOrder[i]));
+            writer.AppendLine(i + 1 < ColumnsInOrdinalOrder.Length ? "," : "");
+        }
     }
 }

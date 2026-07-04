@@ -19,6 +19,12 @@ internal static class ReadPlanSqlShape
     public static string ExtractJoinRightColumnName(string sql) =>
         ExtractQualifiedColumnName(ExtractJoinConditionExpressions(sql).RightExpression);
 
+    public static string ExtractWhereLeftColumnName(string sql) =>
+        ExtractQualifiedColumnName(ExtractWhereConditionExpressions(sql).LeftExpression);
+
+    public static string ExtractWhereRightParameterName(string sql) =>
+        ExtractParameterName(ExtractWhereConditionExpressions(sql).RightExpression);
+
     public static IReadOnlyList<string> ExtractSelectedColumnExpressions(string sql) =>
         ExtractSqlSectionExpressions(sql, "SELECT", "FROM");
 
@@ -69,6 +75,26 @@ internal static class ReadPlanSqlShape
         {
             throw new InvalidOperationException(
                 $"Hydration SQL join line has unsupported join condition shape: '{joinLine}'."
+            );
+        }
+
+        return (conditionParts[0], conditionParts[1]);
+    }
+
+    private static (string LeftExpression, string RightExpression) ExtractWhereConditionExpressions(
+        string sql
+    )
+    {
+        var whereLine = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static segment => segment.Trim())
+            .Single(segment => segment.StartsWith("WHERE ", StringComparison.Ordinal));
+        var condition = whereLine["WHERE ".Length..];
+        var conditionParts = condition.Split(" = ", StringSplitOptions.RemoveEmptyEntries);
+
+        if (conditionParts.Length != 2)
+        {
+            throw new InvalidOperationException(
+                $"Hydration SQL WHERE line has unsupported condition shape: '{whereLine}'."
             );
         }
 
@@ -144,6 +170,18 @@ internal static class ReadPlanSqlShape
         }
 
         return expression[(qualifierSeparatorIndex + 1)..].Trim('"', '[', ']');
+    }
+
+    private static string ExtractParameterName(string expression)
+    {
+        if (!expression.StartsWith('@'))
+        {
+            throw new InvalidOperationException(
+                $"Hydration SQL expression '{expression}' is missing a parameter marker."
+            );
+        }
+
+        return expression[1..];
     }
 
     private static string ExtractTrailingAlias(string sql, string linePrefix)

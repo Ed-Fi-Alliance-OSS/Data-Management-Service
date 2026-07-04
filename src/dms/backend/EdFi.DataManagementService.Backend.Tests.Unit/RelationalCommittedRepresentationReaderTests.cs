@@ -72,6 +72,21 @@ public class Given_RelationalCommittedRepresentationReader
         var result = await sut.ReadAsync(request, persistedTarget, writeSession);
 
         result.Should().BeSameAs(materializedResponse);
+        A.CallTo(() =>
+                sessionDocumentHydrator.HydrateAsync(
+                    writeSession.Connection,
+                    writeSession.Transaction,
+                    readPlan,
+                    new PageKeysetSpec.Single(documentId),
+                    A<HydrationExecutionOptions>.That.Matches(options =>
+                        options.IncludeDescriptorProjection
+                        && !options.IncludeDocumentReferenceLookup
+                        && options.UseSingleDocumentFastPath
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(

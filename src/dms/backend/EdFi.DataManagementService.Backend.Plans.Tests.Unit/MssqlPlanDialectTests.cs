@@ -69,4 +69,32 @@ public class Given_MssqlPlanDialect
                 """
             );
     }
+
+    [Test]
+    public void It_should_emit_single_document_metadata_select()
+    {
+        _dialect.AppendSingleDocumentMetadataSelect(
+            _writer,
+            HydrationSqlConventions.SingleDocumentIdParameterName
+        );
+
+        _writer
+            .ToString()
+            .Should()
+            .Be(
+                """
+                SELECT
+                    d.[DocumentId],
+                    d.[DocumentUuid],
+                    d.[ContentVersion],
+                    d.[IdentityVersion],
+                    d.[ContentLastModifiedAt],
+                    d.[IdentityLastModifiedAt]
+                FROM [dms].[Document] d
+                WHERE d.[DocumentId] = @DocumentId
+                ORDER BY d.[DocumentId];
+
+                """
+            );
+    }
 }

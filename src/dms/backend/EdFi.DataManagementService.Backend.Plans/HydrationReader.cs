@@ -39,11 +39,12 @@ public static class HydrationReader
     }
 
     /// <summary>
-    /// Expected column count for the document metadata result set:
-    /// DocumentId (ordinal 0) + the columns defined in <see cref="DocumentMetadataColumns.ColumnsInOrdinalOrder"/>.
+    /// Expected column count for the document metadata result set, defined by
+    /// <see cref="DocumentMetadataColumns.ColumnsInOrdinalOrder"/>.
     /// </summary>
-    private static readonly int ExpectedDocumentMetadataColumnCount =
-        1 + DocumentMetadataColumns.ColumnsInOrdinalOrder.Length;
+    private static readonly int ExpectedDocumentMetadataColumnCount = DocumentMetadataColumns
+        .ColumnsInOrdinalOrder
+        .Length;
 
     /// <summary>
     /// Reads <c>dms.Document</c> metadata rows from the current result set.

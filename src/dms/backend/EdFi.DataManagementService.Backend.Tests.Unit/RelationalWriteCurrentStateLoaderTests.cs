@@ -182,6 +182,8 @@ public class Given_Relational_Write_Current_State_Loader
 
         recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
         recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeFalse();
+        recordingHydrator.CapturedExecutionOptions.IncludeDocumentReferenceLookup.Should().BeFalse();
+        recordingHydrator.CapturedExecutionOptions.UseSingleDocumentFastPath.Should().BeTrue();
     }
 
     [Test]
@@ -215,6 +217,8 @@ public class Given_Relational_Write_Current_State_Loader
 
         recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
         recordingHydrator.CapturedExecutionOptions!.IncludeDescriptorProjection.Should().BeTrue();
+        recordingHydrator.CapturedExecutionOptions.IncludeDocumentReferenceLookup.Should().BeFalse();
+        recordingHydrator.CapturedExecutionOptions.UseSingleDocumentFastPath.Should().BeTrue();
     }
 
     private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(
@@ -243,7 +247,13 @@ public class Given_Relational_Write_Current_State_Loader
         return new ResourceReadPlan(
             resourceModel,
             KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
+            [
+                new TableReadPlan(
+                    resourceModel.Root,
+                    SelectByKeysetSql: "select \"DocumentId\", \"Name\" from edfi.\"School\"",
+                    SelectBySingleDocumentSql: "select \"DocumentId\", \"Name\" from edfi.\"School\" where \"DocumentId\" = @DocumentId"
+                ),
+            ],
             [],
             []
         );
@@ -285,7 +295,8 @@ public class Given_Relational_Write_Current_State_Loader
             [
                 new TableReadPlan(
                     writePlan.TableModel,
-                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\""
+                    SelectByKeysetSql: "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\"",
+                    SelectBySingleDocumentSql: "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\" where \"DocumentId\" = @DocumentId"
                 ),
             ],
             [],

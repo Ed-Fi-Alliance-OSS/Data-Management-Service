@@ -445,6 +445,11 @@ internal static class MappingSetManifestJsonEmitter
             "select_by_keyset_sql_sha256",
             PlanManifestConventions.ComputeNormalizedSha256(tablePlan.SelectByKeysetSql)
         );
+        WriteNullableNormalizedSqlHash(
+            writer,
+            "select_by_single_document_sql_sha256",
+            tablePlan.SelectBySingleDocumentSql
+        );
 
         writer.WritePropertyName("select_list_columns_in_order");
         writer.WriteStartArray();
@@ -741,6 +746,11 @@ internal static class MappingSetManifestJsonEmitter
             "select_by_keyset_sql_sha256",
             PlanManifestConventions.ComputeNormalizedSha256(descriptorProjectionPlan.SelectByKeysetSql)
         );
+        WriteNullableNormalizedSqlHash(
+            writer,
+            "select_by_single_document_sql_sha256",
+            descriptorProjectionPlan.SelectBySingleDocumentSql
+        );
 
         writer.WritePropertyName("result_shape");
         writer.WriteStartObject();
@@ -765,6 +775,21 @@ internal static class MappingSetManifestJsonEmitter
 
         writer.WriteEndArray();
         writer.WriteEndObject();
+    }
+
+    private static void WriteNullableNormalizedSqlHash(
+        Utf8JsonWriter writer,
+        string propertyName,
+        string? sql
+    )
+    {
+        if (sql is null)
+        {
+            writer.WriteNull(propertyName);
+            return;
+        }
+
+        writer.WriteString(propertyName, PlanManifestConventions.ComputeNormalizedSha256(sql));
     }
 
     private static void WriteWriteValueSource(Utf8JsonWriter writer, WriteValueSource valueSource)

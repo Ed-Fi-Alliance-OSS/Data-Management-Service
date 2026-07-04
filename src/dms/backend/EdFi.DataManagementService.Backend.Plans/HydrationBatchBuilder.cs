@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// and <see cref="PageKeysetSpec"/> for single-command multi-result hydration.
 /// </summary>
 /// <remarks>
-/// The batch emits result sets in a deterministic sequence:
+/// The keyset batch emits result sets in a deterministic sequence:
 /// <list type="number">
 /// <item>Optional <c>TotalCount</c> (single row, single column)</item>
 /// <item><c>dms.Document</c> metadata joined to the page keyset</item>
@@ -30,11 +30,12 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <see cref="ResourceReadPlan.DocumentReferenceLookup"/> is non-null)
 /// </item>
 /// </list>
+/// When the PostgreSQL single-document fast path is enabled for <see cref="PageKeysetSpec.Single"/>,
+/// the batch skips keyset materialization and starts with document metadata, followed by the same
+/// table, descriptor, and document-reference result-set sequence.
 /// </remarks>
 public static class HydrationBatchBuilder
 {
-    internal const string DocumentIdParameterName = "DocumentId";
-
     /// <summary>
     /// Builds the complete SQL batch command text.
     /// </summary>
@@ -67,6 +68,31 @@ public static class HydrationBatchBuilder
         var planDialect = PlanSqlDialectFactory.Create(dialect);
         var writer = new SqlWriter(sqlDialect);
 
+        if (ShouldUseSingleDocumentBatch(keyset, dialect, executionOptions))
+        {
+            return BuildSingleDocumentBatch(plan, planDialect, writer, executionOptions);
+        }
+
+        return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
+    }
+
+    private static bool ShouldUseSingleDocumentBatch(
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions
+    ) =>
+        dialect is SqlDialect.Pgsql
+        && keyset is PageKeysetSpec.Single
+        && executionOptions.UseSingleDocumentFastPath;
+
+    private static string BuildExistingKeysetBatch(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        IPlanSqlDialect planDialect,
+        SqlWriter writer,
+        HydrationExecutionOptions executionOptions
+    )
+    {
         // 1. Create keyset temp table
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
@@ -117,6 +143,96 @@ public static class HydrationBatchBuilder
         return writer.ToString();
     }
 
+    private static string BuildSingleDocumentBatch(
+        ResourceReadPlan plan,
+        IPlanSqlDialect planDialect,
+        SqlWriter writer,
+        HydrationExecutionOptions executionOptions
+    )
+    {
+        // 1. Document metadata select
+        planDialect.AppendSingleDocumentMetadataSelect(
+            writer,
+            HydrationSqlConventions.SingleDocumentIdParameterName
+        );
+        writer.AppendLine();
+
+        // 2. Table hydration selects in dependency order
+        for (
+            var tablePlanIndex = 0;
+            tablePlanIndex < plan.TablePlansInDependencyOrder.Length;
+            tablePlanIndex++
+        )
+        {
+            var tablePlan = plan.TablePlansInDependencyOrder[tablePlanIndex];
+            writer.AppendLine(
+                EnsureTrailingSemicolon(
+                    RequireSingleDocumentSql(
+                        $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
+                        tablePlan.SelectBySingleDocumentSql
+                    )
+                )
+            );
+            writer.AppendLine();
+        }
+
+        // 3. Descriptor projection selects in deterministic plan order
+        if (executionOptions.IncludeDescriptorProjection)
+        {
+            for (
+                var descriptorPlanIndex = 0;
+                descriptorPlanIndex < plan.DescriptorProjectionPlansInOrder.Length;
+                descriptorPlanIndex++
+            )
+            {
+                writer.AppendLine(
+                    EnsureTrailingSemicolon(
+                        RequireSingleDocumentSql(
+                            $"descriptor projection plan at index '{descriptorPlanIndex}'",
+                            plan.DescriptorProjectionPlansInOrder[
+                                descriptorPlanIndex
+                            ].SelectBySingleDocumentSql
+                        )
+                    )
+                );
+                writer.AppendLine();
+            }
+        }
+
+        // 4. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers that discard the lookup result opt out).
+        if (
+            executionOptions.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookup
+        )
+        {
+            writer.AppendLine(
+                EnsureTrailingSemicolon(
+                    RequireSingleDocumentSql(
+                        "document-reference lookup plan",
+                        documentReferenceLookup.SelectBySingleDocumentSql
+                    )
+                )
+            );
+            writer.AppendLine();
+        }
+
+        return writer.ToString();
+    }
+
+    private static string RequireSingleDocumentSql(string planDescription, string? sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            throw new InvalidOperationException(
+                "PostgreSQL single-document hydration requires "
+                    + $"{planDescription} to provide SelectBySingleDocumentSql."
+            );
+        }
+
+        return sql;
+    }
+
     /// <summary>
     /// Adds parameters to a <see cref="DbCommand"/> based on the keyset specification.
     /// </summary>
@@ -130,7 +246,11 @@ public static class HydrationBatchBuilder
         switch (keyset)
         {
             case PageKeysetSpec.Single single:
-                AddScalarParameter(command, DocumentIdParameterName, single.DocumentId);
+                AddScalarParameter(
+                    command,
+                    HydrationSqlConventions.SingleDocumentIdParameterName,
+                    single.DocumentId
+                );
                 break;
 
             case PageKeysetSpec.Query query:
@@ -163,7 +283,7 @@ public static class HydrationBatchBuilder
                     .Append(" (")
                     .Append(quotedDocIdCol)
                     .Append(") VALUES (")
-                    .AppendParameter(DocumentIdParameterName)
+                    .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName)
                     .AppendLine(");");
                 break;
 
