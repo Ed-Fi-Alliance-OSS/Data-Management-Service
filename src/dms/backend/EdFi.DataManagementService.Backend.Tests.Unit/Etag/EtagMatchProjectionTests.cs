@@ -14,17 +14,19 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Etag;
 public class Given_EtagMatchProjection
 {
     [Test]
-    public void It_drops_format_and_linkFlag_keeping_version_epoch_profile()
+    public void It_drops_format_profile_and_linkFlag_keeping_version_and_epoch()
     {
-        EtagMatchProjection.Of("5-a1b2c3d4.j._.l").Should().Be("5-a1b2c3d4._");
-        // Same state, different format and link mode => same projection.
-        EtagMatchProjection.Of("5-a1b2c3d4.x._.n").Should().Be("5-a1b2c3d4._");
+        EtagMatchProjection.Of("5-a1b2c3d4.j._.l").Should().Be("5-a1b2c3d4");
+        // Same state, different format, profile, and link mode => same projection.
+        EtagMatchProjection.Of("5-a1b2c3d4.x.3.n").Should().Be("5-a1b2c3d4");
     }
 
     [Test]
-    public void It_distinguishes_different_profiles()
+    public void It_ignores_profile_differences()
     {
-        EtagMatchProjection.Of("5-a1b2c3d4.j._.l").Should().NotBe(EtagMatchProjection.Of("5-a1b2c3d4.j.3.l"));
+        // Amended 2026-07-04: profileCode is no longer state-significant for If-Match, so a profiled
+        // and an unprofiled tag for the same ContentVersion/schemaEpoch project equal.
+        EtagMatchProjection.Of("5-a1b2c3d4.j._.l").Should().Be(EtagMatchProjection.Of("5-a1b2c3d4.j.3.l"));
     }
 
     [Test]
