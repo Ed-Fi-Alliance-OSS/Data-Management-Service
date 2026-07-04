@@ -217,13 +217,19 @@ public static class AspNetCoreFrontend
         {
             // The _etag is stored as an opaque, unquoted value in the JSON body; serve it on the
             // ETag response header as a quoted strong validator (RFC 7232 §2.3). Other headers pass
-            // through verbatim. An empty etag emits no header value.
-            var headerValue =
-                string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(header.Value)
-                    ? EtagValue.ToHeaderValue(header.Value)
-                    : header.Value;
-            httpContext.Response.Headers.Append(header.Key, headerValue);
+            // through verbatim. Normalize via TryParseHeaderValue to handle any pre-quoted values,
+            // and skip empty values.
+            if (string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase))
+            {
+                if (EtagValue.TryParseHeaderValue(header.Value, out var etagValue))
+                {
+                    httpContext.Response.Headers.Append(header.Key, EtagValue.ToHeaderValue(etagValue));
+                }
+            }
+            else
+            {
+                httpContext.Response.Headers.Append(header.Key, header.Value);
+            }
         }
 
         return Results.Content(

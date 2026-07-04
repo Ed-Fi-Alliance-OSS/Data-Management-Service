@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Etag;
 /// </summary>
 public static class EtagMatchProjection
 {
-    // The space cannot occur in a valid etagc-only projection, so this never matches a real tag.
+    // This sentinel lacks the '-' / '.' structure of a well-formed projection, so it never matches a real tag.
     private const string Malformed = "!malformed";
 
     public static string Of(string? etagValue)

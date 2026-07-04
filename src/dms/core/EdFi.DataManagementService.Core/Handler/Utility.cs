@@ -122,8 +122,12 @@ public static class Utility
         ArgumentNullException.ThrowIfNull(requestInfo);
 
         var profileContext = requestInfo.ProfileContext;
-        var readContentType = profileContext?.ResourceProfile.ReadContentType;
+        if (profileContext is null)
+        {
+            return null;
+        }
 
+        var readContentType = profileContext.ResourceProfile.ReadContentType;
         if (readContentType is null)
         {
             return null;
@@ -144,7 +148,7 @@ public static class Utility
 
         return new ReadableProfileProjectionContext(readContentType, identityPropertyNames)
         {
-            ProfileName = profileContext!.ProfileName,
+            ProfileName = profileContext.ProfileName,
         };
     }
 
