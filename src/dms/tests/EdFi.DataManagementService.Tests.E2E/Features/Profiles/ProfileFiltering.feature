@@ -313,3 +313,32 @@ Feature: Profile Response Filtering
             Then the profile response status is 412
              And the response body should have error type "urn:ed-fi:api:optimistic-lock-failed"
              And the response body should have error message "etag value does not match"
+
+        @e2e-ci-shard-2
+        Scenario: 10 An unprofiled If-Match etag is accepted by a profiled PUT (legacy parity)
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}"
+            Then it should respond with 200
+             And the response body path "_etag" is stored as variable "fullSchoolEtag"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School" and if-match variable "fullSchoolEtag" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Parity Updated",
+                      "shortNameOfInstitution": "PETS-PARITY",
+                      "webSite": "https://profile-etag-parity.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 204
