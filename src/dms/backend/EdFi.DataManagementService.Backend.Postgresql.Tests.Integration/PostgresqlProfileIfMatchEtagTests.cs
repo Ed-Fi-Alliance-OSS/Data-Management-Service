@@ -61,7 +61,10 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
     }
 
     // Matches the writable profile name used by CreateWritableProfileContext so a profiled read etag
-    // and a subsequent profiled write share the same profileCode (state-significant for If-Match).
+    // and a subsequent profiled write share the same profileCode. As of the 2026-07-04 ADR amendment,
+    // profileCode is no longer state-significant for If-Match (EtagMatchProjection.Of compares only
+    // ContentVersion + schemaEpoch), so the shared profile name here is incidental to the match rather
+    // than required.
     public const string ReadableProfileName = "root-only-profile";
 
     public static ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
@@ -242,6 +245,37 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             MappingSet: mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpdateDocumentById(request);
+    }
+
+    public static async Task<UpdateResult> ExecuteUnprofiledPutAsync(
+        ServiceProvider serviceProvider,
+        string connectionString,
+        MappingSet mappingSet,
+        int namingStressItemId,
+        DocumentUuid documentUuid,
+        JsonNode requestBody,
+        string traceId,
+        string ifMatch
+    )
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider, connectionString);
+
+        var request = new UpdateRequest(
+            ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
+            DocumentInfo: PostgresqlProfileRootTableOnlyMergeSupport.CreateNamingStressDocumentInfo(
+                namingStressItemId
+            ),
+            MappingSet: mappingSet,
+            EdfiDoc: requestBody,
+            Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
         );
@@ -632,4 +666,106 @@ public class Given_A_Postgresql_Profiled_Put_With_A_Stale_Profiled_Etag_After_A_
     [Test]
     public void It_returns_412_for_a_profiled_put_using_the_stale_profiled_etag() =>
         _staleProfiledPutResult.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Unprofiled_Put_Using_The_Current_Profiled_Get_Etag
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("6c3f2a1b-9d4e-4f8a-8b2c-7e1d0a5f4c33")
+    );
+
+    private const int NamingStressItemId = 7433;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpdateResult _unprofiledPutResult = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            PostgresqlProfileRootTableOnlyMergeSupport.NamingStressFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostgresqlProfileIfMatchEtagTestSupport.CreateServiceProvider();
+
+        var seedBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 42,
+        };
+
+        (
+            await PostgresqlProfileIfMatchEtagTestSupport.SeedAsync(
+                _serviceProvider,
+                _database,
+                _mappingSet,
+                NamingStressItemId,
+                seedBody,
+                DocumentUuid,
+                "pg-unprofiled-put-profiled-etag-seed"
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+
+        var profiledGet = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-unprofiled-put-profiled-etag-get",
+            PostgresqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext()
+        );
+
+        var profiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(profiledGet)
+        );
+
+        // Full (unprofiled) replacement body, guarded by the etag captured from the profiled read.
+        var unprofiledPutBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Updated",
+            ["order"] = 42,
+        };
+
+        _unprofiledPutResult = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteUnprofiledPutAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            NamingStressItemId,
+            DocumentUuid,
+            unprofiledPutBody,
+            "pg-unprofiled-put-profiled-etag-put",
+            profiledEtag
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public void It_accepts_the_profiled_get_etag_for_an_unprofiled_put() =>
+        _unprofiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
 }
