@@ -41,8 +41,8 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
    (format, readable profile, `link` mode).
 2. **RFC 7232 strong validator**: `_etag` is served as a strong validator (unquoted in the
    `_etag` body field, quoted in the `ETag` header, never `W/`-prefixed). `If-Match` uses strong
-   comparison over the tag's **state-significant projection** — `ContentVersion`, `schemaEpoch`, and
-   `profileCode`; the `format` and `linkFlag` components are excluded (see "Optimistic concurrency").
+   comparison over the tag's **state-significant projection** — `ContentVersion` and `schemaEpoch`;
+   the `format`, `profileCode`, and `linkFlag` components are excluded (see "Optimistic concurrency").
    Weak validators would fail every `If-Match` and are not permitted.
 3. **Change Queries alignment**: `ChangeVersion` MUST be a global, monotonically increasing `bigint`.
 4. **Cross-engine**: must work on PostgreSQL and SQL Server.
@@ -207,8 +207,8 @@ Example: `_etag` body value `5-a1b2c3d4.j._.l`; `ETag` header `"5-a1b2c3d4.j._.l
 The server MUST recompute the full `_etag` deterministically from request context (negotiated
 format, profile in effect, `link` mode) plus the loaded schema at read response, write response,
 and `If-Match` evaluation, with no database dependency. At `If-Match` evaluation the server compares
-only the **state-significant projection** of the tag (`ContentVersion`, `schemaEpoch`, `profileCode`;
-`format` and `linkFlag` excluded) — see "Optimistic concurrency".
+only the **state-significant projection** of the tag (`ContentVersion` and `schemaEpoch`; `format`,
+`profileCode`, and `linkFlag` excluded) — see "Optimistic concurrency".
 
 ## Change Query candidate selection (cross-reference)
 
@@ -229,12 +229,13 @@ With stored representation stamps:
 - PUT/DELETE validates `If-Match` using strong comparison over the tag's **state-significant
   projection**. The backend reads the current `ContentVersion` and composes the expected tag from
   the request's `variantKey`, then compares it to the client's `If-Match` while **ignoring the
-  `format` and `linkFlag` components** — these encode only how the representation is rendered, never
-  resource state, and never change on a write. The compared components are `ContentVersion`,
-  `schemaEpoch`, and `profileCode`. `profileCode` **is** significant: a readable profile changes
-  which fields the client saw, so a cross-profile `If-Match` returns `412 Precondition Failed` even
-  when `ContentVersion` is unchanged. A mismatch on any compared component returns `412`. (The served
-  `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
+  `format`, `profileCode`, and `linkFlag` components** — these encode only how the representation is
+  rendered or filtered, never resource state, and never change on a write. The compared components
+  are `ContentVersion` and `schemaEpoch`. `profileCode` is **not** significant (amended 2026-07-04):
+  a profiled or cross-profile `If-Match` matches whenever `ContentVersion` and `schemaEpoch` agree,
+  matching legacy ODS/API behavior — a readable profile filters the response body but does not alter
+  the resource-state concurrency validator. A mismatch on any compared component returns `412`. (The
+  served `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
   conditional-GET / `If-None-Match` caching stays byte-correct.) A client presents the `_etag` it
   obtained for the representation it is acting on.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
