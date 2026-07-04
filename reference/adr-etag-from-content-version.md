@@ -3,6 +3,8 @@
 **Status:** Accepted — implemented in the relational backend; the three design docs
 (`update-tracking.md`, `transactions-and-concurrency.md`, `flattening-reconstitution.md`) have been
 updated to match. \
+**Amended 2026-07-04:** `profileCode` removed from the `If-Match` comparison to restore legacy
+compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison). \
 **Date:** 2026-06-30 (accepted 2026-07-03) \
 **Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
@@ -115,6 +117,9 @@ A bare `ContentVersion` is a strong validator only when each resource state maps
 
 **`If-Match` comparison (decided).** The _served_ etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. Two `variantKey` components, **`format`** and **`linkFlag`**, encode only how the representation is rendered: they never reflect resource state and never change as the result of a `PUT`/`DELETE` (a `DELETE` has no representation at all). Comparing them would produce spurious `412`s across representation variants that denote the _same_ state, so they are **excluded** from the `If-Match` match. The retained, compared components are `ContentVersion`, `schemaEpoch`, and **`profileCode`**.
 
+> [!WARNING]
+> **Superseded 2026-07-04.** The `profileCode`-significant decision described in this paragraph and the next was reversed for legacy compatibility. `profileCode` is **no longer** compared during `If-Match`; a cross-profile or profiled-vs-unprofiled `If-Match` now matches whenever `ContentVersion` and `schemaEpoch` agree. See [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison).
+
 **`profileCode` is deliberately significant for `If-Match` (decision made 2026-07-01).** A readable profile changes which fields the client actually saw, so an etag obtained under profile A is treated as distinct from one obtained under profile B: a cross-profile `If-Match` returns `412` even when `ContentVersion` is unchanged. This is a chosen scoping guarantee, not an accident of encoding, and it is the point on which this design departs from the "compare only `ContentVersion`" lenient option.
 
 Concretely, the precondition passes **if and only if** the client's `If-Match` tag and the server-composed expected tag agree on `ContentVersion`, `schemaEpoch`, and `profileCode`; differences in `format` or `linkFlag` are ignored. This preserves optimistic-concurrency safety — the ignored components cannot mask a state change — while avoiding false `412`s from link/format variance (e.g. an etag read from a links-on instance used to guard a write on a links-off instance). It is a deliberate, documented refinement of RFC 7232 §3.1: the _served_ etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the _write-time_ `If-Match` comparison is projected to the state-significant subset.
@@ -179,6 +184,9 @@ The redesign docs that currently _specify_ the content hash must be updated: `up
 
 `_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The _served_ etag varies by profile, format, and link mode — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 7232 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`, `profileCode`): it is sensitive to **profile** (a cross-profile `If-Match` returns `412`) but **not** to `format` or `link` mode (see "`If-Match` comparison (decided)"). `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag.
 
+> [!WARNING]
+> **Superseded 2026-07-04.** `profileCode` is no longer part of the `If-Match` projection; the compared components are now `ContentVersion` and `schemaEpoch` only. The _served_ etag is unchanged (it still carries the full `variantKey`, so conditional-GET / `If-None-Match` caching is unaffected). See [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison).
+
 ### What is given up
 
 Content-addressability across rebuilds/migrations and identical etags across instances/engines. If either becomes a requirement later, the fallback is to keep the hash and pursue Option 1 (post-COMMIT) for writes plus Option 3 for reads, or invest in Option 2.
@@ -194,3 +202,39 @@ Confirm that an **identity-update cascade into referrers** (e.g. a `StudentUniqu
 3. On acceptance, update the design docs listed under Consequences.
 4. Implement the cross-backend etag-production change, converging the relational `If-Match` check onto the `ContentVersion` comparison.
 5. Human review of design-doc and code changes before merge.
+
+## Amendment (2026-07-04): `profileCode` removed from `If-Match` comparison
+
+**Status:** Accepted — amends the 2026-07-01 "`profileCode` is deliberately significant" decision. \
+**Date:** 2026-07-04 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code and the confirmed legacy ODS/API behavior as understood on 2026-07-04 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+The 2026-07-01 decision made `profileCode` a **state-significant** component of the `If-Match` comparison, so an etag obtained under one representation (profiled or unprofiled) would fail an `If-Match` against a write under a different representation, returning `412` even when the resource state was unchanged. This amendment **removes `profileCode` from the comparison**. The retained, compared components are now **`ContentVersion` and `schemaEpoch`** only; `format`, `linkFlag`, and now `profileCode` are all projected out.
+
+The **served** etag is unchanged: reads and writes still emit the full `"{ContentVersion}-{variantKey}"` tag including `profileCode`, so conditional-**GET** / `If-None-Match` cache correctness (the actual RFC 7232 driver for representation-sensitive etags) is fully preserved. Only the write-time `If-Match` comparison is relaxed.
+
+### Why
+
+1. **Legacy compatibility.** The legacy Ed-Fi ODS/API serves a single etag per resource state and accepts it for `If-Match` regardless of the profile lens used on the read. Confirmed by inspection of the legacy code base: a client may take an etag from a profile-filtered (partial) read and successfully use it as the `If-Match` for a full/unprofiled write. The 2026-07-01 decision broke that contract.
+
+2. **The break could hit a compliant client.** The most acute case is an **asymmetric (read-only) profile** — a profile that defines a readable content type but no writable one for a resource. Such a client is *forced* to write unprofiled (there is no writable content type to send), yet the only etag it can obtain comes from the profiled read. Under the 2026-07-01 rule this yields a spurious `412` that the client cannot avoid.
+
+3. **`profileCode` significance added no lost-update protection.** `If-Match`'s purpose is to detect concurrent modification, which `ContentVersion` answers completely — it bumps on *any* state change, including profile-hidden persisted fields (verified by the "stale hidden-field" tests, which still `412` on the `ContentVersion` change). `profileCode` only ever flips a *no-conflict* case (identical `ContentVersion`) into a `412`, enforcing "write through the same lens you read through" — a representation-consistency constraint that `If-Match` is not designed to provide and that legacy never imposed. The field-clobbering concern the original decision cited is a property of PUT-with-profile semantics, not something `If-Match` can or should police.
+
+`schemaEpoch` **remains** significant: a schema or profile-*definition* change genuinely changes the reproducible bytes for an unchanged `ContentVersion`, so invalidating prior etags across such a change is still correct. This does not affect the legacy scenario, which is same-schema.
+
+4. **Realignment with the DMS-1005 story.** The update-tracking story (`epics/10-update-tracking-change-queries/03-if-match.md`, Answers 1.1 and 3.2) already resolved that `If-Match` must "compare against the same full-resource `_etag` used by unprofiled requests" and "ignore readable profile projection." The 2026-07-01 decision diverged from that resolution; this amendment restores it. The ADR's *separate* decision to serve **profile-variant** etags for conditional-GET / `If-None-Match` cache correctness still stands — that supersedes the story's acceptance criterion "profiled GET preserves the same `_etag` as unprofiled" and is unaffected by this amendment, because served etags and the `If-Match` comparison are deliberately decoupled.
+
+### Scope of the code change
+
+- The only production change is `EtagMatchProjection.Of`, which stops appending `profileCode` to the projection. Both write precondition sites (`RelationalCurrentEtagPreconditionChecker` and `RelationalWriteExecutionStateResolver`) and the shared DELETE precondition path route through this method and inherit the new behavior automatically. Descriptors are unaffected (their `profileCode` is always the no-profile code).
+- Etag **composition** (`EtagComposer` / `VariantKeyFactory` / `ProfileVariantCode`) is untouched, preserving the profile-sensitive served etag.
+
+### Consequence
+
+Cross-profile and profiled-vs-unprofiled `If-Match` (and DELETE `If-Match`) now succeed whenever `ContentVersion` and `schemaEpoch` agree, matching legacy ODS/API behavior. Optimistic-concurrency safety is retained in full, because the removed component never reflected resource state.
