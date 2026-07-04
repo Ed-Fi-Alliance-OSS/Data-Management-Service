@@ -970,11 +970,11 @@ internal sealed class DescriptorWriteHandler(
 
     /// <summary>
     /// Compares the client's If-Match against the composed current etag on their state-significant
-    /// projections (ContentVersion + schemaEpoch + profileCode) rather than byte-for-byte, so
-    /// representation-encoding differences do not spuriously fail the precondition. For a descriptor
-    /// the fixed variant key reduces the projection to ContentVersion + schemaEpoch, so a stale
-    /// ContentVersion (or a schema change) still yields the 412 mismatch path. The frontend has already
-    /// stripped the surrounding quotes from <paramref name="ifMatchValue"/>.
+    /// projections (ContentVersion + schemaEpoch) rather than byte-for-byte, so representation-encoding
+    /// differences (format, profileCode, linkFlag) do not spuriously fail the precondition. For a
+    /// descriptor the fixed variant key already reduces to those components, so a stale ContentVersion
+    /// (or a schema change) still yields the 412 mismatch path. The frontend has already stripped the
+    /// surrounding quotes from <paramref name="ifMatchValue"/>.
     /// </summary>
     private static bool IfMatchMatchesCurrentEtag(string ifMatchValue, string currentEtag) =>
         string.Equals(

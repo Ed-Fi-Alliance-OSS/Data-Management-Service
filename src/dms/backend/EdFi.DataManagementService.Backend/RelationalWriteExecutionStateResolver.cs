@@ -141,8 +141,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         }
 
         // If-Match compares the state-significant projection of the composed etag (ContentVersion,
-        // schemaEpoch, profileCode). format and linkFlag are projected out, so the values passed for
-        // them here are not significant.
+        // schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode as of the
+        // 2026-07-04 ADR amendment), so the values passed for them here are not significant.
         var currentEtag = _etagComposer.Compose(
             currentState.DocumentMetadata.ContentVersion,
             VariantKeyFactory.Create(

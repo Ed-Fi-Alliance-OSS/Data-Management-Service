@@ -37,8 +37,9 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 
     /// <summary>
     /// The readable-profile name of the representation the client is acting on, or <see langword="null"/>
-    /// when no profile applies (e.g. a DELETE). Drives the <c>profileCode</c> of the composed etag,
-    /// which is state-significant for the If-Match comparison.
+    /// when no profile applies (e.g. a DELETE). Drives the <c>profileCode</c> of the composed (served)
+    /// etag; as of the 2026-07-04 ADR amendment <c>profileCode</c> is projected out of the If-Match
+    /// comparison, so this affects the returned etag but not whether the precondition matches.
     /// </summary>
     public string? ProfileName { get; init; }
 }
@@ -137,9 +138,10 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        // If-Match compares the state-significant projection of the composed etag (ContentVersion,
-        // schemaEpoch, profileCode). format and linkFlag are projected out; profileCode comes from the
-        // request's profile (null for a DELETE, or the write profile for a profiled update).
+        // Compose the current served etag (it still carries profileCode from the request's profile, for
+        // the returned CurrentEtag). If-Match then compares only the state-significant projection
+        // (ContentVersion, schemaEpoch); format, linkFlag, and profileCode are projected out — profileCode
+        // as of the 2026-07-04 ADR amendment.
         var currentEtag = _etagComposer.Compose(
             currentState.DocumentMetadata.ContentVersion,
             VariantKeyFactory.Create(
