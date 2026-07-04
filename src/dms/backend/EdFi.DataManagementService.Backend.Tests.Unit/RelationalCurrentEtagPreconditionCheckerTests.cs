@@ -132,10 +132,11 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     }
 
     [Test]
-    public async Task It_reports_mismatch_when_the_if_match_value_was_obtained_under_a_profile()
+    public async Task It_matches_when_the_if_match_value_was_obtained_under_a_profile()
     {
-        // A DELETE precondition composes the current tag with no profile ("_"); an etag captured
-        // under a readable profile carries a different profileCode, which is state-significant.
+        // Amended 2026-07-04: profileCode is not state-significant for If-Match. An etag captured under
+        // a readable profile matches the current tag (composed with no profile) when ContentVersion and
+        // schemaEpoch agree — restoring legacy ODS/API cross-profile parity.
         var request = CreateRequest(
             SqlDialect.Pgsql,
             new WritePrecondition.IfMatch(
@@ -146,7 +147,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsMatch.Should().BeTrue();
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
@@ -167,8 +168,9 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     }
 
     // Recomposes the etag the checker is expected to produce for the current row: same schema epoch,
-    // JSON format, links-on, and (by default) no profile. linkFlag/format are projected out of the
-    // If-Match comparison; profileName is significant.
+    // JSON format, links-on, and (by default) no profile. linkFlag/format/profile are all projected out
+    // of the If-Match comparison (amended 2026-07-04); profileName still varies the composed served tag
+    // but does not affect the match.
     private static string CurrentComposedEtag(
         SqlDialect dialect,
         long contentVersion,
