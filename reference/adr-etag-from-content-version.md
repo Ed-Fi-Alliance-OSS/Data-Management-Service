@@ -1,8 +1,10 @@
 # ADR: Derive `_etag` from `ContentVersion` instead of a content hash
 
-**Status:** Proposed — DRAFT for development-team review. Not yet accepted; no code or design-doc changes made. \
-**Date:** 2026-06-30 \
-**Deciders:** _(to be assigned by the team)_ \
+**Status:** Accepted — implemented in the relational backend; the three design docs
+(`update-tracking.md`, `transactions-and-concurrency.md`, `flattening-reconstitution.md`) have been
+updated to match. \
+**Date:** 2026-06-30 (accepted 2026-07-03) \
+**Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
 > **AI-use disclosure.** This ADR and the supporting code analysis were drafted with substantial AI assistance. The findings reflect the source code as it existed on 2026-06-30 and must be re-verified before implementation. Accountability for the decision rests with the development team.

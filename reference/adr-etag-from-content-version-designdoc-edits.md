@@ -1,9 +1,9 @@
 # Companion: proposed design-doc edits for the `ContentVersion` `_etag` ADR
 
-**Status:** DRAFT — pending acceptance of `adr-etag-from-content-version.md`. Do
-not apply until the ADR is accepted. This file does **not** modify any design
-doc; it stages paste-ready replacement wording. \
-**Date:** 2026-07-01 \
+**Status:** APPLIED — the ADR was accepted 2026-07-03 and all edit blocks below have
+been applied to `update-tracking.md`, `transactions-and-concurrency.md`, and
+`flattening-reconstitution.md`. Retained as a record of the change. \
+**Date:** 2026-07-01 (applied 2026-07-03) \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
 > **AI-use disclosure.** Drafted with substantial AI assistance. Line numbers

@@ -914,10 +914,10 @@ Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - inject `id` from `dms.Document.DocumentUuid`
 - serve `_lastModifiedDate` from stored `dms.Document.ContentLastModifiedAt`
 - emit response properties in deterministic compiled-path order
-- compute `_etag` as `SHA-256` over the canonical JSON form of the resource-state document
-  (excluding server-generated fields `id`, `link`, `_etag`, and `_lastModifiedDate`), where object
-  properties are recursively ordered canonically and arrays preserve element order; it must not be
-  generated as “now” or from ad hoc dependency scans at read/materialization time.
+- serve `_etag` as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
+  metadata"). `_etag` MUST NOT be computed by hashing the reconstituted document: it is composed
+  from `dms.Document.ContentVersion` and the response `variantKey`, so reconstitution performs no
+  per-document hashing.
 
 Array presence rule (recommended):
 - If the array has rows, write it.
