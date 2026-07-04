@@ -7,10 +7,11 @@ namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
 /// Produces the state-significant projection of an etag value used for RFC 7232 If-Match matching.
-/// A served etag is "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". Per the ADR,
-/// If-Match ignores the representation-encoding components (format, linkFlag) and retains
-/// ContentVersion, schemaEpoch, and profileCode. Two tags match iff their projections are equal
-/// (ordinal). A malformed tag yields a sentinel that cannot equal any well-formed projection.
+/// A served etag is "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". Per the ADR
+/// (as amended 2026-07-04), If-Match ignores the representation-selector components (format,
+/// profileCode, linkFlag) and retains only ContentVersion and schemaEpoch. Two tags match iff their
+/// projections are equal (ordinal). A malformed tag yields a sentinel that cannot equal any
+/// well-formed projection.
 /// </summary>
 public static class EtagMatchProjection
 {
@@ -41,8 +42,8 @@ public static class EtagMatchProjection
         }
 
         var schemaEpoch = parts[0];
-        var profileCode = parts[2]; // parts[1] = format, parts[3] = linkFlag are intentionally dropped
+        // parts[1] = format, parts[2] = profileCode, parts[3] = linkFlag are intentionally dropped
 
-        return $"{contentVersion}-{schemaEpoch}.{profileCode}";
+        return $"{contentVersion}-{schemaEpoch}";
     }
 }
