@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds pre-release and release NuGet packages for the Dms API application.
+        * Package: builds pre-release and release NuGet packages for the DMS API application and SchemaTools.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -48,7 +48,7 @@
         and runs instance management E2E tests.
 
     .EXAMPLE
-        .\build-dms.ps1 push -NuGetApiKey $env:nuget_key
+        .\build-dms.ps1 push -NuGetApiKey $env:nuget_key -PackageFile .\EdFi.Api.8.0.0.nupkg
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Build entry script intentionally writes operator progress and status output to the console.')]
@@ -138,7 +138,9 @@ $applicationRoot = "$solutionRoot/frontend"
 $clisRoot = "$solutionRoot/clis"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
+$schemaToolsProjectName = "EdFi.DataManagementService.SchemaTools"
 $packageName = "EdFi.Api"
+$schemaToolsPackageName = "EdFi.Api.SchemaTools"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
@@ -1180,21 +1182,61 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $ProjectPath `
-        --no-build `
-        --no-restore `
-        --output $PSScriptRoot `
-        -p:NuspecFile=$nuspecPath `
-        -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" `
-        /p:NoWarn=NU5100
+    Invoke-Execute {
+        dotnet pack $ProjectPath `
+            --no-build `
+            --no-restore `
+            --output $PSScriptRoot `
+            -p:NuspecFile=$nuspecPath `
+            -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" `
+            /p:NoWarn=NU5100
+    }
 }
 
-function BuildPackage {
+function BuildApiPackage {
     $mainPath = "$applicationRoot/$projectName"
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
+    $expectedPackagePath = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
+
+    if (Test-Path $expectedPackagePath) {
+        Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+    }
 
     RunNuGetPack -ProjectPath $projectPath -PackageVersion $DMSVersion $nugetSpecPath
+
+    if (-not (Test-Path $expectedPackagePath)) {
+        throw "Expected API package was not created: $expectedPackagePath"
+    }
+}
+
+function BuildSchemaToolsPackage {
+    $projectPath = "$clisRoot/$schemaToolsProjectName/$schemaToolsProjectName.csproj"
+    $expectedPackagePath = "$PSScriptRoot/$schemaToolsPackageName.$DMSVersion.nupkg"
+
+    Write-Info "Building $schemaToolsPackageName package"
+
+    Invoke-Execute {
+        if (Test-Path $expectedPackagePath) {
+            Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+        }
+
+        dotnet pack $projectPath `
+            -c $Configuration `
+            --no-build `
+            --no-restore `
+            --output $PSScriptRoot `
+            -p:PackageVersion=$DMSVersion
+
+        if (-not (Test-Path $expectedPackagePath)) {
+            throw "Expected SchemaTools package was not created: $expectedPackagePath"
+        }
+    }
+}
+
+function BuildPackage {
+    BuildApiPackage
+    BuildSchemaToolsPackage
 }
 
 function Invoke-Build {
@@ -1271,7 +1313,7 @@ function PushPackage {
         }
 
         if (-not $PackageFile) {
-            $PackageFile = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
+            throw "PackageFile is required for Push because DMS produces multiple packages. Pass -PackageFile '<path-to-.nupkg>'."
         }
 
         if ($DryRun) {

@@ -9,7 +9,31 @@ requiring database connectivity.
 
 ## Installation
 
-Build from source:
+There are two ways to use `dms-schema`:
+
+1. Install the published .NET tool package from Azure Artifacts.
+2. Download the source code and compile the tool locally with `dotnet build`.
+
+### Install from Azure Artifacts
+
+Use this option when you want the published tool without cloning or building the
+DMS repository.
+
+```powershell
+$feed = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+$version = "<published-version>"
+dotnet tool install --global EdFi.Api.SchemaTools --source $feed --version $version
+```
+
+Use a published package version from the feed. To install the latest stable
+package, omit `--version $version`.
+
+The installed command is `dms-schema`.
+
+### Build from source
+
+Use this option when you have downloaded or cloned the DMS repository and want
+to compile the tool locally.
 
 ```bash
 dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools

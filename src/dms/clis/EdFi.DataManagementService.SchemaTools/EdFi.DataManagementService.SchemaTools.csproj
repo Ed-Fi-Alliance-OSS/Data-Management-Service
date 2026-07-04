@@ -6,6 +6,15 @@
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <AssemblyName>dms-schema</AssemblyName>
+        <PackageId>EdFi.Api.SchemaTools</PackageId>
+        <PackageType>DotnetTool</PackageType>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>dms-schema</ToolCommandName>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
+        <Title>Ed-Fi API Schema Tools</Title>
+        <Description>Command-line tool for Ed-Fi DMS schema hashing, DDL generation, and database provisioning.</Description>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.Data.SqlClient" />
@@ -21,6 +30,9 @@
     </ItemGroup>
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />

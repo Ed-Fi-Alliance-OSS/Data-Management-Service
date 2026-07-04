@@ -368,7 +368,7 @@
         "resolved": "9.0.11",
         "contentHash": "s8yUYuYYu+PAwvBdhLG1KyrGrk9gkYeuPxfAsXsTqqWyepwSyEw8hAaflW4nO98NG52YpYI1am2+9o+79h2RtQ=="
       },
-      "dms-schema": {
+      "EdFi.Api.SchemaTools": {
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
