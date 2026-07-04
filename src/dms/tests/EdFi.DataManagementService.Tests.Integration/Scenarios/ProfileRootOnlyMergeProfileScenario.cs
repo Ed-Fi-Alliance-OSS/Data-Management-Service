@@ -131,10 +131,10 @@ internal static class ProfileRootOnlyMergeProfileScenario
             : seedResponse.Headers.Location!.OriginalString;
         string resourceId = locationPath.Split('/')[^1];
 
-        // profileCode is state-significant for If-Match (ADR: profileCode is deliberately
-        // significant for If-Match), so a profiled PUT must present an etag obtained from a
-        // profiled GET under the same profile - the unprofiled seed POST's etag would 412.
-        // GET never sets an ETag response header (GetByIdHandler always returns Headers: []),
+        // As of the 2026-07-04 ADR amendment, profileCode is no longer state-significant for If-Match
+        // (EtagMatchProjection compares only ContentVersion + schemaEpoch), so using an etag from a
+        // profiled GET here is incidental rather than required - the unprofiled seed POST's etag would
+        // also match. GET never sets an ETag response header (GetByIdHandler always returns Headers: []),
         // so the etag must be read from the "_etag" body field instead.
         using HttpResponseMessage profiledGetResponse = await GetProfiledAsync(
             harness,
