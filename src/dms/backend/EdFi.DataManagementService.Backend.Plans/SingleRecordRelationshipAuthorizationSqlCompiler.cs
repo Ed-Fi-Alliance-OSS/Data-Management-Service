@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -1803,7 +1802,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         public bool Equals(SqlPlanCacheKey? other) =>
             other is not null
             && Dialect == other.Dialect
-            && ReferenceEquals(CheckSpecs, other.CheckSpecs)
+            && CheckSpecsEqual(CheckSpecs, other.CheckSpecs)
             && ClaimKind == other.ClaimKind
             && string.Equals(BaseParameterName, other.BaseParameterName, StringComparison.Ordinal)
             && StringsEqual(ParameterNamesInOrder, other.ParameterNamesInOrder)
@@ -1843,7 +1842,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             HashCode hashCode = new();
             hashCode.Add(Dialect);
-            hashCode.Add(RuntimeHelpers.GetHashCode(CheckSpecs));
+            AddCheckSpecSequenceHashCodes(ref hashCode, CheckSpecs);
             hashCode.Add(ClaimKind);
             hashCode.Add(BaseParameterName, StringComparer.Ordinal);
             AddStringSequenceHashCodes(ref hashCode, ParameterNamesInOrder);
@@ -1852,6 +1851,257 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             AddStringSequenceHashCodes(ref hashCode, ReservedParameterNames);
 
             return hashCode.ToHashCode();
+        }
+
+        private static bool CheckSpecsEqual(
+            IReadOnlyList<RelationshipAuthorizationCheckSpec> first,
+            IReadOnlyList<RelationshipAuthorizationCheckSpec> second
+        )
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!CheckSpecEquals(first[index], second[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool CheckSpecEquals(
+            RelationshipAuthorizationCheckSpec first,
+            RelationshipAuthorizationCheckSpec second
+        ) =>
+            first.ConfiguredStrategy == second.ConfiguredStrategy
+            && first.RelationshipLocalOrder == second.RelationshipLocalOrder
+            && first.Direction == second.Direction
+            && first.ValueSource == second.ValueSource
+            && SubjectsEqual(first.Subjects, second.Subjects)
+            && CheckTargetsEqual(first.CheckTarget, second.CheckTarget);
+
+        private static bool SubjectsEqual(
+            IReadOnlyList<RelationshipAuthorizationSubject> first,
+            IReadOnlyList<RelationshipAuthorizationSubject> second
+        )
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!SubjectEquals(first[index], second[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool SubjectEquals(
+            RelationshipAuthorizationSubject first,
+            RelationshipAuthorizationSubject second
+        ) =>
+            first.Resource == second.Resource
+            && first.Table == second.Table
+            && first.Column == second.Column
+            && first.AuthObject == second.AuthObject
+            && SequenceEqual(first.Contributors, second.Contributors)
+            && PersonMetadataEquals(first.PersonMetadata, second.PersonMetadata);
+
+        private static bool PersonMetadataEquals(
+            RelationshipAuthorizationPersonSubjectMetadata? first,
+            RelationshipAuthorizationPersonSubjectMetadata? second
+        )
+        {
+            if (first is null || second is null)
+            {
+                return first is null && second is null;
+            }
+
+            return first.PersonKind == second.PersonKind
+                && PersonSubjectPathEquals(first.Path, second.Path)
+                && first.StoredAnchor == second.StoredAnchor
+                && first.ProposedAnchor == second.ProposedAnchor;
+        }
+
+        private static bool PersonSubjectPathEquals(
+            RelationshipAuthorizationPersonSubjectPath first,
+            RelationshipAuthorizationPersonSubjectPath second
+        ) => first.Kind == second.Kind && SequenceEqual(first.Steps, second.Steps);
+
+        private static bool CheckTargetsEqual(
+            RelationshipAuthorizationCheckTarget first,
+            RelationshipAuthorizationCheckTarget second
+        ) =>
+            (first, second) switch
+            {
+                (
+                    RelationshipAuthorizationCheckTarget.Stored firstStored,
+                    RelationshipAuthorizationCheckTarget.Stored secondStored
+                ) => firstStored.RootTable == secondStored.RootTable
+                    && firstStored.DocumentIdColumn == secondStored.DocumentIdColumn,
+                (
+                    RelationshipAuthorizationCheckTarget.Proposed firstProposed,
+                    RelationshipAuthorizationCheckTarget.Proposed secondProposed
+                ) => firstProposed.RootTable == secondProposed.RootTable
+                    && SequenceEqual(
+                        firstProposed.SubjectBindingsInOrder,
+                        secondProposed.SubjectBindingsInOrder
+                    ),
+                _ => false,
+            };
+
+        private static bool SequenceEqual<T>(IReadOnlyList<T> first, IReadOnlyList<T> second)
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!EqualityComparer<T>.Default.Equals(first[index], second[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static void AddCheckSpecSequenceHashCodes(
+            ref HashCode hashCode,
+            IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs
+        )
+        {
+            hashCode.Add(checkSpecs.Count);
+
+            foreach (var checkSpec in checkSpecs)
+            {
+                AddCheckSpecHashCodes(ref hashCode, checkSpec);
+            }
+        }
+
+        private static void AddCheckSpecHashCodes(
+            ref HashCode hashCode,
+            RelationshipAuthorizationCheckSpec checkSpec
+        )
+        {
+            hashCode.Add(checkSpec.ConfiguredStrategy);
+            hashCode.Add(checkSpec.RelationshipLocalOrder);
+            hashCode.Add(checkSpec.Direction);
+            hashCode.Add(checkSpec.ValueSource);
+            AddSubjectSequenceHashCodes(ref hashCode, checkSpec.Subjects);
+            AddCheckTargetHashCodes(ref hashCode, checkSpec.CheckTarget);
+        }
+
+        private static void AddSubjectSequenceHashCodes(
+            ref HashCode hashCode,
+            IReadOnlyList<RelationshipAuthorizationSubject> subjects
+        )
+        {
+            hashCode.Add(subjects.Count);
+
+            foreach (var subject in subjects)
+            {
+                AddSubjectHashCodes(ref hashCode, subject);
+            }
+        }
+
+        private static void AddSubjectHashCodes(
+            ref HashCode hashCode,
+            RelationshipAuthorizationSubject subject
+        )
+        {
+            hashCode.Add(subject.Resource);
+            hashCode.Add(subject.Table);
+            hashCode.Add(subject.Column);
+            hashCode.Add(subject.AuthObject);
+            AddSequenceHashCodes(ref hashCode, subject.Contributors);
+            AddPersonMetadataHashCodes(ref hashCode, subject.PersonMetadata);
+        }
+
+        private static void AddPersonMetadataHashCodes(
+            ref HashCode hashCode,
+            RelationshipAuthorizationPersonSubjectMetadata? metadata
+        )
+        {
+            hashCode.Add(metadata is not null);
+
+            if (metadata is null)
+            {
+                return;
+            }
+
+            hashCode.Add(metadata.PersonKind);
+            AddPersonSubjectPathHashCodes(ref hashCode, metadata.Path);
+            hashCode.Add(metadata.StoredAnchor);
+            hashCode.Add(metadata.ProposedAnchor);
+        }
+
+        private static void AddPersonSubjectPathHashCodes(
+            ref HashCode hashCode,
+            RelationshipAuthorizationPersonSubjectPath path
+        )
+        {
+            hashCode.Add(path.Kind);
+            AddSequenceHashCodes(ref hashCode, path.Steps);
+        }
+
+        private static void AddCheckTargetHashCodes(
+            ref HashCode hashCode,
+            RelationshipAuthorizationCheckTarget target
+        )
+        {
+            switch (target)
+            {
+                case RelationshipAuthorizationCheckTarget.Stored stored:
+                    hashCode.Add(0);
+                    hashCode.Add(stored.RootTable);
+                    hashCode.Add(stored.DocumentIdColumn);
+                    break;
+                case RelationshipAuthorizationCheckTarget.Proposed proposed:
+                    hashCode.Add(1);
+                    hashCode.Add(proposed.RootTable);
+                    AddSequenceHashCodes(ref hashCode, proposed.SubjectBindingsInOrder);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(target), target, null);
+            }
+        }
+
+        private static void AddSequenceHashCodes<T>(ref HashCode hashCode, IReadOnlyList<T> values)
+        {
+            hashCode.Add(values.Count);
+
+            foreach (var value in values)
+            {
+                hashCode.Add(value);
+            }
         }
 
         private static void AddStringSequenceHashCodes(ref HashCode hashCode, IReadOnlyList<string> values)

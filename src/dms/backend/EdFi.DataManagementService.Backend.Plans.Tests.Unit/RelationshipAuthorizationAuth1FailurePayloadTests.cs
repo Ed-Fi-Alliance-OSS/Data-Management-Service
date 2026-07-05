@@ -2976,6 +2976,142 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reuse_cached_postgresql_plans_for_structurally_equivalent_stored_check_specs()
+    {
+        var firstCheckSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+        var secondCheckSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        firstCheckSpecs.Should().NotBeSameAs(secondCheckSpecs);
+
+        var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                firstCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+        var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                secondCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+
+        secondPlan.Should().BeSameAs(firstPlan);
+    }
+
+    [Test]
+    public void It_should_reuse_cached_postgresql_plans_for_structurally_equivalent_proposed_check_specs()
+    {
+        var firstCheckSpecs = new[]
+        {
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+        var secondCheckSpecs = new[]
+        {
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        firstCheckSpecs.Should().NotBeSameAs(secondCheckSpecs);
+
+        var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                firstCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+        var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                secondCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+
+        secondPlan.Should().BeSameAs(firstPlan);
+        AssertSingleProposedValueParameterName(secondPlan, "relationshipAuthorization_0_0_schoolId");
+    }
+
+    [Test]
+    public void It_should_not_reuse_cached_postgresql_plans_when_check_spec_sql_shape_changes()
+    {
+        var schoolCheckSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+        var localEducationAgencyCheckSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var schoolPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                schoolCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+        var localEducationAgencyPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                localEducationAgencyCheckSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+
+        localEducationAgencyPlan.Should().NotBeSameAs(schoolPlan);
+        schoolPlan.AuthorizationSql.Should().Contain("\"SchoolId\"");
+        localEducationAgencyPlan.AuthorizationSql.Should().Contain("\"LocalEducationAgencyId\"");
+    }
+
+    [Test]
     public void It_should_validate_uncached_claim_edorg_values_before_reusing_cached_plan()
     {
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
