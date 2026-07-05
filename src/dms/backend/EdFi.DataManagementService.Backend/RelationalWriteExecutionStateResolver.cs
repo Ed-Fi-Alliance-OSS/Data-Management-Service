@@ -142,7 +142,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         // If-Match compares the state-significant projection of the composed etag (ContentVersion,
         // schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode as of the
-        // 2026-07-04 ADR amendment), so the values passed for them here are not significant.
+        // 2026-07-04 ADR amendment), so the values passed for them here are not significant. A wildcard
+        // precondition (If-Match: *) short-circuits to a match because currentState being non-null means
+        // the target row exists.
         var currentEtag = _etagComposer.Compose(
             currentState.DocumentMetadata.ContentVersion,
             VariantKeyFactory.Create(
@@ -153,11 +155,13 @@ internal sealed class RelationalWriteExecutionStateResolver(
             )
         );
 
-        return string.Equals(
-            EtagMatchProjection.Of(ifMatch.Value),
-            EtagMatchProjection.Of(currentEtag),
-            StringComparison.Ordinal
-        )
+        return
+            ifMatch.IsWildcard
+            || string.Equals(
+                EtagMatchProjection.Of(ifMatch.Value),
+                EtagMatchProjection.Of(currentEtag),
+                StringComparison.Ordinal
+            )
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }
