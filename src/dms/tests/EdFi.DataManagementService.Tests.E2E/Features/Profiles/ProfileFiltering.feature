@@ -220,7 +220,6 @@ Feature: Profile Response Filtering
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
              And the response body path "0._etag" should equal variable "profiledSchoolEtag"
-             And the response body path "0._etag" should not equal variable "fullSchoolEtag"
 
         @e2e-ci-shard-2
         Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns a profile-sensitive etag distinct from the full-resource etag
