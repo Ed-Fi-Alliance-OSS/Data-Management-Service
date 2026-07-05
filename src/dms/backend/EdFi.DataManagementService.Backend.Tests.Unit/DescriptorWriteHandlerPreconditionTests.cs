@@ -344,6 +344,56 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_put_when_the_target_is_missing_under_a_wildcard_if_match()
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against a missing PUT target the
+        // wildcard yields 412 (ETag mismatch) rather than 404 (not exists). The scoped PUT lookup
+        // misses (no enqueued rows), so ResolveLockedDescriptorForIfMatchAsync returns NotFound.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_descriptor_put_when_the_target_is_missing_under_a_non_wildcard_if_match()
+    {
+        // Regression guard: a non-wildcard If-Match against a missing PUT target still returns 404.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_rolls_back_descriptor_put_update_transactions_when_if_match_is_absent_and_the_write_fails()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -645,6 +695,29 @@ public class Given_Descriptor_Write_Preconditions
         var result = await sut.HandleDeleteAsync(request);
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_delete_when_the_scoped_lookup_misses_under_a_wildcard_if_match()
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against a missing DELETE target the
+        // wildcard yields 412 (ETag mismatch) rather than 404 (not exists).
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);

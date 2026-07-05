@@ -133,9 +133,11 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
-                RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureNotExists()
-                ),
+                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // target yields the precondition-failed (412) result rather than not-exists (404).
+                RelationalWriteOperationKind.Put => ifMatch.IsWildcard
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             };
         }
@@ -333,7 +335,12 @@ internal sealed class RelationalWriteExecutionStateResolver(
             RelationalWriteTargetRequest.Put => new InSessionTargetResolution(
                 null,
                 null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // target yields the precondition-failed (412) result rather than not-exists (404).
+                request.WritePrecondition
+                    is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             ),
             RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
                 options.AllowPostTargetReevaluation
