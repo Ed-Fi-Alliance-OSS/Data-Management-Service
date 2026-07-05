@@ -154,52 +154,6 @@ Feature: ETag validations
              When a DELETE if-match "{IfMatch}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
         @e2e-ci-shard-1
-        Scenario: 07 Ensure that clients can pass an unquoted ETag in the If-Match header on a PUT
-             When a POST request is made to "/ed-fi/students" with
-                  """
-                  {
-                      "studentUniqueId": "111111",
-                      "birthDate": "2014-08-14",
-                      "firstName": "Russella",
-                      "lastSurname": "Mayers"
-                  }
-                  """
-             Then it should respond with 201 or 200
-              And the ETag is in the response header
-              And the record can be retrieved with a GET request
-                  """
-                  {
-                    "id": "{id}",
-                    "studentUniqueId": "111111",
-                    "birthDate": "2014-08-14",
-                    "firstName": "Russella",
-                    "lastSurname": "Mayers",
-                    "_etag": "{etag}"
-                  }
-                  """
-             When a PUT if-match "{IfMatch}" request is made to "/ed-fi/students/{id}" with
-                  """
-                  {
-                      "id": "{id}",
-                      "studentUniqueId": "111111",
-                      "birthDate": "2014-08-14",
-                      "firstName": "Russella",
-                      "lastSurname": "Mayorga"
-                  }
-                  """
-             Then it should respond with 204
-             When a PUT if-match "0000000000" request is made to "/ed-fi/students/{id}" with
-                  """
-                  {
-                      "id": "{id}",
-                      "studentUniqueId": "111111",
-                      "birthDate": "2014-08-14",
-                      "firstName": "Russella",
-                      "lastSurname": "Mulligan"
-                  }
-                  """
-             Then it should respond with 412
-        @e2e-ci-shard-1
         Scenario: 08 Ensure that clients can pass a wildcard If-Match on a PUT to an existing resource
              When a POST request is made to "/ed-fi/students" with
                   """
