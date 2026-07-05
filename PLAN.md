@@ -86,6 +86,16 @@ Validation:
 
 ## Workstream 2 - Pre-size Or Pool High-Churn Collections And Builders
 
+Execution status: completed on 2026-07-05. Implemented conservative request-hot-path pre-sizing and materialization reductions in relational write, relationship authorization parameter construction, JSON path canonicalization, and document reconstitution paths. Validation artifacts are in:
+
+`/home/brad/work/dms-root/Suite-3-Performance-Testing/DmsTestResults/2026-07-05-01-15-workstream2-presize-20c-30m-volume-pgsm-dotnet`
+
+Measured against the clean warning-level baseline:
+
+`/home/brad/work/dms-root/Suite-3-Performance-Testing/DmsTestResults/2026-07-04-23-54-loglevel-warning-clean-rerun-20c-30m-volume-pgsm-dotnet`
+
+Result: clean 30-minute 20-client Suite 3 volume run with zero failures. Throughput improved from `1162.87` to `1298.71` requests/sec, median latency improved from `10` to `9` ms, P95 improved from `78` to `66` ms, and GC pause per 1k requests improved by about `19.1%`. Allocation rate did not improve: average allocation rose from about `387.5 MB/sec` to `446.8 MB/sec`, and allocation per request rose about `3.2%` by rate-normalized calculation. Treat Workstream 2 as a throughput/latency improvement, not a confirmed allocation-rate fix.
+
 Primary files:
 
 - `src/dms/backend/EdFi.DataManagementService.Backend/RelationalCommandAccess.cs`
@@ -242,4 +252,3 @@ The plan is complete when at least one isolated change has a clean 30-minute Sui
 - lower allocation rate than the clean fast-path baseline
 - lower GC pause time than the clean fast-path baseline
 - no reappearance of the `"page"` temp-table path for single-document hydration
-

@@ -161,7 +161,10 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         IRelationalParameterConfigurator parameterConfigurator
     )
     {
-        Dictionary<string, object?> valuesByParameterName = new(StringComparer.Ordinal)
+        Dictionary<string, object?> valuesByParameterName = new(
+            sqlPlan.ParametersInOrder.Count,
+            StringComparer.Ordinal
+        )
         {
             [SingleRecordRelationshipAuthorizationSqlSpecDefaults.DocumentIdParameterName] =
                 request.DocumentId,
@@ -172,18 +175,20 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
             request.ClaimEducationOrganizationIdParameterization
         );
 
-        return new RelationalCommand(
-            sqlPlan.AuthorizationSql,
-            [
-                .. sqlPlan.ParametersInOrder.Select(parameter =>
-                    RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
-                        parameter,
-                        valuesByParameterName[parameter.ParameterName],
-                        parameterConfigurator
-                    )
-                ),
-            ]
-        );
+        List<RelationalParameter> parameters = new(sqlPlan.ParametersInOrder.Count);
+
+        foreach (var parameter in sqlPlan.ParametersInOrder)
+        {
+            parameters.Add(
+                RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
+                    parameter,
+                    valuesByParameterName[parameter.ParameterName],
+                    parameterConfigurator
+                )
+            );
+        }
+
+        return new RelationalCommand(sqlPlan.AuthorizationSql, parameters);
     }
 
     private static async Task<SingleRecordRelationshipAuthorizationExecutionResult> ReadAuthorizedResultAsync(

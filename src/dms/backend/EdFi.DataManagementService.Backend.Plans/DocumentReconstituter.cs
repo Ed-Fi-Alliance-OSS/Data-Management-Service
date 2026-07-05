@@ -143,12 +143,17 @@ public static class DocumentReconstituter
 
     private static IReadOnlyList<JsonNode> ReconstituteAllDocuments(
         PageReconstitutionContext pageReconstitutionContext
-    ) =>
-        [
-            .. pageReconstitutionContext.DocumentsInOrder.Select(documentPageNode =>
-                ReconstituteDocument(documentPageNode, pageReconstitutionContext)
-            ),
-        ];
+    )
+    {
+        List<JsonNode> documents = new(pageReconstitutionContext.DocumentsInOrder.Length);
+
+        foreach (var documentPageNode in pageReconstitutionContext.DocumentsInOrder)
+        {
+            documents.Add(ReconstituteDocument(documentPageNode, pageReconstitutionContext));
+        }
+
+        return documents;
+    }
 
     private static JsonNode ReconstituteDocument(
         DocumentPageNode documentPageNode,
@@ -253,9 +258,13 @@ public static class DocumentReconstituter
     )
     {
         var rootTableModel = tableRowsInDependencyOrder[0].TableModel;
-        var tableModelsInDependencyOrder = tableRowsInDependencyOrder
-            .Select(static tableRows => tableRows.TableModel)
-            .ToArray();
+        var tableModelsInDependencyOrder = new DbTableModel[tableRowsInDependencyOrder.Count];
+
+        for (var index = 0; index < tableRowsInDependencyOrder.Count; index++)
+        {
+            tableModelsInDependencyOrder[index] = tableRowsInDependencyOrder[index].TableModel;
+        }
+
         var model = new RelationalResourceModel(
             Resource: new QualifiedResourceName("ReconstitutionAdapter", "Document"),
             PhysicalSchema: rootTableModel.Table.Schema,
@@ -272,15 +281,30 @@ public static class DocumentReconstituter
                 Table: new SqlRelationRef.TempTable("page"),
                 DocumentIdColumnName: new DbColumnName("DocumentId")
             ),
-            TablePlansInDependencyOrder: tableRowsInDependencyOrder.Select(
-                static tableRows => new TableReadPlan(tableRows.TableModel, string.Empty)
-            ),
+            TablePlansInDependencyOrder: BuildTableReadPlanAdapters(tableRowsInDependencyOrder),
             ReferenceIdentityProjectionPlansInDependencyOrder: referenceProjectionPlans,
             DescriptorProjectionPlansInOrder: BuildDescriptorProjectionPlans(
                 tableRowsInDependencyOrder,
                 descriptorProjectionSources
             )
         );
+    }
+
+    private static IReadOnlyList<TableReadPlan> BuildTableReadPlanAdapters(
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
+    )
+    {
+        var tableReadPlans = new TableReadPlan[tableRowsInDependencyOrder.Count];
+
+        for (var index = 0; index < tableRowsInDependencyOrder.Count; index++)
+        {
+            tableReadPlans[index] = new TableReadPlan(
+                tableRowsInDependencyOrder[index].TableModel,
+                string.Empty
+            );
+        }
+
+        return tableReadPlans;
     }
 
     private static IReadOnlyList<DescriptorProjectionPlan> BuildDescriptorProjectionPlans(
@@ -293,7 +317,7 @@ public static class DocumentReconstituter
             return [];
         }
 
-        Dictionary<DbTableName, HydratedTableRows> tableRowsByTable = [];
+        Dictionary<DbTableName, HydratedTableRows> tableRowsByTable = new(tableRowsInDependencyOrder.Count);
 
         foreach (var tableRows in tableRowsInDependencyOrder)
         {
@@ -305,7 +329,7 @@ public static class DocumentReconstituter
             }
         }
 
-        List<DescriptorProjectionSource> projectionSources = [];
+        List<DescriptorProjectionSource> projectionSources = new(descriptorProjectionSources.Count);
 
         foreach (var descriptorSource in descriptorProjectionSources)
         {
@@ -346,7 +370,7 @@ public static class DocumentReconstituter
         CompiledReconstitutionPlan compiledPlan
     )
     {
-        List<HydratedTableRows> singleDocumentRows = [];
+        List<HydratedTableRows> singleDocumentRows = new(tableRowsInDependencyOrder.Count);
 
         foreach (var tableRows in tableRowsInDependencyOrder)
         {
@@ -354,23 +378,27 @@ public static class DocumentReconstituter
             var rootScopeLocatorOrdinal = tablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow();
             var rootScopeLocatorColumn = tablePlan.TableModel.Columns[rootScopeLocatorOrdinal].ColumnName;
 
-            singleDocumentRows.Add(
-                tableRows with
+            List<object?[]> rowsForDocument = new(tableRows.Rows.Count);
+
+            for (var rowIndex = 0; rowIndex < tableRows.Rows.Count; rowIndex++)
+            {
+                var row = tableRows.Rows[rowIndex];
+
+                if (
+                    RowBelongsToDocument(
+                        row,
+                        tableRows.TableModel.Table,
+                        rootScopeLocatorColumn,
+                        rootScopeLocatorOrdinal,
+                        documentId
+                    )
+                )
                 {
-                    Rows =
-                    [
-                        .. tableRows.Rows.Where(row =>
-                            RowBelongsToDocument(
-                                row,
-                                tableRows.TableModel.Table,
-                                rootScopeLocatorColumn,
-                                rootScopeLocatorOrdinal,
-                                documentId
-                            )
-                        ),
-                    ],
+                    rowsForDocument.Add(row);
                 }
-            );
+            }
+
+            singleDocumentRows.Add(tableRows with { Rows = rowsForDocument });
         }
 
         return singleDocumentRows;
@@ -912,7 +940,7 @@ public static class DocumentReconstituter
     private static JsonObject ReorderObject(JsonObject jsonObject, PropertyOrderNode propertyOrder)
     {
         var reordered = new JsonObject();
-        HashSet<string> emittedProperties = new(StringComparer.Ordinal);
+        HashSet<string> emittedProperties = new(jsonObject.Count, StringComparer.Ordinal);
 
         foreach (var (propertyName, childOrder) in propertyOrder.ChildrenInOrder)
         {

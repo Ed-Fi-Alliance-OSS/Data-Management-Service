@@ -17,13 +17,10 @@ internal static class RelationalJsonPathSupport
         JsonPathExpression relativePath
     )
     {
-        JsonPathSegment[] combinedSegments =
-        [
-            .. GetRestrictedSegments(scopePath),
-            .. GetRestrictedSegments(relativePath),
-        ];
+        var scopeSegments = GetRestrictedSegments(scopePath);
+        var relativeSegments = GetRestrictedSegments(relativePath);
 
-        return BuildCanonical(combinedSegments);
+        return BuildCanonical(scopeSegments, relativeSegments);
     }
 
     public static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
@@ -48,27 +45,55 @@ internal static class RelationalJsonPathSupport
                 buffer[0] = '$';
                 var index = 1;
 
-                foreach (var segment in state)
-                {
-                    switch (segment)
-                    {
-                        case JsonPathSegment.Property property:
-                            buffer[index++] = '.';
-                            property.Name.AsSpan().CopyTo(buffer[index..]);
-                            index += property.Name.Length;
-                            break;
-                        case JsonPathSegment.AnyArrayElement:
-                            "[*]".AsSpan().CopyTo(buffer[index..]);
-                            index += 3;
-                            break;
-                        default:
-                            throw new InvalidOperationException(
-                                $"Restricted JSONPath segment '{segment.GetType().Name}' is not supported."
-                            );
-                    }
-                }
+                AppendCanonicalSegments(buffer, state, ref index);
             }
         );
+    }
+
+    private static string BuildCanonical(
+        IReadOnlyList<JsonPathSegment> firstSegments,
+        IReadOnlyList<JsonPathSegment> secondSegments
+    )
+    {
+        return string.Create(
+            CalculateCanonicalLength(firstSegments, secondSegments),
+            (FirstSegments: firstSegments, SecondSegments: secondSegments),
+            static (buffer, state) =>
+            {
+                buffer[0] = '$';
+                var index = 1;
+
+                AppendCanonicalSegments(buffer, state.FirstSegments, ref index);
+                AppendCanonicalSegments(buffer, state.SecondSegments, ref index);
+            }
+        );
+    }
+
+    private static void AppendCanonicalSegments(
+        Span<char> buffer,
+        IReadOnlyList<JsonPathSegment> segments,
+        ref int index
+    )
+    {
+        foreach (var segment in segments)
+        {
+            switch (segment)
+            {
+                case JsonPathSegment.Property property:
+                    buffer[index++] = '.';
+                    property.Name.AsSpan().CopyTo(buffer[index..]);
+                    index += property.Name.Length;
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    "[*]".AsSpan().CopyTo(buffer[index..]);
+                    index += 3;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Restricted JSONPath segment '{segment.GetType().Name}' is not supported."
+                    );
+            }
+        }
     }
 
     public static ParsedConcretePath ParseConcretePath(JsonPath concretePath)
@@ -239,6 +264,14 @@ internal static class RelationalJsonPathSupport
         }
 
         return length;
+    }
+
+    private static int CalculateCanonicalLength(
+        IReadOnlyList<JsonPathSegment> firstSegments,
+        IReadOnlyList<JsonPathSegment> secondSegments
+    )
+    {
+        return CalculateCanonicalLength(firstSegments) + CalculateCanonicalLength(secondSegments) - 1;
     }
 
     private static InvalidOperationException CreateRestrictedPathException(string canonicalPath)

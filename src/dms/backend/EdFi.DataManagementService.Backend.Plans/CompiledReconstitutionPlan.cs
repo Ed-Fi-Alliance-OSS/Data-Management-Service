@@ -17,7 +17,16 @@ internal sealed class ScopeKey : IEquatable<ScopeKey>
     {
         ArgumentNullException.ThrowIfNull(parts);
 
-        Parts = [.. parts.Select(CanonicalizePart)];
+        var builder = parts is IReadOnlyCollection<object?> readOnlyCollection
+            ? ImmutableArray.CreateBuilder<object?>(readOnlyCollection.Count)
+            : ImmutableArray.CreateBuilder<object?>();
+
+        foreach (var part in parts)
+        {
+            builder.Add(CanonicalizePart(part));
+        }
+
+        Parts = builder.MoveToImmutable();
     }
 
     public ImmutableArray<object?> Parts { get; }
