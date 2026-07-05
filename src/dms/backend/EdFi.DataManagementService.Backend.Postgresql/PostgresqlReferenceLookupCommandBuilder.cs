@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using EdFi.DataManagementService.Backend;
@@ -19,6 +20,9 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 internal static class PostgresqlReferenceLookupCommandBuilder
 {
     private const string ReferentialIdsParameterName = "@referentialIds";
+    private const int MaxCachedCommandTexts = 512;
+
+    private static readonly ConcurrentDictionary<CommandTextCacheKey, string> CommandTextByShape = new();
     private static readonly NpgsqlDbType ReferentialIdsParameterDbType = (NpgsqlDbType)(
         (int)NpgsqlDbType.Array | (int)NpgsqlDbType.Uuid
     );
@@ -66,8 +70,28 @@ internal static class PostgresqlReferenceLookupCommandBuilder
 
     private static string BuildCommandText(ReferenceLookupRequest request)
     {
+        var projections = ReferenceLookupVerificationSupport.BuildProjections(request);
+        var cacheKey = CommandTextCacheKey.Create(projections);
+
+        if (CommandTextByShape.TryGetValue(cacheKey, out var cachedCommandText))
+        {
+            return cachedCommandText;
+        }
+
+        var commandText = BuildCommandText(projections);
+
+        if (CommandTextByShape.Count >= MaxCachedCommandTexts)
+        {
+            return commandText;
+        }
+
+        return CommandTextByShape.GetOrAdd(cacheKey, commandText);
+    }
+
+    private static string BuildCommandText(IReadOnlyList<ReferenceLookupVerificationProjection> projections)
+    {
         var descriptorVerificationPrefix = EscapeSqlLiteral(_descriptorVerificationPrefix);
-        var verificationIdentitySql = BuildVerificationIdentitySql(request);
+        var verificationIdentitySql = BuildVerificationIdentitySql(projections);
 
         return $$"""
             WITH "LookupInput"("ReferentialId", "Ordinal") AS (
@@ -101,10 +125,10 @@ internal static class PostgresqlReferenceLookupCommandBuilder
             """;
     }
 
-    private static string BuildVerificationIdentitySql(ReferenceLookupRequest request)
+    private static string BuildVerificationIdentitySql(
+        IReadOnlyList<ReferenceLookupVerificationProjection> projections
+    )
     {
-        var projections = ReferenceLookupVerificationSupport.BuildProjections(request);
-
         return projections.Count == 0
             ? EmptyVerificationIdentitySql
             : string.Join(
@@ -183,4 +207,132 @@ internal static class PostgresqlReferenceLookupCommandBuilder
 
     private static string EscapeSqlLiteral(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
+
+    private sealed class CommandTextCacheKey(
+        IReadOnlyList<ReferenceLookupProjectionCacheKey> projections,
+        int hashCode
+    ) : IEquatable<CommandTextCacheKey>
+    {
+        private readonly IReadOnlyList<ReferenceLookupProjectionCacheKey> _projections = projections;
+        private readonly int _hashCode = hashCode;
+
+        public static CommandTextCacheKey Create(
+            IReadOnlyList<ReferenceLookupVerificationProjection> projections
+        )
+        {
+            var projectionKeys = new ReferenceLookupProjectionCacheKey[projections.Count];
+            var hash = new HashCode();
+
+            for (var index = 0; index < projections.Count; index++)
+            {
+                projectionKeys[index] = ReferenceLookupProjectionCacheKey.Create(projections[index]);
+                hash.Add(projectionKeys[index]);
+            }
+
+            return new CommandTextCacheKey(projectionKeys, hash.ToHashCode());
+        }
+
+        public bool Equals(CommandTextCacheKey? other)
+        {
+            if (
+                other is null
+                || _hashCode != other._hashCode
+                || _projections.Count != other._projections.Count
+            )
+            {
+                return false;
+            }
+
+            for (var index = 0; index < _projections.Count; index++)
+            {
+                if (!_projections[index].Equals(other._projections[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public override bool Equals(object? obj) => obj is CommandTextCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+    }
+
+    private sealed class ReferenceLookupProjectionCacheKey(
+        short resourceKeyId,
+        DbTableName sourceTable,
+        IReadOnlyList<ReferenceLookupElementCacheKey> identityElements,
+        int hashCode
+    ) : IEquatable<ReferenceLookupProjectionCacheKey>
+    {
+        private readonly short _resourceKeyId = resourceKeyId;
+        private readonly DbTableName _sourceTable = sourceTable;
+        private readonly IReadOnlyList<ReferenceLookupElementCacheKey> _identityElements = identityElements;
+        private readonly int _hashCode = hashCode;
+
+        public static ReferenceLookupProjectionCacheKey Create(
+            ReferenceLookupVerificationProjection projection
+        )
+        {
+            var identityElementKeys = projection
+                .IdentityElements.Select(ReferenceLookupElementCacheKey.Create)
+                .ToArray();
+            var hash = new HashCode();
+            hash.Add(projection.ResourceKeyId);
+            hash.Add(projection.SourceTable);
+
+            foreach (var identityElement in identityElementKeys)
+            {
+                hash.Add(identityElement);
+            }
+
+            return new ReferenceLookupProjectionCacheKey(
+                projection.ResourceKeyId,
+                projection.SourceTable,
+                identityElementKeys,
+                hash.ToHashCode()
+            );
+        }
+
+        public bool Equals(ReferenceLookupProjectionCacheKey? other)
+        {
+            if (
+                other is null
+                || _hashCode != other._hashCode
+                || _resourceKeyId != other._resourceKeyId
+                || !_sourceTable.Equals(other._sourceTable)
+                || _identityElements.Count != other._identityElements.Count
+            )
+            {
+                return false;
+            }
+
+            for (var index = 0; index < _identityElements.Count; index++)
+            {
+                if (!_identityElements[index].Equals(other._identityElements[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is ReferenceLookupProjectionCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+    }
+
+    private sealed record ReferenceLookupElementCacheKey(
+        DbColumnName Column,
+        string IdentityJsonPath,
+        RelationalScalarType ScalarType,
+        bool IsDescriptorReference
+    )
+    {
+        public static ReferenceLookupElementCacheKey Create(ReferenceLookupVerificationElement element) =>
+            new(element.Column, element.IdentityJsonPath, element.ScalarType, element.IsDescriptorReference);
+    }
 }
