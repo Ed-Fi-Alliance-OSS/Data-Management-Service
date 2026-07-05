@@ -1548,6 +1548,56 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_if_match_failure_for_a_wildcard_put_when_the_target_is_missing()
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against a missing PUT target the
+        // wildcard yields 412 (ETag mismatch) rather than 404 (not exists). The precondition checker
+        // returning null signals the target was absent under the If-Match precondition.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        // UpdateFailureNotExists and UpdateFailureETagMisMatch are both memberless records, so
+        // BeEquivalentTo cannot tell them apart; assert on the concrete inner result type instead.
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_a_non_wildcard_put_when_the_target_is_missing_under_if_match()
+    {
+        // Regression guard: a non-wildcard If-Match against a missing PUT target still returns 404.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNotExists>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_if_match_failure_for_put_before_reference_resolution_when_the_current_etag_mismatches()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(

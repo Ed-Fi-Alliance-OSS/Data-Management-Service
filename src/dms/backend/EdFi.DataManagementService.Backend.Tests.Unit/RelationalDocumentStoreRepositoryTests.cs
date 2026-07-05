@@ -8861,6 +8861,84 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_recheck_cannot_relock_the_target(
+        SqlDialect dialect
+    )
+    {
+        // RFC 7232 If-Match: * requires the target to exist; when the wildcard recheck cannot re-lock
+        // the target (a concurrent delete), the wildcard yields 412 rather than 404.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(
+            new InvalidOperationException("DELETE should not execute when the target disappears.")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = null;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_document_uuid_is_not_resolvable(
+        SqlDialect dialect
+    )
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against an unresolvable DELETE target
+        // the wildcard yields 412 rather than 404. Default fake returns null from the UUID lookup.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_not_exists_when_a_non_wildcard_if_match_document_uuid_is_not_resolvable(
+        SqlDialect dialect
+    )
+    {
+        // Regression guard: a non-wildcard If-Match against an unresolvable DELETE target still
+        // returns 404.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
     public async Task It_preserves_foreign_key_conflict_mapping_when_relational_delete_if_match_precondition_succeeds(
         SqlDialect dialect
     )

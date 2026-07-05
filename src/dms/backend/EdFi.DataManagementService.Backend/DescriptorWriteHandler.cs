@@ -359,7 +359,12 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.NotFound:
                     case DescriptorLockedPreconditionResult.MissingDocument:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpdateResult.UpdateFailureNotExists();
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // missing PUT target yields the precondition-failed (412) result rather than
+                        // not-exists (404).
+                        return ifMatch.IsWildcard
+                            ? new UpdateResult.UpdateFailureETagMisMatch()
+                            : new UpdateResult.UpdateFailureNotExists();
 
                     case DescriptorLockedPreconditionResult.MissingDescriptor(
                         var missingDescriptorDocumentId
@@ -674,10 +679,13 @@ internal sealed class DescriptorWriteHandler(
 
                     outcome = preconditionResult switch
                     {
-                        DescriptorLockedPreconditionResult.NotFound =>
-                            new DeleteResult.DeleteFailureNotExists(),
-                        DescriptorLockedPreconditionResult.MissingDocument =>
-                            new DeleteResult.DeleteFailureNotExists(),
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // missing DELETE target yields the precondition-failed (412) result rather
+                        // than not-exists (404).
+                        DescriptorLockedPreconditionResult.NotFound
+                        or DescriptorLockedPreconditionResult.MissingDocument => ifMatch.IsWildcard
+                            ? new DeleteResult.DeleteFailureETagMisMatch()
+                            : new DeleteResult.DeleteFailureNotExists(),
                         DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
                             new DeleteResult.UnknownFailure(
                                 BuildMissingDescriptorMessage(request.Resource, documentId)

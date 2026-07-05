@@ -428,7 +428,11 @@ public sealed class RelationalDocumentStoreRepository(
 
                 if (resolved is null)
                 {
-                    outcome = new DeleteResult.DeleteFailureNotExists();
+                    // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing
+                    // DELETE target yields the precondition-failed (412) result rather than 404.
+                    outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                        ? new DeleteResult.DeleteFailureETagMisMatch()
+                        : new DeleteResult.DeleteFailureNotExists();
                 }
                 else
                 {
@@ -441,7 +445,11 @@ public sealed class RelationalDocumentStoreRepository(
 
                     if (lockedContentVersion is null)
                     {
-                        outcome = new DeleteResult.DeleteFailureNotExists();
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // target that vanished before locking yields 412 rather than 404.
+                        outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                            ? new DeleteResult.DeleteFailureETagMisMatch()
+                            : new DeleteResult.DeleteFailureNotExists();
                     }
                     else
                     {
@@ -580,7 +588,11 @@ public sealed class RelationalDocumentStoreRepository(
 
             if (preconditionCheckResult is null)
             {
-                return new DeleteResult.DeleteFailureNotExists();
+                // RFC 7232 If-Match: * requires the target to exist; a wildcard whose recheck cannot
+                // re-lock the target (a concurrent delete) yields 412 rather than 404.
+                return ifMatch.IsWildcard
+                    ? new DeleteResult.DeleteFailureETagMisMatch()
+                    : new DeleteResult.DeleteFailureNotExists();
             }
 
             if (!preconditionCheckResult.IsMatch)
