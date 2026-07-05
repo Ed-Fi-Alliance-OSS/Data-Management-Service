@@ -2004,6 +2004,38 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_write_conflict_not_if_match_failure_for_wildcard_stale_no_op_compare()
+    {
+        // A wildcard If-Match (*) is an existence precondition, not a concurrency check. When a
+        // guarded no-op goes stale but the row still exists, the wildcard must follow the
+        // no-precondition path (write-conflict/retry) exactly like the None precondition case above,
+        // NOT surface an ETag mismatch (412) as a specific-tag If-Match would.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+        _writeFreshnessChecker.IsCurrentResult = false;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        var update = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Which;
+        update.Result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        update.Result.Should().NotBeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_insert_success_when_non_collection_create_dml_is_applied()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
