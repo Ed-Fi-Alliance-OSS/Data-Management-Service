@@ -5,6 +5,7 @@
 
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -86,10 +87,27 @@ public static class CanonicalJsonSerializer
     /// <returns>The SHA-256 hash bytes.</returns>
     public static byte[] ComputeSha256Hash(JsonNode? node)
     {
+        return ComputeSha256HashCore(node, propertyNamesToSkip: null);
+    }
+
+    internal static byte[] ComputeSha256HashExcludingPropertyNames(
+        JsonNode? node,
+        FrozenSet<string> propertyNamesToSkip
+    )
+    {
+        ArgumentNullException.ThrowIfNull(propertyNamesToSkip);
+
+        return ComputeSha256HashCore(node, propertyNamesToSkip);
+    }
+
+    private static byte[] ComputeSha256HashCore(JsonNode? node, FrozenSet<string>? propertyNamesToSkip)
+    {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var stream = new IncrementalHashWriteStream(hash);
+        using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
-        SerializeToStream(stream, node);
+        WriteCanonicalNode(writer, node, propertyNamesToSkip);
+        writer.Flush();
 
         return hash.GetHashAndReset();
     }
@@ -138,7 +156,11 @@ public static class CanonicalJsonSerializer
         return result;
     }
 
-    private static void WriteCanonicalNode(Utf8JsonWriter writer, JsonNode? node)
+    private static void WriteCanonicalNode(
+        Utf8JsonWriter writer,
+        JsonNode? node,
+        FrozenSet<string>? propertyNamesToSkip = null
+    )
     {
         switch (node)
         {
@@ -146,10 +168,10 @@ public static class CanonicalJsonSerializer
                 writer.WriteNullValue();
                 break;
             case JsonObject jsonObject:
-                WriteCanonicalObject(writer, jsonObject);
+                WriteCanonicalObject(writer, jsonObject, propertyNamesToSkip);
                 break;
             case JsonArray jsonArray:
-                WriteCanonicalArray(writer, jsonArray);
+                WriteCanonicalArray(writer, jsonArray, propertyNamesToSkip);
                 break;
             case JsonValue jsonValue:
                 jsonValue.WriteTo(writer);
@@ -160,7 +182,11 @@ public static class CanonicalJsonSerializer
         }
     }
 
-    private static void WriteCanonicalObject(Utf8JsonWriter writer, JsonObject jsonObject)
+    private static void WriteCanonicalObject(
+        Utf8JsonWriter writer,
+        JsonObject jsonObject,
+        FrozenSet<string>? propertyNamesToSkip
+    )
     {
         writer.WriteStartObject();
 
@@ -170,7 +196,7 @@ public static class CanonicalJsonSerializer
             return;
         }
 
-        var properties = RentSortedProperties(jsonObject, out var propertyCount);
+        var properties = RentSortedProperties(jsonObject, propertyNamesToSkip, out var propertyCount);
 
         try
         {
@@ -179,7 +205,7 @@ public static class CanonicalJsonSerializer
                 var (propertyName, propertyValue) = properties[index];
 
                 writer.WritePropertyName(GetEncodedPropertyName(propertyName));
-                WriteCanonicalNode(writer, propertyValue);
+                WriteCanonicalNode(writer, propertyValue, propertyNamesToSkip);
             }
         }
         finally
@@ -190,14 +216,18 @@ public static class CanonicalJsonSerializer
         writer.WriteEndObject();
     }
 
-    private static void WriteCanonicalArray(Utf8JsonWriter writer, JsonArray jsonArray)
+    private static void WriteCanonicalArray(
+        Utf8JsonWriter writer,
+        JsonArray jsonArray,
+        FrozenSet<string>? propertyNamesToSkip
+    )
     {
         writer.WriteStartArray();
 
         // Preserve element order exactly
         foreach (var item in jsonArray)
         {
-            WriteCanonicalNode(writer, item);
+            WriteCanonicalNode(writer, item, propertyNamesToSkip);
         }
 
         writer.WriteEndArray();
@@ -223,15 +253,31 @@ public static class CanonicalJsonSerializer
 
     private static KeyValuePair<string, JsonNode?>[] RentSortedProperties(
         JsonObject jsonObject,
+        FrozenSet<string>? propertyNamesToSkip,
         out int propertyCount
     )
     {
         var properties = ArrayPool<KeyValuePair<string, JsonNode?>>.Shared.Rent(jsonObject.Count);
         propertyCount = 0;
 
-        foreach (var property in jsonObject)
+        if (propertyNamesToSkip is null)
         {
-            properties[propertyCount++] = property;
+            foreach (var property in jsonObject)
+            {
+                properties[propertyCount++] = property;
+            }
+        }
+        else
+        {
+            foreach (var property in jsonObject)
+            {
+                if (propertyNamesToSkip.Contains(property.Key))
+                {
+                    continue;
+                }
+
+                properties[propertyCount++] = property;
+            }
         }
 
         Array.Sort(properties, 0, propertyCount, JsonObjectPropertyComparer.Instance);

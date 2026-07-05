@@ -139,4 +139,29 @@ public class Given_ResourceEtagFormatter
             .Should()
             .Be(ResourceEtagFormatter.FormatEtag(documentWithoutServerFields));
     }
+
+    [Test]
+    public void It_does_not_mutate_the_document_when_ignoring_server_generated_fields()
+    {
+        var document = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "name": "Lincoln High",
+              "schoolReference": {
+                "schoolId": 255901,
+                "link": {
+                  "href": "/ed-fi/schools/bbbbbbbb-1111-2222-3333-cccccccccccc"
+                }
+              }
+            }
+            """
+        )!;
+        var originalJson = document.ToJsonString();
+
+        ResourceEtagFormatter.FormatEtag(document);
+
+        document.ToJsonString().Should().Be(originalJson);
+    }
 }
