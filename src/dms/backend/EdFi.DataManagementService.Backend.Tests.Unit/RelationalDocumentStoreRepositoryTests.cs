@@ -6686,6 +6686,70 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_retries_stale_put_guarded_no_op_attempts_once_when_if_match_is_a_wildcard()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        // A wildcard If-Match (*) is an existence precondition, not a concurrency check, so a stale
+        // guarded no-op against a still-existing row follows the no-precondition retry path rather
+        // than short-circuiting to a 412 (unlike the specific-tag case above).
+        var writePrecondition = new WritePrecondition.IfMatch("*", IsWildcard: true);
+        var executorCallCount = 0;
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
+                            RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Wildcard retry"));
+        A.CallTo(() => updateRequest.WritePrecondition).Returns(writePrecondition);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests
+            .Select(request => request.WritePrecondition)
+            .Should()
+            .OnlyContain(precondition => precondition == writePrecondition);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    [Test]
     public async Task It_does_not_retry_stale_post_as_update_guarded_no_op_attempts_when_if_match_is_present()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());

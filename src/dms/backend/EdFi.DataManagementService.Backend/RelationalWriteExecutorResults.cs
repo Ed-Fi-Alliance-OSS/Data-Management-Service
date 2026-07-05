@@ -192,7 +192,10 @@ internal static class RelationalWriteExecutorResults
     )
     {
         ArgumentNullException.ThrowIfNull(writePrecondition);
-        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch;
+        // A wildcard If-Match (*) is an existence-only precondition, not a concurrency check. A stale
+        // guarded no-op against a still-existing row must NOT 412 for a wildcard; excluding it here
+        // routes the wildcard through the write-conflict branch, matching the no-precondition path.
+        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch { IsWildcard: false };
 
         return operationKind switch
         {

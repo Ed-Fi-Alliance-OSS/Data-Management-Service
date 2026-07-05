@@ -2209,7 +2209,10 @@ public sealed class RelationalDocumentStoreRepository(
             if (
                 executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
                 && attemptIndex == 0
-                && writePrecondition is not WritePrecondition.IfMatch
+                // A wildcard If-Match (*) is an existence-only precondition, not a concurrency check, so
+                // a stale no-op against a still-existing row is retried like the no-precondition path
+                // rather than short-circuiting to a 412. Only a specific-tag If-Match blocks the retry.
+                && writePrecondition is not WritePrecondition.IfMatch { IsWildcard: false }
             )
             {
                 continue;
