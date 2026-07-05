@@ -20,6 +20,43 @@ public static class MappingSetResourceLookupExtensions
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
     > ConcreteResourceModelsByResource = new();
 
+    private static readonly ConditionalWeakTable<
+        DerivedRelationalModelSet,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
+    > ConcreteResourceModelsByResourceByModelSet = new();
+
+    /// <summary>
+    /// Gets the concrete resource models keyed by qualified resource name from the model set's canonical
+    /// resource list. Duplicate names keep the first model, matching <c>PersonJoinPathResolver.BuildResourceLookup</c>.
+    /// </summary>
+    public static IReadOnlyDictionary<
+        QualifiedResourceName,
+        ConcreteResourceModel
+    > GetConcreteResourceModelsByResource(this DerivedRelationalModelSet modelSet)
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+
+        return ConcreteResourceModelsByResourceByModelSet.GetValue(
+            modelSet,
+            static staticModelSet =>
+            {
+                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>(
+                    staticModelSet.ConcreteResourcesInNameOrder.Count
+                );
+
+                foreach (var concreteResourceModel in staticModelSet.ConcreteResourcesInNameOrder)
+                {
+                    resourcesByName.TryAdd(
+                        concreteResourceModel.RelationalModel.Resource,
+                        concreteResourceModel
+                    );
+                }
+
+                return resourcesByName.ToFrozenDictionary();
+            }
+        );
+    }
+
     /// <summary>
     /// Attempts to resolve the concrete resource model from the mapping set's canonical resource list.
     /// </summary>

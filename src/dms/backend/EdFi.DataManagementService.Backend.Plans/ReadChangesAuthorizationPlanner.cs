@@ -119,7 +119,7 @@ public static class ReadChangesAuthorizationPlanner
         List<ReadChangesRelationshipCheckSpec> relationshipChecks = [];
         List<string> resolutionFailures = [];
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup =
-            PersonJoinPathResolver.BuildResourceLookup(mappingSet.Model.ConcreteResourcesInNameOrder);
+            mappingSet.Model.GetConcreteResourceModelsByResource();
         foreach (var strategy in relationshipStrategies)
         {
             var definition = _supportedSubjectsByStrategyName[strategy.StrategyName];

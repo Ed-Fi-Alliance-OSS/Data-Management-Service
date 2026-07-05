@@ -553,6 +553,25 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_cache_model_resource_lookup_with_first_wins_semantics()
+    {
+        var firstResource = _mappingSet.Model.ConcreteResourcesInNameOrder[2];
+        var duplicateResource = firstResource with { };
+        var modelSetWithDuplicateResource = _mappingSet.Model with
+        {
+            ConcreteResourcesInNameOrder = [firstResource, duplicateResource],
+        };
+
+        var firstLookup = modelSetWithDuplicateResource.GetConcreteResourceModelsByResource();
+        var secondLookup = modelSetWithDuplicateResource.GetConcreteResourceModelsByResource();
+
+        duplicateResource.Should().NotBeSameAs(firstResource);
+        secondLookup.Should().BeSameAs(firstLookup);
+        firstLookup[firstResource.RelationalModel.Resource].Should().BeSameAs(firstResource);
+        firstLookup.Values.Should().NotContain(resource => ReferenceEquals(resource, duplicateResource));
+    }
+
+    [Test]
     public void It_should_match_legacy_scan_behavior_for_omitted_write_plan_lookup()
     {
         var unknownResource = new QualifiedResourceName("Ed-Fi", "UnknownResource");
