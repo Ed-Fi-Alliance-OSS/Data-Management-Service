@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -26,10 +27,16 @@ namespace EdFi.DataManagementService.Core.Utilities;
 /// </summary>
 public static class CanonicalJsonSerializer
 {
+    private const int MaxCachedPropertyNames = 8192;
+    private static readonly JavaScriptEncoder JsonEncoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+    private static readonly ConcurrentDictionary<string, JsonEncodedText> EncodedPropertyNameCache = new(
+        StringComparer.Ordinal
+    );
+
     private static readonly JsonWriterOptions WriterOptions = new()
     {
         Indented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Encoder = JsonEncoder,
     };
 
     /// <summary>
@@ -171,7 +178,7 @@ public static class CanonicalJsonSerializer
             {
                 var (propertyName, propertyValue) = properties[index];
 
-                writer.WritePropertyName(propertyName);
+                writer.WritePropertyName(GetEncodedPropertyName(propertyName));
                 WriteCanonicalNode(writer, propertyValue);
             }
         }
@@ -194,6 +201,24 @@ public static class CanonicalJsonSerializer
         }
 
         writer.WriteEndArray();
+    }
+
+    private static JsonEncodedText GetEncodedPropertyName(string propertyName)
+    {
+        if (EncodedPropertyNameCache.TryGetValue(propertyName, out var encodedPropertyName))
+        {
+            return encodedPropertyName;
+        }
+
+        if (EncodedPropertyNameCache.Count >= MaxCachedPropertyNames)
+        {
+            return JsonEncodedText.Encode(propertyName, JsonEncoder);
+        }
+
+        return EncodedPropertyNameCache.GetOrAdd(
+            propertyName,
+            static name => JsonEncodedText.Encode(name, JsonEncoder)
+        );
     }
 
     private static KeyValuePair<string, JsonNode?>[] RentSortedProperties(

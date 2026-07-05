@@ -230,6 +230,26 @@ public class CanonicalJsonSerializerTests
     }
 
     [TestFixture]
+    public class Given_Property_Names_With_Escaped_Characters : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private string _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject { ["z\"quote"] = 1, ["a<unsafe>&"] = 2 };
+            _result = CanonicalJsonSerializer.SerializeToString(_input);
+        }
+
+        [Test]
+        public void It_preserves_relaxed_escaping_while_escaping_required_json_syntax()
+        {
+            _result.Should().Be("""{"a<unsafe>&":2,"z\"quote":1}""");
+        }
+    }
+
+    [TestFixture]
     public class Given_Different_Whitespace_Inputs : CanonicalJsonSerializerTests
     {
         private JsonNode _prettyInput = null!;
