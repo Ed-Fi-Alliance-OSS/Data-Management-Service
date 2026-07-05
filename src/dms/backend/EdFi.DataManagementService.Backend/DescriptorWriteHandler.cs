@@ -958,7 +958,7 @@ internal sealed class DescriptorWriteHandler(
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
             DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                when !IfMatchMatchesCurrentEtag(ifMatch.Value, currentEtag) =>
+                when !ifMatch.IsWildcard && !IfMatchMatchesCurrentEtag(ifMatch.Value, currentEtag) =>
                 DescriptorLockedPreconditionResult.Mismatch.Instance,
             DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
                 new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
@@ -974,7 +974,9 @@ internal sealed class DescriptorWriteHandler(
     /// differences (format, profileCode, linkFlag) do not spuriously fail the precondition. For a
     /// descriptor the fixed variant key already reduces to those components, so a stale ContentVersion
     /// (or a schema change) still yields the 412 mismatch path. The frontend has already stripped the
-    /// surrounding quotes from <paramref name="ifMatchValue"/>.
+    /// surrounding quotes from <paramref name="ifMatchValue"/>. A wildcard precondition (If-Match: *) is
+    /// handled by the caller's switch guard and never reaches this comparison, since it matches whenever
+    /// the target exists.
     /// </summary>
     private static bool IfMatchMatchesCurrentEtag(string ifMatchValue, string currentEtag) =>
         string.Equals(

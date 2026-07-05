@@ -141,7 +141,8 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         // Compose the current served etag (it still carries profileCode from the request's profile, for
         // the returned CurrentEtag). If-Match then compares only the state-significant projection
         // (ContentVersion, schemaEpoch); format, linkFlag, and profileCode are projected out — profileCode
-        // as of the 2026-07-04 ADR amendment.
+        // as of the 2026-07-04 ADR amendment. A wildcard precondition (If-Match: *) short-circuits to a
+        // match here because reaching this point means the target row exists and is locked.
         var currentEtag = _etagComposer.Compose(
             currentState.DocumentMetadata.ContentVersion,
             VariantKeyFactory.Create(
@@ -160,11 +161,12 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             currentState,
             refreshedTargetContext,
             currentEtag,
-            string.Equals(
-                EtagMatchProjection.Of(request.Precondition.Value),
-                EtagMatchProjection.Of(currentEtag),
-                StringComparison.Ordinal
-            )
+            request.Precondition.IsWildcard
+                || string.Equals(
+                    EtagMatchProjection.Of(request.Precondition.Value),
+                    EtagMatchProjection.Of(currentEtag),
+                    StringComparison.Ordinal
+                )
         );
     }
 

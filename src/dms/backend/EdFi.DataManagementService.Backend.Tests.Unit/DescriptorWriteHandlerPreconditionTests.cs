@@ -420,6 +420,49 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_updates_descriptor_put_when_if_match_is_a_wildcard_against_an_existing_descriptor()
+    {
+        // RFC 7232 If-Match: * succeeds against any existing target, even when the supplied opaque
+        // value would not match the current etag.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Charter"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().NotBeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
     public async Task It_preserves_descriptor_put_immutable_identity_failures_after_exact_if_match()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
