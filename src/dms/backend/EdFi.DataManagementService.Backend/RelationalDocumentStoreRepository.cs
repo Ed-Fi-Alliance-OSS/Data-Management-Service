@@ -2156,7 +2156,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     operationKind,
-                    targetRequest
+                    targetRequest,
+                    writePrecondition
                 )
                 .ConfigureAwait(false);
 
@@ -2229,7 +2230,8 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetRequest targetRequest
+        RelationalWriteTargetRequest targetRequest,
+        WritePrecondition writePrecondition
     )
     {
         var targetLookupResult = targetRequest switch
@@ -2258,9 +2260,13 @@ public sealed class RelationalDocumentStoreRepository(
             && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
         )
         {
+            // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+            // target yields the precondition-failed (412) result rather than not-exists (404).
             return new TargetContextResolution(
                 null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(operationKind)
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
         }
 
