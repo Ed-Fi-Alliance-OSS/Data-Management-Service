@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -36,6 +38,23 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public static class HydrationBatchBuilder
 {
+    private static readonly ConditionalWeakTable<
+        ResourceReadPlan,
+        ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>
+    > _singleDocumentBatchCache = new();
+
+    private readonly record struct SingleDocumentBatchCacheKey(
+        bool IncludeDescriptorProjection,
+        bool IncludeDocumentReferenceLookup
+    )
+    {
+        public static SingleDocumentBatchCacheKey From(HydrationExecutionOptions executionOptions) =>
+            new(
+                executionOptions.IncludeDescriptorProjection,
+                executionOptions.IncludeDocumentReferenceLookup
+            );
+    }
+
     /// <summary>
     /// Builds the complete SQL batch command text.
     /// </summary>
@@ -64,14 +83,14 @@ public static class HydrationBatchBuilder
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(keyset);
 
+        if (ShouldUseSingleDocumentBatch(keyset, dialect, executionOptions))
+        {
+            return GetOrBuildSingleDocumentBatch(plan, executionOptions);
+        }
+
         var sqlDialect = SqlDialectFactory.Create(dialect);
         var planDialect = PlanSqlDialectFactory.Create(dialect);
         var writer = new SqlWriter(sqlDialect);
-
-        if (ShouldUseSingleDocumentBatch(keyset, dialect, executionOptions))
-        {
-            return BuildSingleDocumentBatch(plan, planDialect, writer, executionOptions);
-        }
 
         return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
     }
@@ -84,6 +103,49 @@ public static class HydrationBatchBuilder
         dialect is SqlDialect.Pgsql
         && keyset is PageKeysetSpec.Single
         && executionOptions.UseSingleDocumentFastPath;
+
+    private static string GetOrBuildSingleDocumentBatch(
+        ResourceReadPlan plan,
+        HydrationExecutionOptions executionOptions
+    )
+    {
+        var cacheKey = SingleDocumentBatchCacheKey.From(executionOptions);
+        var cacheForPlan = _singleDocumentBatchCache.GetValue(
+            plan,
+            static _ => new ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>()
+        );
+        var cachedBatch = cacheForPlan.GetOrAdd(
+            cacheKey,
+            static (key, readPlan) =>
+                new Lazy<string>(
+                    () => BuildSingleDocumentBatch(readPlan, key),
+                    LazyThreadSafetyMode.ExecutionAndPublication
+                ),
+            plan
+        );
+
+        try
+        {
+            return cachedBatch.Value;
+        }
+        catch
+        {
+            cacheForPlan.TryRemove(cacheKey, out _);
+            throw;
+        }
+    }
+
+    private static string BuildSingleDocumentBatch(
+        ResourceReadPlan plan,
+        SingleDocumentBatchCacheKey cacheKey
+    )
+    {
+        var sqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var planDialect = PlanSqlDialectFactory.Create(SqlDialect.Pgsql);
+        var writer = new SqlWriter(sqlDialect);
+
+        return BuildSingleDocumentBatch(plan, planDialect, writer, cacheKey);
+    }
 
     private static string BuildExistingKeysetBatch(
         ResourceReadPlan plan,
@@ -147,7 +209,7 @@ public static class HydrationBatchBuilder
         ResourceReadPlan plan,
         IPlanSqlDialect planDialect,
         SqlWriter writer,
-        HydrationExecutionOptions executionOptions
+        SingleDocumentBatchCacheKey cacheKey
     )
     {
         // 1. Document metadata select
@@ -177,7 +239,7 @@ public static class HydrationBatchBuilder
         }
 
         // 3. Descriptor projection selects in deterministic plan order
-        if (executionOptions.IncludeDescriptorProjection)
+        if (cacheKey.IncludeDescriptorProjection)
         {
             for (
                 var descriptorPlanIndex = 0;
@@ -202,7 +264,7 @@ public static class HydrationBatchBuilder
         // 4. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
         //    execution option — write-path callers that discard the lookup result opt out).
         if (
-            executionOptions.IncludeDocumentReferenceLookup
+            cacheKey.IncludeDocumentReferenceLookup
             && plan.DocumentReferenceLookup is { } documentReferenceLookup
         )
         {

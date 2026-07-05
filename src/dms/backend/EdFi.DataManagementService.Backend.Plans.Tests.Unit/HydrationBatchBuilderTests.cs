@@ -292,6 +292,78 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
     }
 
     [Test]
+    public void It_should_reuse_cached_single_document_batch_for_the_same_plan_and_options()
+    {
+        var readPlan = BuildTestReadPlan(
+            SqlDialect.Pgsql,
+            BuildDescriptorPlans(),
+            BuildLookupPlan(),
+            includeSingleDocumentSql: true
+        );
+        var keyset = new PageKeysetSpec.Single(42L);
+        var options = new HydrationExecutionOptions(
+            IncludeDescriptorProjection: true,
+            IncludeDocumentReferenceLookup: true,
+            UseSingleDocumentFastPath: true
+        );
+
+        var firstBatch = HydrationBatchBuilder.Build(readPlan, keyset, SqlDialect.Pgsql, options);
+        var secondBatch = HydrationBatchBuilder.Build(readPlan, keyset, SqlDialect.Pgsql, options);
+
+        ReferenceEquals(firstBatch, secondBatch).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_cache_distinct_single_document_batches_for_distinct_execution_options()
+    {
+        var readPlan = BuildTestReadPlan(
+            SqlDialect.Pgsql,
+            BuildDescriptorPlans(),
+            BuildLookupPlan(),
+            includeSingleDocumentSql: true
+        );
+        var keyset = new PageKeysetSpec.Single(42L);
+
+        var fullBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: true,
+                IncludeDocumentReferenceLookup: true,
+                UseSingleDocumentFastPath: true
+            )
+        );
+        var storageOnlyBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: false,
+                IncludeDocumentReferenceLookup: false,
+                UseSingleDocumentFastPath: true
+            )
+        );
+        var repeatedStorageOnlyBatch = HydrationBatchBuilder.Build(
+            readPlan,
+            keyset,
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(
+                IncludeDescriptorProjection: false,
+                IncludeDocumentReferenceLookup: false,
+                UseSingleDocumentFastPath: true
+            )
+        );
+
+        fullBatch.Should().Contain(RootDescriptorSingleDocumentSql);
+        fullBatch.Should().Contain(LookupSingleDocumentSql);
+        storageOnlyBatch.Should().NotContain(RootDescriptorSingleDocumentSql);
+        storageOnlyBatch.Should().NotContain(LookupSingleDocumentSql);
+        ReferenceEquals(fullBatch, storageOnlyBatch).Should().BeFalse();
+        ReferenceEquals(storageOnlyBatch, repeatedStorageOnlyBatch).Should().BeTrue();
+    }
+
+    [Test]
     public void It_should_keep_the_keyset_path_when_the_feature_flag_is_disabled()
     {
         var batch = HydrationBatchBuilder.Build(
