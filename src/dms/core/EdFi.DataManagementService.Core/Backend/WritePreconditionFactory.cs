@@ -21,6 +21,13 @@ internal static class WritePreconditionFactory
             return new WritePrecondition.None();
         }
 
+        // RFC 7232 §3.1 wildcard: a bare (unquoted) "*" is an existence precondition, not an opaque tag.
+        // Only the bare form is the wildcard; a quoted "*" flows through as an ordinary (mismatching) tag.
+        if (string.Equals(ifMatchValue, "*", StringComparison.Ordinal))
+        {
+            return new WritePrecondition.IfMatch("*", IsWildcard: true);
+        }
+
         // Normalize the wire form to the opaque tag the backend compares against: strip the surrounding
         // quotes of a strong entity-tag and tolerate a bare unquoted value. A weak (W/) validator is
         // rejected by the helper and kept verbatim so the backend's state-significant projection cannot

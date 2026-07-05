@@ -54,4 +54,27 @@ public class WritePreconditionFactoryTests
         // backend's state-significant projection cannot equal a well-formed current tag -> 412.
         result.Should().Be(new WritePrecondition.IfMatch(ifMatchValue));
     }
+
+    [Test]
+    public void It_produces_a_wildcard_for_a_bare_asterisk()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["If-Match"] = "*" };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfMatch("*", IsWildcard: true));
+    }
+
+    [Test]
+    public void It_does_not_treat_a_quoted_asterisk_as_a_wildcard()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-Match"] = "\"*\"",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfMatch("*")); // IsWildcard defaults false
+    }
 }

@@ -16,8 +16,11 @@ public abstract record WritePrecondition
     public sealed record None : WritePrecondition;
 
     /// <summary>
-    /// The request carries an opaque <c>If-Match</c> value that must be compared exactly.
+    /// The request carries an <c>If-Match</c> precondition. When <see cref="IsWildcard"/> is false,
+    /// <see cref="Value"/> is the opaque tag compared against the current representation. When true,
+    /// this is the RFC 7232 §3.1 wildcard (<c>If-Match: *</c>): the precondition succeeds whenever a
+    /// current representation of the target exists and fails (412) when it does not; <see cref="Value"/>
+    /// is not compared.
     /// </summary>
-    /// <param name="Value">The exact frontend-supplied value after frontend header filtering.</param>
-    public sealed record IfMatch(string Value) : WritePrecondition;
+    public sealed record IfMatch(string Value, bool IsWildcard = false) : WritePrecondition;
 }
