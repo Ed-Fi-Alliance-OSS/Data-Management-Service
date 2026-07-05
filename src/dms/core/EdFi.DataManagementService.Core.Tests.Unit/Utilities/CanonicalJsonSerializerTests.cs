@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Utilities;
@@ -136,6 +137,68 @@ public class CanonicalJsonSerializerTests
         public void It_produces_identical_bytes()
         {
             _bytes1.Should().BeEquivalentTo(_bytes2);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Stream_Output : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private byte[] _streamBytes = null!;
+        private byte[] _serializedBytes = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject
+            {
+                ["z"] = new JsonObject { ["b"] = 2, ["a"] = 1 },
+                ["a"] = new JsonArray("first", null, "third"),
+            };
+
+            using var stream = new MemoryStream();
+
+            CanonicalJsonSerializer.SerializeToStream(stream, _input);
+
+            _streamBytes = stream.ToArray();
+            _serializedBytes = CanonicalJsonSerializer.SerializeToUtf8Bytes(_input);
+        }
+
+        [Test]
+        public void It_matches_the_canonical_byte_serializer()
+        {
+            _streamBytes.Should().Equal(_serializedBytes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Sha256_Hash : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private byte[] _expectedHash = null!;
+        private byte[] _actualHash = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject
+            {
+                ["name"] = "Lincoln High",
+                ["address"] = new JsonObject
+                {
+                    ["stateAbbreviationDescriptor"] = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    ["city"] = "Austin",
+                },
+            };
+
+            _expectedHash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(_input));
+            _actualHash = CanonicalJsonSerializer.ComputeSha256Hash(_input);
+        }
+
+        [Test]
+        public void It_matches_hashing_the_canonical_byte_output()
+        {
+            _actualHash.Should().Equal(_expectedHash);
         }
     }
 

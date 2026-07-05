@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Core.Utilities;
@@ -13,7 +12,7 @@ public static class ResourceEtagFormatter
     public static string FormatEtag(JsonNode document)
     {
         var canonicalDocument = BuildCanonicalDocument(document);
-        var hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(canonicalDocument));
+        var hash = CanonicalJsonSerializer.ComputeSha256Hash(canonicalDocument);
 
         return Convert.ToBase64String(hash);
     }

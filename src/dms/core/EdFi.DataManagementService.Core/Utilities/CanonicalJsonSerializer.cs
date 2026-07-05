@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Buffers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -37,18 +39,27 @@ public static class CanonicalJsonSerializer
     /// <returns>UTF-8 encoded bytes of the canonical JSON representation.</returns>
     public static byte[] SerializeToUtf8Bytes(JsonNode? node)
     {
-        if (node == null)
-        {
-            return "null"u8.ToArray();
-        }
-
         using var stream = new MemoryStream();
+
+        SerializeToStream(stream, node);
+
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Serializes a JsonNode to a stream as canonical UTF-8 JSON.
+    /// </summary>
+    /// <param name="stream">The stream that receives canonical UTF-8 bytes.</param>
+    /// <param name="node">The JSON node to serialize.</param>
+    public static void SerializeToStream(Stream stream, JsonNode? node)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
         using var writer = new Utf8JsonWriter(stream, WriterOptions);
 
         WriteCanonicalNode(writer, node);
 
         writer.Flush();
-        return stream.ToArray();
     }
 
     /// <summary>
@@ -59,6 +70,21 @@ public static class CanonicalJsonSerializer
     public static string SerializeToString(JsonNode? node)
     {
         return Encoding.UTF8.GetString(SerializeToUtf8Bytes(node));
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 hash of a JsonNode's canonical UTF-8 representation.
+    /// </summary>
+    /// <param name="node">The JSON node to hash.</param>
+    /// <returns>The SHA-256 hash bytes.</returns>
+    public static byte[] ComputeSha256Hash(JsonNode? node)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var stream = new IncrementalHashWriteStream(hash);
+
+        SerializeToStream(stream, node);
+
+        return hash.GetHashAndReset();
     }
 
     /// <summary>
@@ -105,10 +131,13 @@ public static class CanonicalJsonSerializer
         return result;
     }
 
-    private static void WriteCanonicalNode(Utf8JsonWriter writer, JsonNode node)
+    private static void WriteCanonicalNode(Utf8JsonWriter writer, JsonNode? node)
     {
         switch (node)
         {
+            case null:
+                writer.WriteNullValue();
+                break;
             case JsonObject jsonObject:
                 WriteCanonicalObject(writer, jsonObject);
                 break;
@@ -128,18 +157,27 @@ public static class CanonicalJsonSerializer
     {
         writer.WriteStartObject();
 
-        // Sort properties by key using ordinal comparison
-        foreach (var kvp in jsonObject.OrderBy(p => p.Key, StringComparer.Ordinal))
+        if (jsonObject.Count == 0)
         {
-            writer.WritePropertyName(kvp.Key);
-            if (kvp.Value == null)
+            writer.WriteEndObject();
+            return;
+        }
+
+        var properties = RentSortedProperties(jsonObject, out var propertyCount);
+
+        try
+        {
+            for (var index = 0; index < propertyCount; index++)
             {
-                writer.WriteNullValue();
+                var (propertyName, propertyValue) = properties[index];
+
+                writer.WritePropertyName(propertyName);
+                WriteCanonicalNode(writer, propertyValue);
             }
-            else
-            {
-                WriteCanonicalNode(writer, kvp.Value);
-            }
+        }
+        finally
+        {
+            ReturnProperties(properties, propertyCount);
         }
 
         writer.WriteEndObject();
@@ -152,16 +190,87 @@ public static class CanonicalJsonSerializer
         // Preserve element order exactly
         foreach (var item in jsonArray)
         {
-            if (item == null)
-            {
-                writer.WriteNullValue();
-            }
-            else
-            {
-                WriteCanonicalNode(writer, item);
-            }
+            WriteCanonicalNode(writer, item);
         }
 
         writer.WriteEndArray();
+    }
+
+    private static KeyValuePair<string, JsonNode?>[] RentSortedProperties(
+        JsonObject jsonObject,
+        out int propertyCount
+    )
+    {
+        var properties = ArrayPool<KeyValuePair<string, JsonNode?>>.Shared.Rent(jsonObject.Count);
+        propertyCount = 0;
+
+        foreach (var property in jsonObject)
+        {
+            properties[propertyCount++] = property;
+        }
+
+        Array.Sort(properties, 0, propertyCount, JsonObjectPropertyComparer.Instance);
+
+        return properties;
+    }
+
+    private static void ReturnProperties(KeyValuePair<string, JsonNode?>[] properties, int propertyCount)
+    {
+        Array.Clear(properties, 0, propertyCount);
+        ArrayPool<KeyValuePair<string, JsonNode?>>.Shared.Return(properties);
+    }
+
+    private sealed class JsonObjectPropertyComparer : IComparer<KeyValuePair<string, JsonNode?>>
+    {
+        public static readonly JsonObjectPropertyComparer Instance = new();
+
+        public int Compare(KeyValuePair<string, JsonNode?> x, KeyValuePair<string, JsonNode?> y)
+        {
+            return string.CompareOrdinal(x.Key, y.Key);
+        }
+    }
+
+    private sealed class IncrementalHashWriteStream(IncrementalHash hash) : Stream
+    {
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => true;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            hash.AppendData(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            hash.AppendData(buffer);
+        }
     }
 }
