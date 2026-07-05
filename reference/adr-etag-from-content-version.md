@@ -5,6 +5,10 @@
 updated to match. \
 **Amended 2026-07-04:** `profileCode` removed from the `If-Match` comparison to restore legacy
 compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison). \
+**Amended 2026-07-05:** unquoted `If-Match` values accepted as equivalent to quoted ones for legacy
+compatibility — see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted). \
+**Amended 2026-07-05:** bare `If-Match: *` honored as an existence precondition per RFC 7232 §3.1 —
+see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching). \
 **Date:** 2026-06-30 (accepted 2026-07-03) \
 **Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
@@ -151,7 +155,7 @@ Examples (`ContentVersion` = 5, schema epoch `a1b2c3d4`):
 
 Rules:
 
-- The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers carry it **quoted**.
+- The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers the server **emits** carry it **quoted**. On **input**, however, the server accepts an `If-Match` value whether or not it is quoted (see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)); this asymmetry is deliberate, for legacy compatibility. A bare `If-Match: *` is handled separately as an RFC 7232 §3.1 wildcard, not as an opaque tag (see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching)).
 - `ContentVersion` and every `variantKey` component are treated as **opaque strings** — no component is parsed or compared numerically.
 - All components are always present (use `_` / `n` for "none" / "off") so the token has a fixed shape and is never ambiguous.
 - The server recomputes the full tag deterministically from request context (negotiated format, profile in effect, link mode) plus the loaded schema at three points — read response, write response, and `If-Match` precondition — with **no database dependency** and **no document hashing**. At the `If-Match` precondition the comparison is against the **state-significant projection** (`ContentVersion`, `schemaEpoch`, `profileCode`; `format` and `linkFlag` excluded) — see "`If-Match` comparison (decided)".
@@ -238,3 +242,94 @@ The **served** etag is unchanged: reads and writes still emit the full `"{Conten
 ### Consequence
 
 Cross-profile and profiled-vs-unprofiled `If-Match` (and DELETE `If-Match`) now succeed whenever `ContentVersion` and `schemaEpoch` agree, matching legacy ODS/API behavior. Optimistic-concurrency safety is retained in full, because the removed component never reflected resource state.
+
+## Amendment (2026-07-05): unquoted `If-Match` values accepted as equivalent to quoted
+
+**Status:** Accepted — clarifies the RFC 7232 posture stated in "ETag format and HTTP validator semantics". \
+**Date:** 2026-07-05 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code and the confirmed legacy ODS/API behavior as understood on 2026-07-05 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+RFC 7232 §2.3 defines an entity-tag as an `opaque-tag` that **must** be double-quoted (`opaque-tag = DQUOTE *etagc DQUOTE`), so a strict reading — the posture this ADR otherwise adopts — treats `If-Match: "5-a1b2c3d4.j._.l"` as valid and a bare `If-Match: 5-a1b2c3d4.j._.l` as malformed. The legacy Ed-Fi ODS/API, by contrast, does **not** enforce the quoting requirement on input: it accepts the quoted and unquoted forms interchangeably for `If-Match`.
+
+This amendment adopts the legacy behavior as a **requirement**: on **input**, the DMS treats an unquoted `If-Match` value as equivalent to the same value quoted. Both forms resolve to the same opaque tag and are compared identically against the server-composed expected tag.
+
+The server's **output** contract is unchanged: the DMS continues to **emit** `ETag` response headers as fully quoted strong entity-tags (no `W/` prefix), per RFC 7232. The relaxation applies only to what the server is willing to **parse** from a client, not to what it produces. Weak (`W/`-prefixed) validators remain rejected for `If-Match` regardless of quoting.
+
+### Why
+
+1. **Legacy compatibility, no downside.** Clients written against the legacy ODS/API may send `If-Match` without quotes. Rejecting those requests (or silently failing the precondition) would be a breaking behavior change for a population of already-conforming-enough clients, with no offsetting benefit — the unquoted value is unambiguous here because the opaque tag contains no whitespace, comma, or quote characters (`variantKey` draws only from `[a-z0-9_.]` and `ContentVersion` is digits), so there is no parsing hazard in accepting it.
+
+2. **Postel's-law robustness.** Being liberal in what the server accepts while strict in what it emits is the standard, safe accommodation for a validator whose grammar the server fully controls. Accepting the unquoted form cannot weaken optimistic-concurrency safety: the value still has to match the state-significant projection of the current tag, so a wrong or stale tag still yields `412`.
+
+### Scope of the code change
+
+This decision is **already satisfied** by the current implementation; the amendment documents the intent rather than requiring new work:
+
+- `EtagValue.TryParseHeaderValue` (`Core/Utilities/EtagValue.cs`) strips surrounding quotes when present and otherwise returns the bare value unchanged, while still rejecting `W/` weak tags.
+- `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) routes every `If-Match` header — for PUT, POST-as-update, and DELETE — through that helper, so all write preconditions inherit the quoted/unquoted equivalence from a single parse site.
+- Server emission (`EtagValue.ToHeaderValue`, `EtagComposer`) is untouched and continues to quote.
+
+If future hardening ever tightens the parser, the quoted/unquoted equivalence for `If-Match` input must be preserved (or explicitly re-decided by the team) to avoid regressing legacy clients.
+
+### Consequence
+
+A client may send `If-Match` with or without surrounding quotes and receive identical precondition behavior, matching legacy ODS/API. The change is confined to input tolerance; the emitted `ETag` contract and RFC 7232 strong-comparison semantics are otherwise unchanged.
+
+## Amendment (2026-07-05): `If-Match` wildcard matching
+
+**Status:** Proposed — **requires a code change** (not yet implemented; contrast the two amendments above, which the code already satisfied). \
+**Date:** 2026-07-05 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-05 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+RFC 7232 §3.1 defines a wildcard for `If-Match`: with the field-value `*`, the precondition is true if — and only if — the origin server currently has a representation for the target resource, regardless of its entity-tag. The grammar is `If-Match = "*" / 1#entity-tag`, so the wildcard is the **bare, unquoted** `*`, a production distinct from a (quoted) entity-tag.
+
+The DMS-1005 story specified an exact opaque-string comparison that "must not normalize quotes, parse entity-tag lists, or otherwise reinterpret the value." As a result, a `*` is today compared literally against the composed tag `"{ContentVersion}-{variantKey}"`, never equals it, and **always produces `412` — even when the resource exists.** This amendment adopts wildcard handling as a requirement, superseding the story's blanket "no reinterpretation" stance for the `*` case only (as the earlier quote/unquote amendments already did for quoting).
+
+**Requirement.** The DMS must treat a bare `If-Match: *` as a wildcard: the precondition succeeds when a current representation of the target exists and fails with `412` when it does not.
+
+Per operation:
+
+- **PUT** (update-by-id): resource exists → `*` satisfied, update proceeds. Missing target → **`412`** (the wildcard is an existence precondition and it fails). This is the one case where a missing target does **not** return `404`.
+- **DELETE**: resource exists → `*` satisfied, delete proceeds. Missing target → **`412`**.
+- **POST** upsert resolving to **update** (existing document): `*` satisfied, proceeds.
+- **POST** upsert resolving to **insert** (new document): no current representation → **`412`**, consistent with the existing "POST + `If-Match` on a new document → 412" rule.
+
+Outside the wildcard, status-code behavior is unchanged: a missing PUT/DELETE target without `If-Match`, or with a specific-tag `If-Match`, still returns **`404`** (per DMS-1005 Answer 1.5). Only a bare `*` converts a missing target into a `412`.
+
+A wildcard never guards against concurrent modification — it matches any version and asserts only existence. That is exactly the RFC-defined meaning and a deliberately weaker guarantee than a specific-tag `If-Match`, selected by the client.
+
+### Decisions
+
+Three points were resolved when adopting this amendment:
+
+1. **Missing target + `If-Match: *` returns `412`, not `404`.** The wildcard is an existence precondition; when the target does not exist the precondition genuinely fails, so `412` (not `404`) is the RFC-conformant and chosen response. Non-wildcard requests keep the existing `404` for missing targets.
+2. **Only the bare, unquoted `*` is the wildcard.** A quoted `"*"` is treated as an ordinary opaque tag (which will simply mismatch), matching the RFC grammar `If-Match = "*" / 1#entity-tag`.
+3. **This is a non-breaking enhancement.** Legacy Ed-Fi ODS/API has no wildcard `If-Match` concept, so no existing client could have relied on wildcard behavior; today's unconditional `412` is simply a defect for any RFC-conformant client that sends `*`.
+
+### Why
+
+1. **RFC 7232 §3.1 conformance.** The current unconditional `412` for `*` is a defect against the standard this ADR otherwise commits to.
+2. **Client ergonomics.** `*` is the standard way to express "modify/delete only if it exists." Honoring it lets clients and tooling use the wildcard as intended instead of receiving a spurious `412`.
+3. **No concurrency-safety loss.** `*` is explicitly an existence check, not a change detector, so honoring it removes no protection that a specific-tag `If-Match` provides.
+
+### Scope of the code change
+
+Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendments, this is **new work**:
+
+- **Detect the wildcard before quote-stripping.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) should recognize a raw `If-Match` value of exactly `*` and produce a new typed arm — e.g. `WritePrecondition.IfMatchAny` — rather than routing it through `EtagValue.TryParseHeaderValue`. Only the bare `*` qualifies; a quoted `"*"` continues through the normal opaque-tag path.
+- **Honor the wildcard in the precondition checkers.** `RelationalCurrentEtagPreconditionChecker`, `RelationalWriteExecutionStateResolver`, the DELETE precondition path, and `DescriptorWriteHandler` should treat `IfMatchAny` as satisfied whenever the target row is present — i.e., pass when the existence/row-lock step that already runs succeeds — bypassing `EtagMatchProjection` entirely, and fail with `412` when the target is absent (including the PUT/DELETE missing-target case, which the wildcard converts from `404` to `412`).
+- **Preserve non-wildcard precedence:** new-document POST-insert → `412`; missing PUT/DELETE target without a wildcard → `404`.
+
+### Consequence
+
+`If-Match: *` becomes a working existence precondition — succeeding on any current version of an existing resource and returning `412` when the resource does not exist — instead of an unconditional `412` in all cases. Optimistic-concurrency behavior for specific-tag `If-Match` is unchanged.
