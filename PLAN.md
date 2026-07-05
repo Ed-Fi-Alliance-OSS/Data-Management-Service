@@ -147,6 +147,17 @@ Validation:
 
 ## Workstream 3 - Review JSON Path And Authorization SQL Construction For Per-Request Recompilation
 
+Execution status: implementation completed on 2026-07-05; performance validation pending. Implemented a bounded cached compile path for single-record relationship authorization SQL plans and switched the stored/proposed runtime request paths to it. The cached plan excludes request-specific claim EdOrg values and proposed runtime values, while the key includes dialect, check-spec identity, claim parameterization shape, emitted AUTH1 index, document parameter name, and reserved write parameter names.
+
+Validation completed:
+
+- `dotnet csharpier format` on changed files
+- `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter "FullyQualifiedName~Given_SingleRecordRelationshipAuthorizationSqlCompiler"`: 70 passed
+- `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`: 1842 passed
+- `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`: 1688 passed
+
+Next validation: one clean 30-minute Suite 3 20-client volume run with PostgreSQL evidence and .NET counters only. Use a 5-minute symbolized trace only if counters do not clearly show allocation or GC movement.
+
 Primary files:
 
 - `src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs`

@@ -546,8 +546,8 @@ internal sealed class RelationalWriteNoProfilePersister(
             ?? throw new InvalidOperationException(
                 "Cannot build a proposed authorization command without a runtime authorization check."
             );
-        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(mappingSet.Key.Dialect);
-        var sqlPlan = compiler.Compile(
+        var sqlPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet.Key.Dialect,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 relationshipAuthorizationRuntimeCheck.CheckSpecs,
                 relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,

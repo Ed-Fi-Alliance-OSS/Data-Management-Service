@@ -2940,6 +2940,157 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain("NOT EXISTS (SELECT 1 FROM failed_subjects WHERE \"StrategyOrdinal\" = 0)");
     }
 
+    [Test]
+    public void It_should_reuse_cached_postgresql_plans_when_only_claim_edorg_values_change()
+    {
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var firstParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var secondParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [200L, 300L],
+            "ClaimEducationOrganizationIds"
+        );
+
+        var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, firstParameterization, 5)
+        );
+        var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, secondParameterization, 5)
+        );
+
+        secondPlan.Should().BeSameAs(firstPlan);
+    }
+
+    [Test]
+    public void It_should_validate_uncached_claim_edorg_values_before_reusing_cached_plan()
+    {
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var validParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var invalidParameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+            "ClaimEducationOrganizationIds",
+            [],
+            ["ClaimEducationOrganizationIds"]
+        );
+
+        SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, validParameterization, 5)
+        );
+
+        var compile = () =>
+            SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                SqlDialect.Pgsql,
+                new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, invalidParameterization, 5)
+            );
+
+        compile.Should().Throw<ArgumentException>().WithMessage("*at least one claim EdOrg id*");
+    }
+
+    [Test]
+    public void It_should_not_reuse_cached_proposed_plans_when_reserved_parameter_names_change()
+    {
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var parameterization = CreateSingleClaimParameterization();
+
+        var unreservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, parameterization, 5)
+        );
+        var reservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Pgsql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                checkSpecs,
+                parameterization,
+                5,
+                ReservedParameterNames: ["relationshipAuthorization_0_0_schoolId"]
+            )
+        );
+
+        reservedPlan.Should().NotBeSameAs(unreservedPlan);
+        AssertSingleProposedValueParameterName(unreservedPlan, "relationshipAuthorization_0_0_schoolId");
+        AssertSingleProposedValueParameterName(reservedPlan, "relationshipAuthorization_0_0_schoolId_2");
+    }
+
+    [Test]
+    public void It_should_not_reuse_cached_sql_server_scalar_plans_when_parameter_shape_changes()
+    {
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var oneClaimParameterization =
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Mssql,
+                [100L],
+                "ClaimEducationOrganizationIds"
+            );
+        var twoClaimParameterization =
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Mssql,
+                [100L, 200L],
+                "ClaimEducationOrganizationIds"
+            );
+
+        var oneClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Mssql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, oneClaimParameterization, 5)
+        );
+        var twoClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            SqlDialect.Mssql,
+            new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, twoClaimParameterization, 5)
+        );
+
+        twoClaimPlan.Should().NotBeSameAs(oneClaimPlan);
+        oneClaimPlan
+            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("DocumentId", "ClaimEducationOrganizationIds_0");
+        twoClaimPlan
+            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("DocumentId", "ClaimEducationOrganizationIds_0", "ClaimEducationOrganizationIds_1");
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_compile_stored_target_cte_with_ordered_root_columns(SqlDialect dialect)
