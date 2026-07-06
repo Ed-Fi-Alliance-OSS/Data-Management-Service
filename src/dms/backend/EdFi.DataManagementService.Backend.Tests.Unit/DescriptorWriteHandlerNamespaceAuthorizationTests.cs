@@ -324,6 +324,47 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_returns_namespace_403_and_does_not_insert_when_descriptor_post_create_under_wildcard_if_none_match_has_a_proposed_namespace_denial()
+    {
+        // If-None-Match on a CreateNew descriptor POST is the new "proceed to insert" branch, but the
+        // proposed-namespace check runs inside the locked resolve before the insert. A denial must
+        // therefore return the namespace 403, issue no INSERT, and never commit — mirroring the
+        // If-Match create case so a future switch-reordering that inserted before the auth check fails
+        // here rather than opening a namespace-authorization bypass.
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
+        );
+        var sut = CreateSut(sessionFactory, targetLookupService);
+        var request = CreatePostRequest(
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            authorizationStrategy: NamespaceStrategy(),
+            @namespace: "uri://other.org/SchoolTypeDescriptor"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        result
+            .As<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+            );
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_namespace_403_and_does_not_update_when_descriptor_post_upsert_stored_namespace_is_not_authorized()
     {
         var documentId = 345L;
