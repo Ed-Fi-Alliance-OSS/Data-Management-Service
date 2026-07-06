@@ -39,14 +39,6 @@ internal interface IPlanSqlDialect
     void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
 
     /// <summary>
-    /// Appends a <c>SELECT</c> statement that reads <c>dms.Document</c> metadata for a single
-    /// document id parameter, returning the same metadata columns and order as the keyset form.
-    /// </summary>
-    /// <param name="writer">The SQL writer to append to.</param>
-    /// <param name="documentIdParameterName">The bare document id parameter name.</param>
-    void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName);
-
-    /// <summary>
     /// Appends a predicate comparison against the supplied table alias and column.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>

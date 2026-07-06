@@ -141,7 +141,7 @@ public static class HydrationBatchBuilder
     )
     {
         var sqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
-        var planDialect = PlanSqlDialectFactory.Create(SqlDialect.Pgsql);
+        var planDialect = new PgsqlPlanDialect();
         var writer = new SqlWriter(sqlDialect);
 
         return BuildSingleDocumentBatch(plan, planDialect, writer, cacheKey);
@@ -207,7 +207,7 @@ public static class HydrationBatchBuilder
 
     private static string BuildSingleDocumentBatch(
         ResourceReadPlan plan,
-        IPlanSqlDialect planDialect,
+        PgsqlPlanDialect planDialect,
         SqlWriter writer,
         SingleDocumentBatchCacheKey cacheKey
     )

@@ -15,14 +15,14 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_PgsqlPlanDialect
 {
-    private IPlanSqlDialect _dialect = null!;
+    private PgsqlPlanDialect _dialect = null!;
     private SqlWriter _writer = null!;
     private KeysetTableContract _keyset = null!;
 
     [SetUp]
     public void Setup()
     {
-        _dialect = PlanSqlDialectFactory.Create(SqlDialect.Pgsql);
+        _dialect = new PgsqlPlanDialect();
         _writer = new SqlWriter(SqlDialectFactory.Create(SqlDialect.Pgsql));
         _keyset = KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql);
     }

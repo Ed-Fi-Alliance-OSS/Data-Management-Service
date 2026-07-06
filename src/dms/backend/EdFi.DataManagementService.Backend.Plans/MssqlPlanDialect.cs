@@ -68,19 +68,6 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        ArgumentNullException.ThrowIfNull(documentIdParameterName);
-
-        DocumentMetadataColumns.AppendSingleDocumentMetadataSelectBody(
-            writer,
-            DocumentTable,
-            documentIdParameterName
-        );
-    }
-
-    /// <inheritdoc />
     public void AppendComparisonSql(
         SqlWriter writer,
         string tableAlias,
