@@ -61,9 +61,6 @@ services:
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
       AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
-      DOTNET_EnableDiagnostics: ${DMS_DOTNET_ENABLE_DIAGNOSTICS:-1}
-      DOTNET_DiagnosticPorts: ${DMS_DOTNET_DIAGNOSTIC_PORTS:-}
-      TMPDIR: ${DMS_DOTNET_TMPDIR:-/tmp}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}
@@ -76,8 +73,6 @@ services:
       JwtAuthentication__AutomaticRefreshIntervalHours: ${DMS_JWT_AUTOMATIC_REFRESH_INTERVAL_HOURS:-24}
     ports:
       - "127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}"
-    volumes:
-      - ${DMS_DOTNET_DIAGNOSTICS_DIR:-/tmp/dms-dotnet-diagnostics}:/diag
     networks:
       - dms
     restart: unless-stopped

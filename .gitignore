@@ -65,6 +65,7 @@ artifacts/
 eng/docker-compose/.bootstrap/
 eng/docker-compose/.derived/
 eng/docker-compose/.env.perf-hostpg
+.dms-dotnet-diagnostics/
 
 # Local data-load credentials
 /dataload-creds.json
