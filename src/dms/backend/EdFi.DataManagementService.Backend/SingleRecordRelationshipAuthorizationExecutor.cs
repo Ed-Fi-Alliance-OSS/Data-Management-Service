@@ -73,7 +73,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         ArgumentNullException.ThrowIfNull(request);
 
         var sqlPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            request.MappingSet.Key.Dialect,
+            request.MappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 request.CheckSpecs,
                 request.ClaimEducationOrganizationIdParameterization,

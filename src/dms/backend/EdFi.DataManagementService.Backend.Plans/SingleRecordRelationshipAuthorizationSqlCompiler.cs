@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -35,10 +36,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly string[] _defaultReservedParameterNames = ["documentUuid", "resourceKeyId"];
     private static readonly string _pgsqlEdOrgSubjectValueSqlType = ResolvePgsqlEdOrgSubjectValueSqlType();
-    private static readonly ConcurrentDictionary<
-        SqlPlanCacheKey,
-        Lazy<SingleRecordRelationshipAuthorizationSqlPlan>
-    > _cachedSqlPlans = new();
+    private static readonly ConditionalWeakTable<MappingSet, SqlPlanCache> _sqlPlanCachesByMappingSet = new();
 
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
@@ -68,101 +66,19 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     }
 
     public static SingleRecordRelationshipAuthorizationSqlPlan CompileCached(
-        SqlDialect dialect,
+        MappingSet mappingSet,
         SingleRecordRelationshipAuthorizationSqlSpec spec
     )
     {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var dialect = mappingSet.Key.Dialect;
         ValidateCacheableSpecShape(dialect, spec);
 
         var cacheKey = SqlPlanCacheKey.Create(dialect, spec);
-        if (_cachedSqlPlans.TryGetValue(cacheKey, out var cachedPlan))
-        {
-            return GetCachedSqlPlan(cacheKey, cachedPlan);
-        }
+        var sqlPlanCache = _sqlPlanCachesByMappingSet.GetValue(mappingSet, static _ => new SqlPlanCache());
 
-        if (_cachedSqlPlans.Count >= MaxCachedSqlPlans)
-        {
-            return CompileUncached(dialect, spec);
-        }
-
-        var lazyPlan = _cachedSqlPlans.GetOrAdd(
-            cacheKey,
-            static (key, sourceSpec) =>
-                new Lazy<SingleRecordRelationshipAuthorizationSqlPlan>(
-                    () => CompileUncached(key.Dialect, sourceSpec),
-                    LazyThreadSafetyMode.ExecutionAndPublication
-                ),
-            spec
-        );
-
-        return GetCachedSqlPlan(cacheKey, lazyPlan);
-    }
-
-    private static SingleRecordRelationshipAuthorizationSqlPlan GetCachedSqlPlan(
-        SqlPlanCacheKey cacheKey,
-        Lazy<SingleRecordRelationshipAuthorizationSqlPlan> cachedPlan
-    )
-    {
-        try
-        {
-            return cachedPlan.Value;
-        }
-        catch
-        {
-            _cachedSqlPlans.TryRemove(cacheKey, out _);
-            throw;
-        }
-    }
-
-    private static SingleRecordRelationshipAuthorizationSqlPlan CompileUncached(
-        SqlDialect dialect,
-        SingleRecordRelationshipAuthorizationSqlSpec spec
-    ) =>
-        new SingleRecordRelationshipAuthorizationSqlCompiler(dialect).Compile(
-            CreateCacheableCompileSpec(spec)
-        );
-
-    private static SingleRecordRelationshipAuthorizationSqlSpec CreateCacheableCompileSpec(
-        SingleRecordRelationshipAuthorizationSqlSpec spec
-    )
-    {
-        var parameterization = spec.ClaimEducationOrganizationIdParameterization;
-        string[] parameterNamesInOrder = [.. parameterization.ParameterNamesInOrder];
-
-        return new SingleRecordRelationshipAuthorizationSqlSpec(
-            spec.CheckSpecs,
-            new AuthorizationClaimEducationOrganizationIdParameterization(
-                parameterization.Kind,
-                parameterization.BaseParameterName,
-                CreatePlaceholderClaimEducationOrganizationIds(
-                    parameterization.Kind,
-                    parameterNamesInOrder.Length
-                ),
-                parameterNamesInOrder
-            ),
-            spec.EmittedAuth1Index,
-            spec.DocumentIdParameterName,
-            spec.ReservedParameterNames is null ? [] : [.. spec.ReservedParameterNames]
-        );
-    }
-
-    private static long[] CreatePlaceholderClaimEducationOrganizationIds(
-        AuthorizationClaimEducationOrganizationIdParameterizationKind claimKind,
-        int parameterNameCount
-    )
-    {
-        var count =
-            claimKind is AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar
-                ? parameterNameCount
-                : 1;
-        long[] claimEducationOrganizationIds = new long[count];
-
-        for (var index = 0; index < claimEducationOrganizationIds.Length; index++)
-        {
-            claimEducationOrganizationIds[index] = index + 1L;
-        }
-
-        return claimEducationOrganizationIds;
+        return sqlPlanCache.GetOrAdd(cacheKey, spec);
     }
 
     private static void ValidateCacheableSpecShape(
@@ -606,6 +522,154 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
 
         return proposedValueParameters;
+    }
+
+    private sealed class SqlPlanCache
+    {
+        private readonly ConcurrentDictionary<
+            SqlPlanCacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan>
+        > _cachedSqlPlans = new();
+        private int _cachedSqlPlanCount;
+
+        public SingleRecordRelationshipAuthorizationSqlPlan GetOrAdd(
+            SqlPlanCacheKey cacheKey,
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        )
+        {
+            if (_cachedSqlPlans.TryGetValue(cacheKey, out var cachedPlan))
+            {
+                return GetCachedSqlPlan(cacheKey, cachedPlan);
+            }
+
+            if (!TryReserveCacheSlot())
+            {
+                return CompileUncached(cacheKey.Dialect, spec);
+            }
+
+            var lazyPlan = new Lazy<SingleRecordRelationshipAuthorizationSqlPlan>(
+                () => CompileUncached(cacheKey.Dialect, spec),
+                LazyThreadSafetyMode.ExecutionAndPublication
+            );
+            cachedPlan = _cachedSqlPlans.GetOrAdd(cacheKey, lazyPlan);
+
+            if (!ReferenceEquals(cachedPlan, lazyPlan))
+            {
+                ReleaseCacheSlot();
+            }
+
+            return GetCachedSqlPlan(cacheKey, cachedPlan);
+        }
+
+        private bool TryReserveCacheSlot()
+        {
+            while (true)
+            {
+                var cachedSqlPlanCount = Volatile.Read(ref _cachedSqlPlanCount);
+
+                if (cachedSqlPlanCount >= MaxCachedSqlPlans)
+                {
+                    return false;
+                }
+
+                if (
+                    Interlocked.CompareExchange(
+                        ref _cachedSqlPlanCount,
+                        cachedSqlPlanCount + 1,
+                        cachedSqlPlanCount
+                    ) == cachedSqlPlanCount
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        private void ReleaseCacheSlot()
+        {
+            Interlocked.Decrement(ref _cachedSqlPlanCount);
+        }
+
+        private SingleRecordRelationshipAuthorizationSqlPlan GetCachedSqlPlan(
+            SqlPlanCacheKey cacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan> cachedPlan
+        )
+        {
+            try
+            {
+                return cachedPlan.Value;
+            }
+            catch
+            {
+                Remove(cacheKey, cachedPlan);
+                throw;
+            }
+        }
+
+        private void Remove(
+            SqlPlanCacheKey cacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan> cachedPlan
+        )
+        {
+            if (
+                _cachedSqlPlans.TryRemove(cacheKey, out var removedPlan)
+                && ReferenceEquals(removedPlan, cachedPlan)
+            )
+            {
+                ReleaseCacheSlot();
+            }
+        }
+
+        private static SingleRecordRelationshipAuthorizationSqlPlan CompileUncached(
+            SqlDialect dialect,
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        ) =>
+            new SingleRecordRelationshipAuthorizationSqlCompiler(dialect).Compile(
+                CreateCacheableCompileSpec(spec)
+            );
+
+        private static SingleRecordRelationshipAuthorizationSqlSpec CreateCacheableCompileSpec(
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        )
+        {
+            var parameterization = spec.ClaimEducationOrganizationIdParameterization;
+            string[] parameterNamesInOrder = [.. parameterization.ParameterNamesInOrder];
+
+            return new SingleRecordRelationshipAuthorizationSqlSpec(
+                spec.CheckSpecs,
+                new AuthorizationClaimEducationOrganizationIdParameterization(
+                    parameterization.Kind,
+                    parameterization.BaseParameterName,
+                    CreatePlaceholderClaimEducationOrganizationIds(
+                        parameterization.Kind,
+                        parameterNamesInOrder.Length
+                    ),
+                    parameterNamesInOrder
+                ),
+                spec.EmittedAuth1Index,
+                spec.DocumentIdParameterName,
+                spec.ReservedParameterNames is null ? [] : [.. spec.ReservedParameterNames]
+            );
+        }
+
+        private static long[] CreatePlaceholderClaimEducationOrganizationIds(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind claimKind,
+            int parameterNameCount
+        )
+        {
+            var count =
+                claimKind is AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar
+                    ? parameterNameCount
+                    : 1;
+            long[] claimEducationOrganizationIds = new long[count];
+
+            for (var index = 0; index < claimEducationOrganizationIds.Length; index++)
+            {
+                claimEducationOrganizationIds[index] = index + 1L;
+            }
+
+            return claimEducationOrganizationIds;
+        }
     }
 
     private static HashSet<string> BuildReservedParameterNameSet(

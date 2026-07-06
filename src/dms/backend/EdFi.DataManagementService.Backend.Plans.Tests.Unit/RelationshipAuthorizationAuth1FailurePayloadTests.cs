@@ -2894,6 +2894,56 @@ public class Given_RelationshipAuthorizationFailureMapper
 [Parallelizable]
 public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
 {
+    private static MappingSet CreateCacheMappingSet(SqlDialect dialect)
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKeyEntry = new ResourceKeyEntry(1, resource, "5.2.0", IsAbstractResource: false);
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "5.2",
+            RelationalMappingVersion: "v1",
+            EffectiveSchemaHash: new string('f', 64),
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.2.0", false, new string('e', 64)),
+            ],
+            ResourceKeysInIdOrder: [resourceKeyEntry]
+        );
+        var modelSet = new DerivedRelationalModelSet(
+            EffectiveSchema: effectiveSchema,
+            Dialect: dialect,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo("ed-fi", "Ed-Fi", "5.2.0", false, new DbSchemaName("edfi")),
+            ],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey(effectiveSchema.EffectiveSchemaHash, dialect, "v1"),
+            Model: modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resource] = resourceKeyEntry.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKeyEntry.ResourceKeyId] = resourceKeyEntry,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
     [Test]
     public void It_should_compile_postgresql_auth1_sql_with_one_claim_edorg_array_parameter()
     {
@@ -2943,6 +2993,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_reuse_cached_postgresql_plans_when_only_claim_edorg_values_change()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
         [
             CreateStoredCheckSpec(
@@ -2964,11 +3015,11 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         );
 
         var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, firstParameterization, 5)
         );
         var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, secondParameterization, 5)
         );
 
@@ -2978,6 +3029,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_reuse_cached_postgresql_plans_for_structurally_equivalent_stored_check_specs()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         var firstCheckSpecs = new[]
         {
             CreateStoredCheckSpec(
@@ -3000,7 +3052,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         firstCheckSpecs.Should().NotBeSameAs(secondCheckSpecs);
 
         var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 firstCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3008,7 +3060,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
         var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 secondCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3020,8 +3072,47 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_scope_cached_plans_to_the_mapping_set_instance()
+    {
+        var firstMappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
+        var secondMappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+
+        firstMappingSet.Should().NotBeSameAs(secondMappingSet);
+
+        var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            firstMappingSet,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                checkSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+        var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            secondMappingSet,
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                checkSpecs,
+                CreateSingleClaimParameterization(),
+                5
+            )
+        );
+
+        secondPlan.Should().NotBeSameAs(firstPlan);
+        secondPlan.AuthorizationSql.Should().Be(firstPlan.AuthorizationSql);
+    }
+
+    [Test]
     public void It_should_reuse_cached_postgresql_plans_for_structurally_equivalent_proposed_check_specs()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         var firstCheckSpecs = new[]
         {
             CreateProposedCheckSpec(
@@ -3044,7 +3135,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         firstCheckSpecs.Should().NotBeSameAs(secondCheckSpecs);
 
         var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 firstCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3052,7 +3143,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
         var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 secondCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3067,6 +3158,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_not_reuse_cached_postgresql_plans_when_check_spec_sql_shape_changes()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         var schoolCheckSpecs = new[]
         {
             CreateStoredCheckSpec(
@@ -3090,7 +3182,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         };
 
         var schoolPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 schoolCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3098,7 +3190,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             )
         );
         var localEducationAgencyPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 localEducationAgencyCheckSpecs,
                 CreateSingleClaimParameterization(),
@@ -3114,6 +3206,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_validate_uncached_claim_edorg_values_before_reusing_cached_plan()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
         [
             CreateStoredCheckSpec(
@@ -3136,13 +3229,13 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         );
 
         SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, validParameterization, 5)
         );
 
         var compile = () =>
             SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-                SqlDialect.Pgsql,
+                mappingSet,
                 new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, invalidParameterization, 5)
             );
 
@@ -3152,6 +3245,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_not_reuse_cached_proposed_plans_when_reserved_parameter_names_change()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
         [
             CreateProposedCheckSpec(
@@ -3164,11 +3258,11 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var parameterization = CreateSingleClaimParameterization();
 
         var unreservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, parameterization, 5)
         );
         var reservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Pgsql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(
                 checkSpecs,
                 parameterization,
@@ -3185,6 +3279,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     [Test]
     public void It_should_not_reuse_cached_sql_server_scalar_plans_when_parameter_shape_changes()
     {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Mssql);
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
         [
             CreateStoredCheckSpec(
@@ -3208,11 +3303,11 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             );
 
         var oneClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Mssql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, oneClaimParameterization, 5)
         );
         var twoClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            SqlDialect.Mssql,
+            mappingSet,
             new SingleRecordRelationshipAuthorizationSqlSpec(checkSpecs, twoClaimParameterization, 5)
         );
 
