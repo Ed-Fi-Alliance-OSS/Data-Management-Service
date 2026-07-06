@@ -42,7 +42,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
     /// sibling of If-Match, so every structural "is a precondition present?" gate must admit both;
     /// only the proceed-vs-412 outcome differs, centralized in <see cref="EtagPreconditionEvaluator"/>.
     /// </summary>
-    private static bool HasEtagPrecondition(WritePrecondition precondition) =>
+    internal static bool HasEtagPrecondition(WritePrecondition precondition) =>
         precondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch;
 
     public static IfMatchPreconditionEvaluation GetEtagPreconditionEvaluation(

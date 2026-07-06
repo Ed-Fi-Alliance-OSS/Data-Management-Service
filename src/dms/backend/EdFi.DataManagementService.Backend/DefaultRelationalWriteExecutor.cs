@@ -137,9 +137,10 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             // If-None-Match is a sibling of If-Match, so the before-auth dispatch gate must admit both to
             // agree with GetEtagPreconditionEvaluation's broadened defer decision; otherwise an
-            // If-None-Match write would silently skip the precondition resolution.
+            // If-None-Match write would silently skip the precondition resolution. Reuse the resolver's
+            // single predicate so the two cannot drift and re-open the fail-open path.
             if (
-                request.WritePrecondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch
+                RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
                 && ifMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
@@ -205,7 +206,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
 
             if (
-                request.WritePrecondition is not (WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch)
+                !RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
                 || ifMatchPreconditionEvaluation
                     is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )
