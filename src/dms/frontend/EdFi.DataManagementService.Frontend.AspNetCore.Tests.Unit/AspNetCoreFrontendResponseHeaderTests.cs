@@ -76,4 +76,40 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
 
         httpContext.Response.Headers.ETag.ToString().Should().BeEmpty();
     }
+
+    [Test]
+    public async Task It_maps_a_304_response_to_a_quoted_etag_header_and_no_body()
+    {
+        // A conditional-GET short-circuit (If-None-Match matched the current representation) is
+        // signaled by the Core handler as a 304 with a null body; the ETag header must still be
+        // served as a quoted strong validator, and no body content should be written.
+        const string opaqueEtag = "5-a1b2c3d4.j._.l";
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        using var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+
+        var response = new FrontendResponse(
+            StatusCode: 304,
+            Body: null,
+            Headers: new Dictionary<string, string> { ["etag"] = opaqueEtag }
+        );
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be(304);
+        httpContext.Response.Headers.ETag.ToString().Should().Be($"\"{opaqueEtag}\"");
+        responseBody.Length.Should().Be(0);
+    }
 }
