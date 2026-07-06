@@ -194,3 +194,14 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1285` — Close MSSQL Relational Write-Path Correctness and Resilience Coverage Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/05-mssql-write-path-coverage.md`
   - `DMS-1286` — Add Real-MSSQL Integration Coverage for NamespaceBased CRUD Authorization — `reference/design/backend-redesign/epics/17-mssql-gap-closure/06-mssql-namespace-authorization-coverage.md`
   - `DMS-1289` — Add MSSQL Coverage to Scheduled Smoke Tests — `reference/design/backend-redesign/epics/17-mssql-gap-closure/07-mssql-scheduled-smoke.md`
+
+## Proposed Epics Pending Jira Creation
+
+- `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/17-cdc-kafka/EPIC.md`
+  - `TBD` — Wire CDC enablement to `dms.DocumentCache` projector guarantees — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
+  - `TBD` — Emit/provision CDC key and database setup support for `dms.DocumentCache` — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
+  - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/17-cdc-kafka/02-connector-template-generation.md`
+  - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`
+  - `TBD` — Add Kafka message contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
+  - `TBD` — Replace legacy Kafka E2E expectations with relational CDC scenarios — `reference/design/backend-redesign/epics/17-cdc-kafka/05-e2e-kafka-scenarios.md`
+  - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/17-cdc-kafka/06-ops-docs-runbooks.md`
