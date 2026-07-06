@@ -103,6 +103,9 @@ public static class TestHelper
         body["detail"]!.GetValue<string>().Should().Be("The caller could not be authenticated.");
         body["status"]!.GetValue<int>().Should().Be(401);
 
-        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Contain(expectedError);
+        // The contract carries exactly the one scenario message and, unlike the other
+        // problem-details factories, emits no validationErrors member.
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
+        body["validationErrors"].Should().BeNull();
     }
 }
