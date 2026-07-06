@@ -209,7 +209,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
 9. **MFA is intentionally disabled** in Keycloak so credentials can be shared with the review
    team. Enforce MFA for any real deployment.
 10. **Secrets.** Replace every `CHANGEME` value in `.env` before deployment.
-11. **`/mt-dms` Discovery advertises a broken OAuth URL (upstream bug, unfiled).** The DMS
+11. **`/mt-dms` Discovery advertises a broken OAuth URL (upstream bug, `DMS-1262`).** The DMS
     appends the tenant/route-qualifier segments to `urls.oauth`, so `/mt-dms` discovery returns
     `…/protocol/openid-connect/token/{tenant}/{schoolYear}` — a route that exists neither on
     Keycloak nor on the DMS itself (its `/oauth/token` proxy is mapped only at the service
@@ -217,5 +217,5 @@ Order used to stand the environment up (and that a re-deploy should follow):
     appended. Ignore the advertised value and authenticate against the real token endpoint,
     `https://<PUBLIC_HOST>/auth/realms/edfi/protocol/openid-connect/token` (what
     `bootstrap.ps1` prints and the `http/` walkthroughs use). `/st-dms` discovery is
-    unaffected (its qualifier prefix is empty). The fix belongs upstream in the Discovery URL
-    construction, not in this deployment.
+    unaffected (its qualifier prefix is empty). Tracked upstream as `DMS-1262` (origin
+    `DMS-866`); the fix belongs in the Discovery URL construction, not in this deployment.
