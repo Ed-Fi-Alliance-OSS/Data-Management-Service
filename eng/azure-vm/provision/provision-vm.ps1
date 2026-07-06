@@ -20,7 +20,9 @@ param(
     [string]$AdminUsername = "edfi",
     [string]$SshPublicKeyPath = "$HOME/.ssh/id_rsa.pub",
     [Parameter(Mandatory)][string]$AllowedSshCidr,     # your admin IP, e.g. 203.0.113.7/32
-    [string]$AppSourceCidr = "Internet",               # who can reach 80/443 (Internet for a pen test)
+    [string]$AppSourceCidr = "Internet",               # who can reach 443 (the app surface). Port 80 is
+                                                        # always Internet-open (Let's Encrypt HTTP-01 + 301->443
+                                                        # redirect need it) regardless of this value.
     [int]$OsDiskSizeGb = 64,
     [string]$Image = "Ubuntu2404"                       # fallback URN: Canonical:ubuntu-24_04-lts:server:latest
 )
@@ -33,7 +35,7 @@ function Invoke-Az { param([string[]]$AzArgs) az @AzArgs; if ($LASTEXITCODE -ne 
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw "Azure CLI (az) not found. Install it and run 'az login'." }
 az account show -o none 2>$null; if ($LASTEXITCODE -ne 0) { throw "Not logged in. Run 'az login' first." }
-if (-not (Test-Path $SshPublicKeyPath)) { throw "SSH public key not found at $SshPublicKeyPath (generate with: ssh-keygen -t ed25519)." }
+if (-not (Test-Path $SshPublicKeyPath)) { throw "SSH public key not found at $SshPublicKeyPath. Generate a key (e.g. ssh-keygen -t ed25519) and pass its .pub via -SshPublicKeyPath, or place it at $SshPublicKeyPath." }
 
 # Render cloud-init with the admin username substituted.
 $cloudInit = Get-Content "$PSScriptRoot/cloud-init.yaml" -Raw
@@ -68,6 +70,8 @@ Write-Output "Adding NSG rules to '$nsgName'..."
 Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$nsgName,"-n","allow-ssh",
     "--priority","1000","--access","Allow","--protocol","Tcp","--direction","Inbound",
     "--destination-port-ranges","22","--source-address-prefixes",$AllowedSshCidr,"-o","none")
+# Port 80 is intentionally Internet-open (not gated by $AppSourceCidr): Let's Encrypt HTTP-01
+# validation is reached from arbitrary CA IPs, and nginx serves only a 301 -> 443 redirect here.
 Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$nsgName,"-n","allow-http",
     "--priority","1010","--access","Allow","--protocol","Tcp","--direction","Inbound",
     "--destination-port-ranges","80","--source-address-prefixes","Internet","-o","none")

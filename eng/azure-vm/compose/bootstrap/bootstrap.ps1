@@ -111,10 +111,13 @@ if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
     # Bootstrap admin client -- created directly in Keycloak (full_access scope + cms-client role)
     # so we never rely on the CMS public self-registration endpoint (/connect/register), which is
     # disabled. The shared realm backs both stacks, so this one client authenticates against
-    # st-config and mt-config alike.
+    # st-config and mt-config alike. -SkipRealmAdmin: this client only calls the CMS Admin API
+    # (CMS uses its own DmsConfigurationService identity for Keycloak), so it must NOT also be a
+    # Keycloak realm administrator -- that would expand the credential's blast radius well beyond
+    # its documented CMS-bootstrap role.
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
-        -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret
+        -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
 }
 elseif ($IdentityProvider -eq "self-contained") {
     # Public self-registration (/connect/register) is disabled, so there is no automated path to

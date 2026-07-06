@@ -119,7 +119,10 @@ of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
   (copy or symlink to those names), then reload the gateway.
 - Recommended NSG rules: **443 open** to the review team (the application attack surface);
   **22 (SSH) and the gateway only** otherwise; pgAdmin/Keycloak admin reachable only over
-  443 and gated by their own logins. Lock SSH to admin IPs.
+  443 and gated by their own logins. Lock SSH to admin IPs. **Port 80 stays open to the
+  Internet** (it only serves nginx's 301 -> 443 redirect and the Let's Encrypt HTTP-01
+  challenge, which the CA reaches from arbitrary IPs) — `provision-vm.ps1`'s `-AppSourceCidr`
+  restricts 443 only, not 80.
 - **Public CMS self-registration is disabled** (`IdentitySettings__AllowRegistration=false` on
   both config services) and the gateway returns 403 for `/{st,mt}-config/connect/register`. The
   bootstrap admin client is provisioned directly in Keycloak, so there is no unauthenticated path

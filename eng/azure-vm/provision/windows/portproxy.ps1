@@ -16,8 +16,10 @@ wsl -d $Distro -u root -e true | Out-Null
 $wslIp = ((wsl -d $Distro -- hostname -I) -split '\s+' | Where-Object { $_ })[0]
 if (-not $wslIp) { throw "Could not determine the WSL IP for '$Distro'." }
 
-netsh interface portproxy reset | Out-Null
 foreach ($p in $Ports) {
+    # Delete only THIS port's mapping before re-adding (the WSL IP changes across reboots), rather
+    # than `portproxy reset`, which would wipe every unrelated portproxy mapping on the host.
+    netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$p 2>$null | Out-Null
     netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$p connectaddress=$wslIp connectport=$p | Out-Null
     New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 }
