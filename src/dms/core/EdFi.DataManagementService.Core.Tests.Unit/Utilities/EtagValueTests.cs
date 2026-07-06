@@ -72,4 +72,39 @@ public class Given_EtagValue
         contentVersion.Should().BeEmpty();
         variantKey.Should().BeEmpty();
     }
+
+    [Test]
+    public void It_parses_a_quoted_strong_conditional_tag()
+    {
+        EtagValue.TryParseConditionalTag("\"5-a1b2c3d4.j._.l\"", out var value).Should().BeTrue();
+        value.Should().Be("5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_accepts_an_unquoted_conditional_tag_for_backward_tolerance()
+    {
+        EtagValue.TryParseConditionalTag("5-a1b2c3d4.j._.l", out var value).Should().BeTrue();
+        value.Should().Be("5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_accepts_a_weak_conditional_tag()
+    {
+        EtagValue.TryParseConditionalTag("W/\"5-a1b2c3d4.j._.l\"", out var value).Should().BeTrue();
+        value.Should().Be("5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_returns_a_bare_wildcard_conditional_tag_verbatim()
+    {
+        EtagValue.TryParseConditionalTag("*", out var value).Should().BeTrue();
+        value.Should().Be("*");
+    }
+
+    [Test]
+    public void It_rejects_a_null_or_empty_conditional_tag()
+    {
+        EtagValue.TryParseConditionalTag(null, out _).Should().BeFalse();
+        EtagValue.TryParseConditionalTag(string.Empty, out _).Should().BeFalse();
+    }
 }

@@ -78,4 +78,32 @@ public static class EtagValue
         value = headerValue;
         return true;
     }
+
+    /// <summary>
+    /// Parses an If-None-Match header value using RFC 9110 §2.1 WEAK comparison: strips an optional
+    /// W/ weak prefix (accepted, unlike <see cref="TryParseHeaderValue"/>) and surrounding quotes,
+    /// tolerating a bare unquoted value. The bare "*" wildcard is returned verbatim for the caller to
+    /// interpret. No entity-tag list parsing.
+    /// </summary>
+    public static bool TryParseConditionalTag(string? headerValue, out string value)
+    {
+        value = string.Empty;
+        if (string.IsNullOrEmpty(headerValue))
+        {
+            return false;
+        }
+
+        var candidate = headerValue.StartsWith("W/", StringComparison.Ordinal)
+            ? headerValue[2..]
+            : headerValue;
+
+        if (candidate.Length >= 2 && candidate[0] == '"' && candidate[^1] == '"')
+        {
+            value = candidate[1..^1];
+            return true;
+        }
+
+        value = candidate;
+        return true;
+    }
 }
