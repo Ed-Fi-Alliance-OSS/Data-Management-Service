@@ -137,10 +137,17 @@ externally-issued tokens), the following compensating controls bound the risk:
 - **Server-side revocation (CMS self-contained only).** The per-request `jti`
   status check plus `/connect/revoke` provide immediate revocation for
   self-contained tokens.
-- **No internal-detail leakage on failure.** Authentication failures return a
-  generic `401` (`application/problem+json` for DMS) with no failure-reason or
-  stack-trace disclosure; specifics are logged server-side only. This avoids
-  giving an attacker oracles that would aid token forgery or replay.
+- **No sensitive-detail leakage on failure.** DMS authentication failures return
+  a fixed `application/problem+json` `401` body — `type`
+  `urn:ed-fi:api:security:authentication`, `title` `Authentication Failed`,
+  `detail` `The caller could not be authenticated.` — matching the design-doc and
+  ODS/API contract. The `errors` array carries only a **coarse, approved
+  classification** of the failure (a missing, unknown-scheme, empty, or malformed
+  `Authorization` header, or `Invalid token`); it never discloses a stack trace,
+  cryptographic detail, or the specific reason a token failed validation —
+  expiry, bad signature, and bad claims all collapse to `Invalid token`. Full
+  specifics are logged server-side only. This preserves the ODS/API-compatible
+  contract while avoiding oracles that would aid token forgery or replay.
 
 ## Test coverage map
 
@@ -163,8 +170,10 @@ The behaviors above are exercised by automated tests:
 
 - DMS — `EdFi.DataManagementService.Tests.E2E/Features/Security/OwaspCriticalPaths.feature`:
   valid JWT replayed multiple times within its lifetime is accepted;
-  manipulated-signature tokens are rejected; authentication-failure responses do
-  not leak internal details. (The feature's "expired" scenario rewrites `exp`
+  manipulated-signature tokens are rejected; authentication failures return the
+  fixed problem-details contract (`urn:ed-fi:api:security:authentication`) with
+  only a coarse failure classification and no internal-detail leak. (The
+  feature's "expired" scenario rewrites `exp`
   without re-signing, so it is rejected on signature validation before expiry is
   evaluated; true-expiry rejection via the lifetime check is covered by the DMS
   unit test above.)
