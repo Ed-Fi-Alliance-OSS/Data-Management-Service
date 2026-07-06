@@ -238,6 +238,15 @@ With stored representation stamps:
   served `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
   conditional-GET / `If-None-Match` caching stays byte-correct.) A client presents the `_etag` it
   obtained for the representation it is acting on.
+- A bare, unquoted `If-Match: *` is not an opaque tag but an RFC 7232 §3.1 wildcard existence
+  precondition (amended 2026-07-05): it is satisfied whenever a current representation of the target
+  exists (any `ContentVersion`, no projection comparison) and returns `412` when none exists. For
+  PUT and DELETE this is the one case where a missing target returns `412` instead of `404`; a POST
+  upsert that resolves to an insert (no current representation) likewise returns `412`. Only the
+  bare, unquoted `*` is the wildcard — a quoted `"*"` is treated as an ordinary opaque tag.
+- On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
+  (amended 2026-07-05, for legacy ODS/API compatibility). Emitted `ETag` headers remain quoted and
+  `W/` weak tags remain rejected; the relaxation is on the input grammar only.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 
 ## Retention and `oldestChangeVersion`

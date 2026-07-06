@@ -346,6 +346,15 @@ With stored representation stamps:
     `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
     longer yields `412` on profile alone);
   - if mismatched on any retained component, return `412 Precondition Failed`.
+- A bare, unquoted `If-Match: *` is an RFC 7232 §3.1 wildcard existence precondition, not an opaque
+  tag (amended 2026-07-05): it is satisfied whenever a current representation of the target
+  `DocumentId` exists (any `ContentVersion`, no projection comparison) and returns `412` when it
+  does not. For PUT and DELETE this is the one case where a missing target returns `412` instead of
+  `404`; a POST upsert that resolves to an insert (no current representation) likewise returns
+  `412`. A quoted `"*"` is treated as an ordinary opaque tag.
+- On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
+  (amended 2026-07-05, for legacy ODS/API compatibility); emitted `ETag`/`If-Match` headers stay
+  quoted and `W/` weak tags remain rejected.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
   - If the observed `ContentVersion` is still current, the backend may commit a successful no-op without DML.
