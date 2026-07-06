@@ -61,7 +61,7 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    public static void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(documentIdParameterName);

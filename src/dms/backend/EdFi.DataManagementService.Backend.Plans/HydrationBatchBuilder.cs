@@ -141,10 +141,9 @@ public static class HydrationBatchBuilder
     )
     {
         var sqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
-        var planDialect = new PgsqlPlanDialect();
         var writer = new SqlWriter(sqlDialect);
 
-        return BuildSingleDocumentBatch(plan, planDialect, writer, cacheKey);
+        return BuildSingleDocumentBatch(plan, writer, cacheKey);
     }
 
     private static string BuildExistingKeysetBatch(
@@ -207,13 +206,12 @@ public static class HydrationBatchBuilder
 
     private static string BuildSingleDocumentBatch(
         ResourceReadPlan plan,
-        PgsqlPlanDialect planDialect,
         SqlWriter writer,
         SingleDocumentBatchCacheKey cacheKey
     )
     {
         // 1. Document metadata select
-        planDialect.AppendSingleDocumentMetadataSelect(
+        PgsqlPlanDialect.AppendSingleDocumentMetadataSelect(
             writer,
             HydrationSqlConventions.SingleDocumentIdParameterName
         );
