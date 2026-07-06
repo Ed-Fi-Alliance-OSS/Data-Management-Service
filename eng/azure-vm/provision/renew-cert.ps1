@@ -16,10 +16,10 @@ if (-not (Test-Path $composeDir)) { throw "compose dir not found at $composeDir"
 
 Push-Location $composeDir
 try {
-    Write-Host "Stopping gateway to free port 80..." -ForegroundColor Cyan
+    Write-Output "Stopping gateway to free port 80..."
     docker compose -f docker-compose.yml --env-file .env stop gateway
 
-    Write-Host "Renewing certificate..." -ForegroundColor Cyan
+    Write-Output "Renewing certificate..."
     sudo certbot renew --standalone --non-interactive
 
     $live = "/etc/letsencrypt/live/$PublicHost"
@@ -27,9 +27,9 @@ try {
     sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
     sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
 
-    Write-Host "Restarting gateway..." -ForegroundColor Cyan
+    Write-Output "Restarting gateway..."
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d gateway
-    Write-Host "Certificate renewed." -ForegroundColor Green
+    Write-Output "Certificate renewed."
 }
 finally {
     Pop-Location

@@ -12,9 +12,9 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-Write-Host "Deallocating VM '$VmName' (stops compute billing)..." -ForegroundColor Cyan
+Write-Output "Deallocating VM '$VmName' (stops compute billing)..."
 az vm deallocate -g $ResourceGroup -n $VmName -o none
 if ($LASTEXITCODE -ne 0) { throw "az vm deallocate failed ($LASTEXITCODE)" }
 
-Write-Host "VM deallocated. Compute billing stopped; disk + public IP still incur (small) cost." -ForegroundColor Green
-Write-Host "Start again before the next session with ./start-vm.ps1"
+Write-Output "VM deallocated. Compute billing stopped; disk + public IP still incur (small) cost."
+Write-Output "Start again before the next session with ./start-vm.ps1"

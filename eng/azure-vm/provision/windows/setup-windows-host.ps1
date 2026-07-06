@@ -26,11 +26,11 @@ $distros = (wsl --list --quiet) -replace "`0", "" | ForEach-Object { $_.Trim() }
 if ($distros -notcontains $Distro) { throw "WSL distro '$Distro' not found/initialized. Launch it once to create a user, then re-run." }
 
 $wslUser = (wsl -d $Distro -- whoami).Trim()
-Write-Host "WSL distro '$Distro' present (default user: $wslUser)." -ForegroundColor Cyan
+Write-Output "WSL distro '$Distro' present (default user: $wslUser)."
 
 # --- networking -------------------------------------------------------------
 if (-not $UsePortProxy) {
-    Write-Host "Configuring WSL mirrored networking (.wslconfig)..." -ForegroundColor Cyan
+    Write-Output "Configuring WSL mirrored networking (.wslconfig)..."
     $wslconfig = Join-Path $env:USERPROFILE ".wslconfig"
     @"
 [wsl2]
@@ -45,11 +45,11 @@ foreach ($p in $Ports) {
 wsl --shutdown
 
 # --- provision inside WSL ---------------------------------------------------
-Write-Host "Enabling systemd in WSL..." -ForegroundColor Cyan
+Write-Output "Enabling systemd in WSL..."
 wsl -d $Distro -u root -- bash -c "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf"
 wsl --shutdown
 
-Write-Host "Installing Docker, PowerShell, git, certbot inside WSL (a few minutes)..." -ForegroundColor Cyan
+Write-Output "Installing Docker, PowerShell, git, certbot inside WSL (a few minutes)..."
 $bash = @'
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -87,7 +87,7 @@ Register-ScheduledTask -TaskName "DMS-Start-WSL" -Action $action -Trigger $trigg
 if ($UsePortProxy) { & (Join-Path $PSScriptRoot "portproxy.ps1") -Distro $Distro -Ports $Ports }
 else { wsl -d $Distro -u root -e true | Out-Null }
 
-Write-Host "`nWindows host configured." -ForegroundColor Green
-Write-Host "Next (inside WSL): clone the repo and run provision/setup-env.ps1 - see README step 7."
-Write-Host "NOTE: validate that 'DMS-Start-WSL' brings containers back after a reboot;" -ForegroundColor Yellow
-Write-Host "      headless WSL autostart can need a tweak on some builds." -ForegroundColor Yellow
+Write-Output "`nWindows host configured."
+Write-Output "Next (inside WSL): clone the repo and run provision/setup-env.ps1 - see README step 7."
+Write-Output "NOTE: validate that 'DMS-Start-WSL' brings containers back after a reboot;"
+Write-Output "      headless WSL autostart can need a tweak on some builds."

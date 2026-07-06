@@ -11,11 +11,11 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-Write-Host "Starting VM '$VmName'..." -ForegroundColor Cyan
+Write-Output "Starting VM '$VmName'..."
 az vm start -g $ResourceGroup -n $VmName -o none
 if ($LASTEXITCODE -ne 0) { throw "az vm start failed ($LASTEXITCODE)" }
 
 $fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
-Write-Host "VM running. Containers resume automatically." -ForegroundColor Green
-Write-Host "  https://$fqdn"
-Write-Host "  Allow ~30-60s for services to report healthy."
+Write-Output "VM running. Containers resume automatically."
+Write-Output "  https://$fqdn"
+Write-Output "  Allow ~30-60s for services to report healthy."

@@ -21,4 +21,4 @@ foreach ($p in $Ports) {
     netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$p connectaddress=$wslIp connectport=$p | Out-Null
     New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 }
-Write-Host "portproxy active: Windows :$($Ports -join ', ') -> $wslIp"
+Write-Output "portproxy active: Windows :$($Ports -join ', ') -> $wslIp"

@@ -40,10 +40,10 @@ $cloudInit = Get-Content "$PSScriptRoot/cloud-init.yaml" -Raw
 $tmpCloudInit = Join-Path ([System.IO.Path]::GetTempPath()) "dms-sec-cloud-init.yaml"
 ($cloudInit -replace "__ADMIN_USER__", $AdminUsername) | Set-Content -Path $tmpCloudInit -NoNewline
 
-Write-Host "Creating resource group '$ResourceGroup' in $Location..." -ForegroundColor Cyan
+Write-Output "Creating resource group '$ResourceGroup' in $Location..."
 Invoke-Az @("group", "create", "-n", $ResourceGroup, "-l", $Location, "-o", "none")
 
-Write-Host "Creating VM '$VmName' ($VmSize)..." -ForegroundColor Cyan
+Write-Output "Creating VM '$VmName' ($VmSize)..."
 Invoke-Az @(
     "vm", "create",
     "-g", $ResourceGroup, "-n", $VmName,
@@ -63,7 +63,7 @@ Remove-Item $tmpCloudInit -ErrorAction SilentlyContinue
 # Discover the NSG created for the VM and add inbound rules.
 $nsgName = az network nsg list -g $ResourceGroup --query "[0].name" -o tsv
 if (-not $nsgName) { throw "Could not find the VM's network security group." }
-Write-Host "Adding NSG rules to '$nsgName'..." -ForegroundColor Cyan
+Write-Output "Adding NSG rules to '$nsgName'..."
 
 Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$nsgName,"-n","allow-ssh",
     "--priority","1000","--access","Allow","--protocol","Tcp","--direction","Inbound",
@@ -78,13 +78,13 @@ Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$ns
 $fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
 $ip   = az vm show -d -g $ResourceGroup -n $VmName --query publicIps -o tsv
 
-Write-Host "`n== VM provisioned ==" -ForegroundColor Green
-Write-Host "  FQDN : $fqdn"
-Write-Host "  IP   : $ip"
-Write-Host "  SSH  : ssh $AdminUsername@$fqdn"
-Write-Host "`nNext steps:"
-Write-Host "  1. Wait ~2-3 min for cloud-init to finish (Docker/pwsh/git/certbot install)."
-Write-Host "     Verify:  ssh $AdminUsername@$fqdn 'cloud-init status --wait && docker --version && pwsh --version'"
-Write-Host "  2. Get the repo onto the VM (deploy key clone or scp - see provision/README.md)."
-Write-Host "  3. On the VM:  pwsh ~/dms-src/eng/azure-vm/provision/setup-env.ps1 -PublicHost $fqdn -LetsEncryptEmail you@org.tld"
-Write-Host "`nCost control: ./stop-vm.ps1 to deallocate when idle; ./start-vm.ps1 before a session."
+Write-Output "`n== VM provisioned =="
+Write-Output "  FQDN : $fqdn"
+Write-Output "  IP   : $ip"
+Write-Output "  SSH  : ssh $AdminUsername@$fqdn"
+Write-Output "`nNext steps:"
+Write-Output "  1. Wait ~2-3 min for cloud-init to finish (Docker/pwsh/git/certbot install)."
+Write-Output "     Verify:  ssh $AdminUsername@$fqdn 'cloud-init status --wait && docker --version && pwsh --version'"
+Write-Output "  2. Get the repo onto the VM (deploy key clone or scp - see provision/README.md)."
+Write-Output "  3. On the VM:  pwsh ~/dms-src/eng/azure-vm/provision/setup-env.ps1 -PublicHost $fqdn -LetsEncryptEmail you@org.tld"
+Write-Output "`nCost control: ./stop-vm.ps1 to deallocate when idle; ./start-vm.ps1 before a session."

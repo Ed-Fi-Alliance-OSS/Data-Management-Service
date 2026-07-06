@@ -19,6 +19,7 @@
 #   pwsh ./bootstrap.ps1 -Insecure       # local self-signed cert
 #   pwsh ./bootstrap.ps1 -SkipKeycloak   # realm/clients already created
 [CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
     [string]$EnvFile = "$PSScriptRoot/../.env",
     [ValidateSet("", "keycloak", "self-contained")]
@@ -90,7 +91,7 @@ $created = [System.Collections.Generic.List[object]]::new()
 
 # --- 1. Keycloak realm + service clients ------------------------------------
 if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
-    Write-Host "== Configuring Keycloak realm '$realm' and service clients ==" -ForegroundColor Cyan
+    Write-Output "== Configuring Keycloak realm '$realm' and service clients =="
     $kc = "$publicBaseUrl/auth"
     $kcAdmin = EnvVal "KEYCLOAK_ADMIN" "admin"
     $kcAdminPw = EnvVal "KEYCLOAK_ADMIN_PASSWORD"
@@ -121,6 +122,7 @@ elseif ($IdentityProvider -eq "self-contained") {
 
 # --- Helper: provision one application and capture credentials --------------
 function New-ReviewApplication {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'One-shot provisioning helper that creates CMS entities via API calls; no -WhatIf surface in this bootstrap script.')]
     param(
         [Parameter(Mandatory)][string]$CmsUrl,
         [Parameter(Mandatory)][string]$Label,
@@ -148,7 +150,7 @@ function New-ReviewApplication {
 }
 
 # --- 2. Single-tenant -------------------------------------------------------
-Write-Host "== Bootstrapping single-tenant stack ($stConfig) ==" -ForegroundColor Cyan
+Write-Output "== Bootstrapping single-tenant stack ($stConfig) =="
 # The bootstrap admin client already exists in Keycloak (created above, or pre-existing under
 # -SkipKeycloak); authenticate with it directly -- no CMS self-registration.
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
@@ -161,18 +163,18 @@ New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stTo
 # New-ReviewApplication ... -ClaimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" -EducationOrganizationIds @([long]255901)
 
 # --- 3. Multi-tenant --------------------------------------------------------
-Write-Host "== Bootstrapping multi-tenant stack ($mtConfig) ==" -ForegroundColor Cyan
+Write-Output "== Bootstrapping multi-tenant stack ($mtConfig) =="
 # Same Keycloak bootstrap admin client (shared realm) -- authenticate against mt-config directly.
 $mtToken = Get-CmsToken -CmsUrl $mtConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 
 foreach ($t in @($tenant1, $tenant2)) {
-    Write-Host "  - tenant '$t'" -ForegroundColor DarkCyan
+    Write-Output "  - tenant '$t'"
     try { Add-Tenant -CmsUrl $mtConfig -AccessToken $mtToken -TenantName $t | Out-Null }
     catch { Write-Warning "    tenant '$t' may already exist: $($_.Exception.Message)" }
 
     # Physical per-tenant isolation: each tenant gets its OWN data database, provisioned
     # and seeded separately. tenant1 -> edfi_mt, tenant2 -> edfi_mt_t2. The schoolYear
-    # route context still qualifies the DMS data path. (Isolation verified — see
+    # route context still qualifies the DMS data path. (Isolation verified -- see
     # docs/infrastructure.md.)
     $mtDb = @{ $tenant1 = "edfi_mt"; $tenant2 = "edfi_mt_t2" }[$t]
     if (-not $mtDb) { $mtDb = "edfi_mt" }
@@ -186,9 +188,9 @@ foreach ($t in @($tenant1, $tenant2)) {
 }
 
 # --- Summary ----------------------------------------------------------------
-Write-Host "`n== API credentials created (store in your private vault / credentials doc -- NEVER commit to this repo) ==" -ForegroundColor Green
+Write-Output "`n== API credentials created (store in your private vault / credentials doc -- NEVER commit to this repo) =="
 $created | Format-Table -AutoSize
-Write-Host "DMS endpoints:"
-Write-Host "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
-Write-Host "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
-Write-Host "Token endpoint (advertised in Discovery): $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). The <dms-base>/oauth/token proxy forwards here but needs a publicly-trusted cert."
+Write-Output "DMS endpoints:"
+Write-Output "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
+Write-Output "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
+Write-Output "Token endpoint (advertised in Discovery): $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). The <dms-base>/oauth/token proxy forwards here but needs a publicly-trusted cert."

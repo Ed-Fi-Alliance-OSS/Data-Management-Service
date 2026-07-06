@@ -15,7 +15,7 @@
 # Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
 # Use -Bootstrap to force a re-bootstrap on an existing .env (e.g. after reset.sh).
 #
-# ⚠️ GAP: this does NOT provision the relational schema (dms-schema), stage
+# !! GAP: this does NOT provision the relational schema (dms-schema), stage
 #    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
 #    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
 #    stage the ApiSchema workspace, provision the schema, then start them with -StartDms (or
@@ -46,7 +46,9 @@ $ErrorActionPreference = "Stop"
 function Get-SecureChar([string]$Set) {
     return $Set[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($Set.Length)]
 }
-function New-ComplexSecret([int]$Length = 40) {
+function New-ComplexSecret {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates an in-memory secret string; no system state changes and no -WhatIf surface.')]
+    param([int]$Length = 40)
     # Meets CMS/Keycloak complexity: lower, upper, digit, special; 32-128 chars.
     # Special set avoids characters significant in .env / connection strings / URLs AND in
     # form-urlencoded bodies ('+' decodes to a space, '%' starts an escape sequence), so the
@@ -67,16 +69,22 @@ function New-ComplexSecret([int]$Length = 40) {
     -join $chars
 }
 function New-Key32 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates an in-memory key string; no system state changes and no -WhatIf surface.')]
+    param()
     # Exactly 32 characters (the CMS database encryption key requires length 32).
     $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     -join (1..32 | ForEach-Object { Get-SecureChar $a })
 }
 function New-Base64Key {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates an in-memory key string; no system state changes and no -WhatIf surface.')]
+    param()
     $b = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Fill($b)
     [Convert]::ToBase64String($b)
 }
-function Set-EnvValue([string]$File, [string]$Key, [string]$Value) {
+function Set-EnvValue {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Rewrites one key in the local .env working file during setup; a -WhatIf surface adds no value in this one-shot deployment script.')]
+    param([string]$File, [string]$Key, [string]$Value)
     $found = $false
     $out = foreach ($line in (Get-Content $File)) {
         if ($line -match "^\s*$([regex]::Escape($Key))=") { $found = $true; "$Key=$Value" } else { $line }
@@ -92,7 +100,7 @@ if (-not (Test-Path $RepoDir)) {
     # above it. Cloning straight into $RepoDir would nest this folder at $RepoDir/eng/azure-vm
     # and the compose-dir check below would fail.
     $cloneRoot = ($RepoDir -replace '\\', '/').TrimEnd('/') -replace '/eng/azure-vm$', ''
-    Write-Host "Cloning $RepoUrl -> $cloneRoot" -ForegroundColor Cyan
+    Write-Output "Cloning $RepoUrl -> $cloneRoot"
     git clone $RepoUrl $cloneRoot
     if ($LASTEXITCODE -ne 0) { throw "git clone of '$RepoUrl' failed ($LASTEXITCODE)." }
     if (-not (Test-Path (Join-Path $RepoDir "compose"))) {
@@ -115,9 +123,9 @@ try {
     if ($freshEnv) { Copy-Item ".env.example" ".env" }
 
     # Host / base URL are deterministic from -PublicHost, so they are safe to (re)write every run.
-    Write-Host "Writing .env host values..." -ForegroundColor Cyan
-    Set-EnvValue ".env" "PUBLIC_BASE_URL" "https://$PublicHost"
-    Set-EnvValue ".env" "PUBLIC_HOST"     $PublicHost
+    Write-Output "Writing .env host values..."
+    Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"
+    Set-EnvValue -File ".env" -Key "PUBLIC_HOST" -Value $PublicHost
 
     # Secrets are persisted state: the Postgres volume, the Keycloak realm/clients, and the
     # CMS-encrypted rows are all keyed to the FIRST-run values. Regenerating them on a re-run (e.g.
@@ -125,24 +133,23 @@ try {
     # the existing volumes. Generate only when .env is first created, or on an explicit
     # -RotateSecrets (which implies you will also reset the dependent volumes/registrations).
     if ($freshEnv -or $RotateSecrets) {
-        Write-Host "Writing generated secrets to .env..." -ForegroundColor Cyan
-        Set-EnvValue ".env" "POSTGRES_PASSWORD"                  (New-ComplexSecret)
-        Set-EnvValue ".env" "KEYCLOAK_ADMIN_PASSWORD"            (New-ComplexSecret)
-        Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_CLIENT_SECRET"  (New-ComplexSecret)
-        Set-EnvValue ".env" "CONFIG_SERVICE_CLIENT_SECRET"       (New-ComplexSecret)
-        Set-EnvValue ".env" "BOOTSTRAP_ADMIN_CLIENT_SECRET"      (New-ComplexSecret)
-        Set-EnvValue ".env" "PGADMIN_DEFAULT_PASSWORD"           (New-ComplexSecret)
-        Set-EnvValue ".env" "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" (New-Key32)
-        Set-EnvValue ".env" "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY" (New-Base64Key)
+        Write-Output "Writing generated secrets to .env..."
+        Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "KEYCLOAK_ADMIN_PASSWORD" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "CONFIG_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "BOOTSTRAP_ADMIN_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "PGADMIN_DEFAULT_PASSWORD" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY" -Value (New-Base64Key)
     }
     else {
-        Write-Host "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)." -ForegroundColor DarkGray
+        Write-Output "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)."
     }
 
     # --- 3. TLS certificate -------------------------------------------------
-    $insecureBootstrap = $true
     if ($LetsEncryptEmail) {
-        Write-Host "Obtaining Let's Encrypt certificate for $PublicHost (port 80 must be reachable)..." -ForegroundColor Cyan
+        Write-Output "Obtaining Let's Encrypt certificate for $PublicHost (port 80 must be reachable)..."
         sudo certbot certonly --standalone --non-interactive --agree-tos -m $LetsEncryptEmail -d $PublicHost
         if ($LASTEXITCODE -ne 0) { throw "certbot failed. Check that DNS resolves to this VM and port 80 is open." }
         $live = "/etc/letsencrypt/live/$PublicHost"
@@ -150,19 +157,18 @@ try {
         # (a bare cp inherits the shell umask, often leaving the key group/other-readable).
         sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
         sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
-        $insecureBootstrap = $false   # cert is valid (bootstrap still uses loopback below)
     }
     elseif (Test-Path "ssl/server.crt") {
-        Write-Host "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)." -ForegroundColor DarkGray
+        Write-Output "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)."
     }
     else {
-        Write-Host "No -LetsEncryptEmail: generating a self-signed certificate." -ForegroundColor Yellow
+        Write-Output "No -LetsEncryptEmail: generating a self-signed certificate."
         ./ssl/generate-certificate.sh $PublicHost
     }
 
     # --- 4. (optional) Grand Bend sample data -------------------------------
     if ($LoadGrandbend) {
-        Write-Host "Loading Grand Bend sample data (populated template)..." -ForegroundColor Cyan
+        Write-Output "Loading Grand Bend sample data (populated template)..."
         docker network inspect dms-sec *> $null
         if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
         docker compose -f docker-compose.yml --env-file .env up -d postgres
@@ -172,7 +178,7 @@ try {
             $pg = (docker inspect -f '{{.State.Health.Status}}' dms-sec-postgres 2>$null)
         } while ($pg -ne "healthy" -and (Get-Date) -lt $pgDeadline)
         bash ./seed/grandbend.sh
-        Write-Host "Grand Bend template loaded into edfi_st (schema + data). Single-tenant is ready to start; the multi-tenant DBs still need schema + seed." -ForegroundColor DarkGray
+        Write-Output "Grand Bend template loaded into edfi_st (schema + data). Single-tenant is ready to start; the multi-tenant DBs still need schema + seed."
     }
 
     # --- 5. start identity + CMS (NOT the DMS services yet) -----------------
@@ -182,13 +188,13 @@ try {
     docker network inspect dms-sec *> $null
     if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
 
-    Write-Host "Starting infrastructure (postgres, keycloak, config services, gateway)..." -ForegroundColor Cyan
+    Write-Output "Starting infrastructure (postgres, keycloak, config services, gateway)..."
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
         postgres keycloak st-config mt-config pgadmin gateway
 
-    Write-Host "Waiting for Keycloak + config services to report healthy..." -ForegroundColor Cyan
+    Write-Output "Waiting for Keycloak + config services to report healthy..."
     $deadline = (Get-Date).AddMinutes(8)
     do {
         Start-Sleep -Seconds 10
@@ -200,7 +206,7 @@ try {
         $kcCode = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/auth/realms/master")
         if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
-    if ($healthy) { Write-Host "Identity + config services healthy." -ForegroundColor Green }
+    if ($healthy) { Write-Output "Identity + config services healthy." }
     else { Write-Warning "Identity/config not all healthy yet. Check './logs.sh' before continuing." }
 
     # Bootstrap on first stand-up only. On a re-run (e.g. the '-StartDms' second pass) the realm,
@@ -208,11 +214,11 @@ try {
     # bootstrap admin client. So bootstrap runs only for a fresh .env unless -Bootstrap forces it.
     $runBootstrap = (-not $SkipBootstrap) -and ($freshEnv -or $Bootstrap)
     if ($runBootstrap) {
-        Write-Host "Running bootstrap (over loopback)..." -ForegroundColor Cyan
+        Write-Output "Running bootstrap (over loopback)..."
         & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
     }
     elseif (-not $SkipBootstrap) {
-        Write-Host "Skipping bootstrap: .env already exists (pass -Bootstrap to force re-bootstrap)." -ForegroundColor DarkGray
+        Write-Output "Skipping bootstrap: .env already exists (pass -Bootstrap to force re-bootstrap)."
     }
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
@@ -234,9 +240,9 @@ try {
                 "Stage it first (eng/docker-compose/prepare-dms-schema.ps1 writes eng/docker-compose/.bootstrap/ApiSchema; " +
                 "copy that folder here), then re-run with -StartDms. See docs/infrastructure.md 'Provisioning method'.")
         }
-        Write-Host "Starting DMS services..." -ForegroundColor Cyan
+        Write-Output "Starting DMS services..."
         docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
-        Write-Host "Waiting for DMS services to report healthy (requires provisioned schema)..." -ForegroundColor Cyan
+        Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)
         do {
             Start-Sleep -Seconds 10
@@ -246,23 +252,23 @@ try {
                 if ($code -ne "200") { $healthy = $false }
             }
         } while (-not $healthy -and (Get-Date) -lt $deadline)
-        if ($healthy) { Write-Host "DMS services healthy." -ForegroundColor Green }
+        if ($healthy) { Write-Output "DMS services healthy." }
         else { Write-Warning "DMS not healthy. Is the relational schema provisioned? See docs/infrastructure.md." }
     }
     else {
-        Write-Host "`nNext steps (manual):" -ForegroundColor Yellow
-        Write-Host "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
-        Write-Host "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
-        Write-Host "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema, against the same staged"
-        Write-Host "     workspace; see docs/infrastructure.md)."
-        Write-Host "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
+        Write-Output "`nNext steps (manual):"
+        Write-Output "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
+        Write-Output "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
+        Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema, against the same staged"
+        Write-Output "     workspace; see docs/infrastructure.md)."
+        Write-Output "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }
 
-    Write-Host "`n== Setup complete ==" -ForegroundColor Green
-    Write-Host "Public URL: https://$PublicHost"
-    Write-Host "Secrets were written to compose/.env (gitignored). Record the generated values and"
-    Write-Host "the API key/secret pairs above in your PRIVATE vault / credentials doc -- never commit"
-    Write-Host "them to this repo (docs/infrastructure.md is tracked and must stay secret-free)."
+    Write-Output "`n== Setup complete =="
+    Write-Output "Public URL: https://$PublicHost"
+    Write-Output "Secrets were written to compose/.env (gitignored). Record the generated values and"
+    Write-Output "the API key/secret pairs above in your PRIVATE vault / credentials doc -- never commit"
+    Write-Output "them to this repo (docs/infrastructure.md is tracked and must stay secret-free)."
 }
 finally {
     Pop-Location
