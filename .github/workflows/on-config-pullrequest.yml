@@ -145,6 +145,13 @@ jobs:
               throw "$($result.FailedCount) lock-file parity test(s) failed."
           }
 
+      - name: Run OpenIddict Crypto Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/docker-compose/tests/OpenIddictCrypto.Tests.ps1" -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) {
+              throw "$($result.FailedCount) OpenIddict crypto test(s) failed."
+          }
+
   run-unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
