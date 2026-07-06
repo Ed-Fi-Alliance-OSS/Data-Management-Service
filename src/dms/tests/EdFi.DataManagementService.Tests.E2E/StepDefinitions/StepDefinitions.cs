@@ -580,6 +580,35 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
+        [When("a PUT if-none-match {string} request is made to {string} with")]
+        public async Task WhenAPUTIf_NoneMatchRequestIsMadeToWith(string ifNoneMatch, string url, string body)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            body = body.Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"PUT url: {url}");
+            _logger.log.Information($"PUT body: {body}");
+
+            ifNoneMatch = ifNoneMatch.Replace("{IfMatch}", _etag);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new()
+                {
+                    DataByte = System.Text.Encoding.UTF8.GetBytes(body),
+                    Headers = GetWriteHeadersWithIfNoneMatch(ifNoneMatch),
+                }
+            )!;
+            _featureContext["_waitOnNextQuery"] = true;
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
@@ -1945,6 +1974,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var list = new List<KeyValuePair<string, string>>
             {
                 new("Authorization", GetDmsTokenFromContext()),
+                new("If-None-Match", ifNoneMatch),
+            };
+            return list;
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> GetWriteHeadersWithIfNoneMatch(string ifNoneMatch)
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+                new("Content-Type", "application/json"),
                 new("If-None-Match", ifNoneMatch),
             };
             return list;

@@ -281,7 +281,65 @@ Feature: ETag validations
              When a GET if-none-match "0000000000" request is made to "/ed-fi/students/{id}"
              Then it should respond with 200
         @e2e-ci-shard-1
-        Scenario: 15 Ensure that a quoted If-Match (as emitted) is accepted on PUT
+        Scenario: 15 Ensure that clients can pass a wildcard If-None-Match on a POST that creates a new resource
+             When a POST request is made to "/ed-fi/students" with header "If-None-Match" value "*"
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201
+              And the ETag is in the response header
+        @e2e-ci-shard-1
+        Scenario: 16 Ensure that a wildcard If-None-Match on a POST to an already-existing resource returns 412
+             Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             When a POST request is made to "/ed-fi/students" with header "If-None-Match" value "*"
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mulligan"
+                  }
+                  """
+             Then it should respond with 412
+        @e2e-ci-shard-1
+        Scenario: 17 Ensure that a wildcard If-None-Match on a PUT to an existing resource returns 412
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a PUT if-none-match "*" request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga"
+                  }
+                  """
+             Then it should respond with 412
+        @e2e-ci-shard-1
+        Scenario: 18 Ensure that a quoted If-Match (as emitted) is accepted on PUT
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -305,7 +363,7 @@ Feature: ETag validations
                   """
              Then it should respond with 204
         @e2e-ci-shard-1
-        Scenario: 16 Ensure that a quoted If-Match (as emitted) is accepted on DELETE
+        Scenario: 19 Ensure that a quoted If-Match (as emitted) is accepted on DELETE
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -320,7 +378,7 @@ Feature: ETag validations
              When a DELETE if-match "{IfMatchQuoted}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
         @e2e-ci-shard-1
-        Scenario: 17 Ensure the served ETag conforms to the DMS-1252 format and matches the body _etag
+        Scenario: 20 Ensure the served ETag conforms to the DMS-1252 format and matches the body _etag
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -346,7 +404,7 @@ Feature: ETag validations
                   }
                   """
         @e2e-ci-shard-1
-        Scenario: 18 Ensure a child-collection-only update advances the ETag and invalidates a stale If-Match
+        Scenario: 21 Ensure a child-collection-only update advances the ETag and invalidates a stale If-Match
             Given the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
