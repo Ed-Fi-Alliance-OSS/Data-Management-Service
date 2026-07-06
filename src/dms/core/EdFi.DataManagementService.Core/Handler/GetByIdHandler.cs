@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -24,6 +25,8 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// </summary>
 internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
+    private const string IfNoneMatchHeaderName = "If-None-Match";
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
@@ -112,6 +115,16 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
 
     private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
     {
+        string? servedEtag = edfiDoc["_etag"]?.GetValue<string>();
+
+        if (
+            !string.IsNullOrEmpty(servedEtag)
+            && TryCreateNotModified(requestInfo, servedEtag, out FrontendResponse notModified)
+        )
+        {
+            return notModified;
+        }
+
         var contentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
             ? ProfileHeaderParser.BuildProfileContentType(
                 requestInfo.ResourceSchema.ResourceName.Value,
@@ -120,18 +133,61 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             )
             : "application/json";
 
-        string? servedEtag = edfiDoc["_etag"]?.GetValue<string>();
-
-        Dictionary<string, string> headers = !string.IsNullOrEmpty(servedEtag)
-            ? new() { ["etag"] = servedEtag }
-            : [];
-
         return new FrontendResponse(
             StatusCode: 200,
             Body: edfiDoc,
-            Headers: headers,
+            Headers: new() { ["etag"] = servedEtag ?? "" },
             ContentType: contentType
         );
+    }
+
+    /// <summary>
+    /// Determines whether a conditional GET's If-None-Match header is satisfied by the served etag,
+    /// meaning the client's cached representation is still current. Returns true and produces a 304
+    /// response (no body) when so; otherwise returns false and the caller proceeds with a normal 200.
+    /// </summary>
+    private static bool TryCreateNotModified(
+        RequestInfo requestInfo,
+        string servedEtag,
+        out FrontendResponse response
+    )
+    {
+        response = null!;
+
+        if (!requestInfo.FrontendRequest.Headers.TryGetValue(IfNoneMatchHeaderName, out var rawHeaderValue))
+        {
+            return false;
+        }
+
+        // RFC 9110 §13.1.2 wildcard: a bare (unquoted) "*" means "if any representation exists" -- and
+        // since reaching this method means the resource exists, the precondition is false. This must be
+        // detected from the RAW header value (before parsing), because EtagValue.TryParseConditionalTag
+        // strips quotes and would otherwise turn a quoted "*" (an ordinary opaque tag) into the wildcard.
+        bool isWildcard = string.Equals(rawHeaderValue, "*", StringComparison.Ordinal);
+
+        string clientTag = string.Empty;
+        if (!isWildcard && !EtagValue.TryParseConditionalTag(rawHeaderValue, out clientTag))
+        {
+            return false;
+        }
+
+        // Full-tag comparison against the entire served etag (ContentVersion plus variantKey), not a
+        // projection: If-None-Match is representation-sensitive, so a client tag that differs only in
+        // the variantKey tail (format/profile/links) must not match. EtagMatchProjection is a write-side
+        // (If-Match) concern and does not apply here.
+        bool matches = isWildcard || string.Equals(clientTag, servedEtag, StringComparison.Ordinal);
+
+        if (!matches)
+        {
+            return false;
+        }
+
+        response = new FrontendResponse(
+            StatusCode: 304,
+            Body: null,
+            Headers: new() { ["etag"] = servedEtag }
+        );
+        return true;
     }
 
     private static IGetRequest CreateGetRequest(RequestInfo requestInfo)

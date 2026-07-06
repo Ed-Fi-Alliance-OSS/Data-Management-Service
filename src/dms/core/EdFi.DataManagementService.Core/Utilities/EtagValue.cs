@@ -85,6 +85,12 @@ public static class EtagValue
     /// tolerating a bare unquoted value. The bare "*" wildcard is returned verbatim for the caller to
     /// interpret. No entity-tag list parsing.
     /// </summary>
+    /// <remarks>
+    /// Because this method strips quotes, a quoted <c>"*"</c> and a bare <c>*</c> are indistinguishable
+    /// in its output. Callers that must detect the RFC 9110 §13.1.2 wildcard have to check the RAW header
+    /// value (<c>rawHeaderValue == "*"</c>, ordinal) BEFORE calling this method -- only the bare,
+    /// unquoted form is the wildcard.
+    /// </remarks>
     public static bool TryParseConditionalTag(string? headerValue, out string value)
     {
         value = string.Empty;
