@@ -12,6 +12,7 @@
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="dbup-core" Version="5.0.87" />
     <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
+    <PackageVersion Include="dbup-sqlserver" Version="5.0.40" />
     <PackageVersion Include="EdFi.DataStandard52.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard52.Homograph.ApiSchema" Version="1.0.332" />
     <PackageVersion Include="EdFi.DataStandard52.Sample.ApiSchema" Version="1.0.332" />

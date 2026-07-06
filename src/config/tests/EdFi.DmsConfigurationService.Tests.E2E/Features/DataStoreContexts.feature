@@ -13,6 +13,7 @@ Feature: Data Store Context
                   """
 
 
+        @MssqlRepresentative
         Scenario: 01 Ensure clients can create a new data store context
              When a POST request is made to "/v3/dataStoreContexts" with
                   """

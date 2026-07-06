@@ -790,7 +790,8 @@ public class ApplicationTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             _dataStoreRepository = new DataStoreRepository(
                 Configuration.DatabaseOptions,
@@ -945,7 +946,8 @@ public class ApplicationTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             _dataStoreRepository = new DataStoreRepository(
                 Configuration.DatabaseOptions,

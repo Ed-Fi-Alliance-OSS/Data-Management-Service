@@ -12,7 +12,8 @@ using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
-using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
+using EdFi.DmsConfigurationService.Backend.Mssql;
+using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
@@ -99,37 +100,19 @@ public static class WebApplicationBuilderExtensions
             }
         );
 
-        webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
-        webApplicationBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
-        webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<
             IAuthorizationMetadataResponseFactory,
             AuthorizationMetadataResponseFactory
         >();
-        webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
-        webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
-        webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
-        webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
-        webApplicationBuilder.Services.AddTransient<
-            IDataStoreContextRepository,
-            DataStoreContextRepository
-        >();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
         webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
-        webApplicationBuilder.Services.AddTransient<IDataStoreRepository, DataStoreRepository>();
-        webApplicationBuilder.Services.AddTransient<
-            IDataStoreDerivativeRepository,
-            DataStoreDerivativeRepository
-        >();
-        webApplicationBuilder.Services.AddTransient<IProfileRepository, ProfileRepository>();
         webApplicationBuilder.Services.AddSingleton<
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
         >();
-        webApplicationBuilder.Services.AddTransient<ITenantRepository, TenantRepository>();
         webApplicationBuilder.Services.AddScoped<ITenantContextProvider, TenantContextProvider>();
 
         // Register audit context as transient to allow resolution from both singleton and scoped services
@@ -169,8 +152,24 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
-            webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
-            webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            webAppBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
+            webAppBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
+            webAppBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
+            webAppBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
+            webAppBuilder.Services.AddTransient<
+                IClaimSetDataProvider,
+                Backend.Postgresql.ClaimSetDataProvider
+            >();
+            webAppBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
+            webAppBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
+            webAppBuilder.Services.AddTransient<IDataStoreContextRepository, DataStoreContextRepository>();
+            webAppBuilder.Services.AddTransient<IDataStoreRepository, DataStoreRepository>();
+            webAppBuilder.Services.AddTransient<
+                IDataStoreDerivativeRepository,
+                DataStoreDerivativeRepository
+            >();
+            webAppBuilder.Services.AddTransient<IProfileRepository, ProfileRepository>();
+            webAppBuilder.Services.AddTransient<ITenantRepository, TenantRepository>();
             webAppBuilder.Services.AddTransient<
                 IClaimsTableValidator,
                 Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
@@ -184,12 +183,14 @@ public static class WebApplicationBuilderExtensions
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
+            webAppBuilder.Services.AddMssqlDatastore();
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
-            webAppBuilder.Services.AddTransient<
-                IResourceClaimRepository,
-                MssqlUnsupportedResourceClaimRepository
-            >();
         }
+
+        // Token management and client-secret hashing are datastore-agnostic and required
+        // by both engines
+        webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
+        webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
     }
 
     private static void ConfigureIdentityProvider(
@@ -323,7 +324,23 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
             logger.Information("Registering Self-Contained services");
-            webApplicationBuilder.Services.AddPostgresOpenIddictStores(config, identitySettings.Authority);
+            if (
+                string.Equals(
+                    config.GetSection("AppSettings:Datastore").Value,
+                    "mssql",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                webApplicationBuilder.Services.AddMssqlOpenIddictStores(config, identitySettings.Authority);
+            }
+            else
+            {
+                webApplicationBuilder.Services.AddPostgresOpenIddictStores(
+                    config,
+                    identitySettings.Authority
+                );
+            }
         }
         else // Default to Keycloak
         {

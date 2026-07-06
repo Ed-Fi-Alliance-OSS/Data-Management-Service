@@ -4,6 +4,7 @@ Feature: ClaimsManagement endpoints
             Given valid credentials
               And token received
 
+        @MssqlRepresentative
         Scenario: 01 Verify hybrid mode assembles fragments to match authoritative composition
              When a GET request is made to "/management/current-claims"
              Then it should respond with 200

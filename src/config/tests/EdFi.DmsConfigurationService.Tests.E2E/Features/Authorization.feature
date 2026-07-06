@@ -35,6 +35,7 @@ Feature: Authorization
              When a GET request is made to "/v3/applications"
              Then it should respond with 200
 
+        @MssqlRepresentative
         Scenario: 02 Ensure clients can POST and GET application
              When a POST request is made to "/v3/applications" with
                   """
@@ -138,6 +139,7 @@ Feature: Authorization
              When a GET request is made to "/v3/applications"
              Then it should respond with 200
 
+        @MssqlRepresentative
         Scenario: 06 Ensure clients can not have access to POST,PUT,DELETE endpoints with read only access
             Given client "CMSReadOnlyAccess" credentials with "edfi_admin_api/readonly_access" scope
               And token received

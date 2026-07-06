@@ -4,14 +4,18 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Bootstrap script intentionally writes operator progress and SQL diagnostics to the console.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive: the script parameters are consumed inside the nested helper functions, and this rule does not track usage across function scopes.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'DbPassword', Justification = 'Carries an ENV: indirection sentinel resolved from the .env file and handed to sqlcmd, which requires plaintext; SecureString adds no protection across that boundary.')]
 [CmdletBinding()]
 param (
     [string] $DbType = "Postgresql", # or "MSSQL"
     [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;",
     [string] $EnvironmentFile = "./.env",
     [string] $PostgresContainerName = "dms-postgresql",
-    [string] $DbHost = "localhost",
-    [string] $DbPort = "ENV:POSTGRES_PORT",
+    [string] $MssqlContainerName = "dms-mssql",
+    [string] $DbPassword = "ENV:MSSQL_SA_PASSWORD",
+    [string] $DbHost = "",
+    [string] $DbPort = "",
     [string] $DbName = "ENV:POSTGRES_DB_NAME",
     [string] $DbUser = "postgres",
     [string] $NewClientId = "DmsConfigurationService",
@@ -52,41 +56,106 @@ if ($EnvironmentFile) {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
 }
 
+function Resolve-DbPort {
+    param(
+        [string]$DbPort,
+        [string]$DbType
+    )
+
+    if ($DbPort) {
+        return $DbPort
+    }
+
+    if ($DbType -eq "MSSQL") {
+        return "ENV:MSSQL_PORT"
+    }
+
+    return "ENV:POSTGRES_PORT"
+}
+
+function Resolve-DbHost {
+    param(
+        [string]$DbHost,
+        [string]$DbType
+    )
+
+    if ($DbHost) {
+        return $DbHost
+    }
+
+    if ($DbType -eq "MSSQL") {
+        return "127.0.0.1"
+    }
+
+    return "localhost"
+}
+
+$DbPort = Resolve-DbPort -DbPort $DbPort -DbType $DbType
+$DbHost = Resolve-DbHost -DbHost $DbHost -DbType $DbType
+
+function Get-ScalarResult {
+    param($Result)
+    if ($DbType -eq "MSSQL") {
+        return ($Result | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -First 1).Trim()
+    }
+    return $Result[2]
+}
+
 function New-OpenIddictRole {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
-    $sqlInsert = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictRole WHERE Name = '$RoleName') INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES ('$roleId', '$RoleName');"
+    }
+    else {
+        $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictRole" ("Id", "Name")
 VALUES ('$roleId', '$RoleName')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING
 RETURNING "Id";
 "@
+    }
     Invoke-DbQuery $sqlInsert | Out-Null
 
-    $sqlSelect = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = '$RoleName';"
+    }
+    else {
+        $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
 "@
+    }
     $existing = Invoke-DbQuery $sqlSelect
-    return $existing[2]
+    return Get-ScalarResult $existing
 }
 
 function New-OpenIddictScope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
-    $sqlInsert = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName') INSERT INTO dmscs.OpenIddictScope (Id, Name, Description) VALUES ('$scopeId', '$ScopeName', '$Description');"
+    }
+    else {
+        $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictScope" ("Id", "Name", "Description")
 VALUES ('$scopeId', '$ScopeName', '$Description')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictScope_Name" DO NOTHING
 RETURNING "Id";
 "@
+    }
     Invoke-DbQuery $sqlInsert | Out-Null
-    $sqlSelect = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName';"
+    }
+    else {
+        $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
 "@
+    }
     $existing = Invoke-DbQuery $sqlSelect
-    return $existing[2]
+    return Get-ScalarResult $existing
 }
 
 function New-OpenIddictApplication {
@@ -96,19 +165,29 @@ function New-OpenIddictApplication {
     $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $ClientSecret -Iterations $iterations
-    $sqlInsert = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId') INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential');"
+    }
+    else {
+        $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictApplication" ("Id", "ClientId", "ClientSecret", "DisplayName", "Type")
 VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictApplication_ClientId" DO NOTHING
 RETURNING "Id";
 "@
+    }
     Invoke-DbQuery $sqlInsert | Out-Null
 
-    $sqlSelect = @"
+    if ($DbType -eq "MSSQL") {
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId';"
+    }
+    else {
+        $sqlSelect = @"
 SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
 "@
+    }
     $existing = Invoke-DbQuery $sqlSelect
-    return $existing[2]
+    return Get-ScalarResult $existing
 }
 
 function Test-ClientSecretLength {
@@ -131,21 +210,31 @@ function Test-ClientSecretComplexity {
 
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
-    $sql = @"
+    if ($DbType -eq "MSSQL") {
+        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictClientRole WHERE ClientId = '$AppId' AND RoleId = '$RoleId') INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId');"
+    }
+    else {
+        $sql = @"
 INSERT INTO "dmscs"."OpenIddictClientRole" ("ClientId", "RoleId")
 VALUES ('$AppId', '$RoleId')
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
 "@
+    }
     Invoke-DbQuery $sql
 }
 
 function Add-OpenIddictApplicationScope {
     param([string]$AppId, [string]$ScopeId)
-    $sql = @"
+    if ($DbType -eq "MSSQL") {
+        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = '$AppId' AND ScopeId = '$ScopeId') INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId');"
+    }
+    else {
+        $sql = @"
 INSERT INTO "dmscs"."OpenIddictApplicationScope" ("ApplicationId", "ScopeId")
 VALUES ('$AppId', '$ScopeId')
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictApplicationScope" DO NOTHING;
 "@
+    }
     Invoke-DbQuery $sql
 }
 
@@ -153,6 +242,20 @@ function Add-OpenIddictCustomClaim {
     param([string]$AppId, [string]$ClaimName, [string]$ClaimValue)
     if (-not $ClaimValue) {
         Write-Host "ClaimValue is empty, skipping claim addition."
+        return
+    }
+
+    if ($DbType -eq "MSSQL") {
+        $sql = @"
+UPDATE dmscs.OpenIddictApplication
+SET ProtocolMappers = JSON_MODIFY(
+    COALESCE(ProtocolMappers, '[]'),
+    'append $',
+    JSON_QUERY('{"claim.name":"$ClaimName","claim.value":"$ClaimValue","jsonType.label":"String"}')
+)
+WHERE Id = '$AppId';
+"@
+        Invoke-DbQuery -Sql $sql
         return
     }
 
@@ -177,6 +280,16 @@ function Update-OpenIddictApplicationPermissions {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function updates the OpenIddict permissions collection column.')]
     param([string]$AppId, [string]$Scope)
+    if ($DbType -eq "MSSQL") {
+        $sql = @"
+UPDATE dmscs.OpenIddictApplication
+SET Permissions = '["$Scope"]'
+WHERE Id = '$AppId';
+"@
+        Invoke-DbQuery $sql
+        return
+    }
+
     $permissionsString = "{$Scope}" -replace "'", "''"
     $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
@@ -254,7 +367,8 @@ function Get-EffectiveConnectionString {
 function Invoke-DbQuery {
     param(
         [string]$Sql,
-        [switch]$Debug
+        [switch]$Debug,
+        [switch]$UseMasterDatabase
     )
 
     if ($Debug) {
@@ -296,11 +410,83 @@ function Invoke-DbQuery {
         }
     }
     elseif ($script:DbType -eq "MSSQL") {
-        # Use sqlcmd or Invoke-Sqlcmd for MSSQL
-        Write-Error "MSSQL not implemented yet."
+        $params = @{}
+        foreach ($pair in $effectiveConnectionString -split ';') {
+            if ($pair -match '=') {
+                $kv = $pair -split '=', 2
+                $params[$kv[0].Trim()] = $kv[1].Trim()
+            }
+        }
+        $db = if ($UseMasterDatabase) { 'master' } else { $params['Database'] }
+        $user = $params['User Id']
+        $password = Resolve-EnvValue $DbPassword
+
+        Write-Verbose "Executing sqlcmd against $MssqlContainerName"
+        # Invoke docker directly (no Invoke-Expression) so the SQL travels as one
+        # argument with no shell re-parsing; -b makes sqlcmd exit nonzero on SQL
+        # errors so failures throw instead of leaking error text into results;
+        # -I sets QUOTED_IDENTIFIER ON, required by XML data type methods.
+        $output = docker exec $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -P $password -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "sqlcmd failed (exit $LASTEXITCODE): $output"
+        }
+        return $output
     }
     else {
         Write-Error "Unsupported database type: $($script:DbType)"
+    }
+}
+
+function Add-MssqlOpenIddictKeyParameters {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function adds the full set of OpenIddict key parameters to the SqlCommand.')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Data.SqlClient.SqlCommand]$Command,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Parameters
+    )
+
+    $keyIdParameter = $Command.Parameters.Add("@KeyId", [System.Data.SqlDbType]::NVarChar, 64)
+    $keyIdParameter.Value = $Parameters.KeyId
+
+    $publicKeyParameter = $Command.Parameters.Add("@PublicKey", [System.Data.SqlDbType]::VarBinary, -1)
+    $publicKeyParameter.Value = $Parameters.PublicKey
+
+    $privateKeyParameter = $Command.Parameters.Add("@PrivateKey", [System.Data.SqlDbType]::VarChar, -1)
+    $privateKeyParameter.Value = $Parameters.PrivateKey
+
+    $encryptionKeyParameter = $Command.Parameters.Add("@EncryptionKey", [System.Data.SqlDbType]::NVarChar, -1)
+    $encryptionKeyParameter.Value = $Parameters.EncryptionKey
+}
+
+function Invoke-MssqlParameterizedQuery {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Sql,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Parameters
+    )
+
+    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
+    $connectionStringBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($effectiveConnectionString)
+    $connectionStringBuilder.Password = Resolve-EnvValue $DbPassword
+    $connectionStringBuilder.TrustServerCertificate = $true
+
+    $connection = [System.Data.SqlClient.SqlConnection]::new($connectionStringBuilder.ConnectionString)
+    try {
+        $connection.Open()
+        $command = $connection.CreateCommand()
+        $command.CommandText = $Sql
+
+        Add-MssqlOpenIddictKeyParameters -Command $command -Parameters $Parameters
+
+        $command.ExecuteNonQuery()
+    }
+    finally {
+        if ($command -is [System.IDisposable]) { $command.Dispose() }
+        $connection.Dispose()
     }
 }
 
@@ -310,6 +496,44 @@ function Invoke-InitDbScripts {
     param()
 
     Write-Host "InitDb specified: running database initialization scripts..."
+
+    if ($DbType -eq "MSSQL") {
+        Write-Host "Create database if not exists"
+        $dbName = Resolve-EnvValue $DbName
+        Invoke-DbQuery -UseMasterDatabase "IF DB_ID(N'$dbName') IS NULL CREATE DATABASE [$dbName];"
+
+        Write-Host "Create schema if not exists: dmscs"
+        Invoke-DbQuery "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dmscs') EXEC('CREATE SCHEMA dmscs');"
+
+        Write-Host "Create table for OpenIddict keys if not exists: dmscs.OpenIddictKey"
+        Invoke-DbQuery @'
+IF OBJECT_ID('dmscs.OpenIddictKey', 'U') IS NULL
+BEGIN
+    CREATE TABLE dmscs.OpenIddictKey (
+        Id INT IDENTITY(1,1) CONSTRAINT PK_OpenIddictKey PRIMARY KEY,
+        KeyId NVARCHAR(64) NOT NULL,
+        PublicKey VARBINARY(MAX) NOT NULL,
+        PrivateKey VARBINARY(MAX) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CreatedBy NVARCHAR(256),
+        LastModifiedAt DATETIME2,
+        ModifiedBy NVARCHAR(256),
+        ExpiresAt DATETIME2,
+        IsActive BIT NOT NULL DEFAULT 1
+    );
+END;
+'@
+
+        # Generate and output OpenIddictKey insert SQL
+        Write-Host "Generating OpenIddictKey insert statement..."
+        $encryptionKey = Resolve-EnvValue $EncryptionKey
+        $keyInsertCommand = New-OpenIddictKeyInsertCommand -EncryptionKey $encryptionKey -DbType $DbType
+        Write-Host "Insert public and private keys into dmscs.OpenIddictKey"
+        Invoke-MssqlParameterizedQuery -Sql $keyInsertCommand.Sql -Parameters $keyInsertCommand.Parameters
+        Write-Host "Database initialization scripts completed."
+        return
+    }
+
     # Run embedded SQL script contents
     Write-Host "Create schema if not exists: dmscs"
     Invoke-DbQuery @'

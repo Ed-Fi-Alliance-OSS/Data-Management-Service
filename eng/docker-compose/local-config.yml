@@ -54,6 +54,11 @@ services:
     networks:
       - dms
     restart: unless-stopped
+    # The config service deploys the database schema on startup, so hold it (and
+    # everything sequenced after compose up) until the database accepts logins.
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}/health || exit 1"]
       interval: 30s

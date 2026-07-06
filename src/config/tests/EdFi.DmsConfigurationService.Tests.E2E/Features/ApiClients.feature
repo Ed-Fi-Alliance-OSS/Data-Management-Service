@@ -75,6 +75,7 @@ Feature: ApiClients endpoints
              When a GET request is made to "/v3/apiClients/non-existent-client-id"
              Then it should respond with 404
 
+        @MssqlRepresentative
         Scenario: 04 Ensure clients can POST a new apiClient successfully
             Given a POST request is made to "/v3/applications" with
                   """

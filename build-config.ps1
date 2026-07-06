@@ -102,7 +102,15 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained"
+    $IdentityProvider="self-contained",
+
+    # Environment file for the E2E docker-compose stack
+    [string]
+    $EnvironmentFile = "./.env.config.e2e",
+
+    # Optional dotnet test --filter expression applied to E2E test runs
+    [string]
+    $E2ETestFilter = ""
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
@@ -215,7 +223,11 @@ function RunTests {
         $Filter,
 
         [string]
-        $IdentityProvider
+        $IdentityProvider,
+
+        # Optional dotnet test --filter expression
+        [string]
+        $TestFilter
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
@@ -253,13 +265,20 @@ function RunTests {
             $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
             $trx = "$testResults/$fileNameNoExt"
 
+            $filterArgs = @()
+            if (-not [string]::IsNullOrEmpty($TestFilter)) {
+                $filterArgs += "--filter"
+                $filterArgs += "$TestFilter"
+            }
+
             Invoke-Execute {
                 dotnet test $target `
                     --no-build `
                     --no-restore `
                     --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
-                    --nologo
+                    --nologo `
+                    @filterArgs
             }
         }
     }
@@ -274,7 +293,7 @@ function IntegrationTests {
 }
 
 function RunE2E {
-    Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
+    Invoke-Execute { RunTests -Filter "*.Tests.E2E" -TestFilter $E2ETestFilter }
 }
 
 function E2ETests {
@@ -289,11 +308,30 @@ function E2ETests {
         try {
             Push-Location eng/docker-compose/
             if ($SkipDockerBuild) {
-                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider
             }
             else {
-                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider
             }
+
+            Import-Module ./env-utility.psm1 -Force
+            $envValues = ReadValuesFromEnvFile $EnvironmentFile
+            if ($envValues["DMS_CONFIG_DATASTORE"]) {
+                $env:DMS_CONFIG_DATASTORE = $envValues["DMS_CONFIG_DATASTORE"]
+            }
+            # The E2E harness skips @MultitenantOnly scenarios unless this is true.
+            # Assign unconditionally so an env file without the key clears any stale
+            # value instead of leaving the scenarios enabled against a single-tenant stack.
+            $env:DMS_CONFIG_MULTI_TENANCY = $envValues["DMS_CONFIG_MULTI_TENANCY"]
+            # The E2E test-data cleanup connects to the stack's database using these
+            # values (falling back to the standard .env.config*.e2e defaults when unset).
+            # Assign unconditionally so keys absent from the env file clear stale values
+            # and cleanup targets the same database the compose stack published.
+            $env:POSTGRES_PASSWORD = $envValues["POSTGRES_PASSWORD"]
+            $env:POSTGRES_PORT = $envValues["POSTGRES_PORT"]
+            $env:POSTGRES_DB_NAME = $envValues["POSTGRES_DB_NAME"]
+            $env:MSSQL_SA_PASSWORD = $envValues["MSSQL_SA_PASSWORD"]
+            $env:MSSQL_PORT = $envValues["MSSQL_PORT"]
         }
         finally {
             Pop-Location

@@ -46,4 +46,27 @@ public class PagingQuery
         }
         return "OFFSET @Offset";
     }
+
+    /// <summary>
+    /// Returns a SQL Server OFFSET/FETCH paging clause. Callers must place a
+    /// deterministic ORDER BY immediately before it — OFFSET/FETCH is invalid without
+    /// one. Always emits at least "OFFSET 0 ROWS" so the ORDER BY remains valid inside
+    /// derived tables while applying no implicit row cap.
+    /// </summary>
+    public string BuildSqlServerPagingClause()
+    {
+        if (Limit.HasValue && Offset.HasValue)
+        {
+            return "OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
+        }
+        if (Limit.HasValue)
+        {
+            return "OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY";
+        }
+        if (Offset.HasValue)
+        {
+            return "OFFSET @Offset ROWS";
+        }
+        return "OFFSET 0 ROWS";
+    }
 }

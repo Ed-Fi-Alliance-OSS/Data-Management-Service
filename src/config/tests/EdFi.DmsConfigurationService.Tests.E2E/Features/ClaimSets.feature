@@ -4,6 +4,7 @@ Feature: ClaimSets endpoints
             Given valid credentials
               And token received
 
+        @MssqlRepresentative
         Scenario: 01 Ensure clients can GET claim sets
              When a GET request is made to "/v3/claimSets" for first 3 items
              Then it should respond with 200
@@ -210,6 +211,7 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
+        @MssqlRepresentative
         Scenario: 10 Ensure clients can successfully import a valid claim set
              When a POST request is made to "/v3/claimSets/import" with
                   """

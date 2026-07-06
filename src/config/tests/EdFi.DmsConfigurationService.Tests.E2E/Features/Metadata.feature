@@ -3,6 +3,7 @@ Feature: Metadata endpoints
         Background:
             Given the system is ready for E2E testing
 
+        @MssqlRepresentative
         Scenario: 01 Get service information with metadata URLs
              When a GET request is made to "/"
              Then it should respond with 200

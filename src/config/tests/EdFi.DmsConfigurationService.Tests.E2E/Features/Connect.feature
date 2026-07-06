@@ -160,6 +160,7 @@ Feature: Connect endpoints
                     "errors": []
                     }
                   """
+        @MssqlRepresentative
         Scenario: 04 Verify token creation with registered client
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key          | Value                                          |

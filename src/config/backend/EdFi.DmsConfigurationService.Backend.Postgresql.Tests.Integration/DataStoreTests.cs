@@ -36,7 +36,8 @@ public class DataStoreTests : DatabaseTest
         Configuration.DatabaseOptions,
         NullLogger<DataStoreDerivativeRepository>.Instance,
         new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     private readonly IDataStoreRepository _repository;
