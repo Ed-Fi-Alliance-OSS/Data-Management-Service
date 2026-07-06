@@ -84,8 +84,8 @@ param (
     [Switch]
     $v,
 
-    # Environment file. When omitted, resolves eng/docker-compose/.env, falling back to the
-    # tracked .env.example (the shared local-settings contract used by the phase commands), so
+    # Environment file. When omitted, resolves eng/docker-compose/.env, seeding it once from
+    # the tracked .env.example (the shared local-settings contract used by the phase commands), so
     # direct invocations - including teardown - work on a clean checkout with no hand-created .env.
     [string]
     $EnvironmentFile = "",
@@ -187,9 +187,9 @@ if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
     }
 }
 else {
-    # No explicit -EnvironmentFile: shared local-settings resolution (.env, then the tracked
-    # .env.example fallback) so direct invocations - including the documented teardown - work
-    # on a clean checkout with no hand-created .env, matching the phase commands.
+    # No explicit -EnvironmentFile: shared local-settings resolution (.env, seeded once from
+    # the tracked .env.example when absent) so direct invocations - including the documented
+    # teardown - work on a clean checkout with no hand-created .env, matching the phase commands.
     $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
 $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot

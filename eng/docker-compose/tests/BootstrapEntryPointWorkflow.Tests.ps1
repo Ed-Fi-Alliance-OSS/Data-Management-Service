@@ -739,7 +739,8 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
 
             # A clean checkout has no hand-created .env; the documented teardown
             # (start-local-dms.ps1 -DatabaseEngine mssql -d -v) and other direct invocations
-            # must resolve the tracked .env.example fallback instead of throwing on ./.env.
+            # must resolve through the shared resolver (which seeds .env from the tracked
+            # .env.example) instead of throwing on ./.env.
             $startScript | Should -Match 'Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot \$PSScriptRoot'
             $startScript | Should -Not -Match '\$EnvironmentFile = "\./\.env"'
         }

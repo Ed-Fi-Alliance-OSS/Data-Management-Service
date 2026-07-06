@@ -1979,6 +1979,26 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $resolved | Should -Be ([System.IO.Path]::GetFullPath($script:repo.EnvFile))
         }
 
+        It "Resolve-LocalSettingsEnvironmentFile seeds .env from .env.example on first default resolution" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $seededEnv = Join-Path $script:repo.DockerComposeRoot ".env"
+            Test-Path -LiteralPath $seededEnv | Should -BeFalse
+
+            $resolved = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            # .env.example is never consumed at runtime: the resolver materializes .env once as
+            # an identical copy and resolves to it, giving the user a durable file to edit.
+            $resolved | Should -Be ([System.IO.Path]::GetFullPath($seededEnv))
+            Get-Content -LiteralPath $seededEnv -Raw | Should -Be (Get-Content -LiteralPath $script:repo.EnvFile -Raw)
+
+            # A later default resolution reuses the seeded .env (with any user edits) untouched.
+            "CUSTOM_MARKER=kept" | Add-Content -LiteralPath $seededEnv
+            Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $script:repo.DockerComposeRoot |
+                Should -Be $resolved
+            Get-Content -LiteralPath $seededEnv -Raw | Should -Match "CUSTOM_MARKER=kept"
+        }
+
         It "Get-EnvValue returns the supplied default when the key is absent or blank" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
 

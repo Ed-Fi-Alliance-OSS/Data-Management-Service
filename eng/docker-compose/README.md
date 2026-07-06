@@ -26,8 +26,10 @@ start up different configurations:
 7. `keycloak.yml` runs KeyCloak (identity provider).
 8. `swagger-ui.yml` covers SwaggerUI
 
-Before running these, create a `.env` file. The `.env.example` is a good
-starting point.
+The scripts read local settings from a `.env` file; on first run they seed it
+automatically as a copy of the tracked `.env.example`, so a clean checkout
+needs no manual step. Edit `.env` to customize — `.env.example` itself is
+documentation only and is never consumed at runtime.
 
 Kafka and Kafka UI compose files remain available for local infrastructure
 testing. Relational DMS CDC/Kafka support is pending a separate implementation,

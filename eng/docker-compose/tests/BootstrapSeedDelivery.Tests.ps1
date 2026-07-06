@@ -1463,7 +1463,8 @@ SCHEMA_PACKAGES='[
 
         It "load-dms-seed-data.ps1 defaults EnvironmentFile before reading it" {
             # Regression guard for direct seed invocation without -EnvironmentFile: the script must
-            # materialize the default .env/.env.example path before ReadValuesFromEnvFile calls Test-Path.
+            # resolve the shared default (.env, seeded once from .env.example when absent) before
+            # ReadValuesFromEnvFile calls Test-Path.
             $script = Join-Path $script:sourceDockerComposeRoot "load-dms-seed-data.ps1"
             $content = Get-Content -LiteralPath $script -Raw
             $defaultIndex = $content.IndexOf('# Resolve environment file')
@@ -1472,8 +1473,8 @@ SCHEMA_PACKAGES='[
             $defaultIndex | Should -BeGreaterOrEqual 0
             $readIndex | Should -BeGreaterThan $defaultIndex
             $content.Substring($defaultIndex, $readIndex - $defaultIndex) |
-                Should -Match 'if\s*\(\s*\[string\]::IsNullOrWhiteSpace\(\$EnvironmentFile\)\s*\)' `
-                -Because "direct invocation must assign an env file before calling ReadValuesFromEnvFile"
+                Should -Match '\$EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path \$EnvironmentFile' `
+                -Because "direct invocation must resolve through the shared local-settings resolver before calling ReadValuesFromEnvFile"
         }
 
         It "resolves env file and derives CMS URL, DMS URL, identity provider from local settings" {

@@ -43,7 +43,10 @@ function Resolve-LocalSettingsEnvironmentFile {
          - absolute paths are kept as-is;
          - relative paths are resolved against the caller's current working directory.
       2. <docker-compose>/.env when present.
-      3. <docker-compose>/.env.example as a developer fallback.
+      3. When .env is absent, it is seeded once as a copy of <docker-compose>/.env.example
+         and the new .env is returned. .env.example itself is never consumed at runtime:
+         it stays a pure, tracked example, while .env (gitignored) is the live local
+         settings file the user can edit durably.
 
     A missing file always throws. This is intentionally narrower than ReadValuesFromEnvFile
     so phase commands fail fast on a typo rather than silently fall through to ambient process
@@ -67,13 +70,14 @@ function Resolve-LocalSettingsEnvironmentFile {
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
         $defaultEnv = Join-Path $DockerComposeRoot ".env"
-        $fallbackEnv = Join-Path $DockerComposeRoot ".env.example"
-        $Path = if (Test-Path -LiteralPath $defaultEnv -PathType Leaf) {
-            $defaultEnv
+        if (-not (Test-Path -LiteralPath $defaultEnv -PathType Leaf)) {
+            $exampleEnv = Join-Path $DockerComposeRoot ".env.example"
+            if (Test-Path -LiteralPath $exampleEnv -PathType Leaf) {
+                Copy-Item -LiteralPath $exampleEnv -Destination $defaultEnv
+                Write-Information "No .env found; created $defaultEnv from .env.example. Edit it to customize local settings." -InformationAction Continue
+            }
         }
-        else {
-            $fallbackEnv
-        }
+        $Path = $defaultEnv
     }
     elseif (-not [System.IO.Path]::IsPathRooted($Path)) {
         $Path = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))

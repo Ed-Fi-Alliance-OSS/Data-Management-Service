@@ -140,7 +140,10 @@ function Test-WrapperManifestClaimsStaged {
 function Resolve-WrapperEnvironmentFilePath {
     <#
     .SYNOPSIS
-    Resolves the base env file path using the same defaults as the wrapper and start scripts.
+    Resolves the base env file path using the same defaults as the shared resolver in
+    env-utility.psm1: explicit path, else .env — seeded once from .env.example when absent.
+    The seeding is replicated inline (not delegated) because the wrapper-argument Pester
+    sandbox loads this module without its env-utility sibling.
     #>
     param(
         [string]$BaseEnvironmentFile
@@ -148,8 +151,14 @@ function Resolve-WrapperEnvironmentFilePath {
 
     if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
         $defaultEnv = Join-Path $PSScriptRoot ".env"
-        $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
-        $BaseEnvironmentFile = if (Test-Path -LiteralPath $defaultEnv) { $defaultEnv } else { $fallbackEnv }
+        if (-not (Test-Path -LiteralPath $defaultEnv -PathType Leaf)) {
+            $exampleEnv = Join-Path $PSScriptRoot ".env.example"
+            if (Test-Path -LiteralPath $exampleEnv -PathType Leaf) {
+                Copy-Item -LiteralPath $exampleEnv -Destination $defaultEnv
+                Write-Information "No .env found; created $defaultEnv from .env.example. Edit it to customize local settings." -InformationAction Continue
+            }
+        }
+        $BaseEnvironmentFile = $defaultEnv
     }
     elseif (-not [System.IO.Path]::IsPathRooted($BaseEnvironmentFile)) {
         $BaseEnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $BaseEnvironmentFile))

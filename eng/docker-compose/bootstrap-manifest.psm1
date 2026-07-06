@@ -68,12 +68,15 @@ function Format-LogSafeText {
 
     $builder = [System.Text.StringBuilder]::new()
     foreach ($character in $text.ToCharArray()) {
+        # Comma is whitelisted so SQL Server "host,port" targets log readably; newlines and
+        # other control characters stay stripped, which is what prevents log forging.
         if ([char]::IsLetterOrDigit($character) -or
             $character -eq " " -or
             $character -eq "_" -or
             $character -eq "-" -or
             $character -eq "." -or
             $character -eq ":" -or
+            $character -eq "," -or
             $character -eq "/") {
             $null = $builder.Append($character)
         }
