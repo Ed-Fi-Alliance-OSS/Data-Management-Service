@@ -120,7 +120,18 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             )
             : "application/json";
 
-        return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
+        string? servedEtag = edfiDoc["_etag"]?.GetValue<string>();
+
+        Dictionary<string, string> headers = !string.IsNullOrEmpty(servedEtag)
+            ? new() { ["etag"] = servedEtag }
+            : [];
+
+        return new FrontendResponse(
+            StatusCode: 200,
+            Body: edfiDoc,
+            Headers: headers,
+            ContentType: contentType
+        );
     }
 
     private static IGetRequest CreateGetRequest(RequestInfo requestInfo)

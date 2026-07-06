@@ -196,6 +196,51 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_An_Etag : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l",
+            };
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+        }
+
+        [Test]
+        public void It_emits_the_served_etag_as_a_response_header()
+        {
+            requestInfo.FrontendResponse.Headers.Should().ContainKey("etag");
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be("5-a1b2c3d4.j._.l");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success_With_A_Null_LastModifiedTraceId : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
