@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -33,6 +34,8 @@ public class StampedeProtectionTests
         return serviceProvider.GetRequiredService<HybridCache>();
     }
 
+    protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
+
     protected static CacheSettings CreateCacheSettings() => new();
 
     [TestFixture]
@@ -55,7 +58,7 @@ public class StampedeProtectionTests
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -259,7 +262,7 @@ public class StampedeProtectionTests
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
