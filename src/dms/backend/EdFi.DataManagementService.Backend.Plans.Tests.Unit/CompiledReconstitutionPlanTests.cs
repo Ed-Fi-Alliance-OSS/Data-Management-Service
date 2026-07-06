@@ -521,6 +521,14 @@ public class Given_CompiledReconstitutionPlanTests_With_ScopeKey
     }
 
     [Test]
+    public void It_should_accept_lazy_enumerables()
+    {
+        var parts = new object?[] { 1, (short)2, "A" }.Select(static part => part);
+
+        new ScopeKey(parts).Should().Be(_first);
+    }
+
+    [Test]
     public void It_should_hash_equal_scope_parts_after_numeric_canonicalization()
     {
         HashSet<ScopeKey> keys = [_first];

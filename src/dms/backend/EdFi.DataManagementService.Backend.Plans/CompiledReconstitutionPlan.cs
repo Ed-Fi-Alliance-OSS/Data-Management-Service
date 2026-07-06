@@ -26,7 +26,7 @@ internal sealed class ScopeKey : IEquatable<ScopeKey>
             builder.Add(CanonicalizePart(part));
         }
 
-        Parts = builder.MoveToImmutable();
+        Parts = builder.DrainToImmutable();
     }
 
     public ImmutableArray<object?> Parts { get; }
