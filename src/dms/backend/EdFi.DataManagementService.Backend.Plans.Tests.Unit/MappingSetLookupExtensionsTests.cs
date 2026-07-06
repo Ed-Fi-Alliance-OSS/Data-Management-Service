@@ -527,29 +527,28 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_deterministic_error_for_duplicate_concrete_resources()
+    public void It_should_cache_mapping_set_resource_lookup_with_first_wins_semantics()
     {
-        var duplicateResource = _mappingSet.Model.ConcreteResourcesInNameOrder[2];
+        var firstResource = _mappingSet.Model.ConcreteResourcesInNameOrder[2];
+        var duplicateResource = firstResource with { };
         var mappingSetWithDuplicateResource = _mappingSet with
         {
             Model = _mappingSet.Model with
             {
-                ConcreteResourcesInNameOrder =
-                [
-                    .. _mappingSet.Model.ConcreteResourcesInNameOrder,
-                    duplicateResource,
-                ],
+                ConcreteResourcesInNameOrder = [firstResource, duplicateResource],
             },
         };
 
-        var act = () => mappingSetWithDuplicateResource.GetWritePlanOrThrow(_descriptorResource);
+        var firstLookup = mappingSetWithDuplicateResource.GetConcreteResourceModelOrThrow(
+            firstResource.ResourceKey.Resource
+        );
+        var secondLookup = mappingSetWithDuplicateResource.GetConcreteResourceModelOrThrow(
+            firstResource.ResourceKey.Resource
+        );
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                $"Mapping set '{FormatMappingSetKey(mappingSetWithDuplicateResource.Key)}' contains duplicate resource "
-                    + $"'{FormatResource(duplicateResource.RelationalModel.Resource)}' in ConcreteResourcesInNameOrder."
-            );
+        duplicateResource.Should().NotBeSameAs(firstResource);
+        firstLookup.Should().BeSameAs(firstResource);
+        secondLookup.Should().BeSameAs(firstLookup);
     }
 
     [Test]
@@ -567,8 +566,30 @@ public class Given_MappingSetLookupExtensions
 
         duplicateResource.Should().NotBeSameAs(firstResource);
         secondLookup.Should().BeSameAs(firstLookup);
-        firstLookup[firstResource.RelationalModel.Resource].Should().BeSameAs(firstResource);
+        firstLookup[firstResource.ResourceKey.Resource].Should().BeSameAs(firstResource);
         firstLookup.Values.Should().NotContain(resource => ReferenceEquals(resource, duplicateResource));
+    }
+
+    [Test]
+    public void It_should_key_concrete_resource_lookup_by_resource_key_resource()
+    {
+        var canonicalResource = _mappingSet.Model.ConcreteResourcesInNameOrder[2];
+        var relationalModelResource = new QualifiedResourceName("Ed-Fi", "RelationalModelOnlyStudent");
+        var mismatchedResource = canonicalResource with
+        {
+            RelationalModel = canonicalResource.RelationalModel with { Resource = relationalModelResource },
+        };
+        var modelSet = _mappingSet.Model with { ConcreteResourcesInNameOrder = [mismatchedResource] };
+        var mappingSet = _mappingSet with { Model = modelSet };
+
+        var modelSetLookup = modelSet.GetConcreteResourceModelsByResource();
+        var mappingSetLookup = mappingSet.GetConcreteResourceModelOrThrow(
+            canonicalResource.ResourceKey.Resource
+        );
+
+        modelSetLookup[canonicalResource.ResourceKey.Resource].Should().BeSameAs(mismatchedResource);
+        modelSetLookup.Should().NotContainKey(relationalModelResource);
+        mappingSetLookup.Should().BeSameAs(mismatchedResource);
     }
 
     [Test]
@@ -1586,7 +1607,7 @@ public class Given_MappingSetLookupExtensions
     {
         foreach (var concreteResourceModel in mappingSet.Model.ConcreteResourcesInNameOrder)
         {
-            if (concreteResourceModel.RelationalModel.Resource.Equals(resource))
+            if (concreteResourceModel.ResourceKey.Resource.Equals(resource))
             {
                 return concreteResourceModel;
             }

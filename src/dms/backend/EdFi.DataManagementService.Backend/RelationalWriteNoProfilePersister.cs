@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
@@ -43,6 +44,10 @@ internal sealed class RelationalWriteNoProfilePersister(
 ) : IRelationalWritePersister
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
+    private static readonly ConditionalWeakTable<
+        ResourceWritePlan,
+        string[]
+    > _reservedWriteParameterNamesByPlan = new();
 
     private readonly IRelationalParameterConfigurator _parameterConfigurator =
         parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
@@ -70,7 +75,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
                 request.MappingSet,
-                request.WritePlan.Model.Resource,
+                request.WritePlan,
                 targetContext,
                 mergeResult,
                 writeSession,
@@ -123,7 +128,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         {
             await ExecuteProposedRelationshipAuthorizationAsync(
                     writeSession,
-                    BuildProposedRelationshipAuthorizationCommand(request.MappingSet, mergeResult),
+                    BuildProposedRelationshipAuthorizationCommand(
+                        request.MappingSet,
+                        request.WritePlan,
+                        mergeResult
+                    ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -340,7 +349,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private async Task<long> ResolveRootDocumentIdAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
         RelationalWriteTargetContext targetContext,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -351,7 +360,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         {
             RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDocumentAsync(
                     mappingSet,
-                    resource,
+                    writePlan,
                     documentUuid,
                     mergeResult,
                     writeSession,
@@ -365,13 +374,14 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private async Task<long> InsertDocumentAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
         DocumentUuid documentUuid,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
+        var resource = writePlan.Model.Resource;
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
         var command = BuildInsertDocumentCommand(mappingSet.Key.Dialect, documentUuid, resourceKeyId);
         var relationshipAuthorizationRuntimeCheck = mergeResult.ProposedRelationshipAuthorizationRuntimeCheck;
@@ -382,7 +392,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             {
                 return await ExecuteAuthorizedInsertDocumentAsync(
                         writeSession,
-                        BuildAuthorizedInsertDocumentCommand(mappingSet, mergeResult, command),
+                        BuildAuthorizedInsertDocumentCommand(mappingSet, writePlan, mergeResult, command),
                         resource,
                         cancellationToken
                     )
@@ -483,11 +493,13 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private RelationalCommand BuildProposedRelationshipAuthorizationCommand(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult
     )
     {
         var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
             mappingSet,
+            writePlan,
             mergeResult
         );
 
@@ -499,12 +511,14 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private RelationalCommand BuildAuthorizedInsertDocumentCommand(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult,
         RelationalCommand insertDocumentCommand
     )
     {
         var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
             mappingSet,
+            writePlan,
             mergeResult
         );
 
@@ -538,6 +552,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private ProposedRelationshipAuthorizationCommandParts BuildProposedRelationshipAuthorizationCommandParts(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult
     )
     {
@@ -552,7 +567,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 relationshipAuthorizationRuntimeCheck.CheckSpecs,
                 relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
                 relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                ReservedParameterNames: GetReservedWriteParameterNames(mergeResult)
+                ReservedParameterNames: GetReservedWriteParameterNames(writePlan)
             )
         );
 
@@ -664,23 +679,24 @@ internal sealed class RelationalWriteNoProfilePersister(
         return count;
     }
 
-    private static IReadOnlyList<string> GetReservedWriteParameterNames(
-        RelationalWriteMergeResult mergeResult
-    )
+    private static IReadOnlyList<string> GetReservedWriteParameterNames(ResourceWritePlan writePlan) =>
+        _reservedWriteParameterNamesByPlan.GetValue(writePlan, BuildReservedWriteParameterNames);
+
+    private static string[] BuildReservedWriteParameterNames(ResourceWritePlan writePlan)
     {
         var columnBindingCount = 0;
 
-        foreach (var tableState in mergeResult.TablesInDependencyOrder)
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
-            columnBindingCount += tableState.TableWritePlan.ColumnBindings.Length;
+            columnBindingCount += tablePlan.ColumnBindings.Length;
         }
 
         List<string> reservedNames = new(columnBindingCount);
         HashSet<string> seenNames = new(columnBindingCount, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var tableState in mergeResult.TablesInDependencyOrder)
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
-            foreach (var binding in tableState.TableWritePlan.ColumnBindings)
+            foreach (var binding in tablePlan.ColumnBindings)
             {
                 var parameterName = binding.ParameterName.TrimStart('@');
 
@@ -691,7 +707,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             }
         }
 
-        return reservedNames;
+        return [.. reservedNames];
     }
 
     private bool TryMapRelationshipAuthorizationFailure(
