@@ -1336,6 +1336,7 @@ Notice how the securable element paths got translated:
 | `Bearer` scheme present but token value is empty | `Missing Authorization header bearer token value.` |
 | Malformed or unparseable `Authorization` header | `Invalid Authorization header.` |
 | Token not found or expired | `Invalid token` |
+| Authorization stage reached without resolved client authorizations | `No authorization information found. Ensure valid JWT token is provided.` |
 
 #### 2. Authorization Denied (403 Forbidden)
 

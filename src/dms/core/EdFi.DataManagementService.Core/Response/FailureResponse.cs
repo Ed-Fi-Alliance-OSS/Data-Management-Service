@@ -227,10 +227,10 @@ public static class FailureResponse
 
     /// <summary>
     /// Produces the 401 authentication-failure problem details defined by the design doc
-    /// and the ODS/API contract (urn:ed-fi:api:security:authentication). The detail, type,
-    /// and title are fixed by the contract; scenario-specific messages are carried in the
-    /// errors array. Unlike <see cref="ForUnauthorized"/>, no validationErrors member is
-    /// emitted, keeping the body byte-for-byte compatible with the ODS/API response.
+    /// (urn:ed-fi:api:security:authentication), matching the ODS/API type, title, and detail.
+    /// Scenario-specific messages are carried in the errors array, and correlationId is
+    /// included per the DMS problem-details convention. Unlike <see cref="ForUnauthorized"/>,
+    /// no validationErrors member is emitted.
     /// </summary>
     public static JsonNode ForAuthenticationFailure(TraceId traceId, string[] errors) =>
         new JsonObject

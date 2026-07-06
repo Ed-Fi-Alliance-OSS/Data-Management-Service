@@ -143,7 +143,8 @@ externally-issued tokens), the following compensating controls bound the risk:
   `detail` `The caller could not be authenticated.` — matching the design-doc and
   ODS/API contract. The `errors` array carries only a **coarse, approved
   classification** of the failure (a missing, unknown-scheme, empty, or malformed
-  `Authorization` header, or `Invalid token`); it never discloses a stack trace,
+  `Authorization` header, an absent client-authorization context, or `Invalid token`);
+  it never discloses a stack trace,
   cryptographic detail, or the specific reason a token failed validation —
   expiry, bad signature, and bad claims all collapse to `Invalid token`. Full
   specifics are logged server-side only. This preserves the ODS/API-compatible
