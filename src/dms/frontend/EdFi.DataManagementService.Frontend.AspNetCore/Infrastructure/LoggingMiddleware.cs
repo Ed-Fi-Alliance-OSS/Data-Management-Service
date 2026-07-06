@@ -23,12 +23,25 @@ public class LoggingMiddleware(RequestDelegate next)
             ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
             : string.Empty;
 
+        // Always compute a safe-for-logging value (escape newlines to avoid log forging
+        // and ensure we never log raw user-provided values). Use these for all log calls
+        // including error/exception paths where LogLevel.Information may be disabled.
+        string sanitizedMethodForLog = string.IsNullOrEmpty(sanitizedMethod)
+            ? (LoggingSanitizer.SanitizeForLogging(context.Request.Method) ?? string.Empty)
+            : sanitizedMethod;
+        sanitizedMethodForLog = sanitizedMethodForLog.Replace("\r", "\\r").Replace("\n", "\\n");
+
+        string sanitizedPathForLog = string.IsNullOrEmpty(sanitizedPath)
+            ? (LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value) ?? string.Empty)
+            : sanitizedPath;
+        sanitizedPathForLog = sanitizedPathForLog.Replace("\r", "\\r").Replace("\n", "\\n");
+
         if (logInformation)
         {
             logger.LogInformation(
                 "Request started: {Method} {Path} - TraceId: {TraceId}",
-                sanitizedMethod,
-                sanitizedPath,
+                sanitizedMethodForLog,
+                sanitizedPathForLog,
                 context.TraceIdentifier
             );
         }
@@ -42,8 +55,8 @@ public class LoggingMiddleware(RequestDelegate next)
             {
                 logger.LogInformation(
                     "Request completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
-                    sanitizedMethod,
-                    sanitizedPath,
+                    sanitizedMethodForLog,
+                    sanitizedPathForLog,
                     context.Response.StatusCode,
                     stopwatch.ElapsedMilliseconds,
                     context.TraceIdentifier
@@ -57,12 +70,8 @@ public class LoggingMiddleware(RequestDelegate next)
             logger.LogWarning(
                 ex,
                 "Request rejected because the payload was too large: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                sanitizedMethod.Length == 0
-                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Method)
-                    : sanitizedMethod,
-                sanitizedPath.Length == 0
-                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
-                    : sanitizedPath,
+                sanitizedMethodForLog,
+                sanitizedPathForLog,
                 stopwatch.ElapsedMilliseconds,
                 context.TraceIdentifier
             );
@@ -79,12 +88,8 @@ public class LoggingMiddleware(RequestDelegate next)
             logger.LogError(
                 ex,
                 "Request failed: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                sanitizedMethod.Length == 0
-                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Method)
-                    : sanitizedMethod,
-                sanitizedPath.Length == 0
-                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
-                    : sanitizedPath,
+                sanitizedMethodForLog,
+                sanitizedPathForLog,
                 stopwatch.ElapsedMilliseconds,
                 context.TraceIdentifier
             );
@@ -118,7 +123,7 @@ public class LoggingMiddleware(RequestDelegate next)
 
             // Re-throw with contextual information for the middleware pipeline
             throw new InvalidOperationException(
-                $"Request processing failed for {LoggingSanitizer.SanitizeForLogging(context.Request.Method)} {LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)} - TraceId: {context.TraceIdentifier}",
+                $"Request processing failed for {sanitizedMethodForLog} {sanitizedPathForLog} - TraceId: {context.TraceIdentifier}",
                 ex
             );
         }
