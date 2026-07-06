@@ -23,4 +23,13 @@ public abstract record WritePrecondition
     /// is not compared.
     /// </summary>
     public sealed record IfMatch(string Value, bool IsWildcard = false) : WritePrecondition;
+
+    /// <summary>
+    /// The request carries an <c>If-None-Match</c> precondition (RFC 9110 §13.1.2). When
+    /// <see cref="IsWildcard"/> is false, <see cref="Value"/> is the opaque tag; the write proceeds
+    /// unless the current representation matches it (state-significant projection). When true, this is
+    /// the wildcard (<c>If-None-Match: *</c>): the write proceeds only if NO current representation
+    /// exists, and fails (412) when one does. Uses weak comparison; server-emitted tags are always strong.
+    /// </summary>
+    public sealed record IfNoneMatch(string Value, bool IsWildcard = false) : WritePrecondition;
 }

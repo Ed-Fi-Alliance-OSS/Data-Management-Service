@@ -77,4 +77,56 @@ public class WritePreconditionFactoryTests
 
         result.Should().Be(new WritePrecondition.IfMatch("*")); // IsWildcard defaults false
     }
+
+    [Test]
+    public void It_produces_a_wildcard_if_none_match_for_a_bare_asterisk()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = "*",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch("*", IsWildcard: true));
+    }
+
+    [TestCase("\"5-a1b2c3d4.j._.l\"")] // quoted strong validator
+    [TestCase("5-a1b2c3d4.j._.l")] // bare unquoted value tolerated
+    [TestCase("W/\"5-a1b2c3d4.j._.l\"")] // weak validator accepted (unlike If-Match)
+    public void It_normalizes_the_if_none_match_to_the_unquoted_opaque_tag(string ifNoneMatchValue)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = ifNoneMatchValue,
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch("5-a1b2c3d4.j._.l"));
+    }
+
+    [Test]
+    public void It_prefers_if_match_when_both_if_match_and_if_none_match_are_present()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-Match"] = "\"5-a1b2c3d4.j._.l\"",
+            ["If-None-Match"] = "*",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfMatch("5-a1b2c3d4.j._.l"));
+    }
+
+    [Test]
+    public void It_returns_none_when_neither_if_match_nor_if_none_match_is_present()
+    {
+        var result = WritePreconditionFactory.Create(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        );
+
+        result.Should().BeOfType<WritePrecondition.None>();
+    }
 }
