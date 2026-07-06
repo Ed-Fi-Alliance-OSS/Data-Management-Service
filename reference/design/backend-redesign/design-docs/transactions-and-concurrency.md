@@ -523,6 +523,12 @@ Invalidation approaches:
 - CDC streaming (e.g., Debezium → Kafka), and
 - downstream indexing (e.g., OpenSearch).
 
+When relational CDC/Kafka is enabled, `dms.DocumentCache` is conditionally required and is the Debezium
+capture source. CDC still observes projection writes rather than original resource-table writes, so
+projector lag and delete materialization are part of the CDC operational contract. See
+[cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md) and
+[cdc/0003-debezium-connector-deployment.md](cdc/0003-debezium-connector-deployment.md).
+
 Correctness must not depend on this table:
 - rows may be missing/stale and rebuilt asynchronously,
 - authorization must not use it as a source of truth.

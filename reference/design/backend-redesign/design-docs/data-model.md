@@ -469,9 +469,10 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.DocumentCache` (optional, eventually consistent projection)
+##### 5) `dms.DocumentCache` (optional projection; required when CDC/Kafka is enabled)
 
 Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
+It is conditionally required when relational Debezium/Kafka CDC is enabled because CDC captures this table.
 
 This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
 
@@ -479,6 +480,9 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 - when enabled, DMS should materialize documents into this table via a write-driven/background projector
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
+
+For the relational CDC source and Kafka contract, see [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md)
+and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
 
 The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
 with `link` subtrees already present when link injection is compiled into the read plan.
@@ -548,7 +552,8 @@ CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
 Uses:
 
 - Faster GET/query responses (skip reconstitution)
-- Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
+- Relational CDC streaming (Debezium/Kafka) when CDC is enabled
+- Downstream indexing / external integrations
 
 ### Authorization companion objects (schema: `auth`)
 

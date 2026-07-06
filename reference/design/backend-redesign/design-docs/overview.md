@@ -109,6 +109,7 @@ This redesign is split into focused docs in this directory:
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Update tracking (stored stamps for `_etag/_lastModifiedDate/ChangeVersion`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
+- CDC/Kafka (`dms.DocumentCache` source, topic/message contract, connector deployment): [cdc/](cdc/)
 - DDL Generation (builds the relational model and emits/provisions DDL): [ddl-generation.md](ddl-generation.md)
 - DDL generator verification harness (goldens, provision smoke, pack validation): [ddl-generator-testing.md](ddl-generator-testing.md)
 - Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)

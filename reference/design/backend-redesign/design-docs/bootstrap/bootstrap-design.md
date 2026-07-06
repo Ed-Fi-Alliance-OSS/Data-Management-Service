@@ -529,10 +529,11 @@ prepare-dms-schema.ps1
 > `API_SCHEMA_PATH=/app/ApiSchema`, `DMS_API_SCHEMA_MOUNT_SOURCE=<abs .bootstrap/ApiSchema>`, and clears
 > `SCHEMA_PACKAGES` so `run.sh` performs no second download. `bootstrap-dms.yml` (re-introduced) mounts
 > `.bootstrap/ApiSchema` into the DMS container; staged claims are activated per manifest `claims.mode`.
-> In bootstrap mode, default Debezium connector registration is also skipped because the bootstrap relational
-> schema does not include the legacy CDC tables (`dms.document`, `dms.educationorganizationhierarchytermslookup`)
-> or the `to_debezium` publication that the default connector targets. Non-bootstrap local startup can still use
-> the existing `SCHEMA_PACKAGES` downloader path.
+> In bootstrap mode, Debezium connector registration is skipped unless a future explicit CDC opt-in (for example
+> `-EnableKafkaCdc`) is supplied. Relational CDC targets `dms.DocumentCache` and the v1 topic-per-instance
+> contract in `../cdc/`; it must not reuse the legacy connector that targeted `dms.document`,
+> `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. Non-bootstrap local startup
+> can still use the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the
 host materializes concrete schema files first, then downstream steps operate on those staged files rather

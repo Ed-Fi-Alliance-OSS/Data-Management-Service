@@ -43,8 +43,8 @@ The DDL generation utility is responsible for database objects derived from the 
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_Discriminator_ContentVersion`)
   - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
-- Optional projection objects (performance / integrations):
-  - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
+- Optional projection objects (performance / integrations; required when CDC/Kafka is enabled):
+  - `dms.DocumentCache` (materialized JSON projection and relational CDC source; see [data-model.md](data-model.md) and [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md))
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions
@@ -148,7 +148,7 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.Document`
 - `dms.ReferentialIdentity`
 - `dms.Descriptor`
-- Optional projections:
+- Optional projections (required when CDC/Kafka is enabled):
   - `dms.DocumentCache`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
