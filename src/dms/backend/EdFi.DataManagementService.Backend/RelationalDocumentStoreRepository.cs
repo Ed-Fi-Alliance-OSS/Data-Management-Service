@@ -974,7 +974,8 @@ public sealed class RelationalDocumentStoreRepository(
                     documentId,
                     authorized.CheckSpecs,
                     authorized.ClaimEducationOrganizationIdParameterization,
-                    DeleteRelationshipAuthorizationAuth1Index
+                    DeleteRelationshipAuthorizationAuth1Index,
+                    authorized.ExecutableShape
                 )
             )
             .ConfigureAwait(false);
@@ -2950,7 +2951,8 @@ public sealed class RelationalDocumentStoreRepository(
                     documentId,
                     authorized.CheckSpecs,
                     authorized.ClaimEducationOrganizationIdParameterization,
-                    GetByIdRelationshipAuthorizationAuth1Index
+                    GetByIdRelationshipAuthorizationAuth1Index,
+                    authorized.ExecutableShape
                 )
             )
             .ConfigureAwait(false);

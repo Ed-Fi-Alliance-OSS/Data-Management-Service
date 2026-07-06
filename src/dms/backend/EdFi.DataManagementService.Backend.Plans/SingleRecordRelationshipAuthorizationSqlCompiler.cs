@@ -81,6 +81,40 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         return sqlPlanCache.GetOrAdd(cacheKey, spec);
     }
 
+    public static SingleRecordRelationshipAuthorizationSqlPlan CompileCached(
+        MappingSet mappingSet,
+        RelationshipAuthorizationExecutableShape executableShape,
+        AuthorizationClaimEducationOrganizationIdParameterization claimEducationOrganizationIdParameterization,
+        int emittedAuth1Index,
+        IReadOnlyList<string>? reservedParameterNames = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(executableShape);
+        ArgumentNullException.ThrowIfNull(claimEducationOrganizationIdParameterization);
+
+        var spec = new SingleRecordRelationshipAuthorizationSqlSpec(
+            executableShape.CheckSpecs,
+            claimEducationOrganizationIdParameterization,
+            emittedAuth1Index,
+            ReservedParameterNames: reservedParameterNames
+        );
+        var dialect = mappingSet.Key.Dialect;
+        ValidateCacheableSpecShape(dialect, spec);
+
+        var cacheKey = SqlPlanCacheKey.Create(
+            dialect,
+            executableShape.SqlShapeKey,
+            claimEducationOrganizationIdParameterization,
+            emittedAuth1Index,
+            spec.DocumentIdParameterName,
+            reservedParameterNames
+        );
+        var sqlPlanCache = _sqlPlanCachesByMappingSet.GetValue(mappingSet, static _ => new SqlPlanCache());
+
+        return sqlPlanCache.GetOrAdd(cacheKey, spec);
+    }
+
     private static void ValidateCacheableSpecShape(
         SqlDialect dialect,
         SingleRecordRelationshipAuthorizationSqlSpec spec
@@ -1845,25 +1879,24 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
     private sealed class SqlPlanCacheKey : IEquatable<SqlPlanCacheKey>
     {
-        private readonly ShapeToken[] _shapeTokens;
         private readonly int _hashCode;
 
         private SqlPlanCacheKey(
             SqlDialect dialect,
-            ShapeToken[] shapeTokens,
+            RelationshipAuthorizationSqlShapeKey shapeKey,
             AuthorizationClaimEducationOrganizationIdParameterizationKind claimKind,
             string baseParameterName,
-            string[] parameterNamesInOrder,
+            int claimParameterCount,
             int emittedAuth1Index,
             string documentIdParameterName,
-            string[] reservedParameterNames
+            ReservedParameterNamesCacheKey reservedParameterNames
         )
         {
             Dialect = dialect;
-            _shapeTokens = shapeTokens;
+            ShapeKey = shapeKey;
             ClaimKind = claimKind;
             BaseParameterName = baseParameterName;
-            ParameterNamesInOrder = parameterNamesInOrder;
+            ClaimParameterCount = claimParameterCount;
             EmittedAuth1Index = emittedAuth1Index;
             DocumentIdParameterName = documentIdParameterName;
             ReservedParameterNames = reservedParameterNames;
@@ -1872,17 +1905,19 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         public SqlDialect Dialect { get; }
 
+        private RelationshipAuthorizationSqlShapeKey ShapeKey { get; }
+
         private AuthorizationClaimEducationOrganizationIdParameterizationKind ClaimKind { get; }
 
         private string BaseParameterName { get; }
 
-        private string[] ParameterNamesInOrder { get; }
+        private int ClaimParameterCount { get; }
 
         private int EmittedAuth1Index { get; }
 
         private string DocumentIdParameterName { get; }
 
-        private string[] ReservedParameterNames { get; }
+        private ReservedParameterNamesCacheKey ReservedParameterNames { get; }
 
         public static SqlPlanCacheKey Create(
             SqlDialect dialect,
@@ -1893,15 +1928,34 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
             return new SqlPlanCacheKey(
                 dialect,
-                BuildShapeTokens(spec.CheckSpecs),
+                RelationshipAuthorizationSqlShapeKey.Create(spec.CheckSpecs),
                 parameterization.Kind,
                 parameterization.BaseParameterName,
-                [.. parameterization.ParameterNamesInOrder],
+                parameterization.ParameterNamesInOrder.Count,
                 spec.EmittedAuth1Index,
                 spec.DocumentIdParameterName,
-                spec.ReservedParameterNames is null ? [] : [.. spec.ReservedParameterNames]
+                ReservedParameterNamesCacheKey.Create(spec.ReservedParameterNames)
             );
         }
+
+        public static SqlPlanCacheKey Create(
+            SqlDialect dialect,
+            RelationshipAuthorizationSqlShapeKey shapeKey,
+            AuthorizationClaimEducationOrganizationIdParameterization parameterization,
+            int emittedAuth1Index,
+            string documentIdParameterName,
+            IReadOnlyList<string>? reservedParameterNames
+        ) =>
+            new(
+                dialect,
+                shapeKey,
+                parameterization.Kind,
+                parameterization.BaseParameterName,
+                parameterization.ParameterNamesInOrder.Count,
+                emittedAuth1Index,
+                documentIdParameterName,
+                ReservedParameterNamesCacheKey.Create(reservedParameterNames)
+            );
 
         public bool Equals(SqlPlanCacheKey? other)
         {
@@ -1913,17 +1967,17 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             return other is not null
                 && _hashCode == other._hashCode
                 && Dialect == other.Dialect
+                && ShapeKey.Equals(other.ShapeKey)
                 && ClaimKind == other.ClaimKind
                 && string.Equals(BaseParameterName, other.BaseParameterName, StringComparison.Ordinal)
-                && StringsEqual(ParameterNamesInOrder, other.ParameterNamesInOrder)
+                && ClaimParameterCount == other.ClaimParameterCount
                 && EmittedAuth1Index == other.EmittedAuth1Index
                 && string.Equals(
                     DocumentIdParameterName,
                     other.DocumentIdParameterName,
                     StringComparison.Ordinal
                 )
-                && StringsEqual(ReservedParameterNames, other.ReservedParameterNames)
-                && _shapeTokens.AsSpan().SequenceEqual(other._shapeTokens);
+                && ReservedParameterNames.Equals(other.ReservedParameterNames);
         }
 
         public override bool Equals(object? obj) => obj is SqlPlanCacheKey other && Equals(other);
@@ -1934,268 +1988,75 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             HashCode hashCode = new();
             hashCode.Add(Dialect);
-            AddShapeTokenSequenceHashCodes(ref hashCode, _shapeTokens);
+            hashCode.Add(ShapeKey);
             hashCode.Add(ClaimKind);
             hashCode.Add(BaseParameterName, StringComparer.Ordinal);
-            AddStringSequenceHashCodes(ref hashCode, ParameterNamesInOrder);
+            hashCode.Add(ClaimParameterCount);
             hashCode.Add(EmittedAuth1Index);
             hashCode.Add(DocumentIdParameterName, StringComparer.Ordinal);
-            AddStringSequenceHashCodes(ref hashCode, ReservedParameterNames);
+            hashCode.Add(ReservedParameterNames);
 
             return hashCode.ToHashCode();
         }
+    }
 
-        private static ShapeToken[] BuildShapeTokens(
-            IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs
-        )
+    private sealed class ReservedParameterNamesCacheKey : IEquatable<ReservedParameterNamesCacheKey>
+    {
+        private static readonly string[] _emptyParameterNames = [];
+        private static readonly ReservedParameterNamesCacheKey _empty = new(_emptyParameterNames);
+        private static readonly ConditionalWeakTable<string[], ReservedParameterNamesCacheKey> _keysByArray =
+            new();
+
+        private readonly IReadOnlyList<string> _parameterNames;
+        private readonly int _hashCode;
+
+        private ReservedParameterNamesCacheKey(IReadOnlyList<string> parameterNames)
         {
-            var builder = new ShapeTokenBuilder(Math.Max(32, checkSpecs.Count * 24));
-            builder.Add(CreateNumberToken(ShapeTokenKind.CheckSpecCount, checkSpecs.Count));
-
-            for (var index = 0; index < checkSpecs.Count; index++)
-            {
-                AddCheckSpecShapeTokens(ref builder, checkSpecs[index]);
-            }
-
-            return builder.ToArray();
+            _parameterNames = parameterNames;
+            _hashCode = BuildHashCode();
         }
 
-        private static void AddCheckSpecShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationCheckSpec checkSpec
-        )
+        public static ReservedParameterNamesCacheKey Create(IReadOnlyList<string>? parameterNames)
         {
-            builder.Add(
-                new ShapeToken(
-                    ShapeTokenKind.CheckSpecStrategy,
-                    checkSpec.ConfiguredStrategy.StrategyName,
-                    null,
-                    checkSpec.ConfiguredStrategy.RawConfiguredIndex,
-                    checkSpec.RelationshipLocalOrder
-                )
-            );
-            builder.Add(
-                CreateNumberToken(
-                    ShapeTokenKind.CheckSpecSource,
-                    (int)checkSpec.Direction,
-                    (int)checkSpec.ValueSource
-                )
-            );
-            builder.Add(CreateNumberToken(ShapeTokenKind.SubjectCount, checkSpec.Subjects.Count));
-
-            for (var index = 0; index < checkSpec.Subjects.Count; index++)
+            if (parameterNames is null || parameterNames.Count == 0)
             {
-                AddSubjectShapeTokens(ref builder, checkSpec.Subjects[index]);
+                return _empty;
             }
 
-            AddCheckTargetShapeTokens(ref builder, checkSpec.CheckTarget);
-        }
-
-        private static void AddSubjectShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationSubject subject
-        )
-        {
-            builder.Add(CreateResourceToken(ShapeTokenKind.SubjectResource, subject.Resource));
-            builder.Add(CreateTableToken(ShapeTokenKind.SubjectTable, subject.Table));
-            builder.Add(CreateColumnToken(ShapeTokenKind.SubjectColumn, subject.Column));
-            AddAuthObjectShapeTokens(ref builder, subject.AuthObject);
-            builder.Add(CreateNumberToken(ShapeTokenKind.ContributorCount, subject.Contributors.Count));
-
-            for (var index = 0; index < subject.Contributors.Count; index++)
+            if (parameterNames is string[] parameterNameArray)
             {
-                var contributor = subject.Contributors[index];
-                builder.Add(
-                    new ShapeToken(
-                        ShapeTokenKind.Contributor,
-                        contributor.JsonPath,
-                        contributor.ReadableName,
-                        (int)contributor.Kind,
-                        contributor.ContributionOrder
-                    )
+                return _keysByArray.GetValue(
+                    parameterNameArray,
+                    static array => new ReservedParameterNamesCacheKey(array)
                 );
             }
 
-            AddPersonMetadataShapeTokens(ref builder, subject.PersonMetadata);
+            return new ReservedParameterNamesCacheKey([.. parameterNames]);
         }
 
-        private static void AddAuthObjectShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationAuthObject authObject
-        )
+        public bool Equals(ReservedParameterNamesCacheKey? other)
         {
-            builder.Add(CreateTableToken(ShapeTokenKind.AuthObjectTable, authObject.Name));
-            builder.Add(
-                CreateColumnToken(ShapeTokenKind.AuthObjectSubjectValueColumn, authObject.SubjectValueColumn)
-            );
-            builder.Add(
-                CreateColumnToken(
-                    ShapeTokenKind.AuthObjectClaimEducationOrganizationIdColumn,
-                    authObject.ClaimEducationOrganizationIdColumn
-                )
-            );
-            builder.Add(
-                CreateNumberToken(ShapeTokenKind.AuthObjectFlags, authObject.AllowsDirectClaimMatch ? 1 : 0)
-            );
-            builder.Add(CreateTextToken(ShapeTokenKind.AuthObjectFailureHint, authObject.FailureHint));
-        }
-
-        private static void AddPersonMetadataShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationPersonSubjectMetadata? metadata
-        )
-        {
-            if (metadata is null)
+            if (ReferenceEquals(this, other))
             {
-                builder.Add(CreateNumberToken(ShapeTokenKind.PersonMetadata, -1));
-                return;
+                return true;
             }
 
-            builder.Add(CreateNumberToken(ShapeTokenKind.PersonMetadata, (int)metadata.PersonKind));
-            builder.Add(CreateNumberToken(ShapeTokenKind.PersonPath, (int)metadata.Path.Kind));
-            builder.Add(CreateNumberToken(ShapeTokenKind.PersonPathStepCount, metadata.Path.Steps.Count));
-
-            for (var index = 0; index < metadata.Path.Steps.Count; index++)
-            {
-                AddColumnPathStepShapeTokens(ref builder, metadata.Path.Steps[index]);
-            }
-
-            builder.Add(CreateTableToken(ShapeTokenKind.StoredAnchorTable, metadata.StoredAnchor.RootTable));
-            builder.Add(
-                CreateColumnToken(
-                    ShapeTokenKind.StoredAnchorDocumentIdColumn,
-                    metadata.StoredAnchor.RootDocumentIdColumn
-                )
-            );
-
-            if (metadata.ProposedAnchor is not { } proposedAnchor)
-            {
-                builder.Add(CreateNumberToken(ShapeTokenKind.ProposedAnchor, -1));
-                return;
-            }
-
-            builder.Add(CreateNumberToken(ShapeTokenKind.ProposedAnchor, (int)proposedAnchor.Kind));
-            AddProposedBindingShapeTokens(ref builder, proposedAnchor.Binding);
+            return other is not null
+                && _hashCode == other._hashCode
+                && StringsEqual(_parameterNames, other._parameterNames);
         }
 
-        private static void AddColumnPathStepShapeTokens(ref ShapeTokenBuilder builder, ColumnPathStep step)
+        public override bool Equals(object? obj) =>
+            obj is ReservedParameterNamesCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private int BuildHashCode()
         {
-            builder.Add(CreateTableToken(ShapeTokenKind.PersonPathSourceTable, step.SourceTable));
-            builder.Add(CreateColumnToken(ShapeTokenKind.PersonPathSourceColumn, step.SourceColumnName));
-            AddNullableTableToken(ref builder, ShapeTokenKind.PersonPathTargetTable, step.TargetTable);
-            AddNullableColumnToken(ref builder, ShapeTokenKind.PersonPathTargetColumn, step.TargetColumnName);
-        }
+            HashCode hashCode = new();
+            AddStringSequenceHashCodes(ref hashCode, _parameterNames);
 
-        private static void AddCheckTargetShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationCheckTarget target
-        )
-        {
-            switch (target)
-            {
-                case RelationshipAuthorizationCheckTarget.Stored stored:
-                    builder.Add(CreateNumberToken(ShapeTokenKind.CheckTargetStored, 0));
-                    builder.Add(CreateTableToken(ShapeTokenKind.CheckTargetRootTable, stored.RootTable));
-                    builder.Add(
-                        CreateColumnToken(ShapeTokenKind.CheckTargetDocumentIdColumn, stored.DocumentIdColumn)
-                    );
-                    break;
-                case RelationshipAuthorizationCheckTarget.Proposed proposed:
-                    builder.Add(CreateNumberToken(ShapeTokenKind.CheckTargetProposed, 0));
-                    builder.Add(CreateTableToken(ShapeTokenKind.CheckTargetRootTable, proposed.RootTable));
-                    builder.Add(
-                        CreateNumberToken(
-                            ShapeTokenKind.CheckTargetBindingCount,
-                            proposed.SubjectBindingsInOrder.Count
-                        )
-                    );
-
-                    for (var index = 0; index < proposed.SubjectBindingsInOrder.Count; index++)
-                    {
-                        AddProposedBindingShapeTokens(ref builder, proposed.SubjectBindingsInOrder[index]);
-                    }
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(target), target, null);
-            }
-        }
-
-        private static void AddProposedBindingShapeTokens(
-            ref ShapeTokenBuilder builder,
-            RelationshipAuthorizationProposedValueBinding binding
-        )
-        {
-            builder.Add(CreateTableToken(ShapeTokenKind.ProposedBindingTable, binding.Table));
-            builder.Add(CreateColumnToken(ShapeTokenKind.ProposedBindingColumn, binding.Column));
-            builder.Add(
-                new ShapeToken(
-                    ShapeTokenKind.ProposedBinding,
-                    binding.LogicalKey,
-                    binding.ParameterSeed,
-                    binding.BindingIndex,
-                    0
-                )
-            );
-        }
-
-        private static void AddNullableTableToken(
-            ref ShapeTokenBuilder builder,
-            ShapeTokenKind kind,
-            DbTableName? table
-        )
-        {
-            if (table is not { } tableValue)
-            {
-                builder.Add(CreateNullToken(kind));
-                return;
-            }
-
-            builder.Add(CreateTableToken(kind, tableValue));
-        }
-
-        private static void AddNullableColumnToken(
-            ref ShapeTokenBuilder builder,
-            ShapeTokenKind kind,
-            DbColumnName? column
-        )
-        {
-            if (column is not { } columnValue)
-            {
-                builder.Add(CreateNullToken(kind));
-                return;
-            }
-
-            builder.Add(CreateColumnToken(kind, columnValue));
-        }
-
-        private static ShapeToken CreateNullToken(ShapeTokenKind kind) => new(kind, null, null, 0, 0);
-
-        private static ShapeToken CreateNumberToken(ShapeTokenKind kind, int number1, int number2 = 0) =>
-            new(kind, null, null, number1, number2);
-
-        private static ShapeToken CreateTextToken(ShapeTokenKind kind, string? text) =>
-            new(kind, text, null, 0, 0);
-
-        private static ShapeToken CreateResourceToken(ShapeTokenKind kind, QualifiedResourceName resource) =>
-            new(kind, resource.ProjectName, resource.ResourceName, 0, 0);
-
-        private static ShapeToken CreateTableToken(ShapeTokenKind kind, DbTableName table) =>
-            new(kind, table.Schema.Value, table.Name, 0, 0);
-
-        private static ShapeToken CreateColumnToken(ShapeTokenKind kind, DbColumnName column) =>
-            new(kind, column.Value, null, 0, 0);
-
-        private static void AddShapeTokenSequenceHashCodes(
-            ref HashCode hashCode,
-            IReadOnlyList<ShapeToken> values
-        )
-        {
-            hashCode.Add(values.Count);
-
-            foreach (var value in values)
-            {
-                hashCode.Add(value);
-            }
+            return hashCode.ToHashCode();
         }
 
         private static void AddStringSequenceHashCodes(ref HashCode hashCode, IReadOnlyList<string> values)
@@ -2210,6 +2071,11 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         private static bool StringsEqual(IReadOnlyList<string> first, IReadOnlyList<string> second)
         {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
             if (first.Count != second.Count)
             {
                 return false;
@@ -2224,91 +2090,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             }
 
             return true;
-        }
-
-        private enum ShapeTokenKind
-        {
-            CheckSpecCount,
-            CheckSpecStrategy,
-            CheckSpecSource,
-            SubjectCount,
-            SubjectResource,
-            SubjectTable,
-            SubjectColumn,
-            AuthObjectTable,
-            AuthObjectSubjectValueColumn,
-            AuthObjectClaimEducationOrganizationIdColumn,
-            AuthObjectFlags,
-            AuthObjectFailureHint,
-            ContributorCount,
-            Contributor,
-            PersonMetadata,
-            PersonPath,
-            PersonPathStepCount,
-            PersonPathSourceTable,
-            PersonPathSourceColumn,
-            PersonPathTargetTable,
-            PersonPathTargetColumn,
-            StoredAnchorTable,
-            StoredAnchorDocumentIdColumn,
-            ProposedAnchor,
-            ProposedBindingTable,
-            ProposedBindingColumn,
-            ProposedBinding,
-            CheckTargetStored,
-            CheckTargetProposed,
-            CheckTargetRootTable,
-            CheckTargetDocumentIdColumn,
-            CheckTargetBindingCount,
-        }
-
-        private readonly record struct ShapeToken(
-            ShapeTokenKind Kind,
-            string? Text1,
-            string? Text2,
-            int Number1,
-            int Number2
-        );
-
-        private struct ShapeTokenBuilder
-        {
-            private ShapeToken[] _tokens;
-            private int _count;
-
-            public ShapeTokenBuilder(int initialCapacity)
-            {
-                _tokens = new ShapeToken[initialCapacity];
-                _count = 0;
-            }
-
-            public void Add(ShapeToken token)
-            {
-                if (_count == _tokens.Length)
-                {
-                    Grow();
-                }
-
-                _tokens[_count] = token;
-                _count++;
-            }
-
-            public ShapeToken[] ToArray()
-            {
-                if (_count == _tokens.Length)
-                {
-                    return _tokens;
-                }
-
-                ShapeToken[] tokens = new ShapeToken[_count];
-                Array.Copy(_tokens, tokens, _count);
-                return tokens;
-            }
-
-            private void Grow()
-            {
-                var newCapacity = _tokens.Length == 0 ? 16 : _tokens.Length * 2;
-                Array.Resize(ref _tokens, newCapacity);
-            }
         }
     }
 }

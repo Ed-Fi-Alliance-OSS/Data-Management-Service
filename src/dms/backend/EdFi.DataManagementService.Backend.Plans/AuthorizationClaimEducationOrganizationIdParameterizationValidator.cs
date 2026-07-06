@@ -127,6 +127,30 @@ internal static class AuthorizationClaimEducationOrganizationIdParameterizationV
                     );
                 }
 
+                for (
+                    var parameterIndex = 0;
+                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
+                    parameterIndex++
+                )
+                {
+                    var expectedParameterName =
+                        $"{authorizationClaimParameterization.BaseParameterName}_{parameterIndex}";
+
+                    if (
+                        !string.Equals(
+                            authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex],
+                            expectedParameterName,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        throw new ArgumentException(
+                            "SQL Server scalar authorization claim EdOrg parameter names must be derived from the base parameter name and ordinal.",
+                            nameof(authorizationClaimParameterization)
+                        );
+                    }
+                }
+
                 return;
 
             default:

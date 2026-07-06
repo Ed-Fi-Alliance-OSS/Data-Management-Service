@@ -18,7 +18,8 @@ public sealed record SingleRecordRelationshipAuthorizationExecutionRequest(
     long DocumentId,
     IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
     AuthorizationClaimEducationOrganizationIdParameterization ClaimEducationOrganizationIdParameterization,
-    int EmittedAuth1Index
+    int EmittedAuth1Index,
+    RelationshipAuthorizationExecutableShape? ExecutableShape = null
 );
 
 public abstract record SingleRecordRelationshipAuthorizationExecutionResult
@@ -72,14 +73,21 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var sqlPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            request.MappingSet,
-            new SingleRecordRelationshipAuthorizationSqlSpec(
-                request.CheckSpecs,
+        var sqlPlan = request.ExecutableShape is { } executableShape
+            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                request.MappingSet,
+                executableShape,
                 request.ClaimEducationOrganizationIdParameterization,
                 request.EmittedAuth1Index
             )
-        );
+            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                request.MappingSet,
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    request.CheckSpecs,
+                    request.ClaimEducationOrganizationIdParameterization,
+                    request.EmittedAuth1Index
+                )
+            );
         if (sqlPlan.ProposedValueParametersInOrder.Count > 0)
         {
             throw new InvalidOperationException(

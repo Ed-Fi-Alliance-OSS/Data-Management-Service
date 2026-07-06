@@ -135,6 +135,46 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_reuse_executable_shape_for_equivalent_stored_plans_with_different_claim_values()
+    {
+        var mappingSet = CreateMultipleRootSubjectMappingSet();
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var configuredStrategies = CreateConfiguredAuthorizationStrategies(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+        var planner = CreatePlanner();
+
+        var firstResult = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            configuredStrategies,
+            new RelationalAuthorizationContext([100L], [])
+        );
+        var secondResult = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            configuredStrategies,
+            new RelationalAuthorizationContext([200L, 300L], [])
+        );
+
+        var firstAuthorized = firstResult
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Subject;
+        var secondAuthorized = secondResult
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Subject;
+
+        firstAuthorized.ExecutableShape.Should().NotBeNull();
+        secondAuthorized.ExecutableShape.Should().BeSameAs(firstAuthorized.ExecutableShape);
+        secondAuthorized.CheckSpecs.Should().BeSameAs(firstAuthorized.CheckSpecs);
+        secondAuthorized
+            .ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds.Should()
+            .Equal(200L, 300L);
+    }
+
+    [Test]
     public void It_should_plan_proposed_specs_with_root_binding_locators_and_parameter_seeds()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();

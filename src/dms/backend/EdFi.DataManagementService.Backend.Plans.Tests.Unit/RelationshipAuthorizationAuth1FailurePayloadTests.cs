@@ -3322,6 +3322,133 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Equal("DocumentId", "ClaimEducationOrganizationIds_0", "ClaimEducationOrganizationIds_1");
     }
 
+    [Test]
+    public void It_should_reuse_shape_cached_sql_server_scalar_plans_when_claim_values_change()
+    {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Mssql);
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var executableShape = RelationshipAuthorizationExecutableShape.Create(checkSpecs);
+        var firstParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [100L, 200L],
+            "ClaimEducationOrganizationIds"
+        );
+        var secondParameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [300L, 400L],
+            "ClaimEducationOrganizationIds"
+        );
+
+        var firstPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            firstParameterization,
+            5
+        );
+        var secondPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            secondParameterization,
+            5
+        );
+
+        secondPlan.Should().BeSameAs(firstPlan);
+    }
+
+    [Test]
+    public void It_should_not_reuse_shape_cached_sql_server_scalar_plans_when_claim_count_changes()
+    {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Mssql);
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var executableShape = RelationshipAuthorizationExecutableShape.Create(checkSpecs);
+        var oneClaimParameterization =
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Mssql,
+                [100L],
+                "ClaimEducationOrganizationIds"
+            );
+        var twoClaimParameterization =
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                SqlDialect.Mssql,
+                [100L, 200L],
+                "ClaimEducationOrganizationIds"
+            );
+
+        var oneClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            oneClaimParameterization,
+            5
+        );
+        var twoClaimPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            twoClaimParameterization,
+            5
+        );
+
+        twoClaimPlan.Should().NotBeSameAs(oneClaimPlan);
+        oneClaimPlan
+            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("DocumentId", "ClaimEducationOrganizationIds_0");
+        twoClaimPlan
+            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("DocumentId", "ClaimEducationOrganizationIds_0", "ClaimEducationOrganizationIds_1");
+    }
+
+    [Test]
+    public void It_should_apply_reserved_parameter_names_to_shape_cached_proposed_plans()
+    {
+        var mappingSet = CreateCacheMappingSet(SqlDialect.Pgsql);
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs =
+        [
+            CreateProposedCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                0,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        ];
+        var executableShape = RelationshipAuthorizationExecutableShape.Create(checkSpecs);
+        var parameterization = CreateSingleClaimParameterization();
+
+        var unreservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            parameterization,
+            5
+        );
+        var reservedPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            executableShape,
+            parameterization,
+            5,
+            ["relationshipAuthorization_0_0_schoolId"]
+        );
+
+        reservedPlan.Should().NotBeSameAs(unreservedPlan);
+        AssertSingleProposedValueParameterName(unreservedPlan, "relationshipAuthorization_0_0_schoolId");
+        AssertSingleProposedValueParameterName(reservedPlan, "relationshipAuthorization_0_0_schoolId_2");
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_compile_stored_target_cte_with_ordered_root_columns(SqlDialect dialect)

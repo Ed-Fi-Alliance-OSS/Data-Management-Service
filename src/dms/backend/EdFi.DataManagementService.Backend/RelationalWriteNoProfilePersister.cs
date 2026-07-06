@@ -561,15 +561,24 @@ internal sealed class RelationalWriteNoProfilePersister(
             ?? throw new InvalidOperationException(
                 "Cannot build a proposed authorization command without a runtime authorization check."
             );
-        var sqlPlan = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
-            mappingSet,
-            new SingleRecordRelationshipAuthorizationSqlSpec(
-                relationshipAuthorizationRuntimeCheck.CheckSpecs,
+        var reservedParameterNames = GetReservedWriteParameterNames(writePlan);
+        var sqlPlan = relationshipAuthorizationRuntimeCheck.ExecutableShape is { } executableShape
+            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                mappingSet,
+                executableShape,
                 relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
                 relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                ReservedParameterNames: GetReservedWriteParameterNames(writePlan)
+                reservedParameterNames
             )
-        );
+            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                mappingSet,
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    relationshipAuthorizationRuntimeCheck.CheckSpecs,
+                    relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
+                    relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
+                    ReservedParameterNames: reservedParameterNames
+                )
+            );
 
         return new ProposedRelationshipAuthorizationCommandParts(
             sqlPlan.AuthorizationSql,

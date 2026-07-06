@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using static EdFi.DataManagementService.Backend.Plans.RelationshipAuthorizationPlanningHelpers;
@@ -11,6 +13,11 @@ namespace EdFi.DataManagementService.Backend.Plans;
 
 public sealed class RelationshipAuthorizationPlanner
 {
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        SupportedStrategyPlanCache
+    > _supportedStrategyPlanCachesByMappingSet = new();
+
     private readonly RelationalEdOrgAuthorizationSubjectSelector _edOrgAuthorizationSubjectSelector;
 
     public RelationshipAuthorizationPlanner(
@@ -34,7 +41,8 @@ public sealed class RelationshipAuthorizationPlanner
             configuredAuthorizationStrategies,
             authorizationContext,
             RelationshipAuthorizationValueSource.Stored,
-            CreateStoredCheckSpec
+            CreateStoredCheckSpec,
+            SupportedStrategyPlanCacheContext.Stored
         );
 
     public RelationshipAuthorizationResult PlanProposedValues(
@@ -53,7 +61,8 @@ public sealed class RelationshipAuthorizationPlanner
             configuredAuthorizationStrategies,
             authorizationContext,
             RelationshipAuthorizationValueSource.Proposed,
-            CreateProposedCheckSpecFactory(resource, writePlan, ProposedValueOperationKind.CreateNew)
+            CreateProposedCheckSpecFactory(resource, writePlan, ProposedValueOperationKind.CreateNew),
+            SupportedStrategyPlanCacheContext.CreateProposed(ProposedValueOperationKind.CreateNew, writePlan)
         );
     }
 
@@ -80,6 +89,10 @@ public sealed class RelationshipAuthorizationPlanner
             writePlan,
             ProposedValueOperationKind.ExistingResource
         );
+        var proposedCacheContext = SupportedStrategyPlanCacheContext.CreateProposed(
+            ProposedValueOperationKind.ExistingResource,
+            writePlan
+        );
 
         return classification.Outcome switch
         {
@@ -103,7 +116,8 @@ public sealed class RelationshipAuthorizationPlanner
                     resource,
                     classification,
                     authorizationContext,
-                    createProposedCheckSpec
+                    createProposedCheckSpec,
+                    proposedCacheContext
                 ),
             RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
                 PlanSecurityConfigurationUpdateFailures(
@@ -111,7 +125,8 @@ public sealed class RelationshipAuthorizationPlanner
                     resource,
                     classification,
                     authorizationContext,
-                    createProposedCheckSpec
+                    createProposedCheckSpec,
+                    proposedCacheContext
                 ),
             RelationshipAuthorizationClassificationOutcome.SupportedStrategies =>
                 PlanSupportedUpdateStrategies(
@@ -119,7 +134,8 @@ public sealed class RelationshipAuthorizationPlanner
                     resource,
                     classification.SupportedStrategies,
                     authorizationContext,
-                    createProposedCheckSpec
+                    createProposedCheckSpec,
+                    proposedCacheContext
                 ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
@@ -133,7 +149,8 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec
+        CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -154,6 +171,7 @@ public sealed class RelationshipAuthorizationPlanner
             authorizationContext,
             valueSource,
             createCheckSpec,
+            cacheContext,
             classification
         );
     }
@@ -165,6 +183,7 @@ public sealed class RelationshipAuthorizationPlanner
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
         CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext,
         RelationshipAuthorizationClassification classification
     )
     {
@@ -187,7 +206,8 @@ public sealed class RelationshipAuthorizationPlanner
                     classification,
                     authorizationContext,
                     valueSource,
-                    createCheckSpec
+                    createCheckSpec,
+                    cacheContext
                 ),
             RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError =>
                 PlanSecurityConfigurationFailures(
@@ -196,7 +216,8 @@ public sealed class RelationshipAuthorizationPlanner
                     classification,
                     authorizationContext,
                     valueSource,
-                    createCheckSpec
+                    createCheckSpec,
+                    cacheContext
                 ),
             RelationshipAuthorizationClassificationOutcome.SupportedStrategies => PlanSupportedStrategies(
                 mappingSet,
@@ -204,7 +225,8 @@ public sealed class RelationshipAuthorizationPlanner
                 classification.SupportedStrategies,
                 authorizationContext,
                 valueSource,
-                createCheckSpec
+                createCheckSpec,
+                cacheContext
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relationship authorization classification outcome '{classification.Outcome}'."
@@ -218,7 +240,8 @@ public sealed class RelationshipAuthorizationPlanner
         RelationshipAuthorizationClassification classification,
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec
+        CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext
     ) =>
         PlanKnownButNotEnabledClassification(
             resource,
@@ -234,7 +257,8 @@ public sealed class RelationshipAuthorizationPlanner
                             supportedStrategies,
                             authorizationContext,
                             valueSource,
-                            createCheckSpec
+                            createCheckSpec,
+                            cacheContext
                         ),
                     GetSecurityConfigurationFailures,
                     CreateSecurityConfigurationResult
@@ -250,7 +274,8 @@ public sealed class RelationshipAuthorizationPlanner
         RelationshipAuthorizationClassification classification,
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec
+        CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext
     ) =>
         PlanSecurityConfigurationClassification(
             resource,
@@ -266,7 +291,8 @@ public sealed class RelationshipAuthorizationPlanner
                             supportedStrategies,
                             authorizationContext,
                             valueSource,
-                            createCheckSpec
+                            createCheckSpec,
+                            cacheContext
                         ),
                     GetSecurityConfigurationFailures,
                     CreateSecurityConfigurationResult
@@ -279,7 +305,8 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         RelationshipAuthorizationClassification classification,
         RelationalAuthorizationContext authorizationContext,
-        CreateCheckSpec createProposedCheckSpec
+        CreateCheckSpec createProposedCheckSpec,
+        SupportedStrategyPlanCacheContext proposedCacheContext
     ) =>
         PlanKnownButNotEnabledClassification(
             resource,
@@ -294,7 +321,8 @@ public sealed class RelationshipAuthorizationPlanner
                             resource,
                             supportedStrategies,
                             authorizationContext,
-                            createProposedCheckSpec
+                            createProposedCheckSpec,
+                            proposedCacheContext
                         ),
                     static updatePlan => updatePlan.SecurityConfigurationFailures,
                     CreateSecurityConfigurationUpdatePlan
@@ -307,7 +335,8 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         RelationshipAuthorizationClassification classification,
         RelationalAuthorizationContext authorizationContext,
-        CreateCheckSpec createProposedCheckSpec
+        CreateCheckSpec createProposedCheckSpec,
+        SupportedStrategyPlanCacheContext proposedCacheContext
     ) =>
         PlanSecurityConfigurationClassification(
             resource,
@@ -322,7 +351,8 @@ public sealed class RelationshipAuthorizationPlanner
                             resource,
                             supportedStrategies,
                             authorizationContext,
-                            createProposedCheckSpec
+                            createProposedCheckSpec,
+                            proposedCacheContext
                         ),
                     static updatePlan => updatePlan.SecurityConfigurationFailures,
                     CreateSecurityConfigurationUpdatePlan
@@ -399,10 +429,19 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
         RelationalAuthorizationContext authorizationContext,
-        CreateCheckSpec createProposedCheckSpec
+        CreateCheckSpec createProposedCheckSpec,
+        SupportedStrategyPlanCacheContext proposedCacheContext
     )
     {
-        var selectedSubjects = SelectSupportedStrategySubjects(mappingSet, resource, supportedStrategies);
+        var storedPlanningResult = GetSupportedStrategyPlan(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            RelationshipAuthorizationValueSource.Stored,
+            CreateStoredCheckSpec,
+            SupportedStrategyPlanCacheContext.Stored
+        );
+        var selectedSubjects = storedPlanningResult.SubjectSelectionResult;
         var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
             mappingSet,
             resource,
@@ -425,22 +464,29 @@ public sealed class RelationshipAuthorizationPlanner
             return CreateSecurityConfigurationUpdatePlan(missingPeopleAuthViewFailures);
         }
 
+        var proposedPlanningResult = GetSupportedStrategyPlan(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            RelationshipAuthorizationValueSource.Proposed,
+            createProposedCheckSpec,
+            proposedCacheContext
+        );
+
         return CreateUpdatePlan(
             PlanSelectedSupportedStrategies(
                 mappingSet,
                 resource,
                 authorizationContext,
                 RelationshipAuthorizationValueSource.Stored,
-                CreateStoredCheckSpec,
-                selectedSubjects.StrategySubjects
+                storedPlanningResult
             ),
             PlanSelectedSupportedStrategies(
                 mappingSet,
                 resource,
                 authorizationContext,
                 RelationshipAuthorizationValueSource.Proposed,
-                createProposedCheckSpec,
-                selectedSubjects.StrategySubjects
+                proposedPlanningResult
             )
         );
     }
@@ -451,10 +497,19 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec
+        CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext
     )
     {
-        var selectedSubjects = SelectSupportedStrategySubjects(mappingSet, resource, supportedStrategies);
+        var supportedStrategyPlan = GetSupportedStrategyPlan(
+            mappingSet,
+            resource,
+            supportedStrategies,
+            valueSource,
+            createCheckSpec,
+            cacheContext
+        );
+        var selectedSubjects = supportedStrategyPlan.SubjectSelectionResult;
 
         if (selectedSubjects.Failures.Count > 0)
         {
@@ -464,8 +519,7 @@ public sealed class RelationshipAuthorizationPlanner
                         mappingSet,
                         resource,
                         valueSource,
-                        createCheckSpec,
-                        selectedSubjects.StrategySubjects
+                        supportedStrategyPlan.PlanningResult
                     )
                     : CreateMissingPeopleAuthViewAssociationFailures(
                         mappingSet,
@@ -487,8 +541,7 @@ public sealed class RelationshipAuthorizationPlanner
             resource,
             authorizationContext,
             valueSource,
-            createCheckSpec,
-            selectedSubjects.StrategySubjects
+            supportedStrategyPlan
         );
     }
 
@@ -703,16 +756,10 @@ public sealed class RelationshipAuthorizationPlanner
         QualifiedResourceName resource,
         RelationalAuthorizationContext authorizationContext,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
+        SupportedStrategyPlan supportedStrategyPlan
     )
     {
-        var planningResult = CreateSelectedSupportedStrategyPlanningResult(
-            mappingSet,
-            resource,
-            createCheckSpec,
-            strategySubjects
-        );
+        var planningResult = supportedStrategyPlan.PlanningResult;
 
         if (planningResult.Failures.Count > 0)
         {
@@ -755,7 +802,60 @@ public sealed class RelationshipAuthorizationPlanner
                 mappingSet.Key.Dialect,
                 authorizationContext.ClaimEducationOrganizationIds,
                 RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
-            )
+            ),
+            supportedStrategyPlan.ExecutableShape
+        );
+    }
+
+    private SupportedStrategyPlan GetSupportedStrategyPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec,
+        SupportedStrategyPlanCacheContext cacheContext
+    )
+    {
+        var cache = _supportedStrategyPlanCachesByMappingSet.GetValue(
+            mappingSet,
+            static _ => new SupportedStrategyPlanCache()
+        );
+        var cacheKey = SupportedStrategyPlanCacheKey.Create(
+            resource,
+            supportedStrategies,
+            valueSource,
+            cacheContext
+        );
+
+        return cache.GetOrAdd(
+            cacheKey,
+            () => CreateSupportedStrategyPlan(mappingSet, resource, createCheckSpec, supportedStrategies)
+        );
+    }
+
+    private SupportedStrategyPlan CreateSupportedStrategyPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        CreateCheckSpec createCheckSpec,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
+    )
+    {
+        var subjectSelectionResult = SelectSupportedStrategySubjects(
+            mappingSet,
+            resource,
+            supportedStrategies
+        );
+        var planningResult = CreateSelectedSupportedStrategyPlanningResult(
+            mappingSet,
+            resource,
+            createCheckSpec,
+            subjectSelectionResult.StrategySubjects
+        );
+
+        return new SupportedStrategyPlan(
+            subjectSelectionResult,
+            planningResult,
+            RelationshipAuthorizationExecutableShape.Create(planningResult.CheckSpecs)
         );
     }
 
@@ -763,17 +863,9 @@ public sealed class RelationshipAuthorizationPlanner
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationshipAuthorizationValueSource valueSource,
-        CreateCheckSpec createCheckSpec,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
+        SelectedSupportedStrategyPlanningResult planningResult
     )
     {
-        var planningResult = CreateSelectedSupportedStrategyPlanningResult(
-            mappingSet,
-            resource,
-            createCheckSpec,
-            strategySubjects
-        );
-
         if (planningResult.Failures.Count > 0)
         {
             var missingPeopleAuthViewPlanningFailures = CreateMissingPeopleAuthViewAssociationFailures(
@@ -1828,6 +1920,305 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> PeopleAuthViewCandidateStrategySubjects
     );
+
+    private sealed record SupportedStrategyPlan(
+        RelationshipAuthorizationSubjectSelectionResult SubjectSelectionResult,
+        SelectedSupportedStrategyPlanningResult PlanningResult,
+        RelationshipAuthorizationExecutableShape ExecutableShape
+    );
+
+    private sealed class SupportedStrategyPlanCache
+    {
+        private readonly ConcurrentDictionary<
+            SupportedStrategyPlanCacheKey,
+            Lazy<SupportedStrategyPlan>
+        > _plansByKey = new();
+
+        public SupportedStrategyPlan GetOrAdd(
+            SupportedStrategyPlanCacheKey cacheKey,
+            Func<SupportedStrategyPlan> createPlan
+        )
+        {
+            var lazyPlan = new Lazy<SupportedStrategyPlan>(
+                createPlan,
+                LazyThreadSafetyMode.ExecutionAndPublication
+            );
+            var cachedPlan = _plansByKey.GetOrAdd(cacheKey, lazyPlan);
+
+            try
+            {
+                return cachedPlan.Value;
+            }
+            catch
+            {
+                _plansByKey.TryRemove(cacheKey, out _);
+                throw;
+            }
+        }
+    }
+
+    private sealed class SupportedStrategyPlanCacheContext
+    {
+        private SupportedStrategyPlanCacheContext(
+            ProposedValueOperationKind? proposedOperationKind,
+            ResourceWritePlan? writePlan
+        )
+        {
+            ProposedOperationKind = proposedOperationKind;
+            WritePlan = writePlan;
+        }
+
+        public static SupportedStrategyPlanCacheContext Stored { get; } = new(null, null);
+
+        public ProposedValueOperationKind? ProposedOperationKind { get; }
+
+        public ResourceWritePlan? WritePlan { get; }
+
+        public static SupportedStrategyPlanCacheContext CreateProposed(
+            ProposedValueOperationKind operationKind,
+            ResourceWritePlan writePlan
+        )
+        {
+            ArgumentNullException.ThrowIfNull(writePlan);
+
+            return new SupportedStrategyPlanCacheContext(operationKind, writePlan);
+        }
+    }
+
+    private sealed class SupportedStrategyPlanCacheKey : IEquatable<SupportedStrategyPlanCacheKey>
+    {
+        private readonly SupportedStrategySignature[] _supportedStrategySignatures;
+        private readonly ResourceWritePlan? _writePlan;
+        private readonly int _writePlanIdentityHashCode;
+        private readonly int _hashCode;
+
+        private SupportedStrategyPlanCacheKey(
+            QualifiedResourceName resource,
+            RelationshipAuthorizationValueSource valueSource,
+            ProposedValueOperationKind? proposedOperationKind,
+            ResourceWritePlan? writePlan,
+            SupportedStrategySignature[] supportedStrategySignatures
+        )
+        {
+            Resource = resource;
+            ValueSource = valueSource;
+            ProposedOperationKind = proposedOperationKind;
+            _writePlan = writePlan;
+            _writePlanIdentityHashCode = writePlan is null ? 0 : RuntimeHelpers.GetHashCode(writePlan);
+            _supportedStrategySignatures = supportedStrategySignatures;
+            _hashCode = BuildHashCode();
+        }
+
+        private QualifiedResourceName Resource { get; }
+
+        private RelationshipAuthorizationValueSource ValueSource { get; }
+
+        private ProposedValueOperationKind? ProposedOperationKind { get; }
+
+        public static SupportedStrategyPlanCacheKey Create(
+            QualifiedResourceName resource,
+            IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies,
+            RelationshipAuthorizationValueSource valueSource,
+            SupportedStrategyPlanCacheContext cacheContext
+        )
+        {
+            ArgumentNullException.ThrowIfNull(supportedStrategies);
+            ArgumentNullException.ThrowIfNull(cacheContext);
+
+            return new SupportedStrategyPlanCacheKey(
+                resource,
+                valueSource,
+                cacheContext.ProposedOperationKind,
+                cacheContext.WritePlan,
+                [.. supportedStrategies.Select(SupportedStrategySignature.Create)]
+            );
+        }
+
+        public bool Equals(SupportedStrategyPlanCacheKey? other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            return other is not null
+                && _hashCode == other._hashCode
+                && Resource.Equals(other.Resource)
+                && ValueSource == other.ValueSource
+                && ProposedOperationKind == other.ProposedOperationKind
+                && ReferenceEquals(_writePlan, other._writePlan)
+                && SupportedStrategySignaturesEqual(
+                    _supportedStrategySignatures,
+                    other._supportedStrategySignatures
+                );
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is SupportedStrategyPlanCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private int BuildHashCode()
+        {
+            HashCode hashCode = new();
+            hashCode.Add(Resource);
+            hashCode.Add(ValueSource);
+            hashCode.Add(ProposedOperationKind);
+            hashCode.Add(_writePlanIdentityHashCode);
+            hashCode.Add(_supportedStrategySignatures.Length);
+
+            foreach (var signature in _supportedStrategySignatures)
+            {
+                hashCode.Add(signature);
+            }
+
+            return hashCode.ToHashCode();
+        }
+
+        private static bool SupportedStrategySignaturesEqual(
+            IReadOnlyList<SupportedStrategySignature> first,
+            IReadOnlyList<SupportedStrategySignature> second
+        )
+        {
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!first[index].Equals(second[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    private sealed class SupportedStrategySignature : IEquatable<SupportedStrategySignature>
+    {
+        private readonly EligibleSubjectSignature[] _eligibleSubjectSignatures;
+        private readonly int _hashCode;
+
+        private SupportedStrategySignature(
+            RelationshipAuthorizationStrategyKind kind,
+            RelationshipAuthorizationHierarchyDirection direction,
+            string strategyName,
+            int rawConfiguredIndex,
+            int relationshipLocalOrder,
+            EligibleSubjectSignature[] eligibleSubjectSignatures
+        )
+        {
+            Kind = kind;
+            Direction = direction;
+            StrategyName = strategyName;
+            RawConfiguredIndex = rawConfiguredIndex;
+            RelationshipLocalOrder = relationshipLocalOrder;
+            _eligibleSubjectSignatures = eligibleSubjectSignatures;
+            _hashCode = BuildHashCode();
+        }
+
+        private RelationshipAuthorizationStrategyKind Kind { get; }
+
+        private RelationshipAuthorizationHierarchyDirection Direction { get; }
+
+        private string StrategyName { get; }
+
+        private int RawConfiguredIndex { get; }
+
+        private int RelationshipLocalOrder { get; }
+
+        public static SupportedStrategySignature Create(
+            SupportedRelationshipAuthorizationStrategy supportedStrategy
+        )
+        {
+            ArgumentNullException.ThrowIfNull(supportedStrategy);
+
+            return new SupportedStrategySignature(
+                supportedStrategy.Kind,
+                supportedStrategy.Direction,
+                supportedStrategy.ConfiguredStrategy.StrategyName,
+                supportedStrategy.ConfiguredStrategy.RawConfiguredIndex,
+                supportedStrategy.RelationshipLocalOrder,
+                [.. supportedStrategy.EligibleSubjects.Select(EligibleSubjectSignature.Create)]
+            );
+        }
+
+        public bool Equals(SupportedStrategySignature? other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            return other is not null
+                && _hashCode == other._hashCode
+                && Kind == other.Kind
+                && Direction == other.Direction
+                && string.Equals(StrategyName, other.StrategyName, StringComparison.Ordinal)
+                && RawConfiguredIndex == other.RawConfiguredIndex
+                && RelationshipLocalOrder == other.RelationshipLocalOrder
+                && EligibleSubjectSignaturesEqual(
+                    _eligibleSubjectSignatures,
+                    other._eligibleSubjectSignatures
+                );
+        }
+
+        public override bool Equals(object? obj) => obj is SupportedStrategySignature other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private int BuildHashCode()
+        {
+            HashCode hashCode = new();
+            hashCode.Add(Kind);
+            hashCode.Add(Direction);
+            hashCode.Add(StrategyName, StringComparer.Ordinal);
+            hashCode.Add(RawConfiguredIndex);
+            hashCode.Add(RelationshipLocalOrder);
+            hashCode.Add(_eligibleSubjectSignatures.Length);
+
+            foreach (var signature in _eligibleSubjectSignatures)
+            {
+                hashCode.Add(signature);
+            }
+
+            return hashCode.ToHashCode();
+        }
+
+        private static bool EligibleSubjectSignaturesEqual(
+            IReadOnlyList<EligibleSubjectSignature> first,
+            IReadOnlyList<EligibleSubjectSignature> second
+        )
+        {
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!first[index].Equals(second[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    private readonly record struct EligibleSubjectSignature(
+        SecurableElementKind Kind,
+        RelationshipAuthorizationPersonAuthViewKind? PersonAuthViewKind
+    )
+    {
+        public static EligibleSubjectSignature Create(
+            RelationshipAuthorizationStrategySubjectEligibility subjectEligibility
+        ) => new(subjectEligibility.Kind, subjectEligibility.PersonAuthViewKind);
+    }
 
     private sealed record RelationshipAuthorizationSubjectSelectionResult(
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> StrategySubjects,

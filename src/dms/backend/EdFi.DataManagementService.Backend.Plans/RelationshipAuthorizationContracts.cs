@@ -410,7 +410,8 @@ public abstract record RelationshipAuthorizationResult
     public sealed record Authorized(
         IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
         AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
-            null
+            null,
+        RelationshipAuthorizationExecutableShape? ExecutableShape = null
     ) : RelationshipAuthorizationResult;
 
     public sealed record KnownButNotEnabled(IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures)
