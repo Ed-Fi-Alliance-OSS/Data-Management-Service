@@ -15,7 +15,7 @@
     host/database/username keys, SQL Server uses Server/Database/User Id keys. The
     Docker-internal database host is translated to the host-side mapped port before
     SchemaTools runs (dms-postgresql -> localhost:POSTGRES_PORT,
-    dms-mssql -> localhost,MSSQL_PORT).
+    dms-mssql -> 127.0.0.1,MSSQL_PORT).
 
     See command-boundaries.md Section 3.5 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -359,7 +359,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     .SYNOPSIS
     Builds an effective host-side SQL Server provisioning target from a CMS-stored data store
     connection string. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
-    host-side localhost,MSSQL_PORT while preserving the user, password, database, and every
+    host-side 127.0.0.1,MSSQL_PORT while preserving the user, password, database, and every
     other stored option. A non-Docker server (e.g. an external SQL Server configured per
     instance) is preserved as-is.
     #>
@@ -396,7 +396,9 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
     $effectiveServer = $server
     if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
         $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1433"
-        $effectiveServer = "localhost,$mssqlPort"
+        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
+        # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
+        $effectiveServer = "127.0.0.1,$mssqlPort"
     }
 
     # Mutate only the server; every other stored option (password, TrustServerCertificate,

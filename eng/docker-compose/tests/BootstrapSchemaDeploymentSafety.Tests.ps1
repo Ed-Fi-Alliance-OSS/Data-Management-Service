@@ -1517,7 +1517,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
             # The Docker-internal server is translated to the host-side mapped MSSQL_PORT...
-            $connectionString | Should -Match "localhost,15433"
+            $connectionString | Should -Match "127\.0\.0\.1,15433"
             $connectionString | Should -Not -Match "dms-mssql"
             # ...while the database, user, and other stored options survive verbatim.
             $connectionString | Should -Match "Database=db1"
@@ -1557,7 +1557,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
             $connectionString | Should -Match "managed-mssql.example.com,1433"
             $connectionString | Should -Match "Database=ext_db"
-            $connectionString | Should -Not -Match "localhost"
+            $connectionString | Should -Not -Match "127\.0\.0\.1"
         }
 
         It "carries SSL and timeout options through the host-side translation" {
