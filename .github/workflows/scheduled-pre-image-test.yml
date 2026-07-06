@@ -48,7 +48,11 @@ jobs:
         id: e2e
         if: success()
         continue-on-error: true
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e'
+        # This lane runs against the default DS 5.2 stack, so exclude the DS 6.1 version-coupled
+        # scenarios (@StandardVersion-6_1); those are covered on every PR by the run-e2e-tests-ds61
+        # lane and in full by the scheduled smoke test workflow. The non-empty filter makes
+        # build-dms.ps1 write the ...E2E.filtered.trx result file (see the upload step below).
+        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -83,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: scheduled-pre-image-e2e-results-${{ matrix.identityprovider }}
-          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e.trx
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
           if-no-files-found: ignore
 
       - name: Fail if DMS E2E failed
