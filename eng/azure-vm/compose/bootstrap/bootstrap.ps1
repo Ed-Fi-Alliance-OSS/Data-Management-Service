@@ -74,7 +74,11 @@ function EnvVal([string]$key, [string]$default = "") {
 if (-not $IdentityProvider) { $IdentityProvider = EnvVal "IDENTITY_PROVIDER" "keycloak" }
 $publicBaseUrl = if ($BaseUrl) { $BaseUrl.TrimEnd("/") } else { (EnvVal "PUBLIC_BASE_URL" "https://localhost").TrimEnd("/") }
 $realm         = EnvVal "KEYCLOAK_REALM" "edfi"
+$pgUser        = EnvVal "POSTGRES_USER" "postgres"
 $pgPassword    = EnvVal "POSTGRES_PASSWORD"
+# Add-DataStore takes a PSCredential (the module's plaintext -PostgresPassword parameter was
+# replaced); bridge the .env values through the module's own converter.
+$pgCredential  = ConvertTo-PostgresCredential -UserName $pgUser -Secret $pgPassword
 $schoolYear    = EnvVal "MT_SCHOOL_YEAR" "2025"
 $tenant1       = EnvVal "MT_TENANT_1" "tenant1"
 $tenant2       = EnvVal "MT_TENANT_2" "tenant2"
@@ -155,7 +159,7 @@ Write-Output "== Bootstrapping single-tenant stack ($stConfig) =="
 # -SkipKeycloak); authenticate with it directly -- no CMS self-registration.
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Single-Tenant Data Store" `
-    -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresPassword $pgPassword
+    -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresCredential $pgCredential
 # Full-access single-tenant client. (Scope: single-tenant + two isolated tenants.)
 New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stToken `
     -DataStoreIds @([long]$stDataStoreId) -ClaimSet "E2E-NoFurtherAuthRequiredClaimSet"
@@ -180,7 +184,7 @@ foreach ($t in @($tenant1, $tenant2)) {
     if (-not $mtDb) { $mtDb = "edfi_mt" }
     $dsId = Add-DataStore -CmsUrl $mtConfig -AccessToken $mtToken -Name "MT Data Store ($t $schoolYear)" `
         -DataStoreType "SchoolYear" -PostgresHost "postgres" -PostgresDbName $mtDb `
-        -PostgresPassword $pgPassword -Tenant $t
+        -PostgresCredential $pgCredential -Tenant $t
     Add-DataStoreContext -CmsUrl $mtConfig -AccessToken $mtToken -DataStoreId $dsId `
         -ContextKey "schoolYear" -ContextValue $schoolYear -Tenant $t | Out-Null
     New-ReviewApplication -CmsUrl $mtConfig -Label "multi-tenant/$t" -Token $mtToken `

@@ -39,7 +39,12 @@ x-dms-common-env: &dms-common-env
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
-  AppSettings__UseReverseProxyHeaders: "true"
+  # Forwarded headers are honored only from the trusted sources below (DMS-1067). Trust the
+  # Docker container address pools: the dms-sec network subnet is assigned dynamically, and the
+  # gateway is this stack's only published ingress, so in-network spoofing is not part of the
+  # threat model for this review environment.
+  AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+  AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
   AppSettings__Datastore: "postgresql"
   DatabaseOptions__IsolationLevel: "ReadCommitted"
   AppSettings__UseApiSchemaPath: "true"
@@ -77,7 +82,9 @@ x-cms-common-env: &cms-common-env
   DatabaseSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
   AppSettings__DeployDatabaseOnStartup: "true"
   AppSettings__IdentityProvider: "${IDENTITY_PROVIDER:-keycloak}"
-  AppSettings__UseReverseProxyHeaders: "true"
+  # Same trusted-forwarded-headers model as the DMS block above (DMS-1067).
+  AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+  AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
   # Public self-registration is DISABLED. With it on, the anonymous /connect/register endpoint
   # mints a CMS client with admin scope -- an unauthenticated admin-takeover path on a gateway-
   # exposed config service. The bootstrap admin client is instead created directly in Keycloak
@@ -154,7 +161,7 @@ services:
   # =========================================================================
   st-dms:
     <<: *app-defaults
-    image: edfialliance/data-management-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api:${DMS_IMAGE_TAG:-pre}
     hostname: st-dms
     container_name: dms-sec-st-dms
     environment:
@@ -178,7 +185,7 @@ services:
 
   st-config:
     <<: *app-defaults
-    image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
     hostname: st-config
     container_name: dms-sec-st-config
     environment:
@@ -202,7 +209,7 @@ services:
   # =========================================================================
   mt-dms:
     <<: *app-defaults
-    image: edfialliance/data-management-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api:${DMS_IMAGE_TAG:-pre}
     hostname: mt-dms
     container_name: dms-sec-mt-dms
     environment:
@@ -226,7 +233,7 @@ services:
 
   mt-config:
     <<: *app-defaults
-    image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
     hostname: mt-config
     container_name: dms-sec-mt-config
     environment:
