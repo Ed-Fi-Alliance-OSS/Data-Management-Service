@@ -8,6 +8,20 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Guard the destructive `down -v`: it wipes every app + database volume (edfi_st/mt/... data is
+# permanently lost). Require an explicit confirmation so a stray ./reset.sh cannot nuke data --
+# type 'reset' at the interactive prompt, or pass -y/--force (e.g. for automation).
+FORCE=false
+case "${1:-}" in -y | --yes | --force) FORCE=true ;; esac
+if [ "$FORCE" != true ]; then
+  if [ -t 0 ]; then
+    read -r -p "This DROPS all app + database volumes (data lost; Keycloak realm kept). Type 'reset' to continue: " ans
+    [ "$ans" = "reset" ] || { echo "Aborted."; exit 1; }
+  else
+    echo "ERROR: refusing to drop all app + database volumes non-interactively. Re-run with -y/--force."; exit 1
+  fi
+fi
+
 echo "Dropping app + database volumes (Keycloak realm is preserved)..."
 docker compose -f docker-compose.yml --env-file .env down -v
 

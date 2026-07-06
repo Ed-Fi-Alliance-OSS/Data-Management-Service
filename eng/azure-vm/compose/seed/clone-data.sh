@@ -24,7 +24,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 
 [ -f .env ] || { echo "ERROR: .env not found."; exit 1; }
-val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- ; }
+# `|| true`: under `set -o pipefail` a no-match grep exits 1 and would abort the assignment
+# before the caller's `${VAR:-default}` fallback can apply. Swallow it so absent keys fall back.
+val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true ; }
 PG_CONTAINER="${PG_CONTAINER:-dms-sec-postgres}"
 PG_USER="$(val POSTGRES_USER)"; PG_USER="${PG_USER:-postgres}"
 
