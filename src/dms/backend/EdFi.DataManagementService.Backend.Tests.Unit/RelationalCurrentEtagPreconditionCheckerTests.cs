@@ -74,7 +74,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+        result.CurrentEtag.Should().Be(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion));
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
@@ -92,7 +93,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
         _capturedLockCommand.CommandText.Should().Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
@@ -119,7 +120,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
     }
 
     [Test]
@@ -133,7 +134,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
     }
 
     [Test]
@@ -170,7 +171,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
     }
 
     [Test]
@@ -186,12 +187,59 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_is_not_satisfied_by_an_if_none_match_wildcard_when_the_document_exists()
+    {
+        // If-None-Match: * asserts the target does NOT exist. Reaching the checker means the row is
+        // locked and present, so the precondition is not satisfied (the write must 412).
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_is_not_satisfied_by_an_if_none_match_tag_that_matches_the_current_projection()
+    {
+        // If-None-Match with a tag whose state-significant projection matches the current representation
+        // means the client's cached copy is current, so the conditional write must fail (412).
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion))
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_is_satisfied_by_an_if_none_match_tag_that_does_not_match_the_current_projection()
+    {
+        // A non-matching If-None-Match tag means the client's copy is stale, so the write proceeds.
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion - 1))
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeTrue();
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
         SqlDialect dialect,
-        WritePrecondition.IfMatch precondition
+        WritePrecondition precondition
     )
     {
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();

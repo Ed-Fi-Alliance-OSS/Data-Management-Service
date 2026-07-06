@@ -7675,6 +7675,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_ignores_if_none_match_on_a_delete_and_still_deletes()
+    {
+        // Decision 6: DELETE + If-None-Match is not a meaningful idiom. The delete precondition path
+        // keys on If-Match, so a sibling If-None-Match falls through to "no precondition" — the delete
+        // proceeds and the etag precondition checker is never invoked.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteNamespaceAuthorization(new NamespaceAuthorizationExecutionResult.Authorized());
+        ConfigureDeleteOutcome(deleted: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            mappingSet,
+            new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+            documentUuid
+        );
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_namespace_mismatch_403_and_does_not_delete_without_if_match()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());

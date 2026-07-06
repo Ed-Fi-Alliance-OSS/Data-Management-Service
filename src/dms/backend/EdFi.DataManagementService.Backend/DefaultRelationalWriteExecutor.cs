@@ -62,7 +62,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         currentStateLoader,
         currentEtagPreconditionChecker,
         servedEtagComposer,
-        ifMatchEvaluator,
         (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
@@ -130,14 +129,17 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             executionRequest = storedAuthorizationBoundary.ExecutionRequest;
             var ifMatchPreconditionEvaluation =
-                RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(executionRequest);
+                RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(executionRequest);
             // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
             // CreateNew, keep that decision stable so a later race cannot become an update without
             // stored-value authorization.
             var postTargetReevaluation = storedAuthorizationBoundary.PostTargetReevaluation;
 
+            // If-None-Match is a sibling of If-Match, so the before-auth dispatch gate must admit both to
+            // agree with GetEtagPreconditionEvaluation's broadened defer decision; otherwise an
+            // If-None-Match write would silently skip the precondition resolution.
             if (
-                request.WritePrecondition is WritePrecondition.IfMatch
+                request.WritePrecondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch
                 && ifMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
@@ -159,7 +161,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 executionRequest = resolvedExecutionState.ExecutionRequest;
                 currentState = resolvedExecutionState.CurrentState;
 
-                if (executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew)
+                // If-Match on an insert (CreateNew) fails (412); If-None-Match on an insert is the
+                // create-only success case and proceeds.
+                if (
+                    executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew
+                    && executionRequest.WritePrecondition is WritePrecondition.IfMatch
+                )
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
@@ -198,7 +205,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
 
             if (
-                request.WritePrecondition is not WritePrecondition.IfMatch
+                request.WritePrecondition is not (WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch)
                 || ifMatchPreconditionEvaluation
                     is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )

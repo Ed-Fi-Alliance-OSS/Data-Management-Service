@@ -18,7 +18,7 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
         MappingSet mappingSet,
         ResourceReadPlan readPlan,
         RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition,
+        WritePrecondition precondition,
         string? profileName = null
     )
     {
@@ -35,7 +35,7 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
 
-    public WritePrecondition.IfMatch Precondition { get; init; }
+    public WritePrecondition Precondition { get; init; }
 
     /// <summary>
     /// The readable-profile name of the representation the client is acting on, or <see langword="null"/>
@@ -46,10 +46,17 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
     public string? ProfileName { get; init; }
 }
 
+/// <summary>
+/// Result of the current-etag precondition check. <see cref="IsSatisfied"/> is whether the write may
+/// PROCEED under the precondition: for If-Match this means the tag matched; for If-None-Match the
+/// polarity is inverted (satisfied = the tag did NOT match). Computed by
+/// <see cref="EtagPreconditionEvaluator"/> so the inverted semantics live in one place.
+/// </summary>
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     RelationalWriteCurrentState CurrentState,
     RelationalWriteTargetContext.ExistingDocument TargetContext,
-    bool IsMatch
+    string CurrentEtag,
+    bool IsSatisfied
 );
 
 internal interface IRelationalCurrentEtagPreconditionChecker
@@ -185,25 +192,27 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
         };
 
-        var evaluation = _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag);
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+            request.Precondition,
+            targetExists: true,
+            currentEtag
+        );
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
             _logger.LogDebug(
-                "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
-                    + "currentTag={CurrentTag}, matched={IsMatch}",
+                "Etag precondition for document {DocumentId}: currentTag={CurrentTag}, satisfied={IsSatisfied}",
                 request.TargetContext.DocumentId,
-                request.Precondition.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
                 currentEtag,
-                evaluation.IsMatch
+                isSatisfied
             );
         }
 
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
-            evaluation.IsMatch
+            currentEtag,
+            isSatisfied
         );
     }
 

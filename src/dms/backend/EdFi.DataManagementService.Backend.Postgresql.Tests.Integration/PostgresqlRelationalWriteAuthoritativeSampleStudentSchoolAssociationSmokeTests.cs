@@ -1002,7 +1002,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var result = await CheckIfMatchAsync(oppositeLinkModeEtag);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+        result.CurrentEtag.Should().NotBeNullOrEmpty();
     }
 
     [Test]

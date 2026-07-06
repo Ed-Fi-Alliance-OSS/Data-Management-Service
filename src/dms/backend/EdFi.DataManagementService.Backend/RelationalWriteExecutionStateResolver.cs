@@ -17,7 +17,6 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator,
     ILogger<RelationalWriteExecutionStateResolver> logger
 )
 {
@@ -34,16 +33,22 @@ internal sealed class RelationalWriteExecutionStateResolver(
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
-    private readonly IIfMatchEvaluator _ifMatchEvaluator =
-        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
-
     private readonly ILogger<RelationalWriteExecutionStateResolver> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
+    /// <summary>
+    /// True when the request carries an HTTP conditional write precondition (If-Match or
+    /// If-None-Match) whose current existence/etag the write flow must resolve. If-None-Match is a
+    /// sibling of If-Match, so every structural "is a precondition present?" gate must admit both;
+    /// only the proceed-vs-412 outcome differs, centralized in <see cref="EtagPreconditionEvaluator"/>.
+    /// </summary>
+    private static bool HasEtagPrecondition(WritePrecondition precondition) =>
+        precondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch;
+
+    public static IfMatchPreconditionEvaluation GetEtagPreconditionEvaluation(
         RelationalWriteExecutorRequest request
     ) =>
-        request.WritePrecondition is WritePrecondition.IfMatch
+        HasEtagPrecondition(request.WritePrecondition)
         && (
             request.ProposedRelationshipAuthorization is not null
             || request.StoredNamespaceAuthorization is not null
@@ -69,7 +74,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             && options.AllowPostTargetReevaluation
             && (
                 targetContext is RelationalWriteTargetContext.CreateNew
-                || request.WritePrecondition is WritePrecondition.IfMatch
+                || HasEtagPrecondition(request.WritePrecondition)
             )
         )
         {
@@ -114,23 +119,27 @@ internal sealed class RelationalWriteExecutionStateResolver(
         RelationalWriteCurrentState? currentState
     )
     {
-        if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
+        // FAIL-OPEN HAZARD: this early return must admit BOTH If-Match and If-None-Match. If it kept
+        // keying on If-Match only, an If-None-Match write against an existing, authorization-bounded
+        // target would take the deferred path, return null here, and proceed WITHOUT the required 412.
+        if (request.WritePrecondition is WritePrecondition.None)
         {
             return null;
         }
 
         if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
         {
-            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                request.OperationKind,
-                ETagPreconditionFailureReason.TargetDoesNotExist
-            );
+            // If-Match on an insert fails (no current representation to match). If-None-Match on an
+            // insert is the create-only success case, so it proceeds.
+            return request.WritePrecondition is WritePrecondition.IfMatch
+                ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                : null;
         }
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
         {
             throw new InvalidOperationException(
-                $"Deferred If-Match precondition does not support target context '{request.TargetContext.GetType().Name}'."
+                $"Deferred etag precondition does not support target context '{request.TargetContext.GetType().Name}'."
             );
         }
 
@@ -145,13 +154,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
             {
                 var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
                 _logger.LogDebug(
-                    "Deferred If-Match precondition for document {DocumentId}: no current representation "
-                        + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); "
-                        + "resolving missing-target outcome",
+                    "Deferred etag precondition for document {DocumentId}: no current representation "
+                        + "(operation={OperationKind}); resolving missing-target outcome",
                     missingTarget.DocumentId,
-                    request.OperationKind,
-                    ifMatch.IsWildcard,
-                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value)
+                    request.OperationKind
                 );
             }
             return request.OperationKind switch
@@ -160,22 +166,22 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
                 // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
-                // target yields the precondition-failed (412) result rather than not-exists (404).
-                RelationalWriteOperationKind.Put => ifMatch.IsWildcard
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        request.OperationKind,
-                        ETagPreconditionFailureReason.TargetDoesNotExist
-                    )
+                // target yields the precondition-failed (412) result rather than not-exists (404). An
+                // If-None-Match against a now-missing target is the success case, so it falls through to
+                // the normal not-exists (404) result.
+                RelationalWriteOperationKind.Put => request.WritePrecondition
+                    is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             };
         }
 
-        // If-Match compares the state-significant projection of the composed etag (ContentVersion,
-        // schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode as of the
-        // 2026-07-04 ADR amendment), so the values passed for them here are not significant. The
-        // evaluator handles the wildcard precondition (If-Match: *) internally, short-circuiting to a
-        // match because currentState being non-null means the target row exists.
+        // If-Match / If-None-Match compare the state-significant projection of the composed etag
+        // (ContentVersion, schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode
+        // as of the 2026-07-04 ADR amendment), so the values passed for them here are not significant.
+        // EtagPreconditionEvaluator short-circuits a wildcard precondition to the existence answer because
+        // currentState being non-null means the target row exists.
         var currentEtag = _servedEtagComposer.Compose(
             new ServedEtagContext(
                 request.MappingSet.Key.EffectiveSchemaHash,
@@ -186,23 +192,25 @@ internal sealed class RelationalWriteExecutionStateResolver(
             )
         );
 
-        var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+            request.WritePrecondition,
+            targetExists: true,
+            currentEtag
+        );
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
             var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
             _logger.LogDebug(
-                "Deferred If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
-                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                "Deferred etag precondition for document {DocumentId}: "
+                    + "currentTag={CurrentTag}, satisfied={IsSatisfied}",
                 existing.DocumentId,
-                ifMatch.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
                 currentEtag,
-                evaluation.IsMatch
+                isSatisfied
             );
         }
 
-        return evaluation.IsMatch
+        return isSatisfied
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }
@@ -303,7 +311,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (
             options.IfMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
-            && request.WritePrecondition is WritePrecondition.IfMatch ifMatch
+            && HasEtagPrecondition(request.WritePrecondition)
         )
         {
             var preconditionCheckResult = await _currentEtagPreconditionChecker
@@ -312,7 +320,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                         request.MappingSet,
                         request.ExistingDocumentReadPlan!,
                         targetContext,
-                        ifMatch,
+                        request.WritePrecondition,
                         request.ProfileWriteContext?.ProfileName
                     ),
                     writeSession,
@@ -325,7 +333,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 return new InSessionTargetResolution(
                     preconditionCheckResult.TargetContext,
                     preconditionCheckResult.CurrentState,
-                    preconditionCheckResult.IsMatch
+                    preconditionCheckResult.IsSatisfied
                         ? null
                         : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
                 );

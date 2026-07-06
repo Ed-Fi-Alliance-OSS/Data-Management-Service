@@ -117,4 +117,26 @@ public class Given_EtagPreconditionEvaluator
             .Should()
             .BeTrue();
     }
+
+    [Test]
+    public void IfMatch_with_a_missing_target_and_null_current_etag_is_not_satisfied()
+    {
+        // The missing-target path now routes through the evaluator with a null current etag; If-Match
+        // against a non-existent target must not be satisfied.
+        EtagPreconditionEvaluator
+            .IsSatisfied(new WritePrecondition.IfMatch(MatchingClientTag), targetExists: false, null)
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void IfNoneMatch_with_a_missing_target_and_null_current_etag_is_satisfied()
+    {
+        // If-None-Match against a non-existent target is the create-only success case, even with no
+        // current etag to compare.
+        EtagPreconditionEvaluator
+            .IsSatisfied(new WritePrecondition.IfNoneMatch(MatchingClientTag), targetExists: false, null)
+            .Should()
+            .BeTrue();
+    }
 }

@@ -2030,6 +2030,306 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_permits_a_post_insert_under_an_if_none_match_wildcard()
+    {
+        // If-None-Match: * on an insert (CreateNew) is the create-only success case: it proceeds, the
+        // exact inverse of If-Match which 412s on CreateNew.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.InsertSuccess(
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                        ComposedWriteResultEtag
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_permits_a_post_insert_under_an_if_none_match_specific_tag()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfNoneMatch("\"5-abc\"")
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_if_match_failure_for_a_post_insert_under_if_match_wildcard()
+    {
+        // Regression: If-Match: * on an insert must still 412 (unchanged inverse of If-None-Match).
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failure_for_post_as_update_under_if_none_match_when_the_target_exists()
+    {
+        // POST resolving to an existing target under If-None-Match: the before-auth checker now runs
+        // for If-None-Match (previously skipped, the fail-open path) and reports not-satisfied → 412.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_applies_a_post_as_update_under_if_none_match_when_the_precondition_is_satisfied()
+    {
+        // A non-matching If-None-Match tag against an existing target is satisfied (client copy stale),
+        // so the write proceeds as an update.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfNoneMatch("\"stale-client-tag\"")
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failure_for_an_existing_put_under_if_none_match_wildcard()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_applies_an_existing_put_under_if_none_match_when_the_precondition_is_satisfied()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
+            writePrecondition: new WritePrecondition.IfNoneMatch("\"stale-client-tag\"")
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isMatch: true,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_a_missing_put_under_if_none_match_wildcard()
+    {
+        // Contrast with If-Match: * (which 412s a missing PUT): If-None-Match against a missing target
+        // is the success case and yields the normal 404, never 412.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNotExists>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_a_missing_put_under_if_none_match_specific_tag()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfNoneMatch("\"5-abc\"")
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNotExists>();
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failure_on_the_deferred_path_for_an_existing_put_under_if_none_match()
+    {
+        // FAIL-OPEN REGRESSION: an authorization boundary defers precondition evaluation to after
+        // proposed authorization. Before the line-107 guard was widened, If-None-Match dropped out of
+        // TryBuildDeferredPreconditionFailureResult and the write proceeded WITHOUT a 412. This proves
+        // the deferred path honors the create-guard.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        // The deferred path evaluates the precondition itself; it does not call the before-auth checker.
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_permits_a_deferred_post_insert_under_if_none_match_wildcard()
+    {
+        // The deferred CreateNew arm proceeds for If-None-Match (create-only success) after successful
+        // proposed authorization, the inverse of If-Match which 412s here.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_insert_success_when_non_collection_create_dml_is_applied()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);

@@ -573,7 +573,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var result = await CheckIfMatchAsync(oppositeLinkModeEtag);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+        result.CurrentEtag.Should().NotBeNullOrEmpty();
     }
 
     [Test]
