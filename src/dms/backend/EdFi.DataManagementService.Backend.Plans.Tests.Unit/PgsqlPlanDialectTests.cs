@@ -72,7 +72,7 @@ public class Given_PgsqlPlanDialect
     [Test]
     public void It_should_emit_single_document_metadata_select()
     {
-        _dialect.AppendSingleDocumentMetadataSelect(
+        PgsqlPlanDialect.AppendSingleDocumentMetadataSelect(
             _writer,
             HydrationSqlConventions.SingleDocumentIdParameterName
         );
