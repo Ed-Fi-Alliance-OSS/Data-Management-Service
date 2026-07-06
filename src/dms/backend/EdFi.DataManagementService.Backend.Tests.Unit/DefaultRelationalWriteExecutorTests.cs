@@ -2137,6 +2137,45 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_never_reaches_the_stale_no_op_check_for_a_post_as_update_no_op_body_under_if_none_match_wildcard()
+    {
+        // Regression (B7): If-None-Match: * against an EXISTING row with an UNCHANGED (no-op) body must
+        // 412 at the precondition check itself, upstream of the guarded no-op / stale-no-op-compare
+        // machinery. Proven by asserting the merge synthesizer and freshness checker are never invoked —
+        // if the precondition check were skipped or deferred, this request (default no-op body against
+        // the default-named current state) would instead flow into the guarded-no-op branch.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isSatisfied: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_applies_a_post_as_update_under_if_none_match_when_the_precondition_is_satisfied()
     {
         // A non-matching If-None-Match tag against an existing target is satisfied (client copy stale),
@@ -2198,6 +2237,39 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
             );
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_never_reaches_the_stale_no_op_check_for_a_put_no_op_body_under_if_none_match_wildcard()
+    {
+        // Regression (B7): mirrors the POST case above for PUT. If-None-Match: * against an EXISTING row
+        // with an UNCHANGED (no-op) body 412s at the precondition check, never routing through the
+        // guarded no-op / stale-no-op-compare path — proven by the merge synthesizer and freshness
+        // checker never being invoked.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
+            request,
+            isSatisfied: false,
+            currentEtag: "\"current-etag\"",
+            contentVersion: 45L
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+            );
+        result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
