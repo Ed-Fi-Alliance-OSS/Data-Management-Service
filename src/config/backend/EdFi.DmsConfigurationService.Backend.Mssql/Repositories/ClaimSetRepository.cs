@@ -769,7 +769,7 @@ public class ClaimSetRepository(
                 ),
             };
 
-            if (claimImportResult != null)
+            if (claimImportResult is not null)
             {
                 return claimImportResult;
             }
@@ -819,7 +819,7 @@ public class ClaimSetRepository(
 
                         success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
 
-                        if (success == null)
+                        if (success is null)
                         {
                             throw new Exception(
                                 "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."

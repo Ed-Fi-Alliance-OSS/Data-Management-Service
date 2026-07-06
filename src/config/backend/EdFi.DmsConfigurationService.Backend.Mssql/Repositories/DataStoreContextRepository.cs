@@ -77,7 +77,7 @@ public class DataStoreContextRepository(
                 }
             );
 
-            if (id == null)
+            if (id is null)
             {
                 return new DataStoreContextInsertResult.FailureDataStoreNotFound();
             }
@@ -156,7 +156,7 @@ public class DataStoreContextRepository(
                 new { Id = id, TenantId }
             );
 
-            return dataStoreContext != null
+            return dataStoreContext is not null
                 ? new DataStoreContextGetResult.Success(dataStoreContext)
                 : new DataStoreContextGetResult.FailureNotFound();
         }
@@ -299,7 +299,7 @@ public class DataStoreContextRepository(
         await connection.OpenAsync();
         try
         {
-            if (dataStoreIds == null || dataStoreIds.Count == 0)
+            if (dataStoreIds is null || dataStoreIds.Count == 0)
             {
                 return new DataStoreContextQueryByDataStoreIdsResult.Success([]);
             }

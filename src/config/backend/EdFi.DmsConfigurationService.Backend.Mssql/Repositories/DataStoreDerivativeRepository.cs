@@ -74,7 +74,7 @@ public class DataStoreDerivativeRepository(
             };
 
             var id = await connection.ExecuteScalarAsync<long?>(sql, parameters);
-            if (id == null)
+            if (id is null)
             {
                 return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
             }
@@ -161,7 +161,7 @@ public class DataStoreDerivativeRepository(
                 byte[]? ConnectionString
             )?>(sql, new { Id = id, TenantId });
 
-            if (result == null)
+            if (result is null)
             {
                 return new DataStoreDerivativeGetResult.FailureNotFound();
             }

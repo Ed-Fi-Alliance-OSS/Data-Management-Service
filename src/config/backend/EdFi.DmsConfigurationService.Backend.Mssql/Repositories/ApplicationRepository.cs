@@ -243,15 +243,15 @@ public class ApplicationRepository(
                 sql,
                 (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
-                    if (educationOrganizationId != null)
+                    if (educationOrganizationId is not null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         application.DataStoreIds.Add(dataStoreId.Value);
                     }
-                    if (profileId != null)
+                    if (profileId is not null)
                     {
                         application.ProfileIds.Add(profileId.Value);
                     }
@@ -321,15 +321,15 @@ public class ApplicationRepository(
                 sql,
                 (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
-                    if (educationOrganizationId != null)
+                    if (educationOrganizationId is not null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         application.DataStoreIds.Add(dataStoreId.Value);
                     }
-                    if (profileId != null)
+                    if (profileId is not null)
                     {
                         application.ProfileIds.Add(profileId.Value);
                     }
@@ -353,7 +353,7 @@ public class ApplicationRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApplication != null
+            return returnApplication is not null
                 ? new ApplicationGetResult.Success(returnApplication)
                 : new ApplicationGetResult.FailureNotFound();
         }

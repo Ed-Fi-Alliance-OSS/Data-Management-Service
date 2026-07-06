@@ -218,7 +218,7 @@ public class DataStoreRepository(
                 byte[]? ConnectionString,
                 long? TenantId
             )?>(sql, new { Id = id, TenantId });
-            if (result == null)
+            if (result is null)
             {
                 return new DataStoreGetResult.FailureNotFound();
             }
@@ -417,7 +417,7 @@ public class DataStoreRepository(
                         VendorId = application.VendorId,
                         Enabled = application.Enabled,
                         EducationOrganizationIds = group
-                            .Where(row => row.EducationOrganizationId != null)
+                            .Where(row => row.EducationOrganizationId is not null)
                             .Select(row => row.EducationOrganizationId!.Value)
                             .Distinct()
                             .ToList(),
@@ -445,7 +445,7 @@ public class DataStoreRepository(
                 foreach (var profileRow in profileRows)
                 {
                     var app = applications.Find(a => a.Id == profileRow.ApplicationId);
-                    if (app != null && !app.ProfileIds.Contains(profileRow.ProfileId))
+                    if (app is not null && !app.ProfileIds.Contains(profileRow.ProfileId))
                     {
                         app.ProfileIds.Add(profileRow.ProfileId);
                     }

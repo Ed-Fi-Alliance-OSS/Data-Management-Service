@@ -110,7 +110,7 @@ public class TenantRepository(
 
             var tenant = await connection.QuerySingleOrDefaultAsync<TenantResponse>(sql, new { Id = id });
 
-            return tenant == null
+            return tenant is null
                 ? new TenantGetResult.FailureNotFound()
                 : new TenantGetResult.Success(tenant);
         }
@@ -137,7 +137,7 @@ public class TenantRepository(
 
             var tenant = await connection.QuerySingleOrDefaultAsync<TenantResponse>(sql, new { Name = name });
 
-            return tenant == null
+            return tenant is null
                 ? new TenantGetByNameResult.FailureNotFound()
                 : new TenantGetByNameResult.Success(tenant);
         }

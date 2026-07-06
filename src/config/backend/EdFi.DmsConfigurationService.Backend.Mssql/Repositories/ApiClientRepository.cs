@@ -143,7 +143,7 @@ public class ApiClientRepository(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -195,7 +195,7 @@ public class ApiClientRepository(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -215,7 +215,7 @@ public class ApiClientRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApiClient != null
+            return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
                 : new ApiClientGetResult.FailureNotFound();
         }
@@ -244,7 +244,7 @@ public class ApiClientRepository(
                 sql,
                 (apiClient, dataStoreId) =>
                 {
-                    if (dataStoreId != null)
+                    if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
@@ -264,7 +264,7 @@ public class ApiClientRepository(
                 })
                 .SingleOrDefault();
 
-            return returnApiClient != null
+            return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
                 : new ApiClientGetResult.FailureNotFound();
         }

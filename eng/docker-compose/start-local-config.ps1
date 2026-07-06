@@ -118,7 +118,6 @@ else {
         $dbUser = if ($datastore -eq "mssql") { "sa" } else { "postgres" }
         $dbPort = if ($datastore -eq "mssql") { "ENV:MSSQL_PORT" } else { "ENV:POSTGRES_PORT" }
         ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
         # Create client with default edfi_admin_api/full_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
 

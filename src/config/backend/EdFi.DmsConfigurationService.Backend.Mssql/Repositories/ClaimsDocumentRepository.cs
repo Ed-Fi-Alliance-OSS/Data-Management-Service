@@ -158,7 +158,7 @@ public class ClaimsDocumentRepository(
                 hierarchyTuples[0].hierarchyJson
             );
 
-            if (hierarchy == null)
+            if (hierarchy is null)
             {
                 return new ClaimsHierarchyGetResult.FailureUnknown(
                     "Unable to deserialize claim set hierarchy"
@@ -244,7 +244,7 @@ public class ClaimsDocumentRepository(
 
         foreach (JsonNode? claimSetNode in claimSetsArray)
         {
-            if (claimSetNode == null)
+            if (claimSetNode is null)
             {
                 continue;
             }
@@ -309,7 +309,7 @@ public class ClaimsDocumentRepository(
                 _jsonSerializerOptions
             );
 
-            if (claims == null)
+            if (claims is null)
             {
                 logger.LogWarning("Failed to deserialize claims hierarchy");
                 return false;

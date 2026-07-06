@@ -2,7 +2,6 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System.Data;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
@@ -12,7 +11,6 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -63,46 +61,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
                 },
                 configuration
             );
-
-            // Register database connection
-            services.AddTransient<IDbConnection>(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                return new SqlConnection(config.GetConnectionString("DatabaseConnection"));
-            });
-            return services;
-        }
-
-        /// <summary>
-        /// Adds SQL Server OpenIddict stores with custom JWT settings
-        /// </summary>
-        public static IServiceCollection AddMssqlOpenIddictStores(
-            this IServiceCollection services,
-            IConfiguration configuration,
-            string authority,
-            JwtSettings jwtSettings
-        )
-        {
-            // Add identity options
-            services.AddOpenIddictIdentityOptions(configuration);
-
-            services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
-            services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
-            services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
-            services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
-            services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
-
-            // Add enhanced OpenIddict-compatible services
-            services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
-
-            services.AddJwtAuthentication(jwtSettings, configuration);
-
-            services.AddTransient<IDbConnection>(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                return new SqlConnection(config.GetConnectionString("DatabaseConnection"));
-            });
 
             return services;
         }

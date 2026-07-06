@@ -50,7 +50,7 @@ public class ClaimsHierarchyRepository(
 
             var hierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyTuples[0].hierarchyJson);
 
-            if (hierarchy == null)
+            if (hierarchy is null)
             {
                 return new ClaimsHierarchyGetResult.FailureUnknown(
                     "Unable to deserialize claim set hierarchy"
@@ -198,7 +198,7 @@ public class ClaimsHierarchyRepository(
 
     private async Task<(DbConnection conn, bool shouldDispose)> GetConnectionAsync(DbTransaction? transaction)
     {
-        if (transaction?.Connection != null)
+        if (transaction?.Connection is not null)
         {
             return (transaction.Connection, shouldDispose: false);
         }

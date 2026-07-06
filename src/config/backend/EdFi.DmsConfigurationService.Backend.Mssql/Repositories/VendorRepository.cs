@@ -424,14 +424,14 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
                         if (response.TryGetValue(application.Id, out ApplicationResponse? thisApplication))
                         {
-                            if (educationOrganizationId != null)
+                            if (educationOrganizationId is not null)
                             {
                                 thisApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
                             }
                         }
                         else
                         {
-                            if (educationOrganizationId != null)
+                            if (educationOrganizationId is not null)
                             {
                                 application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                             }

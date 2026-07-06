@@ -113,7 +113,7 @@ public class ProfileRepository(
         {
             string sql = @"SELECT Id, ProfileName AS Name, Definition FROM dmscs.Profile WHERE Id=@Id;";
             var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
-            if (profile == null)
+            if (profile is null)
             {
                 return new ProfileGetResult.FailureNotFound();
             }
