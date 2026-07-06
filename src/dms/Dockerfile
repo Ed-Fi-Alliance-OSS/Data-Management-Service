@@ -42,24 +42,26 @@ COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManage
 ARG VERSION=""
 ARG ASSEMBLY_VERSION=""
 
-RUN version_args=""; \
+# Version-stamp arguments are accumulated as positional parameters so the expansion below
+# stays quoted ("$@" preserves one argument per parameter; ShellCheck SC2086).
+RUN set -- ; \
     if [ -n "$VERSION" ]; then \
-        version_args="$version_args /p:Version=$VERSION /p:InformationalVersion=$VERSION"; \
+        set -- "$@" "/p:Version=$VERSION" "/p:InformationalVersion=$VERSION"; \
     fi; \
     if [ -n "$ASSEMBLY_VERSION" ]; then \
-        version_args="$version_args /p:AssemblyVersion=$ASSEMBLY_VERSION /p:FileVersion=$ASSEMBLY_VERSION"; \
+        set -- "$@" "/p:AssemblyVersion=$ASSEMBLY_VERSION" "/p:FileVersion=$ASSEMBLY_VERSION"; \
     fi; \
     dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
-    -c Release --no-restore --self-contained false -o /app/Frontend $version_args && \
+    -c Release --no-restore --self-contained false -o /app/Frontend "$@" && \
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
-    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader $version_args
+    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader "$@"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25d6c60672e74b21bb6334f1402f71bae2d2cf02307163cd AS runtimebase
 
 # Install OpenSSL on the 3.5 line and runtime helpers. icu-libs is required by
 # Microsoft.Data.SqlClient (the MSSQL backend), which does not support Globalization
 # Invariant Mode; the Alpine base image otherwise ships without ICU.
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8 icu-libs
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8 icu-libs=~76
 
 FROM runtimebase AS setup
 
