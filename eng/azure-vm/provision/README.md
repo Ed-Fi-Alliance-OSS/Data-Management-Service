@@ -81,8 +81,9 @@ skips bootstrap, so it only starts the DMS services.
   DMS services while it is unstaged — Docker would otherwise mount it empty and DMS would fail
   startup/health even with the databases provisioned.
 - **Relational schema** — the DMS runs `DeployDatabaseOnStartup=false`; provision each data DB with
-  `dms-schema` (build-from-source; publishing it is **OPT-2**, unfiled), **or** restore the relational
-  populated template (**DMS-1159**, e.g. `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
+  `dms-schema` (build-from-source only; publishing it as a tool/image is a known gap, not yet
+  ticketed), **or** restore the relational populated template (**DMS-1159**, e.g.
+  `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
 - **Startup order** — the DMS fail-fast crash-loops until Keycloak + CMS data stores exist
   (**DMS-1093 / DMS-1109**); `setup-env.ps1` therefore bootstraps first and starts the DMS only
   with `-StartDms` (after the schema is provisioned).
