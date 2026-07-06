@@ -204,6 +204,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
         var materializedDocument = JsonNode.Parse("""{"id":"hydrated","name":"Lincoln High"}""")!;
         RelationalReadMaterializationRequest capturedReadRequest = null!;
+        HydrationExecutionOptions? capturedExecutionOptions = null;
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -222,6 +223,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
+            .Invokes(call => capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2))
             .Returns(hydratedPage);
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .Invokes(call => capturedReadRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!)
@@ -248,6 +250,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .DescriptorRowsInPlanOrder.Should()
             .BeSameAs(hydratedPage.DescriptorRowsInPlanOrder);
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+        capturedExecutionOptions.Should().NotBeNull();
+        capturedExecutionOptions!
+            .UseSingleDocumentFastPath.Should()
+            .BeTrue("GET-by-id hydrates a single known document and should bypass temp-table hydration");
         A.CallTo(() =>
                 _descriptorReadHandler.HandleGetByIdAsync(
                     A<DescriptorGetByIdRequest>._,

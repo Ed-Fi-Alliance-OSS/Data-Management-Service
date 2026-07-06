@@ -2436,7 +2436,8 @@ public sealed class RelationalDocumentStoreRepository(
             // URIs are still needed for both read modes.
             var hydrationExecutionOptions = new HydrationExecutionOptions(
                 IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
-                    == RelationalGetRequestReadMode.ExternalResponse
+                    == RelationalGetRequestReadMode.ExternalResponse,
+                UseSingleDocumentFastPath: true
             );
             var hydratedPage = await _documentHydrator
                 .HydrateAsync(
