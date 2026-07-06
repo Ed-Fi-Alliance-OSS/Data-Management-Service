@@ -398,7 +398,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
 
     $effectiveServer = $server
     if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
-        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1433"
+        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
         # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
         # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
         $effectiveServer = "127.0.0.1,$mssqlPort"

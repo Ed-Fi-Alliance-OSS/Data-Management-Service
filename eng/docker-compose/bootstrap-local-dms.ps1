@@ -201,12 +201,14 @@ param(
     # invocation. When -LoadSeedData is also set, forwarded to load-dms-seed-data.ps1.
     [string]$DmsBaseUrl,
 
-    # Database engine for the DMS datastore. "mssql" composes mssql.yml alongside postgresql.yml
-    # and runs the relational backend; the Configuration Service and self-contained identity stay
-    # on PostgreSQL (no MSSQL backend). Forwarded to start-local-dms.ps1 and
-    # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_*
-    # keys, the SQL Server admin connection string) is composed automatically onto
-    # -EnvironmentFile, so no -EnvironmentFile is needed for a turnkey MSSQL deploy.
+    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
+    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores — no
+    # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
+    # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
+    # composed automatically onto -EnvironmentFile, so no -EnvironmentFile is needed for a
+    # turnkey MSSQL deploy.
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 

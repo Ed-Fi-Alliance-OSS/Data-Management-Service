@@ -90,10 +90,10 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
     }
 
     It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the Abcdefgh1! default baked into mssql.yml and start-local-dms.ps1's
+        # Matches the abcdefgh1! default baked into mssql.yml and start-local-dms.ps1's
         # readiness poll, so a custom env file that omits the key does not bring SQL Server
         # up on the default password while leaving the resolved connection string blank.
-        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "Abcdefgh1!"'
+        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"'
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {

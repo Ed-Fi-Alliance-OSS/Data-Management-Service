@@ -113,6 +113,16 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         $script:overlayValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '\$\{MSSQL_SA_PASSWORD\}'
     }
 
+    It "routes the Configuration Service to SQL Server (single-engine stack)" {
+        # DMS-1243 delivered the CMS SQL Server backend, so -DatabaseEngine mssql runs the
+        # whole stack on SQL Server: no PostgreSQL container exists to fall back to.
+        $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            Should -Match "^Server=dms-mssql,1433;Database=edfi_configurationservice;"
+        $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            Should -Match '\$\{MSSQL_SA_PASSWORD\}'
+    }
+
     It "does not duplicate SCHEMA_PACKAGES or other keys already carried by the base environment file" {
         # The overlay must stay minimal: bulk config (SCHEMA_PACKAGES, DATABASE_TEMPLATE_PACKAGE,
         # version pins) and any key identical to the base env file are inherited, not repeated.

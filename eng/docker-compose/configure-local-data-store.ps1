@@ -329,7 +329,7 @@ function Invoke-ConfigureLocalDataStore {
     # host-side mapped port before invoking SchemaTools.
     $dataStoreConnectionString = ""
     if ($DatabaseEngine -eq "mssql") {
-        $mssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "Abcdefgh1!"
+        $mssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         $mssqlDbName =
             if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"

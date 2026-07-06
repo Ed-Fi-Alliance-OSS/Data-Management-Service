@@ -8,7 +8,7 @@
     Infrastructure-lifecycle phase for the local DMS Docker stack.
 .DESCRIPTION
     This script is the infrastructure-lifecycle phase. It starts or stops the Docker
-    services that underpin local DMS development (PostgreSQL, Config Service,
+    services that underpin local DMS development (PostgreSQL or SQL Server, Config Service,
     optional Keycloak/SwaggerUI/Kafka/KafkaUI). The wrapper bootstrap-local-dms.ps1
     orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
     time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
@@ -154,12 +154,13 @@ param (
     [string]
     $DataStandardVersion,
 
-    # Database engine for the DMS datastore. "postgresql" (default) uses postgresql.yml.
-    # "mssql" composes mssql.yml alongside postgresql.yml — the Configuration Service and
-    # self-contained identity have no MSSQL backend and remain on PostgreSQL — and runs the
-    # relational backend with no Debezium CDC (Kafka is PostgreSQL-only and omitted). The
-    # .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, the SQL Server admin
-    # connection string) is composed automatically onto -EnvironmentFile. See mssql.yml and
+    # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
+    # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
+    # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores —
+    # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
+    # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
+    # is composed automatically onto -EnvironmentFile. See mssql.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
@@ -262,20 +263,19 @@ if ($usePostgresqlTmpfs) {
     Write-Output "Using PostgreSQL tmpfs data directory (POSTGRES_TMPFS_SIZE=$postgresqlTmpfsSize, POSTGRES_CONTAINER_MEMORY=$postgresqlContainerMemory)."
 }
 
+# The database compose file is a swap: both postgresql.yml and mssql.yml define the same
+# "db" service that local-config.yml gates on (depends_on: db: service_healthy), so exactly
+# one of them joins the compose set. On the mssql path SQL Server hosts everything —
+# the DMS datastore, the Configuration Service (CMS SQL Server backend), and the
+# self-contained OpenIddict identity stores — and no PostgreSQL container runs at all.
+$databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
 $files = @(
     "-f",
-    "postgresql.yml"
+    $databaseComposeFile
 )
 
-if ($usePostgresqlTmpfs) {
+if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
     $files += @("-f", $postgresqlTmpfsComposeFile)
-}
-
-# The MSSQL datastore tier is additive: postgresql.yml stays for the Configuration Service
-# and self-contained identity (which have no MSSQL backend), and mssql.yml hosts the DMS
-# relational datastore.
-if ($DatabaseEngine -eq "mssql") {
-    $files += @("-f", "mssql.yml")
 }
 
 $files += @(
@@ -451,22 +451,19 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
-    Write-Output "Starting Postgresql..."
+    $databaseDisplayName = if ($DatabaseEngine -eq "mssql") { "SQL Server" } else { "Postgresql" }
+    Write-Output "Starting $databaseDisplayName..."
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs db
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
+        throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
     }
 
     if ($DatabaseEngine -eq "mssql") {
-        Write-Output "Starting SQL Server..."
-        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs mssql
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to start SQL Server. Exit code $LASTEXITCODE"
-        }
-
+        # SQL Server accepts connections noticeably later than its container reports running;
+        # poll before the phase commands need it. Default matches mssql.yml's compose default.
         $mssqlSaPassword =
             if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                "Abcdefgh1!"
+                "abcdefgh1!"
             }
             else {
                 $envValues.MSSQL_SA_PASSWORD
@@ -474,13 +471,25 @@ else {
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
+    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the CMS database —
+    # -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS startup deploy.
+    # On PostgreSQL the script defaults apply unchanged (shared POSTGRES_DB_NAME database).
+    $identityDbParams =
+        if ($DatabaseEngine -eq "mssql") {
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "edfi_configurationservice" }
+        }
+        else {
+            @{}
+        }
+
     Start-Sleep 20
 
     if ($InfraOnly) {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Init db public and private keys for OpenIddict..."
-            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
         Write-Output "Starting Configuration Service..."
@@ -495,9 +504,9 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Starting self-contained initialization script..."
-            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
         }
 
         if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
@@ -564,7 +573,7 @@ else {
     if($IdentityProvider -eq "self-contained")
     {
         Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
     }
 
     if ($bootstrapManifestPresent) {
@@ -585,13 +594,13 @@ else {
     {
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
     }
     Start-Sleep 20
 }

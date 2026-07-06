@@ -683,20 +683,33 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             $startScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]'
         }
 
-        It "start-local-dms.ps1 always includes postgresql.yml (CMS + identity stay on PostgreSQL)" {
+        It "start-local-dms.ps1 swaps the database compose file by engine (single db service)" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*"postgresql\.yml"'
+            # postgresql.yml and mssql.yml both define the "db" service that local-config.yml
+            # gates on (depends_on: db: service_healthy), so exactly one of them may join the
+            # compose set: SQL Server hosts the whole stack on the mssql path (DMS-1243 CMS
+            # SQL Server backend), and no PostgreSQL container runs.
+            $startScript | Should -Match '\$databaseComposeFile = if \(\$DatabaseEngine -eq "mssql"\) \{ "mssql\.yml" \} else \{ "postgresql\.yml" \}'
+            $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*\$databaseComposeFile'
+            $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.yml"\)'
         }
 
-        It "start-local-dms.ps1 composes mssql.yml only under the mssql engine guard" {
+        It "start-local-dms.ps1 passes engine-aware database parameters to every setup-openiddict.ps1 call" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$DatabaseEngine -eq "mssql"\)\s*\{[^}]*\$files \+= @\("-f", "mssql\.yml"\)'
+            # On SQL Server the OpenIddict stores live in the CMS database (created by -InitDb
+            # when missing); every invocation must splat the shared engine-aware parameters.
+            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "edfi_configurationservice"'
+            $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
+            $openiddictCalls.Count | Should -BeGreaterThan 0
+            foreach ($call in $openiddictCalls) {
+                $call.Value | Should -Match '@identityDbParams'
+            }
         }
 
         It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {

@@ -151,22 +151,23 @@ The local stack can run the DMS datastore on SQL Server instead of PostgreSQL us
 ```
 
 `mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
-image used in CI, publishing port `1433`. `-DatabaseEngine mssql` composes the `.env.mssql`
-overlay (`DMS_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL Server admin connection string)
-onto the base environment file automatically — the same composition mechanism used by
-`-DataStandardVersion` (see "Selecting a Data Standard version" below), so every phase
-(configure, provision, and the DMS container itself) sees a consistent engine selection.
-Everything else (`SCHEMA_PACKAGES`, PostgreSQL credentials for CMS/identity, Kafka, Keycloak,
-identity-provider token endpoints, etc.) still comes from the base environment file; pass
-`-EnvironmentFile` only to override those base settings, and the overlay still composes on top
-of it.
+image used in CI, publishing host port `1435`. `-DatabaseEngine mssql` composes the `.env.mssql`
+overlay (`DMS_DATASTORE=mssql`, `DMS_CONFIG_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
+Server connection strings) onto the base environment file automatically — the same composition
+mechanism used by `-DataStandardVersion` (see "Selecting a Data Standard version" below), so
+every phase (configure, provision, and the DMS container itself) sees a consistent engine
+selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provider token
+endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
+override those base settings, and the overlay still composes on top of it.
 
 A few things are specific to the MSSQL path:
 
-* **It is dual-database.** Only the DMS datastore moves to SQL Server. The Configuration
-  Service and the self-contained (OpenIddict) identity provider have no MSSQL backend and
-  continue to run on PostgreSQL, so `-DatabaseEngine mssql` composes **both** `mssql.yml`
-  (DMS) and `postgresql.yml` (CMS + identity). `DMS_CONFIG_DATASTORE` stays `postgresql`.
+* **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
+  Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
+  `mssql.yml` swaps in for `postgresql.yml` — both define the same `db` service that
+  `local-config.yml` health-gates on — and no PostgreSQL container runs. The DMS datastore
+  database is created by the provision phase; the CMS database (`edfi_configurationservice`)
+  is created by the identity init / CMS startup deploy.
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
