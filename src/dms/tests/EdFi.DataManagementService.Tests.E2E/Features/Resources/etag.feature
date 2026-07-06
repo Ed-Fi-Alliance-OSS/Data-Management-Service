@@ -236,7 +236,52 @@ Feature: ETag validations
                   }
                   """
         @e2e-ci-shard-1
-        Scenario: 12 Ensure that a quoted If-Match (as emitted) is accepted on PUT
+        Scenario: 12 Ensure that clients receive a 304 Not Modified on a GET when If-None-Match matches the current ETag
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a GET if-none-match "{IfMatch}" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 304
+        @e2e-ci-shard-1
+        Scenario: 13 Ensure that a wildcard If-None-Match on a GET to an existing resource returns 304
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a GET if-none-match "*" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 304
+        @e2e-ci-shard-1
+        Scenario: 14 Ensure that clients receive a 200 on a GET when If-None-Match does not match the current ETag
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a GET if-none-match "0000000000" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 200
+        @e2e-ci-shard-1
+        Scenario: 15 Ensure that a quoted If-Match (as emitted) is accepted on PUT
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -260,7 +305,7 @@ Feature: ETag validations
                   """
              Then it should respond with 204
         @e2e-ci-shard-1
-        Scenario: 13 Ensure that a quoted If-Match (as emitted) is accepted on DELETE
+        Scenario: 16 Ensure that a quoted If-Match (as emitted) is accepted on DELETE
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -275,7 +320,7 @@ Feature: ETag validations
              When a DELETE if-match "{IfMatchQuoted}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
         @e2e-ci-shard-1
-        Scenario: 14 Ensure the served ETag conforms to the DMS-1252 format and matches the body _etag
+        Scenario: 17 Ensure the served ETag conforms to the DMS-1252 format and matches the body _etag
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -301,7 +346,7 @@ Feature: ETag validations
                   }
                   """
         @e2e-ci-shard-1
-        Scenario: 15 Ensure a child-collection-only update advances the ETag and invalidates a stale If-Match
+        Scenario: 18 Ensure a child-collection-only update advances the ETag and invalidates a stale If-Match
             Given the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |

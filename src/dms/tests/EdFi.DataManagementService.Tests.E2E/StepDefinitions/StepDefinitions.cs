@@ -894,6 +894,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
+        [When("a GET if-none-match {string} request is made to {string}")]
+        public async Task WhenAGetIf_NoneMatchRequestIsMadeTo(string ifNoneMatch, string url)
+        {
+            string id = GetCurrentId();
+
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"GET url: {url}");
+
+            ifNoneMatch = ifNoneMatch.Replace("{IfMatch}", _etag);
+
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.GetAsync(
+                    url,
+                    new() { Headers = GetHeadersWithIfNoneMatch(ifNoneMatch) }
+                )!
+            );
+        }
+
         [When("the lastModifiedDate is stored")]
         public async Task GivenTheLastModifiedDateIsStored()
         {
@@ -1915,6 +1936,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 new("Authorization", GetDmsTokenFromContext()),
                 new("Content-Type", "application/json"),
                 new("If-Match", ifMatch),
+            };
+            return list;
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfNoneMatch(string ifNoneMatch)
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+                new("If-None-Match", ifNoneMatch),
             };
             return list;
         }
