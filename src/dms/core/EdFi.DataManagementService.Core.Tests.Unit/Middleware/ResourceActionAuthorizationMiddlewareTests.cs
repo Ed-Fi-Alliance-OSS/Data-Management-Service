@@ -303,6 +303,16 @@ public class ResourceActionAuthorizationMiddlewareTests
                 "No authorization information found. Ensure valid JWT token is provided."
             );
         }
+
+        [Test]
+        public void It_includes_www_authenticate_header()
+        {
+            _requestInfo.FrontendResponse.Headers.Should().ContainKey("WWW-Authenticate");
+            _requestInfo
+                .FrontendResponse.Headers["WWW-Authenticate"]
+                .Should()
+                .Be("Bearer error=\"invalid_token\"");
+        }
     }
 
     [TestFixture]

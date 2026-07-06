@@ -182,5 +182,15 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             body["title"]!.GetValue<string>().Should().Be("Authentication Failed");
             body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
         }
+
+        [Test]
+        public void It_includes_www_authenticate_header()
+        {
+            _requestInfo.FrontendResponse.Headers.Should().ContainKey("WWW-Authenticate");
+            _requestInfo
+                .FrontendResponse.Headers["WWW-Authenticate"]
+                .Should()
+                .Be("Bearer error=\"invalid_token\"");
+        }
     }
 }

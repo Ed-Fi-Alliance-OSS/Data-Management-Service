@@ -43,6 +43,14 @@ internal static class AuthorizationHeaderParser
             return AuthorizationHeaderResult.Error("Missing Authorization header bearer token value.");
         }
 
+        // A Bearer token (a JWT) never contains whitespace. An embedded space means the value
+        // did not parse as a single "Bearer <token>" credential, so treat it as a malformed header
+        // rather than passing a multi-token value through to JWT validation.
+        if (parameter.Any(char.IsWhiteSpace))
+        {
+            return AuthorizationHeaderResult.Error("Invalid Authorization header.");
+        }
+
         return AuthorizationHeaderResult.Success(parameter);
     }
 }

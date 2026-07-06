@@ -39,7 +39,10 @@ internal class ProvideAuthorizationFiltersMiddleware(ILogger _logger) : IPipelin
                         requestInfo.FrontendRequest.TraceId,
                         ["No authorization information found. Ensure valid JWT token is provided."]
                     ),
-                    Headers: [],
+                    Headers: new Dictionary<string, string>
+                    {
+                        ["WWW-Authenticate"] = "Bearer error=\"invalid_token\"",
+                    },
                     ContentType: "application/problem+json"
                 );
                 return;
