@@ -28,6 +28,14 @@ public class Given_MssqlPlanDialect
     }
 
     [Test]
+    public void It_should_report_single_document_hydration_support()
+    {
+        _dialect.Dialect.Should().Be(SqlDialect.Mssql);
+        _dialect.DisplayName.Should().Be("SQL Server");
+        _dialect.SupportsSingleDocumentHydration.Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_emit_canonical_keyset_temp_table_ddl()
     {
         _dialect.AppendCreateKeysetTempTable(_writer, _keyset);
@@ -68,5 +76,19 @@ public class Given_MssqlPlanDialect
 
                 """
             );
+    }
+
+    [Test]
+    public void It_should_reject_single_document_metadata_select()
+    {
+        var act = () =>
+            _dialect.AppendSingleDocumentMetadataSelect(
+                _writer,
+                HydrationSqlConventions.SingleDocumentIdParameterName
+            );
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("SQL Server plan dialect does not support single-document hydration.");
     }
 }

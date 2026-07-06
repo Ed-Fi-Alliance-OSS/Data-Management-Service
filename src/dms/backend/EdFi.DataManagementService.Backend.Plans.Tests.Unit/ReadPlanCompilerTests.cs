@@ -3189,7 +3189,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         return () =>
             ReadPlanSingleDocumentSqlValidator.ValidateOrThrow(
                 readPlan,
-                dialect,
+                PlanSqlDialectFactory.Create(dialect),
                 reason => new InvalidOperationException(reason)
             );
     }

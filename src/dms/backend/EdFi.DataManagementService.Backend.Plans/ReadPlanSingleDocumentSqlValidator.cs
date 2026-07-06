@@ -18,11 +18,12 @@ internal static class ReadPlanSingleDocumentSqlValidator
     /// </summary>
     public static void ValidateOrThrow(
         ResourceReadPlan readPlan,
-        SqlDialect dialect,
+        IPlanSqlDialect planDialect,
         Func<string, Exception> createException
     )
     {
         ArgumentNullException.ThrowIfNull(readPlan);
+        ArgumentNullException.ThrowIfNull(planDialect);
         ArgumentNullException.ThrowIfNull(createException);
 
         if (readPlan.Model.StorageKind != ResourceStorageKind.RelationalTables)
@@ -30,23 +31,18 @@ internal static class ReadPlanSingleDocumentSqlValidator
             return;
         }
 
-        switch (dialect)
+        if (planDialect.SupportsSingleDocumentHydration)
         {
-            case SqlDialect.Pgsql:
-                ValidatePgsqlSingleDocumentSql(readPlan, createException);
-                return;
-
-            case SqlDialect.Mssql:
-                ValidateMssqlSingleDocumentSql(readPlan, createException);
-                return;
-
-            default:
-                throw createException($"unsupported SQL dialect '{dialect}'");
+            ValidateRequiredSingleDocumentSql(readPlan, planDialect, createException);
+            return;
         }
+
+        ValidateAbsentSingleDocumentSql(readPlan, planDialect, createException);
     }
 
-    private static void ValidatePgsqlSingleDocumentSql(
+    private static void ValidateRequiredSingleDocumentSql(
         ResourceReadPlan readPlan,
+        IPlanSqlDialect planDialect,
         Func<string, Exception> createException
     )
     {
@@ -61,6 +57,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfMissingSql(
                 tablePlan.SelectBySingleDocumentSql,
                 $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
+                planDialect,
                 createException
             );
         }
@@ -74,6 +71,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfMissingSql(
                 readPlan.DescriptorProjectionPlansInOrder[descriptorPlanIndex].SelectBySingleDocumentSql,
                 $"descriptor projection plan at index '{descriptorPlanIndex}'",
+                planDialect,
                 createException
             );
         }
@@ -83,13 +81,15 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfMissingSql(
                 lookup.SelectBySingleDocumentSql,
                 "document-reference lookup plan",
+                planDialect,
                 createException
             );
         }
     }
 
-    private static void ValidateMssqlSingleDocumentSql(
+    private static void ValidateAbsentSingleDocumentSql(
         ResourceReadPlan readPlan,
+        IPlanSqlDialect planDialect,
         Func<string, Exception> createException
     )
     {
@@ -104,6 +104,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfUnexpectedSql(
                 tablePlan.SelectBySingleDocumentSql,
                 $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
+                planDialect,
                 createException
             );
         }
@@ -117,6 +118,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfUnexpectedSql(
                 readPlan.DescriptorProjectionPlansInOrder[descriptorPlanIndex].SelectBySingleDocumentSql,
                 $"descriptor projection plan at index '{descriptorPlanIndex}'",
+                planDialect,
                 createException
             );
         }
@@ -126,6 +128,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
             ThrowIfUnexpectedSql(
                 lookup.SelectBySingleDocumentSql,
                 "document-reference lookup plan",
+                planDialect,
                 createException
             );
         }
@@ -134,6 +137,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
     private static void ThrowIfMissingSql(
         string? selectBySingleDocumentSql,
         string planDescription,
+        IPlanSqlDialect planDialect,
         Func<string, Exception> createException
     )
     {
@@ -143,13 +147,14 @@ internal static class ReadPlanSingleDocumentSqlValidator
         }
 
         throw createException(
-            $"{planDescription} is missing required SelectBySingleDocumentSql for PostgreSQL read plans"
+            $"{planDescription} is missing required SelectBySingleDocumentSql for {planDialect.DisplayName} read plans"
         );
     }
 
     private static void ThrowIfUnexpectedSql(
         string? selectBySingleDocumentSql,
         string planDescription,
+        IPlanSqlDialect planDialect,
         Func<string, Exception> createException
     )
     {
@@ -159,7 +164,7 @@ internal static class ReadPlanSingleDocumentSqlValidator
         }
 
         throw createException(
-            $"{planDescription} has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            $"{planDescription} has unexpected SelectBySingleDocumentSql for {planDialect.DisplayName} read plans"
         );
     }
 }

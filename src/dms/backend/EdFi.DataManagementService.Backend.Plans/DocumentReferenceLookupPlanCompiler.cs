@@ -22,8 +22,8 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
     private static readonly DbColumnName _documentUuidColumn = new("DocumentUuid");
     private static readonly DbColumnName _resourceKeyIdColumn = new("ResourceKeyId");
 
-    private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     public DocumentReferenceLookupPlan? Compile(
         RelationalResourceModel resourceModel,
@@ -57,7 +57,7 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                 ResourceKeyIdOrdinal: 2
             ),
             SourcesInOrder: compiledSources,
-            SelectBySingleDocumentSql: _dialect is SqlDialect.Pgsql
+            SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
                 ? EmitSelectBySingleDocumentSql(deduplicatedSources)
                 : null
         );

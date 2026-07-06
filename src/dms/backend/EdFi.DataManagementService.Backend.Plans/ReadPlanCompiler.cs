@@ -17,6 +17,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
     private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
     private readonly DocumentReferenceLookupPlanCompiler _documentReferenceLookupPlanCompiler = new(dialect);
 
@@ -105,7 +106,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                     tableAlias,
                     tableReadSqlMetadata
                 ),
-                SelectBySingleDocumentSql: _dialect is SqlDialect.Pgsql
+                SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
                     ? EmitSelectBySingleDocumentSql(tableModel, tableAlias, tableReadSqlMetadata)
                     : null
             );
@@ -146,7 +147,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 
         ReadPlanSingleDocumentSqlValidator.ValidateOrThrow(
             readPlan,
-            _dialect,
+            _planSqlDialect,
             reason => new InvalidOperationException(
                 $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': "
                     + $"compiled single-document SQL is invalid. {reason}. This indicates a read-plan compiler bug."

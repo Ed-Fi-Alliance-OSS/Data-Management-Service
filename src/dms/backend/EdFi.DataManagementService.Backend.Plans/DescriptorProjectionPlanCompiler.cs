@@ -20,8 +20,8 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     private static readonly DbColumnName _descriptorIdProjectionColumn = new("DescriptorId");
     private static readonly DbColumnName _uriColumn = new("Uri");
 
-    private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     public IReadOnlyList<DescriptorProjectionPlan> Compile(
         RelationalResourceModel resourceModel,
@@ -74,7 +74,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                 SelectByKeysetSql: EmitSelectByKeysetSql(deduplicatedSqlSources, keysetTable),
                 ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
                 SourcesInOrder: compiledSources,
-                SelectBySingleDocumentSql: _dialect is SqlDialect.Pgsql
+                SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
                     ? EmitSelectBySingleDocumentSql(deduplicatedSqlSources)
                     : null
             ),

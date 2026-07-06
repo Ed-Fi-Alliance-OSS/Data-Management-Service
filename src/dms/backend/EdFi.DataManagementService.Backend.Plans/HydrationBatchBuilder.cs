@@ -32,9 +32,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <see cref="ResourceReadPlan.DocumentReferenceLookup"/> is non-null)
 /// </item>
 /// </list>
-/// When the PostgreSQL single-document fast path is enabled for <see cref="PageKeysetSpec.Single"/>,
-/// the batch skips keyset materialization and starts with document metadata, followed by the same
-/// table, descriptor, and document-reference result-set sequence.
+/// When the dialect supports single-document hydration and that fast path is enabled for
+/// <see cref="PageKeysetSpec.Single"/>, the batch skips keyset materialization and starts with
+/// document metadata, followed by the same table, descriptor, and document-reference result-set sequence.
 /// </remarks>
 public static class HydrationBatchBuilder
 {
@@ -44,12 +44,17 @@ public static class HydrationBatchBuilder
     > _singleDocumentBatchCache = new();
 
     private readonly record struct SingleDocumentBatchCacheKey(
+        SqlDialect Dialect,
         bool IncludeDescriptorProjection,
         bool IncludeDocumentReferenceLookup
     )
     {
-        public static SingleDocumentBatchCacheKey From(HydrationExecutionOptions executionOptions) =>
+        public static SingleDocumentBatchCacheKey From(
+            IPlanSqlDialect planDialect,
+            HydrationExecutionOptions executionOptions
+        ) =>
             new(
+                planDialect.Dialect,
                 executionOptions.IncludeDescriptorProjection,
                 executionOptions.IncludeDocumentReferenceLookup
             );
@@ -83,13 +88,14 @@ public static class HydrationBatchBuilder
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        if (ShouldUseSingleDocumentBatch(keyset, dialect, executionOptions))
-        {
-            return GetOrBuildSingleDocumentBatch(plan, executionOptions);
-        }
-
         var sqlDialect = SqlDialectFactory.Create(dialect);
         var planDialect = PlanSqlDialectFactory.Create(dialect);
+
+        if (ShouldUseSingleDocumentBatch(keyset, planDialect, executionOptions))
+        {
+            return GetOrBuildSingleDocumentBatch(plan, planDialect, sqlDialect, executionOptions);
+        }
+
         var writer = new SqlWriter(sqlDialect);
 
         return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
@@ -97,31 +103,39 @@ public static class HydrationBatchBuilder
 
     private static bool ShouldUseSingleDocumentBatch(
         PageKeysetSpec keyset,
-        SqlDialect dialect,
+        IPlanSqlDialect planDialect,
         HydrationExecutionOptions executionOptions
     ) =>
-        dialect is SqlDialect.Pgsql
+        planDialect.SupportsSingleDocumentHydration
         && keyset is PageKeysetSpec.Single
         && executionOptions.UseSingleDocumentFastPath;
 
     private static string GetOrBuildSingleDocumentBatch(
         ResourceReadPlan plan,
+        IPlanSqlDialect planDialect,
+        ISqlDialect sqlDialect,
         HydrationExecutionOptions executionOptions
     )
     {
-        var cacheKey = SingleDocumentBatchCacheKey.From(executionOptions);
+        var cacheKey = SingleDocumentBatchCacheKey.From(planDialect, executionOptions);
         var cacheForPlan = _singleDocumentBatchCache.GetValue(
             plan,
             static _ => new ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>()
         );
         var cachedBatch = cacheForPlan.GetOrAdd(
             cacheKey,
-            static (key, readPlan) =>
+            static (key, state) =>
                 new Lazy<string>(
-                    () => BuildSingleDocumentBatch(readPlan, key),
+                    () =>
+                        BuildSingleDocumentBatch(
+                            state.Plan,
+                            state.PlanDialect,
+                            new SqlWriter(state.SqlDialect),
+                            key
+                        ),
                     LazyThreadSafetyMode.ExecutionAndPublication
                 ),
-            plan
+            (Plan: plan, PlanDialect: planDialect, SqlDialect: sqlDialect)
         );
 
         try
@@ -133,17 +147,6 @@ public static class HydrationBatchBuilder
             cacheForPlan.TryRemove(cacheKey, out _);
             throw;
         }
-    }
-
-    private static string BuildSingleDocumentBatch(
-        ResourceReadPlan plan,
-        SingleDocumentBatchCacheKey cacheKey
-    )
-    {
-        var sqlDialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
-        var writer = new SqlWriter(sqlDialect);
-
-        return BuildSingleDocumentBatch(plan, writer, cacheKey);
     }
 
     private static string BuildExistingKeysetBatch(
@@ -206,12 +209,13 @@ public static class HydrationBatchBuilder
 
     private static string BuildSingleDocumentBatch(
         ResourceReadPlan plan,
+        IPlanSqlDialect planDialect,
         SqlWriter writer,
         SingleDocumentBatchCacheKey cacheKey
     )
     {
         // 1. Document metadata select
-        PgsqlPlanDialect.AppendSingleDocumentMetadataSelect(
+        planDialect.AppendSingleDocumentMetadataSelect(
             writer,
             HydrationSqlConventions.SingleDocumentIdParameterName
         );
@@ -228,6 +232,7 @@ public static class HydrationBatchBuilder
             writer.AppendLine(
                 EnsureTrailingSemicolon(
                     RequireSingleDocumentSql(
+                        planDialect,
                         $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
                         tablePlan.SelectBySingleDocumentSql
                     )
@@ -248,6 +253,7 @@ public static class HydrationBatchBuilder
                 writer.AppendLine(
                     EnsureTrailingSemicolon(
                         RequireSingleDocumentSql(
+                            planDialect,
                             $"descriptor projection plan at index '{descriptorPlanIndex}'",
                             plan.DescriptorProjectionPlansInOrder[
                                 descriptorPlanIndex
@@ -269,6 +275,7 @@ public static class HydrationBatchBuilder
             writer.AppendLine(
                 EnsureTrailingSemicolon(
                     RequireSingleDocumentSql(
+                        planDialect,
                         "document-reference lookup plan",
                         documentReferenceLookup.SelectBySingleDocumentSql
                     )
@@ -280,12 +287,16 @@ public static class HydrationBatchBuilder
         return writer.ToString();
     }
 
-    private static string RequireSingleDocumentSql(string planDescription, string? sql)
+    private static string RequireSingleDocumentSql(
+        IPlanSqlDialect planDialect,
+        string planDescription,
+        string? sql
+    )
     {
         if (string.IsNullOrWhiteSpace(sql))
         {
             throw new InvalidOperationException(
-                "PostgreSQL single-document hydration requires "
+                $"{planDialect.DisplayName} single-document hydration requires "
                     + $"{planDescription} to provide SelectBySingleDocumentSql."
             );
         }

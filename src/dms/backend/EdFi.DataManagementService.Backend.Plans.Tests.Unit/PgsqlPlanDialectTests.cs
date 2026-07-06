@@ -28,6 +28,14 @@ public class Given_PgsqlPlanDialect
     }
 
     [Test]
+    public void It_should_report_single_document_hydration_support()
+    {
+        _dialect.Dialect.Should().Be(SqlDialect.Pgsql);
+        _dialect.DisplayName.Should().Be("PostgreSQL");
+        _dialect.SupportsSingleDocumentHydration.Should().BeTrue();
+    }
+
+    [Test]
     public void It_should_emit_canonical_keyset_temp_table_ddl()
     {
         _dialect.AppendCreateKeysetTempTable(_writer, _keyset);
@@ -72,7 +80,7 @@ public class Given_PgsqlPlanDialect
     [Test]
     public void It_should_emit_single_document_metadata_select()
     {
-        PgsqlPlanDialect.AppendSingleDocumentMetadataSelect(
+        _dialect.AppendSingleDocumentMetadataSelect(
             _writer,
             HydrationSqlConventions.SingleDocumentIdParameterName
         );

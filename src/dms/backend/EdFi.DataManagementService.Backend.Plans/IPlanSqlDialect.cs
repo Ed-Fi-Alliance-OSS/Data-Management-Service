@@ -15,6 +15,22 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal interface IPlanSqlDialect
 {
     /// <summary>
+    /// Gets the backend SQL dialect.
+    /// </summary>
+    SqlDialect Dialect { get; }
+
+    /// <summary>
+    /// Gets the dialect display name used in diagnostics.
+    /// </summary>
+    string DisplayName { get; }
+
+    /// <summary>
+    /// Gets whether this dialect supports single-document hydration batches without keyset
+    /// table materialization.
+    /// </summary>
+    bool SupportsSingleDocumentHydration { get; }
+
+    /// <summary>
     /// Appends a dialect-specific paging clause.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
@@ -37,6 +53,13 @@ internal interface IPlanSqlDialect
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
     void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
+
+    /// <summary>
+    /// Appends a <c>SELECT</c> statement that returns metadata for a single document id parameter.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="documentIdParameterName">The bare document id parameter name.</param>
+    void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName);
 
     /// <summary>
     /// Appends a predicate comparison against the supplied table alias and column.
