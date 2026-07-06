@@ -199,6 +199,9 @@ Current allocation causes:
 - The top frame is `WriteCanonicalObject`, with most sampled allocation showing up as strings
   and byte arrays under canonical serialization.
 - Some paths may recompute the same ETag for the same request document.
+- Even when ETag calls are not duplicated, each canonical hash still pays serializer-level
+  allocation costs for the writer/hash path, sorted-property handling, and final hash/base64
+  materialization.
 
 Implementation plan:
 
@@ -212,10 +215,20 @@ Implementation plan:
    available and semantically equivalent.
 5. Keep the canonical algorithm stable: object properties must remain ordinal-sorted, arrays
    must preserve order, and server-generated fields must remain excluded.
-6. Do not rewrite the canonical serializer in this phase. Keep the current `IncrementalHash`
-   stream path, remove duplicate ETag calls, and ensure production ETag code does not use
-   `SerializeToString` or `SerializeToUtf8Bytes`.
-7. Add tests proving ETags are unchanged for:
+6. Reduce serializer-level allocation in the canonical hash path regardless of duplicate-call
+   findings:
+   - Replace hash APIs that return a new `byte[]` with span-based hash finalization and direct
+     base64 formatting so only the required ETag string is allocated.
+   - Investigate replacing the `Stream` wrapper under `Utf8JsonWriter` with a pooled
+     hash-forwarding `IBufferWriter<byte>` if the microbench/trace shows per-call byte-buffer
+     churn from the writer path.
+   - Keep sorted-property handling pooled, and measure whether `ArrayPool` pressure, array
+     clearing, or recursive object traversal is still a material contributor before adding more
+     caching.
+   - Ensure production ETag code does not use `SerializeToString` or `SerializeToUtf8Bytes`.
+7. Do not change the canonical output contract in this phase. Serializer internals may change,
+   but the observable canonical bytes and ETags must remain stable.
+8. Add tests proving ETags are unchanged for:
    - Different property order.
    - Nested objects.
    - Arrays.
@@ -225,7 +238,10 @@ Implementation plan:
 Acceptance check:
 
 - `CanonicalJsonSerializer.WriteCanonicalObject` sampled allocation drops by at least 40% on
-  the same workload through fewer production ETag hash calls.
+  the same workload through the combined effect of duplicate-call removal and serializer-level
+  allocation reduction. If duplicate-call instrumentation shows low duplication, the phase must
+  still produce a meaningful per-call allocation reduction in the canonical hash microbench before
+  it is accepted.
 - All existing ETag tests continue to pass unchanged or with strictly equivalent expectations.
 
 ## Phase 4: Scoped Repository DI Resolution
