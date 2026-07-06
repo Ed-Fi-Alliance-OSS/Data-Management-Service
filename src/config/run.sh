@@ -23,18 +23,29 @@ if [ "$datastore" = "postgresql" ]; then
   echo "PostgreSQL is ready."
 else
   # sqlcmd is not available in this image, so wait for the SQL Server TCP endpoint
-  # (parsed from "Server=host[,port];...") to accept connections before starting.
-  server=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eio "server=([^;]+)" | head -1 | awk -F= '{print $2}')
-  host=$(echo ${server} | awk -F, '{print $1}')
-  port=$(echo ${server} | awk -F, '{print $2}')
+  # to accept connections before starting. SqlClient accepts several aliases for
+  # the server keyword and an optional protocol prefix:
+  # "Server|Data Source|Address|Addr|Network Address=[tcp:]host[,port]".
+  server=$(echo "${DatabaseSettings__DatabaseConnection}" \
+    | grep -Eio "(^|;)[[:space:]]*(server|data source|address|addr|network address)[[:space:]]*=[^;]+" \
+    | head -1 \
+    | sed -E 's/^;?[[:space:]]*[^=]+=[[:space:]]*//; s/^[Tt][Cc][Pp]://')
+  host=$(echo "${server}" | awk -F, '{gsub(/[[:space:]]/, "", $1); print $1}')
+  port=$(echo "${server}" | awk -F, '{gsub(/[[:space:]]/, "", $2); print $2}')
   port=${port:-1433}
 
-  until (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null; do
-    echo "Waiting for SQL Server to start..."
-    sleep 2
-  done
+  if [ -z "${host}" ]; then
+    # Let .NET surface a real connection error rather than blocking startup forever.
+    echo "Could not parse a SQL Server host from DatabaseSettings__DatabaseConnection; skipping TCP readiness wait."
+  else
+    # nc rather than bash's /dev/tcp: the published image runs this script under ash.
+    until nc -z -w 2 "${host}" "${port}" 2>/dev/null; do
+      echo "Waiting for SQL Server to start..."
+      sleep 2
+    done
 
-  echo "SQL Server is accepting TCP connections."
+    echo "SQL Server is accepting TCP connections."
+  fi
 fi
 
 echo "Running EdFi.DmsConfigurationService.Frontend.AspNetCore..."

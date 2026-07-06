@@ -345,11 +345,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 await transaction.CommitAsync();
 
                 var apiClientSql = """
-                    SELECT c.clientUuid
-                    FROM dmscs.apiclient c
-                        INNER JOIN dmscs.application a ON a.id = c.applicationId
-                        INNER JOIN dmscs.vendor v on v.id = a.vendorid
-                    WHERE v.id = @VendorId
+                    SELECT c.ClientUuid
+                    FROM dmscs.ApiClient c
+                        INNER JOIN dmscs.Application a ON a.Id = c.ApplicationId
+                        INNER JOIN dmscs.Vendor v ON v.Id = a.VendorId
+                    WHERE v.Id = @VendorId
                     """;
 
                 var apiClientUuids = await connection.QueryAsync<Guid>(
@@ -402,7 +402,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                         -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide)
                         (SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT) FROM dmscs.ApiClient ac WHERE ac.ApplicationId = a.Id) AS Enabled,
                         eo.EducationOrganizationId
-                    FROM dmscs.vendor v
+                    FROM dmscs.Vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
                     LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
                     WHERE v.Id = @VendorId AND {TenantContext.TenantWhereClause("v")};
