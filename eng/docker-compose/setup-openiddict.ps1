@@ -438,6 +438,7 @@ function Invoke-DbQuery {
 }
 
 function Add-MssqlOpenIddictKeyParameters {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function adds the full set of OpenIddict key parameters to the SqlCommand.')]
     param(
         [Parameter(Mandatory = $true)]
         [System.Data.SqlClient.SqlCommand]$Command,
