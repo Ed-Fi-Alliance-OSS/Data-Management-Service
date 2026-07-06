@@ -992,6 +992,13 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
+        if (rowsToInsert.Count == 0)
+        {
+            return;
+        }
+
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
+
         for (
             var batchStart = 0;
             batchStart < rowsToInsert.Count;
@@ -1013,7 +1020,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 .ConfigureAwait(false);
 
             await ExecuteCollectionInsertBatchAsync(
-                    dialect,
+                    batchSqlEmitter,
                     tableState.TableWritePlan,
                     rowsToInsert,
                     batchStart,
@@ -1191,6 +1198,13 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
+        if (rowsToInsert.Count == 0)
+        {
+            return;
+        }
+
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
+
         for (
             var batchStart = 0;
             batchStart < rowsToInsert.Count;
@@ -1217,7 +1231,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 .ConfigureAwait(false);
 
             await ExecuteCollectionInsertBatchAsync(
-                    dialect,
+                    batchSqlEmitter,
                     tableState.TableWritePlan,
                     rowsToInsert,
                     batchStart,
@@ -1583,7 +1597,7 @@ internal sealed class RelationalWriteNoProfilePersister(
     }
 
     private static async Task ExecuteCollectionInsertBatchAsync(
-        SqlDialect dialect,
+        WritePlanBatchSqlEmitter batchSqlEmitter,
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
         int rowOffset,
@@ -1619,7 +1633,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         await ExecuteNonQueryAsync(
                 writeSession,
                 BuildBatchCommand(
-                    new WritePlanBatchSqlEmitter(dialect).EmitInsertBatch(tableWritePlan, rowCount),
+                    batchSqlEmitter.EmitInsertBatch(tableWritePlan, rowCount),
                     tableWritePlan,
                     rows,
                     rowOffset,

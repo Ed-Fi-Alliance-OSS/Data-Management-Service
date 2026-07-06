@@ -122,17 +122,17 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
         KeysetTableContract keysetTable
     )
     {
-        return EmitSelectSql(sqlSources, DocumentReferenceLookupSourceFilter.Keyset(keysetTable));
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.Keyset(keysetTable));
     }
 
     private string EmitSelectBySingleDocumentSql(IReadOnlyList<DocumentReferenceLookupSqlSource> sqlSources)
     {
-        return EmitSelectSql(sqlSources, DocumentReferenceLookupSourceFilter.SingleDocument);
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.SingleDocument);
     }
 
     private string EmitSelectSql(
         IReadOnlyList<DocumentReferenceLookupSqlSource> sqlSources,
-        DocumentReferenceLookupSourceFilter sourceFilter
+        ProjectionSourceFilter sourceFilter
     )
     {
         const string projectionAlias = "p";
@@ -163,11 +163,6 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                     var sqlSource = sqlSources[index];
                     var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
-                    var rootScopeLocatorColumn =
-                        RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
-                            tableModel,
-                            "document-reference lookup plan"
-                        );
 
                     writer.Append("SELECT ");
 
@@ -179,12 +174,13 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                     AppendQualifiedColumn(writer, tableAlias, sqlSource.FkColumn);
                     writer.Append(" AS ").AppendQuoted(_documentIdColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    AppendSourceFilter(
+                    ProjectionSourceFilterSql.Append(
                         writer,
+                        tableModel,
                         tableAlias,
-                        rootScopeLocatorColumn,
                         sqlSource.FkColumn,
-                        sourceFilter
+                        sourceFilter,
+                        "document-reference lookup plan"
                     );
 
                     if (index + 1 < sqlSources.Count)
@@ -212,43 +208,6 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
-    }
-
-    private static void AppendSourceFilter(
-        SqlWriter writer,
-        string tableAlias,
-        DbColumnName rootScopeLocatorColumn,
-        DbColumnName fkColumn,
-        DocumentReferenceLookupSourceFilter sourceFilter
-    )
-    {
-        if (sourceFilter.KeysetTable is not null)
-        {
-            var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
-
-            writer
-                .Append("INNER JOIN ")
-                .AppendRelation(sourceFilter.KeysetTable.Table)
-                .Append($" {keysetAlias} ON ");
-            AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-            writer.Append(" = ");
-            AppendQualifiedColumn(writer, keysetAlias, sourceFilter.KeysetTable.DocumentIdColumnName);
-            writer.AppendLine();
-            writer.Append("WHERE ");
-            AppendQualifiedColumn(writer, tableAlias, fkColumn);
-            writer.AppendLine(" IS NOT NULL");
-
-            return;
-        }
-
-        writer.Append("WHERE ");
-        AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-        writer.Append(" = ");
-        writer.AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
-        writer.AppendLine();
-        writer.Append("AND ");
-        AppendQualifiedColumn(writer, tableAlias, fkColumn);
-        writer.AppendLine(" IS NOT NULL");
     }
 
     private static DbColumnModel ResolveFkColumnOrThrow(
@@ -319,16 +278,4 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
         int TableDependencyOrdinal,
         int FkColumnOrdinal
     );
-
-    private sealed record DocumentReferenceLookupSourceFilter(KeysetTableContract? KeysetTable)
-    {
-        public static DocumentReferenceLookupSourceFilter SingleDocument { get; } = new(KeysetTable: null);
-
-        public static DocumentReferenceLookupSourceFilter Keyset(KeysetTableContract keysetTable)
-        {
-            ArgumentNullException.ThrowIfNull(keysetTable);
-
-            return new DocumentReferenceLookupSourceFilter(keysetTable);
-        }
-    }
 }
