@@ -967,6 +967,25 @@ internal sealed class DescriptorWriteHandler(
             }
         }
 
+        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag))
+        {
+            var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+
+            _logger.LogDebug(
+                "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                existingTargetContext.DocumentId,
+                ifMatch.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+
+            return evaluation.IsMatch
+                ? new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag)
+                : DescriptorLockedPreconditionResult.Mismatch.Instance;
+        }
+
         return lockedCurrentState switch
         {
             DescriptorCurrentStateLoadResult.MissingDocument => DescriptorLockedPreconditionResult
@@ -974,11 +993,6 @@ internal sealed class DescriptorWriteHandler(
                 .Instance,
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
-            DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                when !_ifMatchEvaluator.Evaluate(ifMatch, currentEtag).IsMatch =>
-                DescriptorLockedPreconditionResult.Mismatch.Instance,
-            DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
-                new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
             _ => throw new InvalidOperationException(
                 $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
             ),
