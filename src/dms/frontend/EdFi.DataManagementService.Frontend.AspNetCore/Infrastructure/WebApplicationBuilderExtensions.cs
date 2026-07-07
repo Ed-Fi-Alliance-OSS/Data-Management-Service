@@ -231,13 +231,8 @@ public static class WebApplicationBuilderExtensions
         }
 
         logger.Information("Injecting relational document store repository surface");
-        webAppBuilder.Services.AddScoped<RelationalDocumentStoreRepository>();
-        webAppBuilder.Services.AddScoped<IDocumentStoreRepository>(serviceProvider =>
-            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-        );
-        webAppBuilder.Services.AddScoped<IQueryHandler>(serviceProvider =>
-            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-        );
+        webAppBuilder.Services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
+        webAppBuilder.Services.AddScoped<IQueryHandler, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.Replace(
             ServiceDescriptor.Singleton<IBackendMappingInitializer, RelationalBackendMappingInitializer>()
         );
