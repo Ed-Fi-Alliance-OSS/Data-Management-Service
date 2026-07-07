@@ -114,7 +114,17 @@ param(
 
     [Switch]$AddSmokeTestCredentials,
 
-    [string]$SchoolYearRange = ""
+    [string]$SchoolYearRange = "",
+
+    # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
+    # overlay (DS 5.2, the default: core + TPDM; DS 6.1: core only, since TPDM is folded into
+    # core in 6.1) is composed onto -EnvironmentFile ONLY when this parameter is explicitly
+    # supplied. Omitting it leaves the base env file's own SCHEMA_PACKAGES / package surface
+    # untouched, which is the pre-existing behavior for published-image workflows that supply a
+    # custom -EnvironmentFile. Distinct from start-published-dms.ps1 -DataStandardVersion, whose
+    # shared .env.ds<NN> overlays carry the E2E/SDK surfaces (Sample/Homograph test extensions).
+    [ValidateSet("5.2", "6.1")]
+    [string]$DataStandardVersion = "5.2"
 )
 
 $ErrorActionPreference = "Stop"

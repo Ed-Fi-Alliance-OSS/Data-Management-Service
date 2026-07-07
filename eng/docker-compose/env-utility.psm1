@@ -43,7 +43,10 @@ function Resolve-LocalSettingsEnvironmentFile {
          - absolute paths are kept as-is;
          - relative paths are resolved against the caller's current working directory.
       2. <docker-compose>/.env when present.
-      3. <docker-compose>/.env.example as a developer fallback.
+      3. When .env is absent, it is seeded once as a copy of <docker-compose>/.env.example
+         and the new .env is returned. .env.example itself is never consumed at runtime:
+         it stays a pure, tracked example, while .env (gitignored) is the live local
+         settings file the user can edit durably.
 
     A missing file always throws. This is intentionally narrower than ReadValuesFromEnvFile
     so phase commands fail fast on a typo rather than silently fall through to ambient process
@@ -67,13 +70,14 @@ function Resolve-LocalSettingsEnvironmentFile {
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
         $defaultEnv = Join-Path $DockerComposeRoot ".env"
-        $fallbackEnv = Join-Path $DockerComposeRoot ".env.example"
-        $Path = if (Test-Path -LiteralPath $defaultEnv -PathType Leaf) {
-            $defaultEnv
+        if (-not (Test-Path -LiteralPath $defaultEnv -PathType Leaf)) {
+            $exampleEnv = Join-Path $DockerComposeRoot ".env.example"
+            if (Test-Path -LiteralPath $exampleEnv -PathType Leaf) {
+                Copy-Item -LiteralPath $exampleEnv -Destination $defaultEnv
+                Write-Information "No .env found; created $defaultEnv from .env.example. Edit it to customize local settings." -InformationAction Continue
+            }
         }
-        else {
-            $fallbackEnv
-        }
+        $Path = $defaultEnv
     }
     elseif (-not [System.IO.Path]::IsPathRooted($Path)) {
         $Path = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
@@ -598,11 +602,19 @@ function Resolve-DataStandardEnvironmentFile {
     .PARAMETER DockerComposeRoot
         Directory holding the .env.<token> overlays and the .derived output. Defaults to this module's
         directory (eng/docker-compose).
+
+    .PARAMETER OverlayPrefix
+        Overlay file-name prefix. Defaults to ".env" (the shared E2E/SDK-surface overlays,
+        e.g. .env.ds61). The bootstrap wrapper passes ".env.bootstrap" to compose the
+        local-bootstrap surfaces (e.g. .env.bootstrap.ds61) instead. A non-default prefix is
+        reflected in the derived file name (e.g. <base>.bootstrap.<token>) so both derivations
+        can coexist under .derived/.
     #>
     param(
         [string]$DataStandardVersion,
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [string]$DockerComposeRoot
+        [string]$DockerComposeRoot,
+        [string]$OverlayPrefix = ".env"
     )
 
     if ([string]::IsNullOrWhiteSpace($DataStandardVersion)) {
@@ -614,14 +626,86 @@ function Resolve-DataStandardEnvironmentFile {
     }
 
     $token = Get-DataStandardOverlayToken $DataStandardVersion
-    $overlayPath = Join-Path $DockerComposeRoot ".env.$token"
+    $overlayPath = Join-Path $DockerComposeRoot "$OverlayPrefix.$token"
     if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
-        $available = @(Get-ChildItem -Path $DockerComposeRoot -Filter ".env.ds*" -ErrorAction SilentlyContinue |
+        $available = @(Get-ChildItem -Path $DockerComposeRoot -Filter "$OverlayPrefix.ds*" -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name) -join ", "
         throw "Resolve-DataStandardEnvironmentFile: no overlay for data standard version '$DataStandardVersion' (expected '$overlayPath'). Available overlays: $available."
     }
 
-    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$token"
+    # A non-default prefix contributes its distinguishing segment(s) to the derived name
+    # (".env.bootstrap" -> "<base>.bootstrap.<token>"); the default ".env" contributes nothing
+    # ("<base>.<token>", the pre-existing naming).
+    $prefixSegment = ($OverlayPrefix -replace '^\.env\.?', '').Trim('.')
+    $derivedName = if ([string]::IsNullOrEmpty($prefixSegment)) {
+        "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$token"
+    } else {
+        "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).$prefixSegment.$token"
+    }
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+
+    return New-DataStandardDerivedEnvFile `
+        -BaseEnvironmentFile $BaseEnvironmentFile `
+        -OverlayEnvironmentFile $overlayPath `
+        -TargetPath $derivedPath
+}
+
+function Resolve-DatabaseEngineEnvironmentFile {
+    <#
+    .SYNOPSIS
+        Returns the effective environment file path for the requested database engine. With the
+        default "postgresql" engine the base file is returned unchanged. With "mssql" the
+        .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server admin
+        connection string) is composed onto the base into a derived file under
+        <DockerComposeRoot>/.derived/ and that path is returned.
+
+    .DESCRIPTION
+        Reuses New-DataStandardDerivedEnvFile's generic base+overlay composition (it is not
+        specific to data-standard overlays despite the name) so DMS_DATASTORE and the
+        SQL Server connection strings reach every phase - configure, provision, and the start
+        scripts - from one canonical path. Without this, a run could provision an MSSQL data
+        store in CMS while the DMS container itself still starts on its postgresql default
+        (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
+
+        Idempotency guard: when the base file already carries DMS_DATASTORE=mssql (an earlier
+        phase - typically the bootstrap wrapper - already composed the overlay onto it) the base
+        file is returned unchanged instead of composing a derived-of-derived file.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" (default; no-op) or "mssql".
+
+    .PARAMETER BaseEnvironmentFile
+        Absolute path to the base env file. Must exist.
+
+    .PARAMETER DockerComposeRoot
+        Directory holding .env.mssql and the .derived output. Defaults to this module's
+        directory (eng/docker-compose).
+    #>
+    param(
+        [string]$DatabaseEngine = "postgresql",
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [string]$DockerComposeRoot
+    )
+
+    if ($DatabaseEngine -ne "mssql") {
+        return $BaseEnvironmentFile
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) {
+        $DockerComposeRoot = $PSScriptRoot
+    }
+
+    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    if ((Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql") {
+        return $BaseEnvironmentFile
+    }
+
+    $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
+    if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
+        throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
+    }
+
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
     $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
 
     return New-DataStandardDerivedEnvFile `

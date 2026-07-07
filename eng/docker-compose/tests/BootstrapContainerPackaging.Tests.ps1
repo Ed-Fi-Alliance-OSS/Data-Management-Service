@@ -105,11 +105,16 @@ Describe "DMS-1154 Dockerfile ApiSchema packaging contract" {
     }
 
     It "copies Directory.Build.targets into the build stage before restore" {
-        $targetsCopyIndex = $script:dockerfileContent.IndexOf("COPY Directory.Build.targets ./")
+        # The COPY line may carry sibling build files (e.g. Directory.Build.props); the contract
+        # is only that Directory.Build.targets lands in the build stage ahead of restore.
+        $targetsCopyMatch = [regex]::Match(
+            $script:dockerfileContent,
+            '(?m)^COPY\s[^\r\n]*Directory\.Build\.targets[^\r\n]*$'
+        )
         $restoreIndex = $script:dockerfileContent.IndexOf("RUN dotnet restore")
 
-        $targetsCopyIndex | Should -BeGreaterOrEqual 0
-        $restoreIndex | Should -BeGreaterThan $targetsCopyIndex
+        $targetsCopyMatch.Success | Should -BeTrue
+        $restoreIndex | Should -BeGreaterThan $targetsCopyMatch.Index
     }
 
     It "copies published ApiSchema content recursively into the final image" {

@@ -1585,24 +1585,9 @@ function Invoke-BulkLoadClient {
 # Skip orchestration when dot-sourced (tests load helpers without running the pipeline).
 if ($MyInvocation.InvocationName -eq '.') { return }
 
-# Resolve environment file
-if ([string]::IsNullOrWhiteSpace($EnvironmentFile)) {
-    $defaultEnv = Join-Path $PSScriptRoot ".env"
-    $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
-    if (Test-Path -LiteralPath $defaultEnv) {
-        $EnvironmentFile = $defaultEnv
-    }
-    else {
-        $EnvironmentFile = $fallbackEnv
-    }
-}
-elseif (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
-    $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $EnvironmentFile))
-}
-
-if (-not (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf)) {
-    throw "Environment file not found: $(Format-LogSafeText $EnvironmentFile). Pass an existing -EnvironmentFile, or run from a directory where .env or .env.example exists."
-}
+# Resolve environment file through the shared resolver (explicit path, else .env - seeded
+# once from .env.example when absent, so the example itself is never consumed at runtime).
+$EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile
 
 # Resolve bootstrap manifest path AND its parent workspace ("bootstrap root").
 # When -BootstrapManifestPath is supplied externally, the manifest's parent directory

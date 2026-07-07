@@ -7,13 +7,15 @@
 
 <#
 .SYNOPSIS
-    DMS-1151 schema provisioning phase (PostgreSQL-only).
+    Schema provisioning phase. Supports PostgreSQL and SQL Server data stores.
 .DESCRIPTION
     Invokes SchemaTools against each distinct effective target database from the
-    selected CMS instances. Hard-codes --dialect pgsql; MSSQL keysets are rejected
-    by Resolve-TargetDialect with an actionable error. MSSQL targets are out of
-    scope for DMS-1151; revisit if/when the bootstrap epic adds MSSQL support in
-    a successor story.
+    selected CMS instances. The dialect (--dialect pgsql|mssql) is auto-detected from
+    the shape of the data store connection string CMS hands back: PostgreSQL uses
+    host/database/username keys, SQL Server uses Server/Database/User Id keys. The
+    Docker-internal database host is translated to the host-side mapped port before
+    SchemaTools runs (dms-postgresql -> localhost:POSTGRES_PORT,
+    dms-mssql -> 127.0.0.1,MSSQL_PORT).
 
     See command-boundaries.md Section 3.5 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -24,7 +26,17 @@ param(
     [string]$EnvironmentFile,
     [Alias("InstanceId")]
     [long[]]$DataStoreId = @(),
-    [int[]]$SchoolYear = @()
+    [int[]]$SchoolYear = @(),
+
+    # Database engine overlay selector for direct invocation of this script. Composes the
+    # .env.mssql overlay onto -EnvironmentFile (Resolve-DatabaseEngineEnvironmentFile) so the
+    # dialect guard in New-ProvisionTarget and the host-side connection-string translation in
+    # Convert-CmsConnectionStringToHostSideTarget see the same engine the caller intends. The
+    # bootstrap wrapper does not pass this parameter: its -EnvironmentFile is already composed,
+    # and the default "postgresql" is a no-op via Resolve-DatabaseEngineEnvironmentFile's
+    # idempotency guard (an env already carrying DMS_DATASTORE=mssql is returned unchanged).
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql"
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,12 +56,15 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
         $text = [string]$Value
         $builder = [System.Text.StringBuilder]::new()
         foreach ($character in $text.ToCharArray()) {
+            # Comma is whitelisted so SQL Server "host,port" targets log readably; newlines
+            # and other control characters stay stripped, which is what prevents log forging.
             if ([char]::IsLetterOrDigit($character) -or
                 $character -eq " " -or
                 $character -eq "_" -or
                 $character -eq "-" -or
                 $character -eq "." -or
                 $character -eq ":" -or
+                $character -eq "," -or
                 $character -eq "/") {
                 $null = $builder.Append($character)
             }
@@ -284,21 +299,142 @@ function Resolve-TargetDialect {
         $Builder
     )
 
-    # DMS-916 / DMS-1151 currently provisions only PostgreSQL. Reject MSSQL-style key sets
-    # early so an inadvertent provider mismatch surfaces with an actionable error rather
-    # than a cryptic SchemaTools failure.
-    $mssqlMarkers = @("server", "initial catalog", "user id", "trusted_connection")
-    foreach ($marker in $mssqlMarkers) {
+    # The data store connection string CMS hands back determines the dialect: SQL Server uses
+    # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
+    # username / port / sslmode. SchemaTools provisions both (dms-schema ddl provision
+    # --dialect pgsql|mssql).
+    #
+    # host, username, port, and sslmode are checked first and are each a definitive PostgreSQL
+    # marker: none of the four is a valid SqlClient connection-string keyword. SqlClient
+    # identifies the user via User ID/UID (not Username), encodes the port inside
+    # "Server=host,port" rather than a standalone Port key, and controls encryption via
+    # Encrypt/TrustServerCertificate rather than SSL Mode. This also fixes a PostgreSQL
+    # connection string that uses Server (a legal Npgsql alias for Host) instead of Host: it
+    # still carries one of these four definitive keys and resolves to pgsql before the mssql
+    # marker loop below ever sees the ambiguous Server key.
+    #
+    # Residual assumption: Server and User Id are themselves ambiguous (each is also a legal
+    # Npgsql alias for Host/Username respectively), so a connection string carrying only
+    # ambiguous alias keys and none of the four definitive PostgreSQL keys - e.g. Server= plus
+    # User Id= with no host/username/port/sslmode - is genuinely indistinguishable from SQL
+    # Server and defaults to mssql via the marker loop below.
+    $definitivePostgresqlMarkers = @("host", "username", "port", "sslmode")
+    foreach ($marker in $definitivePostgresqlMarkers) {
         if ($Builder.ContainsKey($marker)) {
-            throw "CMS data store connection string uses MSSQL-style key '$(Format-LogSafeText $marker)'. Only PostgreSQL provisioning is supported."
+            return "pgsql"
         }
     }
 
-    if (-not $Builder.ContainsKey("host") -and -not $Builder.ContainsKey("server")) {
-        throw "CMS data store connection string is missing a host key. Cannot determine the provisioning dialect."
+    $mssqlMarkers = @("server", "data source", "initial catalog", "user id", "trusted_connection")
+    foreach ($marker in $mssqlMarkers) {
+        if ($Builder.ContainsKey($marker)) {
+            return "mssql"
+        }
     }
 
-    return "pgsql"
+    throw "CMS data store connection string carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key. Cannot determine the provisioning dialect."
+}
+
+function Resolve-ExpectedProvisioningDialect {
+    <#
+    .SYNOPSIS
+    Resolves the SchemaTools dialect the effective environment expects for provisioning targets,
+    from the effective DMS_DATASTORE value: mssql -> mssql, postgresql -> pgsql. A missing or
+    blank value defaults to postgresql -> pgsql, matching local-dms.yml's compose-level default
+    (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}).
+    #>
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    $engineValue = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_DATASTORE" -DefaultValue "postgresql"
+    $expectedDialect = if ($engineValue -eq "mssql") { "mssql" } else { "pgsql" }
+
+    return [pscustomobject]@{
+        EngineValue = $engineValue
+        ExpectedDialect = $expectedDialect
+    }
+}
+
+function Convert-MssqlCmsConnectionStringToHostSideTarget {
+    <#
+    .SYNOPSIS
+    Builds an effective host-side SQL Server provisioning target from a CMS-stored data store
+    connection string. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
+    host-side 127.0.0.1,MSSQL_PORT while preserving the user, password, database, and every
+    other stored option. A non-Docker server (e.g. an external SQL Server configured per
+    instance) is preserved as-is.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $EnvValues
+    )
+
+    # SQL Server accepts either Database or Initial Catalog for the database name.
+    $databaseName = Get-ConnectionStringValue -Builder $Builder -Keys @("database", "initial catalog")
+    if ([string]::IsNullOrWhiteSpace($databaseName)) {
+        throw "CMS data store connection string did not contain a database name."
+    }
+
+    $server = Get-ConnectionStringValue -Builder $Builder -Keys @("server", "data source")
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw "CMS data store connection string is missing the server key."
+    }
+
+    $instanceUser = Get-ConnectionStringValue -Builder $Builder -Keys @("user id", "uid")
+    if ([string]::IsNullOrWhiteSpace($instanceUser)) {
+        throw "CMS data store connection string is missing the user id key."
+    }
+
+    # SQL Server encodes host and port together as "host,port" (and named instances as
+    # "host\instance"). Split off the host to decide whether this is the Docker-internal target.
+    $serverHost = ($server -split ',')[0].Trim()
+
+    $effectiveServer = $server
+    if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
+        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
+        # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
+        $effectiveServer = "127.0.0.1,$mssqlPort"
+    }
+
+    # Mutate only the server; every other stored option (password, TrustServerCertificate,
+    # Encrypt, a password containing ';' or '=', etc.) is carried through verbatim and correctly
+    # re-quoted by the builder. Set whichever server key the source used so we never duplicate it.
+    $serverKey = if ($Builder.ContainsKey("data source")) { "data source" } else { "server" }
+    Set-ConnectionStringValue -Builder $Builder -Key $serverKey -Value $effectiveServer
+
+    $hostConnectionString = $Builder.get_ConnectionString()
+
+    # The port is encoded inside the server value for SQL Server; surface it for the summary.
+    $effectivePort =
+        if ($effectiveServer -match ',') { (($effectiveServer -split ',', 2)[1]).Trim() }
+        else { "1433" }
+
+    # TargetKey identifies an effective provisioning target so two instances pointing at the same
+    # physical database share a single SchemaTools invocation. The server value already encodes
+    # host + port.
+    $targetKey = ("{0}|{1}|{2}|{3}" -f
+        "mssql",
+        $effectiveServer.ToLowerInvariant(),
+        $databaseName.ToLowerInvariant(),
+        $instanceUser.ToLowerInvariant())
+
+    return [pscustomobject]@{
+        Dialect = "mssql"
+        Host = $effectiveServer
+        Port = $effectivePort
+        Username = $instanceUser
+        DatabaseName = $databaseName
+        HostConnectionString = $hostConnectionString
+        TargetKey = $targetKey
+    }
 }
 
 function Convert-CmsConnectionStringToHostSideTarget {
@@ -308,7 +444,8 @@ function Convert-CmsConnectionStringToHostSideTarget {
     connection string. Translates the Docker-internal PostgreSQL hostname/port to the host-side
     mapped port while preserving the instance-specific username, password, and database name.
     Non-Docker hosts (e.g. external PostgreSQL servers configured per instance) are preserved
-    as-is.
+    as-is. SQL Server connection strings are dispatched to
+    Convert-MssqlCmsConnectionStringToHostSideTarget.
     #>
     param(
         [Parameter(Mandatory)]
@@ -323,8 +460,11 @@ function Convert-CmsConnectionStringToHostSideTarget {
     $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
     $dialect = Resolve-TargetDialect -Builder $builder
 
-    # initial catalog is an MSSQL marker already rejected by Resolve-TargetDialect, so the
-    # surviving PostgreSQL keys are database / host / username.
+    if ($dialect -eq "mssql") {
+        return Convert-MssqlCmsConnectionStringToHostSideTarget -Builder $builder -EnvValues $EnvValues
+    }
+
+    # PostgreSQL path: the surviving keys are database / host / username.
     $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
         throw "CMS data store connection string did not contain a database name."
@@ -574,6 +714,19 @@ function New-ProvisionTarget {
     $target = Convert-CmsConnectionStringToHostSideTarget `
         -ConnectionString $resolvedConnectionString `
         -EnvValues $EnvValues
+
+    # configure-local-data-store.ps1 -NoDataStore can select a pre-existing route-unqualified
+    # CMS data store without checking its connection-string dialect, so a stale data store from
+    # a previous run with the other database engine can otherwise be provisioned silently while
+    # DMS itself starts against DMS_DATASTORE from this same environment. Catch the mismatch
+    # here, where the connection string has already been decrypted (if needed) and its dialect
+    # resolved.
+    $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
+    if ($target.Dialect -ne $expectedProvisioningDialect.ExpectedDialect) {
+        $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName), database=$(Format-LogSafeText $target.DatabaseName)) resolved to dialect '$(Format-LogSafeText $target.Dialect)', but the environment's DMS_DATASTORE is '$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' (expected dialect '$(Format-LogSafeText $expectedProvisioningDialect.ExpectedDialect)'). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+    }
+
     $routeContexts = @(
         Get-ProvisionRouteContexts -Instance $Instance | ForEach-Object {
             [pscustomobject]@{
@@ -608,7 +761,11 @@ function Invoke-DmsSchemaProvision {
         $ConnectionString,
 
         [string]
-        $DatabaseName
+        $DatabaseName,
+
+        [ValidateSet("pgsql", "mssql")]
+        [string]
+        $Dialect = "pgsql"
     )
 
     $arguments = @("ddl", "provision")
@@ -617,7 +774,7 @@ function Invoke-DmsSchemaProvision {
     }
     $arguments += @(
         "--connection-string", $ConnectionString,
-        "--dialect", "pgsql",
+        "--dialect", $Dialect,
         "--create-database"
     )
 
@@ -791,7 +948,11 @@ function Invoke-ProvisionDmsSchema {
         $DataStoreId = @(),
 
         [int[]]
-        $SchoolYear = @()
+        $SchoolYear = @(),
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine = "postgresql"
     )
 
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
@@ -799,6 +960,12 @@ function Invoke-ProvisionDmsSchema {
     }
 
     $resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile
+    # Compose the MSSQL engine overlay for -DatabaseEngine mssql; mirrors
+    # configure-local-data-store.ps1 and start-local-dms.ps1. Direct invocation with
+    # -DatabaseEngine mssql layers the overlay onto a custom -EnvironmentFile; wrapper-forwarded
+    # files are already composed and no-op via the DMS_DATASTORE guard in
+    # Resolve-DatabaseEngineEnvironmentFile.
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
@@ -856,7 +1023,8 @@ function Invoke-ProvisionDmsSchema {
             -ToolPath $schemaTool `
             -SchemaPaths $schemaPaths `
             -ConnectionString $target.HostConnectionString `
-            -DatabaseName $target.DatabaseName
+            -DatabaseName $target.DatabaseName `
+            -Dialect $target.Dialect
 
         $null = $provisionedTargets.Add([pscustomobject]@{
             DatabaseName = $target.DatabaseName
@@ -880,4 +1048,5 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 Invoke-ProvisionDmsSchema `
     -EnvironmentFile $EnvironmentFile `
     -DataStoreId $DataStoreId `
-    -SchoolYear $SchoolYear
+    -SchoolYear $SchoolYear `
+    -DatabaseEngine $DatabaseEngine

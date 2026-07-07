@@ -743,6 +743,78 @@ function Get-CurrentSchoolYear {
 
 <#
 .SYNOPSIS
+    Builds a Configuration Service data-store connection string for the given database engine.
+
+.DESCRIPTION
+    Produces the Docker-internal connection string the Configuration Service stores for a data
+    store. PostgreSQL uses the libpq key=value form; MSSQL uses the SqlClient form
+    (Server=host,port) with TrustServerCertificate for the container's self-signed certificate.
+    The provision phase (provision-dms-schema.ps1) reads this string back and translates the
+    Docker host to the host-side mapped port before invoking SchemaTools.
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql".
+
+.PARAMETER DbHost
+    The Docker-internal database host (e.g. dms-postgresql or dms-mssql).
+
+.PARAMETER Port
+    The Docker-internal database port (5432 for PostgreSQL, 1433 for SQL Server).
+
+.PARAMETER Username
+    The database user.
+
+.PARAMETER Password
+    The database password.
+
+.PARAMETER DatabaseName
+    The target database name.
+
+.OUTPUTS
+    [string] The engine-specific connection string.
+
+.EXAMPLE
+    New-DataStoreConnectionString -DatabaseEngine mssql -DbHost dms-mssql -Port 1433 -Username sa -Password $pwd -DatabaseName edfi_datamanagementservice
+#>
+function New-DataStoreConnectionString {
+    [CmdletBinding()]
+    [OutputType([string])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The credentials are read as plaintext from the environment file and must be embedded as plaintext in the engine connection string; SecureString/PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The password is read as plaintext from the environment file and must be embedded as plaintext in the engine connection string; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure string-factory helper despite the New- verb; it creates no system state, so -WhatIf/-Confirm semantics add no value.')]
+    param(
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$DbHost,
+
+        [Parameter(Mandatory)]
+        [int]$Port,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Username,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Password,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$DatabaseName
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "Server=$DbHost,$Port;Database=$DatabaseName;User Id=$Username;Password=$Password;TrustServerCertificate=true;"
+    }
+
+    return "host=$DbHost;port=$Port;username=$Username;password=$Password;database=$DatabaseName;"
+}
+
+<#
+.SYNOPSIS
     Creates a new DMS Instance by sending a POST request to the Configuration Service.
 
 .DESCRIPTION
@@ -813,16 +885,24 @@ function Add-DataStore {
 
         [int]$PostgresPort = 5432,
 
+        # Pre-built connection string. When provided it is used verbatim (any engine, e.g. an
+        # MSSQL connection string from New-DataStoreConnectionString); otherwise a PostgreSQL
+        # connection string is built from the credential and Postgres* parameters.
+        [string]$ConnectionString = "",
+
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
 
         [string]$Tenant = ""
     )
 
-    # Build connection string from individual parameters
-    $postgresUser = $PostgresCredential.UserName
-    $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
-    $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$postgresUser;password=$postgresPassword;database=$PostgresDbName;"
+    # Build the PostgreSQL connection string from the credential and individual parameters
+    # unless a pre-built connection string (e.g. MSSQL) was supplied.
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        $postgresUser = $PostgresCredential.UserName
+        $postgresPassword = $PostgresCredential.GetNetworkCredential().Password
+        $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$postgresUser;password=$postgresPassword;database=$PostgresDbName;"
+    }
 
     $dataStoreData = @{
         dataStoreType = $DataStoreType
@@ -1062,6 +1142,10 @@ function Add-DmsSchoolYearInstances {
 
         [int]$PostgresPort = 5432,
 
+        # Pre-built connection string forwarded verbatim to each per-year Add-DataStore call
+        # (e.g. an MSSQL connection string). When empty, Add-DataStore builds the PostgreSQL form.
+        [string]$ConnectionString = "",
+
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
 
@@ -1089,6 +1173,7 @@ function Add-DmsSchoolYearInstances {
             -PostgresDbName $PostgresDbName `
             -PostgresHost $PostgresHost `
             -PostgresPort $PostgresPort `
+            -ConnectionString $ConnectionString `
             -AccessToken $AccessToken `
             -Tenant $Tenant
 
@@ -1566,9 +1651,9 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
         Invoke-Api @invokeParams
     }
 
-    if (-not ($response | Where-Object { $_.name -eq "SeedLoader" })) {
+    if (-not ($response | Where-Object { $_.claimSetName -eq "SeedLoader" })) {
         throw "CMS does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Config image and re-run."
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

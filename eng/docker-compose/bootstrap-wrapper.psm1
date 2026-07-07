@@ -140,7 +140,10 @@ function Test-WrapperManifestClaimsStaged {
 function Resolve-WrapperEnvironmentFilePath {
     <#
     .SYNOPSIS
-    Resolves the base env file path using the same defaults as the wrapper and start scripts.
+    Resolves the base env file path using the same defaults as the shared resolver in
+    env-utility.psm1: explicit path, else .env — seeded once from .env.example when absent.
+    The seeding is replicated inline (not delegated) because the wrapper-argument Pester
+    sandbox loads this module without its env-utility sibling.
     #>
     param(
         [string]$BaseEnvironmentFile
@@ -148,8 +151,14 @@ function Resolve-WrapperEnvironmentFilePath {
 
     if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
         $defaultEnv = Join-Path $PSScriptRoot ".env"
-        $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
-        $BaseEnvironmentFile = if (Test-Path -LiteralPath $defaultEnv) { $defaultEnv } else { $fallbackEnv }
+        if (-not (Test-Path -LiteralPath $defaultEnv -PathType Leaf)) {
+            $exampleEnv = Join-Path $PSScriptRoot ".env.example"
+            if (Test-Path -LiteralPath $exampleEnv -PathType Leaf) {
+                Copy-Item -LiteralPath $exampleEnv -Destination $defaultEnv
+                Write-Information "No .env found; created $defaultEnv from .env.example. Edit it to customize local settings." -InformationAction Continue
+            }
+        }
+        $BaseEnvironmentFile = $defaultEnv
     }
     elseif (-not [System.IO.Path]::IsPathRooted($BaseEnvironmentFile)) {
         $BaseEnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $BaseEnvironmentFile))
@@ -295,10 +304,38 @@ function Invoke-BootstrapWrapper {
         # The value is held locally and NOT forwarded to the initial start-script infra invocation;
         # it is forwarded only to the post-provision start-script health-wait invocation and,
         # when -LoadSeedData is also requested, to load-dms-seed-data.ps1.
-        [string]$DmsBaseUrl
+        [string]$DmsBaseUrl,
+
+        # Database engine for the DMS datastore ("postgresql" or "mssql"). Forwarded to the
+        # configure phase always, and to the start phases only for start-local-dms.ps1 (mssql.yml
+        # is a local-only tier; start-published-dms.ps1 has no -DatabaseEngine parameter).
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        # Data standard version for the local-bootstrap package surface. For
+        # start-local-dms.ps1 the .env.bootstrap.<token> overlay is always composed onto the
+        # base env file (DS 5.2, the default: core + TPDM; DS 6.1: core only) before any phase
+        # reads it, so local bootstraps have a canonical package surface no matter what the base
+        # env file's own SCHEMA_PACKAGES holds. For start-published-dms.ps1 the overlay is
+        # composed ONLY when the caller explicitly supplies this parameter: published bootstraps
+        # predate overlay composition, and composing unconditionally would silently replace a
+        # custom base env file's SCHEMA_PACKAGES / DATABASE_TEMPLATE_PACKAGE values for published
+        # workflows that never asked for a data-standard override. The default is declared here
+        # as well as on the entry scripts because PowerShell defaults are not part of
+        # $PSBoundParameters and would otherwise not reach this function. Deliberately NOT
+        # forwarded to the start scripts: their -DataStandardVersion composes the shared
+        # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
+        # would override this surface.
+        [ValidateSet("5.2", "6.1")]
+        [string]$DataStandardVersion = "5.2"
     )
 
     $ErrorActionPreference = "Stop"
+
+    # mssql.yml is a local-only datastore tier. Only start-local-dms.ps1 understands
+    # -DatabaseEngine; start-published-dms.ps1 does not, so the engine is forwarded to the start
+    # phases only for the local start script. The configure phase always accepts it.
+    $startScriptSupportsDatabaseEngine = ($StartScriptName -eq "start-local-dms.ps1")
 
     # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
     # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
@@ -400,6 +437,56 @@ function Invoke-BootstrapWrapper {
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
 
+        # Data-standard selection: compose the LOCAL-BOOTSTRAP overlay (.env.bootstrap.<token>,
+        # default DS 5.2) onto the base env before anything reads it, so identity resolution,
+        # prepare, configure, provision, and the start phases all see the composed
+        # SCHEMA_PACKAGES / data-standard settings from one canonical path. These bootstrap-scoped
+        # overlays carry the minimal local surfaces (DS 5.2: core + TPDM; DS 6.1: core only) and
+        # are deliberately distinct from the shared .env.ds<NN> overlays, whose E2E/SDK surfaces
+        # include the Sample/Homograph test extensions required by CI. For the same reason
+        # -DataStandardVersion is NOT forwarded to the start scripts below: they would re-compose
+        # the shared overlay over this derived file and silently restore the E2E-shaped
+        # SCHEMA_PACKAGES. The start phases receive the derived file through -EnvironmentFile
+        # instead.
+        #
+        # start-local-dms.ps1 ALWAYS composes: local bootstraps are the canonical DS 5.2/6.1 entry
+        # point and have no other source of a package surface. start-published-dms.ps1 composes
+        # ONLY when the caller explicitly supplies -DataStandardVersion: published bootstraps
+        # predate overlay composition and existing custom-base-env workflows rely on their own
+        # SCHEMA_PACKAGES / DATABASE_TEMPLATE_PACKAGE values reaching every phase untouched.
+        # Custom or extension schema sets remain expert -ApiSchemaPath territory either way.
+        $composeDataStandardOverlay = ($StartScriptName -eq "start-local-dms.ps1") -or
+            $PSBoundParameters.ContainsKey('DataStandardVersion')
+        if ($composeDataStandardOverlay) {
+            # env-utility is imported here because the wrapper's other imports live inside helper
+            # functions that run after this block.
+            Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+            $baseEnvFile = Resolve-DataStandardEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DockerComposeRoot $PSScriptRoot `
+                -OverlayPrefix ".env.bootstrap"
+        }
+
+        # Database engine selection: compose the MSSQL engine overlay (.env.mssql) onto the base
+        # env whenever -DatabaseEngine mssql is requested, so identity resolution, the configure
+        # phase (which always receives -DatabaseEngine), and the start phases all see
+        # DMS_DATASTORE=mssql and the SQL Server connection strings from one canonical path.
+        # Without this, the CMS data store could be provisioned for MSSQL while the DMS container
+        # itself still starts on its postgresql default (local-dms.yml AppSettings__Datastore
+        # comes only from the env file). Applied AFTER the data-standard overlay above so
+        # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
+        # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
+        # env-utility sibling module.
+        $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
+        if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
+            Import-Module $envUtilityPathForEngineOverlay -Force
+            $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -BaseEnvironmentFile $baseEnvFile `
+                -DockerComposeRoot $PSScriptRoot
+        }
+
         # Resolve identity provider once and forward the same value to both phases. This runs before
         # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
         # The start
@@ -448,7 +535,11 @@ function Invoke-BootstrapWrapper {
         # before infrastructure starts.
         if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
             $global:LASTEXITCODE = 0
-            & $prepareSchemaScript
+            # Forward the same effective env file used by the other phases so standard-mode staging
+            # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
+            # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
+            # hash in sync with what the DMS container entrypoint resolves from the same env file.
+            & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                 throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
             }
@@ -474,6 +565,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
+        if ($startScriptSupportsDatabaseEngine) { $startArgs.DatabaseEngine = $DatabaseEngine }
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -516,6 +608,7 @@ function Invoke-BootstrapWrapper {
         if ($NoDataStore) { $configureArgs.NoDataStore = $true }
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
+        $configureArgs.DatabaseEngine = $DatabaseEngine
 
         # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
@@ -590,6 +683,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
+            if ($startScriptSupportsDatabaseEngine) { $healthWaitArgs.DatabaseEngine = $DatabaseEngine }
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -628,6 +722,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
+        if ($startScriptSupportsDatabaseEngine) { $dmsStartArgs.DatabaseEngine = $DatabaseEngine }
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

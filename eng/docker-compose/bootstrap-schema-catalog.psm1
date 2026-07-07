@@ -53,7 +53,7 @@ $script:StandardFeedUrl = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Allia
 $script:StandardCorePackageId = "EdFi.DataStandard52.ApiSchema"
 $script:StandardCoreProjectName = "Ed-Fi"
 $script:StandardCoreEndpointName = "ed-fi"
-$script:StandardPackageVersion = "1.0.329"
+$script:StandardPackageVersion = "1.0.332"
 
 # Known extension claims metadata keyed by Title-cased project name (matching the projectName
 # field in bootstrap-api-schema-manifest.json, which sources its value from ApiSchema.json). The map
@@ -158,9 +158,9 @@ function Get-StandardKnownExtensionInfo {
     VerificationChecks. TPDM stages no FragmentFileName because its claims ship embedded; see the
     KnownExtensionClaimsMetadata TPDM entry for the full rationale.
     Extensions absent from the known map return $null - this is by design and does not indicate an
-    error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. Note that
-    standard mode is package-backed core-only and does not select extensions; this lookup serves the
-    claims phase regardless of how the schema set was staged.
+    error; such an extension simply requires a caller-supplied ClaimsDirectoryPath. This lookup
+    serves the claims phase regardless of how the schema set was staged (expert -ApiSchemaPath or
+    standard-mode SCHEMA_PACKAGES staging).
 
     .PARAMETER ProjectName
     The projectName as recorded in the ApiSchema manifest (e.g. "Sample", "Homograph", "TPDM").

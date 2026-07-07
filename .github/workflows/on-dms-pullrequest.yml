@@ -147,6 +147,8 @@ jobs:
           # silently.
           DMS_BOOTSTRAP_RUN_PACKAGE_TESTS: "true"
         run: |
+          # Every eng/docker-compose/tests spec runs here except BootstrapDockerSmoke.Tests.ps1,
+          # which requires a live Docker stack and is deliberately excluded from this unit lane.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
@@ -154,10 +156,14 @@ jobs:
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
             "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1",
             "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",
             "eng/docker-compose/tests/ResolveIdentityClientSecrets.Tests.ps1",
             "eng/docker-compose/tests/LockFileParity.Tests.ps1",
+            "eng/docker-compose/tests/DatabaseEngineEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
+            "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru

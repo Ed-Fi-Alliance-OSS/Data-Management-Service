@@ -199,7 +199,26 @@ param(
     # IDE workflow: base URL of an IDE-hosted DMS process to health-wait. Valid only with
     # -InfraOnly; rejected without it. Not forwarded to the initial start-local-dms.ps1 infra
     # invocation. When -LoadSeedData is also set, forwarded to load-dms-seed-data.ps1.
-    [string]$DmsBaseUrl
+    [string]$DmsBaseUrl,
+
+    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
+    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores — no
+    # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
+    # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
+    # composed automatically onto -EnvironmentFile, so no -EnvironmentFile is needed for a
+    # turnkey MSSQL deploy.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
+
+    # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
+    # overlay is always composed onto -EnvironmentFile: DS 5.2 (default) stages core + TPDM,
+    # DS 6.1 stages core only (TPDM is folded into core in 6.1). Distinct from
+    # start-local-dms.ps1 -DataStandardVersion, whose shared .env.ds<NN> overlays carry the
+    # E2E/SDK surfaces (Sample/Homograph test extensions).
+    [ValidateSet("5.2", "6.1")]
+    [string]$DataStandardVersion = "5.2"
 )
 
 $ErrorActionPreference = "Stop"
