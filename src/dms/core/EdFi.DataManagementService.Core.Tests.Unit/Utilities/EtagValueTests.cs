@@ -51,4 +51,25 @@ public class Given_EtagValue
         EtagValue.TryParseHeaderValue(null, out _).Should().BeFalse();
         EtagValue.TryParseHeaderValue(string.Empty, out _).Should().BeFalse();
     }
+
+    [Test]
+    public void It_round_trips_compose_and_parse()
+    {
+        var etag = EtagValue.Compose("5", "a1b2c3d4.j._.l");
+        EtagValue.TryParse(etag, out var contentVersion, out var variantKey).Should().BeTrue();
+        contentVersion.Should().Be("5");
+        variantKey.Should().Be("a1b2c3d4.j._.l");
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("-a1b2c3d4.j._.l")] // empty content version
+    [TestCase("5-")] // empty variant key
+    [TestCase("nodash")]
+    public void It_rejects_malformed_values(string? value)
+    {
+        EtagValue.TryParse(value, out var contentVersion, out var variantKey).Should().BeFalse();
+        contentVersion.Should().BeEmpty();
+        variantKey.Should().BeEmpty();
+    }
 }
