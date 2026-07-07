@@ -132,6 +132,24 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     }
 
     [Test]
+    public async Task It_reports_mismatch_when_only_the_schema_epoch_differs()
+    {
+        // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
+        // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
+        // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
+        var differentEpochEtag = new EtagComposer().Compose(
+            LockedContentVersion,
+            new VariantKey($"ffffffff.j._.l")
+        );
+        var request = CreateRequest(SqlDialect.Pgsql, new WritePrecondition.IfMatch(differentEpochEtag));
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_matches_when_the_if_match_value_was_obtained_under_a_profile()
     {
         // Amended 2026-07-04: profileCode is not state-significant for If-Match. An etag captured under
