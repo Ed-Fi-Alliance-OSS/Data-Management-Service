@@ -157,17 +157,23 @@ Order used to stand the environment up (and that a re-deploy should follow):
    and `up.sh` refuse to start the DMS services until it contains staged schema files.
 3. **Provision the relational schema** into each DMS data DB (`edfi_st`, `edfi_mt`,
    `edfi_mt_t2`) with the `dms-schema` tool, against the same staged ApiSchema workspace that
-   is mounted into the DMS containers.
+   is mounted into the DMS containers. **Exception:** a DB you intend to seed via
+   `seed/grandbend.sh` must be left **empty** — the populated template restores its own schema
+   **and** data, and `grandbend.sh` skips any DB that already has a `dms` schema. So for that DB,
+   run `grandbend.sh` here **instead of** `dms-schema` (see step 6).
 4. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
    tenants / data stores, and the review applications. This **must run before the DMS
    services start** (issue 3).
 5. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
-6. **Seed data:**
-   - **single-tenant** (`edfi_st`): API bulk-load (ODS BulkLoadClient), descriptors first
-     then resources; or restore a *relational* populated template via `seed/grandbend.sh`.
-   - **multi-tenant** (`edfi_mt` = tenant1, `edfi_mt_t2` = tenant2): API bulk-load works directly
-     now (`DMS-1230` fixed — issue 1), or clone the seeded `edfi_st` with `seed/clone-data.sh`
-     (faster).
+6. **Seed data** — two mutually exclusive paths per DB:
+   - **Provision-then-load** (step 3 already ran `dms-schema` on the DB): **single-tenant**
+     (`edfi_st`) via API bulk-load (ODS BulkLoadClient, descriptors first then resources);
+     **multi-tenant** (`edfi_mt` = tenant1, `edfi_mt_t2` = tenant2) via API bulk-load
+     (`DMS-1230` fixed — issue 1) or `seed/clone-data.sh` from a seeded `edfi_st` (faster).
+   - **Template restore** (the DB was left empty at step 3): `seed/grandbend.sh` restores a
+     *relational* populated template (schema + data together) into `edfi_st`. Do **not** run
+     `dms-schema` on a DB you restore this way. `setup-env.ps1 -LoadGrandbend` does this before
+     provisioning; the multi-tenant DBs still need their own schema + seed.
 
 > **Verified 2026-06-20:** single-tenant + both tenants carry the full Grand Bend graph
 > (~104,796 documents) in three physically-isolated databases; a write in `tenant2` left

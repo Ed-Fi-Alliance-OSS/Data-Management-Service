@@ -122,6 +122,12 @@ try {
     $freshEnv = -not (Test-Path ".env")
     if ($freshEnv) { Copy-Item ".env.example" ".env" }
 
+    # Lock .env to owner-only (0600): it holds the DB password, client secrets, and encryption
+    # keys. Copy-Item / Set-Content inherit the shell umask (typically 0644 on Linux/WSL), which
+    # would leave secrets world-readable to other local users/processes. Run every invocation
+    # (idempotent); Set-Content below preserves the mode of the existing file.
+    if ($IsLinux -or $IsMacOS) { chmod 600 .env }
+
     # Host / base URL are deterministic from -PublicHost, so they are safe to (re)write every run.
     Write-Output "Writing .env host values..."
     Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"

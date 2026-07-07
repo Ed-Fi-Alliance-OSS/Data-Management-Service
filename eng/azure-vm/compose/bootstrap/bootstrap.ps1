@@ -119,11 +119,13 @@ if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
 }
-elseif ($IdentityProvider -eq "self-contained") {
+elseif ($IdentityProvider -eq "self-contained" -and -not $SkipKeycloak) {
     # Public self-registration (/connect/register) is disabled, so there is no automated path to
     # create the bootstrap admin client in self-contained mode -- it must be provisioned out of band
     # (OpenIddict keys/clients via eng/docker-compose/setup-openiddict.ps1). Fail fast and clearly
-    # rather than erroring later on the first token request.
+    # rather than erroring later on the first token request. Once that is done, re-run with
+    # -SkipKeycloak: this branch is then skipped and execution falls through to the CMS/data-store/
+    # application bootstrap below (which is identity-provider-agnostic).
     throw "bootstrap.ps1 automates the Keycloak identity provider only. For 'self-contained', provision the OpenIddict bootstrap admin client out of band (see eng/docker-compose/setup-openiddict.ps1) and then re-run with -SkipKeycloak."
 }
 

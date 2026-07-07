@@ -112,6 +112,7 @@ cd ~/dms-src/eng/azure-vm/compose
 
 ```bash
 cp .env.example .env
+chmod 600 .env    # lock to owner-only: .env holds the DB password, client secrets, and keys
 FQDN=<paste-the-FQDN-from-step-3>    # e.g. your-label.eastus.cloudapp.azure.com
 
 # Helper recipes (each meets the client-secret complexity rules):
