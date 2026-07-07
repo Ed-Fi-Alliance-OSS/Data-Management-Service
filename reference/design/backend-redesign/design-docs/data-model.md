@@ -479,7 +479,10 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 - it is not purely a “cache-aside” optimization
 - when enabled, DMS should materialize documents into this table via a write-driven/background projector
 
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
+Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously.
+For the normative role, enablement, projector, freshness, backfill, failure, and CDC source guarantees, see
+[document-cache/](document-cache/). For transaction ordering context, see
+[transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
 CDC mode narrows the eventual-consistency contract for deletes: upsert projection may lag,
 but DMS must not delete the corresponding `dms.Document` row unless a `dms.DocumentCache`

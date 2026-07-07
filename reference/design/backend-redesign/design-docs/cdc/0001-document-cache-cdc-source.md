@@ -137,7 +137,8 @@ DMS-1245 should use this source decision to finalize:
 - local Docker Compose/bootstrap connector registration,
 - E2E replacement for the quarantined KafkaMessaging scenarios.
 
-DMS-1246 should finalize the `dms.DocumentCache` implementation design:
+DMS-1246 owns the `dms.DocumentCache` implementation design. The proposed decision
+records are in [../document-cache/](../document-cache/) and cover:
 
 - projector lifecycle and enablement,
 - initial backfill and rebuild,

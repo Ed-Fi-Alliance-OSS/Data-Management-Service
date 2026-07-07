@@ -1,0 +1,124 @@
+---
+status: proposed
+date: 2026-07-07
+jira: DMS-1246
+related:
+  - DMS-1245
+  - DMS-1232
+  - DMS-1240
+---
+
+# Decision Record: `dms.DocumentCache` Role and Enablement
+
+## Decision
+
+`dms.DocumentCache` is an optional materialized document projection for normal DMS
+operation, but it is conditionally required when relational Debezium/Kafka CDC is
+enabled.
+
+The design separates three concerns:
+
+1. API response materialization: the relational reconstitution/materialization pipeline
+   can build the caller-agnostic full resource document without using
+   `dms.DocumentCache`.
+2. Read acceleration and indexing: `dms.DocumentCache` may be enabled as an eventually
+   consistent materialized projection. Reads may use it only when a row is fresh, and
+   downstream indexers may consume it as a projected state table.
+3. Relational Kafka CDC: CDC captures `dms.DocumentCache` as the public document-state
+   source. In this mode, DMS adds stronger readiness, stale-write, and delete guarantees
+   around the projector.
+
+`dms.DocumentCache` is never the canonical persistence model. Write correctness,
+authorization, identity resolution, Change Queries, and normal GET/query correctness must
+continue to depend on the relational source tables and `dms.Document`, not on cache rows.
+
+## Configuration Contract
+
+Use separate settings for projection, read acceleration, and Kafka CDC. A single
+`DocumentCacheEnabled` flag is too ambiguous because ordinary cache-backed reads and CDC
+have different correctness requirements.
+
+Recommended design-level settings:
+
+```text
+DataManagement:DocumentCache:Projector:Mode = Disabled | Async | CdcRequired
+DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
+DataManagement:KafkaCdc:Enabled = false | true
+```
+
+Mode semantics:
+
+| Setting | Meaning |
+| --- | --- |
+| `Projector:Mode = Disabled` | DMS does not write `dms.DocumentCache`. The table may be absent unless provisioned for another purpose. |
+| `Projector:Mode = Async` | DMS maintains `dms.DocumentCache` asynchronously for read acceleration, indexing, or diagnostics. Rows may be missing or stale. |
+| `Projector:Mode = CdcRequired` | DMS maintains `dms.DocumentCache` with CDC readiness, stale-write fencing, initial backfill, visible health, and pre-delete source-row guarantees. |
+| `ReadAcceleration:Enabled = true` | GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. |
+| `KafkaCdc:Enabled = true` | Requires `Projector:Mode = CdcRequired`, a provisioned `dms.DocumentCache`, and successful CDC readiness checks before connector registration is advertised as supported. |
+
+Indexing or external integration use cases that do not need Kafka CDC should use
+`Projector:Mode = Async`. They may leave `ReadAcceleration:Enabled = false` if the API
+should continue to assemble responses directly from relational tables.
+
+Kafka UI, Kafka infrastructure startup, and connector registration are separate concerns.
+Starting Kafka UI must not imply `KafkaCdc:Enabled`.
+
+## Cached Shape
+
+`DocumentJson` contains the caller-agnostic pre-profile full resource document emitted by
+the same reconstitution/materialization path used for GET/query responses. When link
+injection is compiled into the read plan, the cached document includes `link` subtrees.
+
+Readable-profile projection and `DataManagement:ResourceLinks:Enabled` stripping happen
+after cache retrieval. They do not create separate cache rows and do not change the
+cached/full-resource `_etag`.
+
+The cache row stores the metadata needed by reads, diagnostics, indexing, and CDC:
+
+- `DocumentUuid`
+- `ProjectName`
+- `ResourceName`
+- `ResourceVersion`
+- `ContentVersion`
+- `Etag`
+- `LastModifiedAt`
+- `DocumentJson`
+- `ComputedAt`
+
+`DocumentId` remains the internal primary key and foreign key to `dms.Document`; it is not
+part of the public Kafka contract.
+
+## Consequences
+
+- DMS can run without `dms.DocumentCache` when neither cache-backed reads nor Kafka CDC
+  are enabled.
+- Cache-backed reads are opportunistic. A missing, stale, unhealthy, or disabled cache
+  must not break GET/query behavior.
+- CDC enablement is stricter than cache-backed reads. Connector registration and CDC
+  readiness must fail when `dms.DocumentCache` cannot supply the DMS-1245 source
+  contract.
+- Authorization must run against relational authorization sources. Cached JSON must not
+  contain authorization arrays, EdOrg hierarchy JSON, API client identity, or
+  readable-profile-specific projections.
+- There is one cached full-resource projection per document. DMS does not maintain
+  separate link-free, profile-specific, or consumer-specific `DocumentCache` rows.
+
+## Alternatives Considered
+
+### Make `dms.DocumentCache` mandatory for all DMS deployments
+
+Rejected. It would make ordinary API correctness depend on an eventually consistent
+projection and increase operational requirements for deployments that do not use CDC,
+indexing, or cache-backed reads.
+
+### Treat `dms.DocumentCache` as only a read cache
+
+Rejected. Existing backend-redesign documents intentionally use it as a materialized
+projection for downstream indexing and relational CDC. Calling it only a cache obscures
+the CDC source-row and projector-health responsibilities.
+
+### Use a single enablement flag
+
+Rejected. Read acceleration can tolerate misses and stale rows because it falls back to
+relational reconstitution. CDC cannot tolerate a missing delete source row because that
+would silently lose the Kafka tombstone. Separate settings make those guarantees explicit.

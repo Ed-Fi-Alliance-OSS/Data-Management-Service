@@ -37,7 +37,8 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 - `dms.DocumentCache` is provisioned,
 - the `dms.DocumentCache` projector is enabled and has the CDC guarantees from DMS-1246:
   initial backfill, stale-write fencing, synchronous pre-delete materialization, visible
-  health/lag, and retry/dead-letter handling,
+  health/lag, and retry/dead-letter handling (see
+  [../document-cache/](../document-cache/)),
 - Kafka and Kafka Connect are reachable,
 - the connector principal has the least database permissions required for CDC,
 - the target Kafka topic and ACLs are configured or can be created by the deployment.
@@ -195,7 +196,8 @@ Recommended CDC enablement sequence for an existing instance:
 4. Monitor until connector lag, projector lag, and backfill status reach acceptable
    thresholds, and only then advertise CDC as ready.
 
-DMS-1246 owns the projector-side details that make this safe, especially:
+DMS-1246 owns the projector-side details that make this safe (see
+[../document-cache/](../document-cache/)), especially:
 
 - backfill must not write an older `contentVersion` after a newer one for the same
   `documentUuid`,
@@ -308,5 +310,6 @@ DMS-1245 should next define the implementation epic and stories for relational C
 - E2E Kafka scenario replacement,
 - operational documentation.
 
-DMS-1246 should finalize the projector behavior this connector design relies on before
-connector implementation is considered complete.
+The DMS-1246 decision records in [../document-cache/](../document-cache/) define the
+projector behavior this connector design relies on. Connector implementation is not
+complete until those source guarantees are implemented and provider-verified.

@@ -3,7 +3,8 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 125 story files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 19 epic files and
+  195 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -40,6 +41,9 @@ graph TD
   E13["E13 Runtime/E2E test migration"]
   E14["E14 Authorization (deferred)"]
   E15["E15 Runtime plan compilation + caching"]
+  E16["E16 Bootstrap developer environment"]
+  E17["E17 Relational CDC/Kafka streaming"]
+  E18["E18 DocumentCache projector + CDC guarantees"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -70,12 +74,24 @@ graph TD
   E08 --> E13
   E11 --> E13
 
+  E03 --> E16
+
+  E02 --> E18
+  E08 --> E18
+  E10 --> E18
+  E11 --> E18
+
+  E16 --> E17
+  E18 --> E17
+
   E14
 ```
 
 Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
+- `E17` can develop connector templates and fixture tests in parallel, but supported CDC readiness depends on
+  `E18` source guarantees.
 
 ---
 
@@ -99,6 +115,41 @@ Notes:
 | E13 | [Test Strategy & Migration](13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
 | E14 | [Authorization Design Spike (Relational Primary Store)](14-authorization/EPIC.md) | — | Implementation-ready authorization design (implementation deferred); does not block baseline redesign |
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
+| E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
+| E17 | [Relational CDC/Kafka Streaming](17-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
+| E18 | [`dms.DocumentCache` Projector and CDC Source Guarantees](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Optional cache projection, projector/backfill/failure handling, read-cache fallback, and CDC delete source-row guarantees |
+
+---
+
+## Focused E17/E18 Story Dependency Addendum
+
+This section records the story-level dependency between the DMS-1245 CDC/Kafka implementation epic and the
+DMS-1246 DocumentCache implementation epic. It does not regenerate the full dependency matrix below.
+
+| `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
+| --- | --- | --- | --- |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | CDC readiness consumes configuration, projector state, backfill, pre-delete materialization, fencing, failure state, health, and provider verification. |
+| `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC key/replica setup can start independently, but final proof depends on the source table/state DDL and provider delete verification. |
+| `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Fixture-based template work can proceed before the projector is complete. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap registration is gated by DocumentCache CDC readiness. |
+| `17-04-message-contract-tests.md` | 18-02, 18-06, 18-07, 18-10 | Mixed | Fixture-only transform tests can start earlier; source-level delete tests require DocumentCache delete support. |
+| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-06, 18-07, 18-09, 18-10, plus 17-00 through 17-04 | Hard | API-driven Kafka scenarios require the projector, readiness, immediate-delete path, and provider proof. |
+| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks consume DocumentCache retry/dead-letter, health/readiness, recovery, and delete-blocking behavior. |
+
+| `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
+| --- | --- |
+| 18-00 | CDC/read-cache configuration boundaries for 17-00 and 17-03. |
+| 18-01 | Source/state DDL for 17-00 and 17-01. |
+| 18-02 | Materialized `DocumentJson`, `Etag`, and `LastModifiedAt` source data for 17-04 and 17-05. |
+| 18-03 | Ongoing projection and lag semantics for 17-00, 17-05, and 17-06. |
+| 18-04 | Initial backfill completion signal for 17-00 and 17-03. |
+| 18-05 | Optional cache read behavior; no hard CDC dependency. |
+| 18-06 | CDC-mode delete source-row guarantee for 17-00, 17-04, and 17-05. |
+| 18-07 | Stale-write and post-delete fencing for 17-00, 17-04, and 17-05. |
+| 18-08 | Projection failure/dead-letter state for 17-00, 17-03 diagnostics, and 17-06. |
+| 18-09 | Readiness and telemetry surface consumed by 17-00, 17-03, 17-05, and 17-06. |
+| 18-10 | PostgreSQL/SQL Server proof for 17-01, 17-04, and 17-05. |
+| 18-11 | DocumentCache operator guidance consumed by 17-06. |
 
 ---
 

@@ -299,8 +299,8 @@ DMS-1245 should next define the connector deployment model:
 - snapshot mode and backfill behavior,
 - local Docker Compose/bootstrap registration.
 
-DMS-1246 should finalize the implementation details for the projector guarantees this
-contract depends on:
+The DMS-1246 decision records in [../document-cache/](../document-cache/) define the
+projector guarantees this contract depends on:
 
 - cache materialization before delete when CDC is enabled,
 - lag and health signals for projection,

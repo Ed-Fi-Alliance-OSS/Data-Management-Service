@@ -18,6 +18,8 @@ Source documents:
 - Transactions & concurrency: `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, ContentVersion mirror): `reference/design/backend-redesign/design-docs/change-queries.md`
+- DocumentCache role, projector, freshness, backfill, failure, and CDC source guarantees:
+  `reference/design/backend-redesign/design-docs/document-cache/`
 - CDC/Kafka (`dms.DocumentCache` source, topic/message contract, connector deployment): `reference/design/backend-redesign/design-docs/cdc/`
 - DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 - DDL generator verification harness: `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`
@@ -37,7 +39,8 @@ Source documents:
   CDC/Kafka is not enabled.
 - CDC mode narrows `dms.DocumentCache`'s eventual-consistency contract for deletes: upsert projection may lag,
   but DMS must not delete `dms.Document` unless the delete transaction has a cache source row whose cascaded
-  delete Debezium can publish as the Kafka tombstone.
+  delete Debezium can publish as the Kafka tombstone. The detailed `dms.DocumentCache` role, projector,
+  backfill, failure, and delete-source guarantees are defined in `design-docs/document-cache/`.
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and

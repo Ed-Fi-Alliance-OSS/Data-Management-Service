@@ -42,6 +42,10 @@ streaming feature.
 
 ## Cross-Story Dependency Notes
 
+- This epic depends on the `dms.DocumentCache` implementation epic in
+  [`../18-document-cache/EPIC.md`](../18-document-cache/EPIC.md). Connector work can proceed with fixtures, but
+  CDC must not be exposed as supported until the relevant `18-document-cache` source guarantees are implemented
+  and provider-verified.
 - Story 00 consumes DMS-1246 and is the CDC readiness gate. The connector work can be developed with fakes or
   fixtures, but CDC should not be exposed as supported until the projector's CDC guarantees are implemented:
   initial backfill, stale-write fencing, synchronous pre-delete materialization, and visible health/lag.
@@ -55,6 +59,18 @@ streaming feature.
   `deleted=true` / `EdFiDoc` expectations.
 - Story 06 can draft docs in parallel but should not publish production guidance until Stories 00-03 settle the
   actual command and connector surfaces.
+
+## Dependency Matrix with `18-document-cache`
+
+| This story | Depends on `18-document-cache` | Dependency type | Notes |
+| --- | --- | --- | --- |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | Consumes configuration, projector state, backfill status, delete source-row materialization, fencing, failure state, health, and provider verification. |
+| `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC setup can start from the existing cache table shape, but final provider proof depends on projector state DDL and delete-source verification. |
+| `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Templates can be built with fixture records; final delete/tombstone smoke coverage needs provider-verified cache deletes. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap must not register connectors until DocumentCache CDC readiness passes. |
+| `17-04-message-contract-tests.md` | 18-02, 18-06, 18-07, 18-10 | Mixed | Fixture-only tests can start earlier. Source-level delete tests require materialization, fencing, and provider verification. |
+| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-06, 18-07, 18-09, 18-10, plus 17-00 through 17-04 | Hard | API-driven Kafka scenarios need projector, readiness, immediate-delete path, and provider proof. |
+| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks must document DocumentCache failure, readiness, recovery, and delete blocking behavior. |
 
 ## Scope Guardrails
 

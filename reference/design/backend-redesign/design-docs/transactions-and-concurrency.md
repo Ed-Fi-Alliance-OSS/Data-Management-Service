@@ -526,6 +526,9 @@ Invalidation approaches:
 When relational CDC/Kafka is enabled, `dms.DocumentCache` is conditionally required and is the Debezium
 capture source. CDC still observes projection writes rather than original resource-table writes, so
 projector lag and delete materialization are part of the CDC operational contract. See
+[document-cache/0001-role-and-enablement.md](document-cache/0001-role-and-enablement.md),
+[document-cache/0002-projector-freshness-and-backfill.md](document-cache/0002-projector-freshness-and-backfill.md),
+[document-cache/0003-cdc-delete-and-downstream-guarantees.md](document-cache/0003-cdc-delete-and-downstream-guarantees.md),
 [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md) and
 [cdc/0003-debezium-connector-deployment.md](cdc/0003-debezium-connector-deployment.md).
 
@@ -543,7 +546,8 @@ Correctness must not depend on this table:
 ### Freshness contract (recommended)
 
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached `ContentVersion` to the current `dms.Document.ContentVersion`,
+- compare cached `ContentVersion` / `LastModifiedAt` to the current
+  `dms.Document.ContentVersion` / `ContentLastModifiedAt`,
 - if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
 
 ### Rebuild/invalidation triggers (eventual consistency)
@@ -557,9 +561,9 @@ A minimal projector approach:
 
 1. Consume `dms.Document` in `ContentVersion` order.
 2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
-   contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
-   stored in the cache.
+3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` and `LastModifiedAt`
+   to enforce the freshness contract above; `_etag` is composed per request from
+   `ContentVersion` + `variantKey` and is not stored in the cache.
 4. Fence projector/backfill writes so a lower `ContentVersion` cannot overwrite a newer
    cache row, and queued work cannot recreate a cache row after the document has been
    deleted.
