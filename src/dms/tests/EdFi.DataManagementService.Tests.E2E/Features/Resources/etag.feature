@@ -204,8 +204,34 @@ Feature: ETag validations
                   }
                   """
              Then it should respond with 412
+              And the response body is
+                  """
+                  {
+                      "detail": "The If-Match precondition failed because the resource does not exist.",
+                      "type": "urn:ed-fi:api:optimistic-lock-failed",
+                      "title": "Optimistic Lock Failed",
+                      "status": 412,
+                      "validationErrors": {},
+                      "errors": [
+                          "The 'If-Match' request header requires a current representation of the resource, but none exists. Do not retry with If-Match; create the resource first, or omit If-Match."
+                      ]
+                  }
+                  """
         @e2e-ci-shard-1
         Scenario: 11 Ensure that a wildcard If-Match on a DELETE to a non-existent resource returns 412
              # The id value is a non-existing resource
              When a DELETE if-match "*" request is made to "/ed-fi/students/00000000-0000-4000-a000-000000000000"
              Then it should respond with 412
+              And the response body is
+                  """
+                  {
+                      "detail": "The If-Match precondition failed because the resource does not exist.",
+                      "type": "urn:ed-fi:api:optimistic-lock-failed",
+                      "title": "Optimistic Lock Failed",
+                      "status": 412,
+                      "validationErrors": {},
+                      "errors": [
+                          "The 'If-Match' request header requires a current representation of the resource, but none exists. Do not retry with If-Match; create the resource first, or omit If-Match."
+                      ]
+                  }
+                  """
