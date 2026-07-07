@@ -72,7 +72,10 @@ public record UpsertResult
     /// <summary>
     /// A failure because the current ETag does not exactly match the request's If-Match precondition
     /// </summary>
-    public record UpsertFailureETagMisMatch() : UpsertResult();
+    /// <param name="Reason">Machine-readable reason for the precondition failure</param>
+    public record UpsertFailureETagMisMatch(
+        ETagPreconditionFailureReason Reason = ETagPreconditionFailureReason.Concurrency
+    ) : UpsertResult();
 
     /// <summary>
     /// A failure because the client is not authorized to upsert the document
