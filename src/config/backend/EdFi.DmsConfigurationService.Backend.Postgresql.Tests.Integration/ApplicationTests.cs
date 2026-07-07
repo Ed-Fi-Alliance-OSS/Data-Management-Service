@@ -1335,6 +1335,16 @@ public class ApplicationTests : DatabaseTest
         }
 
         [Test]
+        public async Task It_should_get_and_delete_its_own_tenant_application()
+        {
+            var getResult = await _tenantBRepository.GetApplication(_tenantBApplicationId);
+            getResult.Should().BeOfType<ApplicationGetResult.Success>();
+
+            var deleteResult = await _tenantBRepository.DeleteApplication(_tenantBApplicationId);
+            deleteResult.Should().BeOfType<ApplicationDeleteResult.Success>();
+        }
+
+        [Test]
         public async Task It_should_not_list_another_tenants_applications_in_query()
         {
             var result = await _tenantBRepository.QueryApplication(

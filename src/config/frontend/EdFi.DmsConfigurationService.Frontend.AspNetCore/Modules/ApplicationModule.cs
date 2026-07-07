@@ -206,12 +206,32 @@ public class ApplicationModule : IEndpointModule
         ApplicationUpdateCommand command,
         HttpContext httpContext,
         IApplicationRepository repository,
+        IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
     {
         await validator.GuardAsync(command);
+        if (command.DataStoreIds.Length > 0)
+        {
+            var existingIdsResult = await dataStoreRepository.GetExistingDataStoreIds(command.DataStoreIds);
+            switch (existingIdsResult)
+            {
+                case DataStoreIdsExistResult.Success success
+                    when success.ExistingIds.Count != command.DataStoreIds.Distinct().Count():
+                    throw new ValidationException([
+                        new ValidationFailure("DataStoreId", "Data store does not exist."),
+                    ]);
+                case DataStoreIdsExistResult.FailureUnknown failure:
+                    logger.LogError(
+                        "Error validating DataStoreIds: {Message}",
+                        SanitizeForLog(failure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+
         var apiClientsResult = await repository.GetApplicationApiClients(id);
 
         switch (apiClientsResult)

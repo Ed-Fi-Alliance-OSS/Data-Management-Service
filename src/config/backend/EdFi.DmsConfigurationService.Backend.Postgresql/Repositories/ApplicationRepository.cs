@@ -39,7 +39,11 @@ public class ApplicationRepository(
             """;
     }
 
-    private async Task<bool> AllDataStoresInTenant(NpgsqlConnection connection, long[] dataStoreIds)
+    private async Task<bool> AllDataStoresInTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long[] dataStoreIds
+    )
     {
         string sql = $"""
             SELECT COUNT(1) FROM "dmscs"."DataStore"
@@ -47,18 +51,23 @@ public class ApplicationRepository(
             """;
         int count = await connection.ExecuteScalarAsync<int>(
             sql,
-            new { DataStoreIds = dataStoreIds, TenantId }
+            new { DataStoreIds = dataStoreIds, TenantId },
+            transaction
         );
         return count == dataStoreIds.Distinct().Count();
     }
 
-    private async Task<bool> ApplicationExistsForTenant(NpgsqlConnection connection, long id)
+    private async Task<bool> ApplicationExistsForTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long id
+    )
     {
         string sql = $"""
             SELECT COUNT(1) FROM "dmscs"."Application"
             WHERE "Id" = @Id AND {TenantScopedVendorCondition()};
             """;
-        return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }) > 0;
+        return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }, transaction) > 0;
     }
 
     public async Task<ApplicationInsertResult> InsertApplication(
@@ -138,7 +147,7 @@ public class ApplicationRepository(
 
             if (command.DataStoreIds.Length > 0)
             {
-                if (!await AllDataStoresInTenant(connection, command.DataStoreIds))
+                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
                 {
                     logger.LogWarning("Data store not found");
                     await transaction.RollbackAsync();
@@ -469,7 +478,7 @@ public class ApplicationRepository(
 
             if (affectedRows == 0)
             {
-                if (!await ApplicationExistsForTenant(connection, command.Id))
+                if (!await ApplicationExistsForTenant(connection, transaction, command.Id))
                 {
                     return new ApplicationUpdateResult.FailureNotExists();
                 }
@@ -481,7 +490,7 @@ public class ApplicationRepository(
 
             if (
                 command.DataStoreIds.Length > 0
-                && !await AllDataStoresInTenant(connection, command.DataStoreIds)
+                && !await AllDataStoresInTenant(connection, transaction, command.DataStoreIds)
             )
             {
                 logger.LogWarning("Update application failure: Data store not found");

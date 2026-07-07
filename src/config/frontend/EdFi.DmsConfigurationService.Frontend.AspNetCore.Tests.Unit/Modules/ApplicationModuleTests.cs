@@ -30,7 +30,20 @@ public class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
+    private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+
+    public ApplicationModuleTests()
+    {
+        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                long[] ids = call.GetArgument<long[]>(0) ?? [];
+                return Task.FromResult<DataStoreIdsExistResult>(
+                    new DataStoreIdsExistResult.Success([.. ids])
+                );
+            });
+    }
 
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
@@ -66,6 +79,7 @@ public class ApplicationModuleTests
                 collection
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _clientRepository)
+                    .AddTransient((_) => _dataStoreRepository)
                     .AddTransient((_) => _vendorRepository);
             });
         });
@@ -1252,6 +1266,61 @@ public class ApplicationModuleTests
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_data_store_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataStoreRepository.GetExistingDataStoreIds(
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                    )
+                )
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -1658,6 +1727,7 @@ public class ApplicationModuleTests
                     collection
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _clientRepository)
+                        .AddTransient((_) => _dataStoreRepository)
                         .AddTransient((_) => _vendorRepository);
                 });
             });

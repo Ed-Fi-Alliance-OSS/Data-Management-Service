@@ -399,6 +399,16 @@ public class ApiClientTests : DatabaseTest
         }
 
         [Test]
+        public async Task It_should_get_and_delete_its_own_tenant_api_client()
+        {
+            var getResult = await _tenantBApiClientRepository.GetApiClientById(_tenantBApiClientId);
+            getResult.Should().BeOfType<ApiClientGetResult.Success>();
+
+            var deleteResult = await _tenantBApiClientRepository.DeleteApiClient(_tenantBApiClientId);
+            deleteResult.Should().BeOfType<ApiClientDeleteResult.Success>();
+        }
+
+        [Test]
         public async Task It_should_not_get_another_tenants_api_client_by_client_id()
         {
             var result = await _tenantBApiClientRepository.GetApiClientByClientId(_tenantAClientId);
