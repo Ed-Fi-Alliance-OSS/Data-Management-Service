@@ -534,6 +534,40 @@ public class ApplicationModuleTests
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        [Test]
+        public async Task Should_return_not_found_before_validating_references_on_update()
+        {
+            // Arrange - the requested data store ids do not exist for this tenant either
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId": 1,
+                        "educationOrganizationIds": [1],
+                        "dataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert - a missing or foreign-tenant application responds 404, not 400
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().Contain("Application not found");
+        }
     }
 
     [TestFixture]
@@ -909,6 +943,57 @@ public class ApplicationModuleTests
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_vendor_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId": 999,
+                        "educationOrganizationIds": [1],
+                        "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -1265,6 +1350,62 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_not_create_identity_provider_client_when_insert_data_store_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataStoreRepository.GetExistingDataStoreIds(
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                    )
+                )
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
         }
 
         [Test]

@@ -48,6 +48,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         IVendorRepository vendorRepository,
+        IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
@@ -72,6 +73,16 @@ public class ApplicationModule : IEndpointModule
                 throw new ValidationException([
                     new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
                 ]);
+        }
+
+        // Validate references before creating the identity provider client so a failed
+        // repository insert cannot leave an orphaned client behind.
+        if (
+            await ValidateDataStoreIdsExist(command.DataStoreIds, dataStoreRepository, httpContext, logger) is
+            { } dataStoreFailure
+        )
+        {
+            return dataStoreFailure;
         }
 
         var clientCreateResult = await clientRepository.CreateClientAsync(
@@ -200,12 +211,49 @@ public class ApplicationModule : IEndpointModule
         return LoggingUtility.SanitizeForLog(input);
     }
 
+    /// <summary>
+    /// Validates that every requested data store id exists within the current tenant.
+    /// Throws a ValidationException when one is missing, returns a failure result for
+    /// infrastructure errors, and returns null when the request is valid.
+    /// </summary>
+    private static async Task<IResult?> ValidateDataStoreIdsExist(
+        long[] dataStoreIds,
+        IDataStoreRepository dataStoreRepository,
+        HttpContext httpContext,
+        ILogger<ApplicationModule> logger
+    )
+    {
+        if (dataStoreIds.Length == 0)
+        {
+            return null;
+        }
+
+        var existingIdsResult = await dataStoreRepository.GetExistingDataStoreIds(dataStoreIds);
+        switch (existingIdsResult)
+        {
+            case DataStoreIdsExistResult.Success success
+                when success.ExistingIds.Count != dataStoreIds.Distinct().Count():
+                throw new ValidationException([
+                    new ValidationFailure("DataStoreId", "Data store does not exist."),
+                ]);
+            case DataStoreIdsExistResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error validating DataStoreIds: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        return null;
+    }
+
     private static async Task<IResult> Update(
         long id,
         ApplicationUpdateCommand.Validator validator,
         ApplicationUpdateCommand command,
         HttpContext httpContext,
         IApplicationRepository repository,
+        IVendorRepository vendorRepository,
         IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
@@ -213,25 +261,10 @@ public class ApplicationModule : IEndpointModule
     )
     {
         await validator.GuardAsync(command);
-        if (command.DataStoreIds.Length > 0)
-        {
-            var existingIdsResult = await dataStoreRepository.GetExistingDataStoreIds(command.DataStoreIds);
-            switch (existingIdsResult)
-            {
-                case DataStoreIdsExistResult.Success success
-                    when success.ExistingIds.Count != command.DataStoreIds.Distinct().Count():
-                    throw new ValidationException([
-                        new ValidationFailure("DataStoreId", "Data store does not exist."),
-                    ]);
-                case DataStoreIdsExistResult.FailureUnknown failure:
-                    logger.LogError(
-                        "Error validating DataStoreIds: {Message}",
-                        SanitizeForLog(failure.FailureMessage)
-                    );
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-            }
-        }
 
+        // Resolve the application before validating references so a request for a
+        // missing or foreign-tenant application is answered with 404 regardless of
+        // what references the request body carries.
         var apiClientsResult = await repository.GetApplicationApiClients(id);
 
         switch (apiClientsResult)
@@ -240,6 +273,37 @@ public class ApplicationModule : IEndpointModule
                 var client = success.Clients.FirstOrDefault();
                 if (client != null)
                 {
+                    // Validate references before mutating the identity provider so a
+                    // failed repository update cannot leave an orphaned client change.
+                    switch (await vendorRepository.GetVendor(command.VendorId))
+                    {
+                        case VendorGetResult.Success:
+                            break;
+                        case VendorGetResult.FailureUnknown vendorFailure:
+                            logger.LogError(
+                                "Error validating VendorId: {Message}",
+                                SanitizeForLog(vendorFailure.FailureMessage)
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        default:
+                            throw new ValidationException([
+                                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+                            ]);
+                    }
+
+                    if (
+                        await ValidateDataStoreIdsExist(
+                            command.DataStoreIds,
+                            dataStoreRepository,
+                            httpContext,
+                            logger
+                        ) is
+                        { } dataStoreFailure
+                    )
+                    {
+                        return dataStoreFailure;
+                    }
+
                     logger.LogInformation("Updating client {ClientId}", client.ClientId);
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
                         client.ClientUuid.ToString(),
@@ -334,7 +398,7 @@ public class ApplicationModule : IEndpointModule
                 }
                 else
                 {
-                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                    return FailureResults.NotFound("Application not found", httpContext.TraceIdentifier);
                 }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:

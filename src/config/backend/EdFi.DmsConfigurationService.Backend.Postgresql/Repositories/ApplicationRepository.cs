@@ -99,7 +99,8 @@ public class ApplicationRepository(
                     command.ClaimSetName,
                     CreatedBy = auditContext.GetCurrentUser(),
                     TenantId,
-                }
+                },
+                transaction
             );
 
             if (insertedId is null)
@@ -124,7 +125,7 @@ public class ApplicationRepository(
                 CreatedBy = currentUser,
             });
 
-            await connection.ExecuteAsync(sql, educationOrganizations);
+            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
             sql = """
                 INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
@@ -142,7 +143,8 @@ public class ApplicationRepository(
                     Name = command.ApplicationName,
                     IsApproved = true,
                     CreatedBy = currentUser,
-                }
+                },
+                transaction
             );
 
             if (command.DataStoreIds.Length > 0)
@@ -166,7 +168,7 @@ public class ApplicationRepository(
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dataStoreMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
             }
 
             if (command.ProfileIds.Length > 0)
@@ -185,7 +187,7 @@ public class ApplicationRepository(
                         CreatedBy = currentUser,
                     });
 
-                await connection.ExecuteAsync(sql, profileMappings);
+                await connection.ExecuteAsync(sql, profileMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -473,7 +475,8 @@ public class ApplicationRepository(
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
-                }
+                },
+                transaction
             );
 
             if (affectedRows == 0)
@@ -500,7 +503,7 @@ public class ApplicationRepository(
 
             sql =
                 "DELETE FROM \"dmscs\".\"ApplicationEducationOrganization\" WHERE \"ApplicationId\" = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
+            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
 
             sql = """
                 INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
@@ -515,7 +518,7 @@ public class ApplicationRepository(
                 CreatedBy = currentUser,
             });
 
-            await connection.ExecuteAsync(sql, educationOrganizations);
+            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
             string updateApiClientsql = """
                 UPDATE "dmscs"."ApiClient"
@@ -532,7 +535,8 @@ public class ApplicationRepository(
                     ApplicationId = command.Id,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = currentUser,
-                }
+                },
+                transaction
             );
 
             // Get ApiClient Id for DataStore relationship update
@@ -540,12 +544,13 @@ public class ApplicationRepository(
                 "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ClientId\" = @ClientId AND \"ApplicationId\" = @ApplicationId;";
             long apiClientId = await connection.ExecuteScalarAsync<long>(
                 sql,
-                new { clientCommand.ClientId, ApplicationId = command.Id }
+                new { clientCommand.ClientId, ApplicationId = command.Id },
+                transaction
             );
 
             // Delete existing DataStore relationship
             sql = "DELETE FROM \"dmscs\".\"ApiClientDataStore\" WHERE \"ApiClientId\" = @ApiClientId";
-            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId });
+            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId }, transaction);
 
             // Insert new DataStore relationships if provided
             if (command.DataStoreIds.Length > 0)
@@ -562,12 +567,12 @@ public class ApplicationRepository(
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dataStoreMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
             }
 
             // Delete existing Profile relationships
             sql = "DELETE FROM \"dmscs\".\"ApplicationProfile\" WHERE \"ApplicationId\" = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
+            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
 
             // Insert new Profile relationships if provided
             if (command.ProfileIds.Length > 0)
@@ -586,7 +591,7 @@ public class ApplicationRepository(
                         CreatedBy = currentUser,
                     });
 
-                await connection.ExecuteAsync(sql, profileMappings);
+                await connection.ExecuteAsync(sql, profileMappings, transaction);
             }
 
             await transaction.CommitAsync();

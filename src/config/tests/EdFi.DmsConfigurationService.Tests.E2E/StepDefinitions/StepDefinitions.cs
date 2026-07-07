@@ -168,7 +168,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
         var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase)
         {
-            [header] = value,
+            [header] = await ReplaceIdsAsync(value),
         };
 
         _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!;
@@ -188,13 +188,59 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase);
         foreach (var row in headersTable.Rows)
         {
-            headers[row["Key"]] = row["Value"];
+            headers[row["Key"]] = await ReplaceIdsAsync(row["Value"]);
         }
 
         _apiResponse = await playwrightContext.ApiRequestContext!.FetchAsync(
             url,
             new() { Method = method, Headers = headers }
         );
+    }
+
+    [When("a POST request is made to {string} with header {string} value {string} and")]
+    public async Task WhenAPostRequestIsMadeToWithHeaderAnd(
+        string url,
+        string header,
+        string value,
+        string body
+    )
+    {
+        url = await ReplaceIdsAsync(url);
+        body = await ReplaceIdsAsync(body);
+
+        var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase)
+        {
+            [header] = await ReplaceIdsAsync(value),
+        };
+
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = headers, Data = body }
+        )!;
+        await ExtractIdFromHeader(_apiResponse);
+    }
+
+    [When("a PUT request is made to {string} with header {string} value {string} and")]
+    public async Task WhenAPutRequestIsMadeToWithHeaderAnd(
+        string url,
+        string header,
+        string value,
+        string body
+    )
+    {
+        url = await ReplaceIdsAsync(url);
+        body = await ReplaceIdsAsync(body);
+
+        var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase)
+        {
+            [header] = await ReplaceIdsAsync(value),
+        };
+
+        _apiResponse = await playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Headers = headers, Data = body }
+        )!;
+        await ExtractIdFromHeader(_apiResponse);
     }
 
     [When("a GET request is made to {string} for first {int} items")]
