@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -17,9 +18,58 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class ApplicationRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ApplicationRepository> logger,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IApplicationRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
+    /// <summary>
+    /// SQL condition constraining an Application row to the current tenant through its owning Vendor.
+    /// </summary>
+    private string TenantScopedVendorCondition(string? tableAlias = null)
+    {
+        var column = string.IsNullOrEmpty(tableAlias) ? "\"VendorId\"" : $"{tableAlias}.\"VendorId\"";
+        return $"""
+            {column} IN (
+                SELECT "Id" FROM "dmscs"."Vendor" WHERE {TenantContext.TenantWhereClause()}
+            )
+            """;
+    }
+
+    private async Task<bool> AllDataStoresInTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long[] dataStoreIds
+    )
+    {
+        string sql = $"""
+            SELECT COUNT(1) FROM "dmscs"."DataStore"
+            WHERE "Id" = ANY(@DataStoreIds) AND {TenantContext.TenantWhereClause()};
+            """;
+        int count = await connection.ExecuteScalarAsync<int>(
+            sql,
+            new { DataStoreIds = dataStoreIds, TenantId },
+            transaction
+        );
+        return count == dataStoreIds.Distinct().Count();
+    }
+
+    private async Task<bool> ApplicationExistsForTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long id
+    )
+    {
+        string sql = $"""
+            SELECT COUNT(1) FROM "dmscs"."Application"
+            WHERE "Id" = @Id AND {TenantScopedVendorCondition()};
+            """;
+        return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }, transaction) > 0;
+    }
+
     public async Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
         ApiClientCommand clientCommand
@@ -30,13 +80,17 @@ public class ApplicationRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 INSERT INTO "dmscs"."Application" ("ApplicationName", "VendorId", "ClaimSetName", "CreatedBy")
-                VALUES (@ApplicationName, @VendorId, @ClaimSetName, @CreatedBy)
+                SELECT @ApplicationName, @VendorId, @ClaimSetName, @CreatedBy
+                WHERE EXISTS (
+                    SELECT 1 FROM "dmscs"."Vendor"
+                    WHERE "Id" = @VendorId AND {TenantContext.TenantWhereClause()}
+                )
                 RETURNING "Id";
                 """;
 
-            long id = await connection.ExecuteScalarAsync<long>(
+            long? insertedId = await connection.ExecuteScalarAsync<long?>(
                 sql,
                 new
                 {
@@ -44,8 +98,19 @@ public class ApplicationRepository(
                     command.VendorId,
                     command.ClaimSetName,
                     CreatedBy = auditContext.GetCurrentUser(),
-                }
+                    TenantId,
+                },
+                transaction
             );
+
+            if (insertedId is null)
+            {
+                logger.LogWarning("Vendor not found");
+                await transaction.RollbackAsync();
+                return new ApplicationInsertResult.FailureVendorNotFound();
+            }
+
+            long id = insertedId.Value;
 
             sql = """
                 INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
@@ -60,7 +125,7 @@ public class ApplicationRepository(
                 CreatedBy = currentUser,
             });
 
-            await connection.ExecuteAsync(sql, educationOrganizations);
+            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
             sql = """
                 INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
@@ -78,11 +143,19 @@ public class ApplicationRepository(
                     Name = command.ApplicationName,
                     IsApproved = true,
                     CreatedBy = currentUser,
-                }
+                },
+                transaction
             );
 
             if (command.DataStoreIds.Length > 0)
             {
+                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
+                {
+                    logger.LogWarning("Data store not found");
+                    await transaction.RollbackAsync();
+                    return new ApplicationInsertResult.FailureDataStoreNotFound();
+                }
+
                 sql = """
                     INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
@@ -95,7 +168,7 @@ public class ApplicationRepository(
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dataStoreMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
             }
 
             if (command.ProfileIds.Length > 0)
@@ -114,7 +187,7 @@ public class ApplicationRepository(
                         CreatedBy = currentUser,
                     });
 
-                await connection.ExecuteAsync(sql, profileMappings);
+                await connection.ExecuteAsync(sql, profileMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -187,9 +260,9 @@ public class ApplicationRepository(
     private static string BuildOrderByClause(ApplicationQuery query, string? tableAlias = null) =>
         PostgresqlIdentifier.OrderBy(ResolveOrderByColumnName(query), query.IsDescending, tableAlias);
 
-    private static string BuildFilterClause(ApplicationQuery query, int[] parsedIds)
+    private string BuildFilterClause(ApplicationQuery query, int[] parsedIds)
     {
-        var conditions = new List<string>();
+        var conditions = new List<string> { TenantScopedVendorCondition() };
         if (query.Id.HasValue)
         {
             conditions.Add("\"Id\" = @Id");
@@ -206,7 +279,7 @@ public class ApplicationRepository(
         {
             conditions.Add("\"Id\" = ANY(@ParsedIds)");
         }
-        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+        return "WHERE " + string.Join(" AND ", conditions);
     }
 
     public async Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query)
@@ -270,6 +343,7 @@ public class ApplicationRepository(
                     query.ApplicationName,
                     query.ClaimSetName,
                     ParsedIds = parsedIds,
+                    TenantId,
                 },
                 splitOn: "EducationOrganizationId,DataStoreId,ProfileId"
             );
@@ -303,7 +377,7 @@ public class ApplicationRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
                        (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
                         FROM "dmscs"."ApiClient" ac2
@@ -314,7 +388,7 @@ public class ApplicationRepository(
                 LEFT OUTER JOIN "dmscs"."ApiClient" ac ON a."Id" = ac."ApplicationId"
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 LEFT OUTER JOIN "dmscs"."ApplicationProfile" ap ON a."Id" = ap."ApplicationId"
-                WHERE a."Id" = @Id;
+                WHERE a."Id" = @Id AND {TenantScopedVendorCondition("a")};
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
@@ -340,7 +414,7 @@ public class ApplicationRepository(
                     }
                     return application;
                 },
-                param: new { Id = id },
+                param: new { Id = id, TenantId },
                 splitOn: "EducationOrganizationId,DataStoreId,ProfileId"
             );
 
@@ -379,11 +453,16 @@ public class ApplicationRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 UPDATE "dmscs"."Application"
                 SET "ApplicationName"=@ApplicationName, "VendorId"=@VendorId, "ClaimSetName"=@ClaimSetName,
                     "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
-                WHERE "Id" = @Id;
+                WHERE "Id" = @Id
+                  AND {TenantScopedVendorCondition()}
+                  AND EXISTS (
+                      SELECT 1 FROM "dmscs"."Vendor"
+                      WHERE "Id" = @VendorId AND {TenantContext.TenantWhereClause()}
+                  );
                 """;
             int affectedRows = await connection.ExecuteAsync(
                 sql,
@@ -395,17 +474,36 @@ public class ApplicationRepository(
                     command.Id,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
-                }
+                    TenantId,
+                },
+                transaction
             );
 
             if (affectedRows == 0)
             {
-                return new ApplicationUpdateResult.FailureNotExists();
+                if (!await ApplicationExistsForTenant(connection, transaction, command.Id))
+                {
+                    return new ApplicationUpdateResult.FailureNotExists();
+                }
+
+                logger.LogWarning("Update application failure: Vendor not found");
+                await transaction.RollbackAsync();
+                return new ApplicationUpdateResult.FailureVendorNotFound();
+            }
+
+            if (
+                command.DataStoreIds.Length > 0
+                && !await AllDataStoresInTenant(connection, transaction, command.DataStoreIds)
+            )
+            {
+                logger.LogWarning("Update application failure: Data store not found");
+                await transaction.RollbackAsync();
+                return new ApplicationUpdateResult.FailureDataStoreNotFound();
             }
 
             sql =
                 "DELETE FROM \"dmscs\".\"ApplicationEducationOrganization\" WHERE \"ApplicationId\" = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
+            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
 
             sql = """
                 INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
@@ -420,12 +518,12 @@ public class ApplicationRepository(
                 CreatedBy = currentUser,
             });
 
-            await connection.ExecuteAsync(sql, educationOrganizations);
+            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
             string updateApiClientsql = """
                 UPDATE "dmscs"."ApiClient"
                 SET "ClientUuid"=@ClientUuid, "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
-                WHERE "ClientId" = @ClientId;
+                WHERE "ClientId" = @ClientId AND "ApplicationId" = @ApplicationId;
                 """;
 
             await connection.ExecuteAsync(
@@ -434,18 +532,25 @@ public class ApplicationRepository(
                 {
                     clientCommand.ClientUuid,
                     clientCommand.ClientId,
+                    ApplicationId = command.Id,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = currentUser,
-                }
+                },
+                transaction
             );
 
             // Get ApiClient Id for DataStore relationship update
-            sql = "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ClientId\" = @ClientId;";
-            long apiClientId = await connection.ExecuteScalarAsync<long>(sql, new { clientCommand.ClientId });
+            sql =
+                "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ClientId\" = @ClientId AND \"ApplicationId\" = @ApplicationId;";
+            long apiClientId = await connection.ExecuteScalarAsync<long>(
+                sql,
+                new { clientCommand.ClientId, ApplicationId = command.Id },
+                transaction
+            );
 
             // Delete existing DataStore relationship
             sql = "DELETE FROM \"dmscs\".\"ApiClientDataStore\" WHERE \"ApiClientId\" = @ApiClientId";
-            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId });
+            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId }, transaction);
 
             // Insert new DataStore relationships if provided
             if (command.DataStoreIds.Length > 0)
@@ -462,12 +567,12 @@ public class ApplicationRepository(
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dataStoreMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
             }
 
             // Delete existing Profile relationships
             sql = "DELETE FROM \"dmscs\".\"ApplicationProfile\" WHERE \"ApplicationId\" = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
+            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
 
             // Insert new Profile relationships if provided
             if (command.ProfileIds.Length > 0)
@@ -486,7 +591,7 @@ public class ApplicationRepository(
                         CreatedBy = currentUser,
                     });
 
-                await connection.ExecuteAsync(sql, profileMappings);
+                await connection.ExecuteAsync(sql, profileMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -546,11 +651,11 @@ public class ApplicationRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
-                DELETE FROM "dmscs"."Application" where "Id" = @Id;
+            string sql = $"""
+                DELETE FROM "dmscs"."Application" where "Id" = @Id AND {TenantScopedVendorCondition()};
                 """;
 
-            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             return affectedRows > 0
                 ? new ApplicationDeleteResult.Success()
                 : new ApplicationDeleteResult.FailureNotExists();
@@ -567,14 +672,15 @@ public class ApplicationRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
-                SELECT "ClientId", "ClientUuid", "IsApproved"
-                FROM "dmscs"."ApiClient"
-                WHERE "ApplicationId" = @Id
-                ORDER BY "Id"
+            string sql = $"""
+                SELECT ac."ClientId", ac."ClientUuid", ac."IsApproved"
+                FROM "dmscs"."ApiClient" ac
+                JOIN "dmscs"."Application" a ON ac."ApplicationId" = a."Id"
+                WHERE ac."ApplicationId" = @Id AND {TenantScopedVendorCondition("a")}
+                ORDER BY ac."Id"
                 """;
 
-            var clients = await connection.QueryAsync<ApiClient>(sql, new { Id = @id });
+            var clients = await connection.QueryAsync<ApiClient>(sql, new { Id = @id, TenantId });
 
             return new ApplicationApiClientsResult.Success(clients.ToArray());
         }

@@ -30,7 +30,33 @@ public class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
+    private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+    private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
+
+    public ApplicationModuleTests()
+    {
+        A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                long[] ids = call.GetArgument<long[]>(0) ?? [];
+                return Task.FromResult<DataStoreIdsExistResult>(
+                    new DataStoreIdsExistResult.Success([.. ids])
+                );
+            });
+
+        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new EdFi.DmsConfigurationService.DataModel.Model.Profile.ProfileResponse
+                    {
+                        Id = 1,
+                        Name = "Test Profile",
+                        Definition = "<Profile/>",
+                    }
+                )
+            );
+    }
 
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
@@ -66,7 +92,9 @@ public class ApplicationModuleTests
                 collection
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _clientRepository)
-                    .AddTransient((_) => _vendorRepository);
+                    .AddTransient((_) => _dataStoreRepository)
+                    .AddTransient((_) => _vendorRepository)
+                    .AddTransient((_) => _profileRepository);
             });
         });
         var client = factory.CreateClient();
@@ -520,6 +548,72 @@ public class ApplicationModuleTests
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        [Test]
+        public async Task Should_return_not_found_before_validating_references_on_update()
+        {
+            // Arrange - the requested data store ids do not exist for this tenant either
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId": 1,
+                        "educationOrganizationIds": [1],
+                        "dataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert - a missing or foreign-tenant application responds 404, not 400
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().Contain("Application not found");
+
+            // Assert - the identity provider client was never touched for an application
+            // that does not resolve for this tenant
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task Should_not_delete_identity_provider_client_when_application_does_not_resolve()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
+
+            // Assert - a missing or foreign-tenant application responds 404
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            // Assert - the identity provider client was never deleted for an application
+            // that does not resolve for this tenant
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -895,6 +989,57 @@ public class ApplicationModuleTests
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_vendor_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId": 999,
+                        "educationOrganizationIds": [1],
+                        "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -1252,6 +1397,117 @@ public class ApplicationModuleTests
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+
+        [Test]
+        public async Task Should_not_create_identity_provider_client_when_insert_data_store_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataStoreRepository.GetExistingDataStoreIds(
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                    )
+                )
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_data_store_id_is_invalid()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataStoreRepository.GetExistingDataStoreIds(
+                        A<long[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999L)
+                    )
+                )
+                .Returns(new DataStoreIdsExistResult.Success([]));
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -1308,6 +1564,11 @@ public class ApplicationModuleTests
                 .Returns(
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
+
+            // The update path pre-validates profile references at the module layer, so a
+            // missing profile is reported before the identity provider client is touched.
+            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+                .Returns(new ProfileGetResult.FailureNotFound());
 
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
@@ -1420,6 +1681,58 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_profile_id_is_invalid()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1],
+                        "ProfileIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            // Assert - the identity provider client was never mutated for an invalid
+            // profile reference, so a rejected update cannot leave the client out of sync
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
         }
     }
 
@@ -1658,7 +1971,9 @@ public class ApplicationModuleTests
                     collection
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _clientRepository)
-                        .AddTransient((_) => _vendorRepository);
+                        .AddTransient((_) => _dataStoreRepository)
+                        .AddTransient((_) => _vendorRepository)
+                        .AddTransient((_) => _profileRepository);
                 });
             });
             var client = factory.CreateClient();

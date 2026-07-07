@@ -217,7 +217,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             [SetUp]
@@ -427,13 +428,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             [SetUp]

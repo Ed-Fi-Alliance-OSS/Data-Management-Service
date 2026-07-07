@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,7 +23,8 @@ public class ApplicationTests : DatabaseTest
     private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
         Configuration.DatabaseOptions,
         NullLogger<ApplicationRepository>.Instance,
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     private long _vendorId;
@@ -690,7 +692,8 @@ public class ApplicationTests : DatabaseTest
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         [SetUp]
@@ -773,7 +776,8 @@ public class ApplicationTests : DatabaseTest
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -929,7 +933,8 @@ public class ApplicationTests : DatabaseTest
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -1080,7 +1085,8 @@ public class ApplicationTests : DatabaseTest
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         private readonly OpenIddictDataRepository _openIddictDataRepository = new(
@@ -1163,6 +1169,308 @@ public class ApplicationTests : DatabaseTest
             var result = await _openIddictDataRepository.GetApplicationByClientIdAsync(_clientId);
             result.Should().NotBeNull();
             result!.IsApproved.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_application_operations_from_another_tenant : ApplicationTests
+    {
+        private IApplicationRepository _tenantARepository = null!;
+        private IApplicationRepository _tenantBRepository = null!;
+        private long _tenantAVendorId;
+        private long _tenantBVendorId;
+        private long _tenantAApplicationId;
+        private long _tenantBApplicationId;
+        private string _tenantBClientId = string.Empty;
+        private long _tenantADataStoreId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tenantRepository = new TenantRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            var tenantAProvider = await CreateTenantProvider(tenantRepository, "A");
+            var tenantBProvider = await CreateTenantProvider(tenantRepository, "B");
+
+            _tenantARepository = CreateApplicationRepository(tenantAProvider);
+            _tenantBRepository = CreateApplicationRepository(tenantBProvider);
+
+            _tenantAVendorId = await InsertVendor(tenantAProvider, "Tenant A Company");
+            _tenantBVendorId = await InsertVendor(tenantBProvider, "Tenant B Company");
+
+            (_tenantAApplicationId, _) = await InsertApplication(
+                _tenantARepository,
+                _tenantAVendorId,
+                "Tenant A Application"
+            );
+            (_tenantBApplicationId, _tenantBClientId) = await InsertApplication(
+                _tenantBRepository,
+                _tenantBVendorId,
+                "Tenant B Application"
+            );
+
+            _tenantADataStoreId = await InsertDataStore(tenantAProvider, "Tenant A Data Store");
+        }
+
+        private static async Task<TenantContextProvider> CreateTenantProvider(
+            TenantRepository tenantRepository,
+            string suffix
+        )
+        {
+            var tenantName = $"ApplicationTenant{suffix}-{Guid.NewGuid()}";
+            var tenantResult = await tenantRepository.InsertTenant(
+                new TenantInsertCommand { Name = tenantName }
+            );
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+            return new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(
+                    ((TenantInsertResult.Success)tenantResult).Id,
+                    tenantName
+                ),
+            };
+        }
+
+        private static ApplicationRepository CreateApplicationRepository(
+            TenantContextProvider tenantContextProvider
+        ) =>
+            new(
+                Configuration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+        private static async Task<long> InsertVendor(
+            TenantContextProvider tenantContextProvider,
+            string company
+        )
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = company,
+                    ContactEmailAddress = "tenant@test.com",
+                    ContactName = "Tenant Tester",
+                    NamespacePrefixes = "uri://tenant-test.example",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            return ((VendorInsertResult.Success)vendorResult).Id;
+        }
+
+        private static async Task<(long Id, string ClientId)> InsertApplication(
+            IApplicationRepository applicationRepository,
+            long vendorId,
+            string applicationName
+        )
+        {
+            string clientId = Guid.NewGuid().ToString();
+            var result = await applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = applicationName,
+                    VendorId = vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+            return (((ApplicationInsertResult.Success)result).Id, clientId);
+        }
+
+        private static async Task<long> InsertDataStore(
+            TenantContextProvider tenantContextProvider,
+            string name
+        )
+        {
+            var dataStoreRepository = new DataStoreRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new DataStoreContextRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreContextRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new DataStoreDerivativeRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreDerivativeRepository>.Instance,
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+            var result = await dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = name,
+                    ConnectionString = "Server=tenant;Database=TenantDb;",
+                }
+            );
+            result.Should().BeOfType<DataStoreInsertResult.Success>();
+            return ((DataStoreInsertResult.Success)result).Id;
+        }
+
+        [Test]
+        public async Task It_should_not_get_another_tenants_application()
+        {
+            var result = await _tenantBRepository.GetApplication(_tenantAApplicationId);
+            result.Should().BeOfType<ApplicationGetResult.FailureNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_get_and_delete_its_own_tenant_application()
+        {
+            var getResult = await _tenantBRepository.GetApplication(_tenantBApplicationId);
+            getResult.Should().BeOfType<ApplicationGetResult.Success>();
+
+            var deleteResult = await _tenantBRepository.DeleteApplication(_tenantBApplicationId);
+            deleteResult.Should().BeOfType<ApplicationDeleteResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_not_list_another_tenants_applications_in_query()
+        {
+            var result = await _tenantBRepository.QueryApplication(
+                new ApplicationQuery { Limit = 25, Offset = 0 }
+            );
+            result.Should().BeOfType<ApplicationQueryResult.Success>();
+            var responses = ((ApplicationQueryResult.Success)result).ApplicationResponses;
+            responses.Should().Contain(a => a.Id == _tenantBApplicationId);
+            responses.Should().NotContain(a => a.Id == _tenantAApplicationId);
+        }
+
+        [Test]
+        public async Task It_should_not_update_another_tenants_application()
+        {
+            var result = await _tenantBRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _tenantAApplicationId,
+                    ApplicationName = "Hijacked Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationUpdateResult.FailureNotExists>();
+
+            var unchanged = await _tenantARepository.GetApplication(_tenantAApplicationId);
+            unchanged.Should().BeOfType<ApplicationGetResult.Success>();
+            ((ApplicationGetResult.Success)unchanged)
+                .ApplicationResponse.ApplicationName.Should()
+                .Be("Tenant A Application");
+        }
+
+        [Test]
+        public async Task It_should_not_move_an_application_to_another_tenants_vendor()
+        {
+            var result = await _tenantBRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _tenantBApplicationId,
+                    ApplicationName = "Tenant B Application",
+                    VendorId = _tenantAVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_delete_another_tenants_application()
+        {
+            var result = await _tenantBRepository.DeleteApplication(_tenantAApplicationId);
+            result.Should().BeOfType<ApplicationDeleteResult.FailureNotExists>();
+
+            var stillThere = await _tenantARepository.GetApplication(_tenantAApplicationId);
+            stillThere.Should().BeOfType<ApplicationGetResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_not_list_another_tenants_application_api_clients()
+        {
+            var result = await _tenantBRepository.GetApplicationApiClients(_tenantAApplicationId);
+            result.Should().BeOfType<ApplicationApiClientsResult.Success>();
+            ((ApplicationApiClientsResult.Success)result).Clients.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_not_insert_an_application_under_another_tenants_vendor()
+        {
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Cross Tenant Application",
+                    VendorId = _tenantAVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.FailureVendorNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_insert_an_application_with_another_tenants_data_store()
+        {
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Cross Tenant Data Store Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    DataStoreIds = [_tenantADataStoreId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.FailureDataStoreNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_update_an_application_with_another_tenants_data_store()
+        {
+            var result = await _tenantBRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _tenantBApplicationId,
+                    ApplicationName = "Tenant B Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    DataStoreIds = [_tenantADataStoreId],
+                },
+                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationUpdateResult.FailureDataStoreNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_expose_tenant_scoped_applications_in_single_tenant_context()
+        {
+            var singleTenantRepository = CreateApplicationRepository(new TenantContextProvider());
+            var result = await singleTenantRepository.GetApplication(_tenantAApplicationId);
+            result.Should().BeOfType<ApplicationGetResult.FailureNotFound>();
         }
     }
 }
