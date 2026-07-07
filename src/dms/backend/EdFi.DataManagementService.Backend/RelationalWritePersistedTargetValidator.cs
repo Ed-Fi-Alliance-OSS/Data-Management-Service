@@ -38,5 +38,12 @@ internal static class RelationalWritePersistedTargetValidator
                         + "but persistence returned a different committed target identity."
                 );
         }
+
+        if (persistedTarget.ContentVersion <= 0)
+        {
+            throw new InvalidOperationException(
+                "Relational write persistence completed without returning a positive committed ContentVersion."
+            );
+        }
     }
 }
