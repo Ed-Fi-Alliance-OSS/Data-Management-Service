@@ -113,6 +113,18 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
     }
 
     [Test]
+    public void It_delivers_a_repeated_authorization_header_with_a_leading_blank_value_unreduced()
+    {
+        // Ordering matters: a blank first value must survive the join in position, so core sees
+        // ",Bearer valid" (a fold artifact, rejected as malformed) rather than a lone valid token.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["", "Bearer valid"])
+        );
+
+        headers["Authorization"].Should().Be(",Bearer valid");
+    }
+
+    [Test]
     public void It_delivers_a_repeated_content_type_unreduced()
     {
         var headers = ExtractHeaders(request =>

@@ -40,6 +40,18 @@ internal static class AuthorizationHeaderParser
         }
 
         string scheme = trimmed[..schemeEnd];
+
+        // A comma in the scheme marks a repeated Authorization header folded into a single value
+        // (e.g. ",Bearer <token>" from a blank first value, or "Bearer,junk" with no separating
+        // space) — unparseable per RFC 7235 and malformed rather than an unknown scheme. The
+        // check is scoped to the scheme (and to the parameter below), NOT the whole value, so a
+        // single well-formed non-Bearer credential whose grammar legitimately carries commas in
+        // its auth-params (e.g. Digest, AWS SigV4) still classifies as an unknown scheme.
+        if (scheme.Contains(','))
+        {
+            return AuthorizationHeaderResult.Error("Invalid Authorization header.");
+        }
+
         if (!string.Equals(scheme, BearerScheme, StringComparison.OrdinalIgnoreCase))
         {
             return AuthorizationHeaderResult.Error("Unknown Authorization header scheme.");
