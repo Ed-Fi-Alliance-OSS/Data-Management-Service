@@ -227,18 +227,18 @@ Standard mode resolves the DS-qualified asset-only core ApiSchema NuGet package 
 package feed and stages it into the bootstrap workspace. This is the recommended path for most
 developers. It is package-backed core-only; extension or custom schema sets use Expert mode below.
 
-> **Requirement — `dms-schema` tool:** `prepare-dms-schema.ps1` needs the in-repo `dms-schema`
+> **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
 > CLI published as a native executable. Build it once before running the prepare command (the
 > publish step is safe to re-run after branch switches).
 
 ```pwsh
-# 1. Publish the dms-schema tool (required on a clean checkout)
+# 1. Publish the api-schema-tools tool (required on a clean checkout)
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
-$schemaToolOutput  = ".bootstrap/tools/dms-schema"
+$schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
 dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
 
 # 2. Point to the platform-appropriate executable
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
+$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 ```
 
 Standard mode (omit `-ApiSchemaPath`) resolves and stages the core Data Standard ApiSchema package
@@ -265,8 +265,8 @@ extension you supply) require an additional `-ClaimsDirectoryPath` argument to
 Expert `-ApiSchemaPath`, not package-backed standard mode (which is core-only).
 
 **Wrapper shorthand:** `bootstrap-local-dms.ps1` stages core-only standard mode in-line (when no
-workspace is staged) and then starts the stack. It auto-discovers the `dms-schema` executable
-published to `.bootstrap/tools/dms-schema` in step 1 (or set `DMS_SCHEMA_TOOL_PATH` to point
+workspace is staged) and then starts the stack. It auto-discovers the `api-schema-tools` executable
+published to `.bootstrap/tools/api-schema-tools` in step 1 (or set `DMS_SCHEMA_TOOL_PATH` to point
 elsewhere).
 
 ```pwsh

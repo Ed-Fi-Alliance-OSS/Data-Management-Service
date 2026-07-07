@@ -1,4 +1,4 @@
-# dms-schema CLI
+# api-schema-tools CLI
 
 Command-line tool for Ed-Fi DMS schema hashing and DDL generation. Generates
 deterministic SQL artifacts and manifests from `ApiSchema.json` inputs without
@@ -9,7 +9,7 @@ requiring database connectivity.
 
 ## Installation
 
-There are two ways to use `dms-schema`:
+There are two ways to use `api-schema-tools`:
 
 1. Install the published .NET tool package from Azure Artifacts.
 2. Download the source code and compile the tool locally with `dotnet build`.
@@ -28,7 +28,7 @@ dotnet tool install --global EdFi.Api.SchemaTools --source $feed --version $vers
 Use a published package version from the feed. To install the latest stable
 package, omit `--version $version`.
 
-The installed command is `dms-schema`.
+The installed command is `api-schema-tools`.
 
 ### Build from source
 
@@ -39,7 +39,7 @@ to compile the tool locally.
 dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools
 ```
 
-The executable is output as `dms-schema` (or `dms-schema.exe` on Windows).
+The executable is output as `api-schema-tools` (or `api-schema-tools.exe` on Windows).
 
 ## Commands
 
@@ -49,7 +49,7 @@ Loads one or more `ApiSchema.json` files, normalizes them, and prints the
 effective schema hash (SHA-256, lowercase hex).
 
 ```bash
-dms-schema hash <coreSchemaPath> [extensionSchemaPath...]
+api-schema-tools hash <coreSchemaPath> [extensionSchemaPath...]
 ```
 
 **Arguments:**
@@ -63,13 +63,13 @@ dms-schema hash <coreSchemaPath> [extensionSchemaPath...]
 
 ```bash
 # Core schema only
-dms-schema hash core/ApiSchema.json
+api-schema-tools hash core/ApiSchema.json
 
 # Core + one extension
-dms-schema hash core/ApiSchema.json extensions/tpdm/ApiSchema.json
+api-schema-tools hash core/ApiSchema.json extensions/tpdm/ApiSchema.json
 
 # Core + multiple extensions
-dms-schema hash core/ApiSchema.json extensions/tpdm/ApiSchema.json extensions/sample/ApiSchema.json
+api-schema-tools hash core/ApiSchema.json extensions/tpdm/ApiSchema.json extensions/sample/ApiSchema.json
 ```
 
 ### `ddl emit` — Generate DDL SQL and manifests
@@ -78,7 +78,7 @@ Generates dialect-specific DDL scripts and manifest files to an output directory
 Does not require database connectivity.
 
 ```bash
-dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect>] [--ddl-manifest]
+api-schema-tools ddl emit --schema <paths...> --output <directory> [--dialect <dialect>] [--ddl-manifest]
 ```
 
 **Options:**
@@ -94,13 +94,13 @@ dms-schema ddl emit --schema <paths...> --output <directory> [--dialect <dialect
 
 ```bash
 # Generate PostgreSQL DDL only
-dms-schema ddl emit --schema core/ApiSchema.json --output ./ddl-output --dialect pgsql
+api-schema-tools ddl emit --schema core/ApiSchema.json --output ./ddl-output --dialect pgsql
 
 # Generate both dialects
-dms-schema ddl emit -s core/ApiSchema.json -o ./ddl-output -d both
+api-schema-tools ddl emit -s core/ApiSchema.json -o ./ddl-output -d both
 
 # Core + extension, SQL Server only
-dms-schema ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o ./ddl-output -d mssql
+api-schema-tools ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o ./ddl-output -d mssql
 ```
 
 **Output files:**
@@ -123,7 +123,7 @@ single transaction. Provisions one database at a time (`--dialect both` is not
 accepted).
 
 ```bash
-dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
+api-schema-tools ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
 ```
 
 **Options:**
@@ -140,13 +140,13 @@ dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dia
 
 ```bash
 # Provision a PostgreSQL database
-dms-schema ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
+api-schema-tools ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
 
 # Provision an existing SQL Server database (add --create-database to create it, as in the pgsql examples)
-dms-schema ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
+api-schema-tools ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
 
 # Core + extension, PostgreSQL
-dms-schema ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -c "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" -d pgsql --create-database
+api-schema-tools ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -c "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" -d pgsql --create-database
 ```
 
 **Behavior:**
@@ -225,10 +225,10 @@ Prior to DMS-950, the CLI accepted positional arguments for schema hashing:
 
 ```bash
 # Old (no longer works)
-dms-schema core/ApiSchema.json
+api-schema-tools core/ApiSchema.json
 
 # New equivalent
-dms-schema hash core/ApiSchema.json
+api-schema-tools hash core/ApiSchema.json
 ```
 
 The `hash` subcommand is now required.

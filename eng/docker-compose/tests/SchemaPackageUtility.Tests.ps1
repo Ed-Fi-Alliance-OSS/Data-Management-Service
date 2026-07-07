@@ -12,7 +12,7 @@ Describe "schema-package-utility" {
         )
 
         function script:New-TestDirectory {
-            $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-schema-package-$([Guid]::NewGuid().ToString('N'))"
+            $path = Join-Path ([System.IO.Path]::GetTempPath()) "api-schema-tools-package-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
             return $path
         }

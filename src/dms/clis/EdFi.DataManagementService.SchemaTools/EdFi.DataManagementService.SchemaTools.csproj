@@ -5,11 +5,11 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <AssemblyName>dms-schema</AssemblyName>
+        <AssemblyName>api-schema-tools</AssemblyName>
         <PackageId>EdFi.Api.SchemaTools</PackageId>
         <PackageType>DotnetTool</PackageType>
         <PackAsTool>true</PackAsTool>
-        <ToolCommandName>dms-schema</ToolCommandName>
+        <ToolCommandName>api-schema-tools</ToolCommandName>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>

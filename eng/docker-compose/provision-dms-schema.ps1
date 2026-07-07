@@ -778,7 +778,7 @@ function Invoke-DmsSchemaProvision {
         "--create-database"
     )
 
-    Write-Information "Invoking dms-schema ddl provision for database $(Format-LogSafeText $DatabaseName) with $($SchemaPaths.Count) schema file(s)." -InformationAction Continue
+    Write-Information "Invoking api-schema-tools ddl provision for database $(Format-LogSafeText $DatabaseName) with $($SchemaPaths.Count) schema file(s)." -InformationAction Continue
 
     if ($ToolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
         & pwsh -NoLogo -NoProfile -File $ToolPath @arguments
@@ -788,9 +788,9 @@ function Invoke-DmsSchemaProvision {
     }
 
     $exitCode = $LASTEXITCODE
-    Write-Information "dms-schema exit code for database $(Format-LogSafeText $DatabaseName): $(Format-LogSafeText $exitCode)." -InformationAction Continue
+    Write-Information "api-schema-tools exit code for database $(Format-LogSafeText $DatabaseName): $(Format-LogSafeText $exitCode)." -InformationAction Continue
     if ($exitCode -ne 0) {
-        throw "dms-schema ddl provision failed for database $(Format-LogSafeText $DatabaseName) with exit code $(Format-LogSafeText $exitCode)."
+        throw "api-schema-tools ddl provision failed for database $(Format-LogSafeText $DatabaseName) with exit code $(Format-LogSafeText $exitCode)."
     }
 }
 
@@ -1010,7 +1010,7 @@ function Invoke-ProvisionDmsSchema {
     # that share a database name on different physical hosts or under different users.
     $groups = $targets | Group-Object -Property TargetKey
     $schemaTool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
-    Write-Information "dms-schema resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
+    Write-Information "api-schema-tools resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
 
     $provisionedTargets = [System.Collections.ArrayList]::new()
 

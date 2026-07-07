@@ -66,7 +66,7 @@ void ConfigureServices(IServiceCollection services, bool enableVerbose)
         var logDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
         Directory.CreateDirectory(logDir);
         logConfiguration.WriteTo.File(
-            Path.Combine(logDir, "dms-schema.log"),
+            Path.Combine(logDir, "api-schema-tools.log"),
             rollingInterval: RollingInterval.Day
         );
     }

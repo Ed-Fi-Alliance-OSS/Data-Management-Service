@@ -1216,11 +1216,26 @@ exit $ExitCode
     }
 
     Context "Given_PublishedToolLocation_AutoDiscovery" {
-        It "It_Resolve-DmsSchemaTool_discovers_the_published_tool_under_.bootstrap_tools_dms-schema" {
-            # The README publishes dms-schema to .bootstrap/tools/dms-schema, and the wrapper shorthand
+        It "It_Resolve-DmsSchemaTool_discovers_the_published_tool_under_.bootstrap_tools_api-schema-tools" {
+            # The README publishes api-schema-tools to .bootstrap/tools/api-schema-tools, and the wrapper shorthand
             # (bootstrap-local-dms.ps1) cannot forward -SchemaToolPath. The resolver must auto-discover
             # that documented location so the documented happy path works after publishing, without
             # requiring -SchemaToolPath or DMS_SCHEMA_TOOL_PATH.
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
+
+            $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/api-schema-tools"
+            New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
+            $toolName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+            $toolPath = Join-Path $toolDirectory $toolName
+            "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+            $resolved = Resolve-DmsSchemaTool
+
+            [System.IO.Path]::GetFullPath($resolved) |
+                Should -Be ([System.IO.Path]::GetFullPath($toolPath))
+        }
+
+        It "It_Resolve-DmsSchemaTool_does_not_discover_the_stale_dms-schema_tool_location" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
 
             $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/dms-schema"
@@ -1229,10 +1244,15 @@ exit $ExitCode
             $toolPath = Join-Path $toolDirectory $toolName
             "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
 
-            $resolved = Resolve-DmsSchemaTool
+            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = "false"
 
-            [System.IO.Path]::GetFullPath($resolved) |
-                Should -Be ([System.IO.Path]::GetFullPath($toolPath))
+            try {
+                { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage "*api-schema-tools*"
+            }
+            finally {
+                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
+            }
         }
     }
 }

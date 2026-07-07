@@ -1745,7 +1745,7 @@ jobs:
             -EnvironmentFile "./eng/docker-compose/.env.e2e" `
             -Configuration "${{ env.CONFIGURATION }}" `
             -Dialect "pgsql" `
-            -OutputDirectory "${{ runner.temp }}/dms-schema-preflight"
+            -OutputDirectory "${{ runner.temp }}/api-schema-preflight"
 
       - name: Start DMS Docker
         run: |
