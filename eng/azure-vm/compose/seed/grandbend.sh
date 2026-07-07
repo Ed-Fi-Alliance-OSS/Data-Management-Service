@@ -7,7 +7,7 @@
 #
 # ⚠️ RELATIONAL BACKEND REQUIRED. This stack runs the DMS *relational* backend
 # (per-resource edfi.* tables + a dms.EffectiveSchema fingerprint). You MUST use a
-# RELATIONAL build of EdFi.Dms.Populated.Template.PostgreSql.5.2.0 — i.e. a package built
+# RELATIONAL build of EdFi.Api.Populated.Template.PostgreSql.5.2.0 — i.e. a package built
 # after the DS52 relational cutover (DMS-1159, 2026-06-09). The older builds (e.g. 0.7.x)
 # are the LEGACY DOCUMENT-STORE format (only dms.Document/Reference/Alias; no edfi.* tables,
 # no dms.EffectiveSchema) and are INCOMPATIBLE — restoring one into a relational DB fails
@@ -37,7 +37,7 @@ val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true ; }
 
 PG_CONTAINER="${PG_CONTAINER:-dms-sec-postgres}"
 PG_USER="$(val POSTGRES_USER)"; PG_USER="${PG_USER:-postgres}"
-PKG_ID="$(val DATABASE_TEMPLATE_PACKAGE_ID)"; PKG_ID="${PKG_ID:-EdFi.Dms.Populated.Template.PostgreSql.5.2.0}"
+PKG_ID="$(val DATABASE_TEMPLATE_PACKAGE_ID)"; PKG_ID="${PKG_ID:-EdFi.Api.Populated.Template.PostgreSql.5.2.0}"
 PKG_VER="$(val DATABASE_TEMPLATE_PACKAGE_VERSION)"; PKG_VER="${PKG_VER:-latest}"
 FEED="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3"
 

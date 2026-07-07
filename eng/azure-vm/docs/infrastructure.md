@@ -204,7 +204,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
 5. **`dms-schema` is build-from-source only** (no published image or dotnet tool): `dotnet
    publish src/dms/clis/EdFi.DataManagementService.SchemaTools -r linux-x64 --self-contained`.
 6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` requires a relational build
-   of `EdFi.Dms.Populated.Template.PostgreSql.5.2.0` (post `DMS-1159`, 2026-06-09); the older
+   of `EdFi.Api.Populated.Template.PostgreSql.5.2.0` (post `DMS-1159`, 2026-06-09); the older
    `0.7.x` builds are the legacy document-store format and are rejected by the relational
    backend (the script guards against them).
 7. **Keycloak issuer behind the proxy.** Tokens are issued with `iss =
