@@ -4,10 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
-using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 
@@ -27,28 +27,42 @@ internal class JwtAuthenticationMiddleware(
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Extract Authorization header
-        if (
-            !requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
-            || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-        )
+        if (!requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader))
         {
             logger.LogDebug(
-                "Missing or invalid Authorization header - {TraceId}",
+                "Missing Authorization header - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateUnauthorizedResponse(
-                "Bearer token required",
+                "Authorization header is missing.",
                 requestInfo.FrontendRequest.TraceId
             );
             return;
         }
 
+        AuthorizationHeaderResult headerResult = AuthorizationHeaderParser.Parse(authHeader);
+        if (!headerResult.IsValid)
+        {
+            logger.LogDebug(
+                "Invalid Authorization header ({ErrorDetail}) - {TraceId}",
+                headerResult.ErrorDetail,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
+                headerResult.ErrorDetail!,
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
+
+        string token = headerResult.Token!;
+
         // Validate token and extract client authorizations
         (ClaimsPrincipal? principal, ClientAuthorizations? clientAuthorizations) =
             await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                authHeader,
-                "Bearer ".Length,
+                token,
                 CancellationToken.None
             );
 
@@ -83,19 +97,9 @@ internal class JwtAuthenticationMiddleware(
     /// </summary>
     private static FrontendResponse CreateUnauthorizedResponse(string errorDetail, TraceId traceId)
     {
-        var problemDetails = new
-        {
-            detail = "Authorization failed",
-            type = "urn:ed-fi:api:unauthorized",
-            title = "Unauthorized",
-            status = 401,
-            correlationId = traceId.Value,
-            errors = new[] { errorDetail },
-        };
-
         return new FrontendResponse(
             StatusCode: 401,
-            Body: JsonSerializer.SerializeToNode(problemDetails),
+            Body: FailureResponse.ForAuthenticationFailure(traceId, [errorDetail]),
             Headers: new Dictionary<string, string>
             {
                 ["WWW-Authenticate"] = $"Bearer error=\"invalid_token\"",

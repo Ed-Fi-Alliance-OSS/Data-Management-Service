@@ -322,12 +322,14 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     {
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: (int)HttpStatusCode.Unauthorized,
-            Body: FailureResponse.ForUnauthorized(
+            Body: FailureResponse.ForAuthenticationFailure(
                 requestInfo.FrontendRequest.TraceId,
-                error: "Unauthorized",
-                description: "No authorization information found. Ensure valid JWT token is provided."
+                ["No authorization information found. Ensure valid JWT token is provided."]
             ),
-            Headers: [],
+            Headers: new Dictionary<string, string>
+            {
+                ["WWW-Authenticate"] = "Bearer error=\"invalid_token\"",
+            },
             ContentType: "application/problem+json"
         );
     }

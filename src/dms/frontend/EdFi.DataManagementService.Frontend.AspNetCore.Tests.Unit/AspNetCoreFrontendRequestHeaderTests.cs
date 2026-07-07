@@ -6,6 +6,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -67,10 +68,88 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
     }
 
     [Test]
+    public void It_preserves_an_explicit_empty_authorization_header()
+    {
+        // A blank Authorization must survive extraction so core classifies it as a malformed
+        // header ("Invalid Authorization header.") rather than a missing one.
+        var headers = ExtractHeaders(request => request.Headers["Authorization"] = "");
+
+        headers.Should().ContainKey("Authorization");
+        headers["Authorization"].Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_preserves_an_explicit_whitespace_authorization_header()
+    {
+        var headers = ExtractHeaders(request => request.Headers["Authorization"] = "   ");
+
+        headers.Should().ContainKey("Authorization");
+        headers["Authorization"].Should().Be("   ");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_authorization_header_unreduced()
+    {
+        // A repeated Authorization header is unparseable per RFC 7235. Delivering the comma-joined
+        // value lets core reject it as malformed ("Invalid Authorization header.") instead of
+        // authenticating the first value.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["Bearer valid", "junk"])
+        );
+
+        headers["Authorization"].Should().Be("Bearer valid,junk");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_authorization_header_with_a_blank_value_unreduced()
+    {
+        // A blank duplicate must survive the join (StringValues.ToString() would drop it),
+        // otherwise a valid token sent alongside a blank Authorization line authenticates.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["Bearer valid", ""])
+        );
+
+        headers["Authorization"].Should().Be("Bearer valid,");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_authorization_header_with_a_leading_blank_value_unreduced()
+    {
+        // Ordering matters: a blank first value must survive the join in position, so core sees
+        // ",Bearer valid" (a fold artifact, rejected as malformed) rather than a lone valid token.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["", "Bearer valid"])
+        );
+
+        headers["Authorization"].Should().Be(",Bearer valid");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_content_type_unreduced()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["Content-Type"] = new StringValues(["application/json", "text/plain"])
+        );
+
+        headers["Content-Type"].Should().Be("application/json,text/plain");
+    }
+
+    [Test]
+    public void It_omits_a_missing_authorization_header()
+    {
+        // A genuinely absent Authorization stays absent, so core reports it as missing rather
+        // than malformed.
+        var headers = ExtractHeaders(_ => { });
+
+        headers.Should().NotContainKey("Authorization");
+    }
+
+    [Test]
     public void It_still_drops_other_blank_headers()
     {
-        // The Content-Type preservation is intentionally scoped; blank values of other headers
-        // continue to be dropped as before.
+        // Blank-value preservation is intentionally scoped to the headers core must distinguish
+        // from missing (Content-Type, Authorization); blank values of other headers continue to
+        // be dropped as before.
         var headers = ExtractHeaders(request => request.Headers["X-Custom"] = "");
 
         headers.Should().NotContainKey("X-Custom");

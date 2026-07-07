@@ -339,12 +339,27 @@ public static class AspNetCoreFrontend
     }
 
     private const string ContentTypeHeaderName = "Content-Type";
+    private const string AuthorizationHeaderName = "Authorization";
+
+    /// <summary>
+    /// Headers that must reach core verbatim rather than through the blank-dropping,
+    /// first-non-blank reduction in <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit
+    /// blank is rejected with 415) and Authorization (an explicit blank or a repeated header is
+    /// a malformed header rejected with 401, distinct from a missing header, which reports
+    /// "Authorization header is missing.").
+    /// </summary>
+    private static readonly string[] HeadersPreservedWhenExplicitlySent =
+    [
+        ContentTypeHeaderName,
+        AuthorizationHeaderName,
+    ];
 
     /// <summary>
     /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
-    /// dropped, except for an explicitly supplied Content-Type. Core must distinguish a missing
-    /// Content-Type (exempt) from an explicit blank or whitespace value (rejected with 415), so
-    /// that value is preserved verbatim here instead of being discarded along with the header.
+    /// dropped and multi-valued headers are reduced to their first non-blank value, except for
+    /// the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>, which are delivered
+    /// verbatim (blank preserved, multiple values comma-joined) so core can classify an
+    /// explicit blank or a repeated header as malformed rather than as missing or valid.
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
     {
@@ -357,14 +372,18 @@ public static class AspNetCoreFrontend
             .Where(h => h.Value != null)
             .ToDictionary(x => x.Key, x => x.Value!, StringComparer.OrdinalIgnoreCase);
 
-        // The filtering above discards a Content-Type that was sent but is blank/whitespace.
-        // Restore it so core can reject the explicit value rather than treat it as missing.
-        if (
-            !headers.ContainsKey(ContentTypeHeaderName)
-            && request.Headers.TryGetValue(ContentTypeHeaderName, out StringValues contentType)
-        )
+        // The filtering above discards blank values and reduces a repeated header to its first
+        // non-blank value. Normalize the preserved headers to their full comma-joined value so
+        // an explicit blank reaches core as present-but-invalid and a repeated header is not
+        // reduced to a single authenticatable value. string.Join is used instead of
+        // StringValues.ToString() because ToString() drops empty entries, which would silently
+        // erase a blank duplicate sent alongside a valid value.
+        foreach (string headerName in HeadersPreservedWhenExplicitlySent)
         {
-            headers[ContentTypeHeaderName] = contentType.ToString();
+            if (request.Headers.TryGetValue(headerName, out StringValues value))
+            {
+                headers[headerName] = string.Join(",", value.ToArray());
+            }
         }
 
         return headers;

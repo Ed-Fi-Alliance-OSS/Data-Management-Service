@@ -265,6 +265,58 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_No_Client_Authorizations : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ClientAuthorizations = No.ClientAuthorizations,
+            };
+
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_401_unauthorized()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "No authorization information found. Ensure valid JWT token is provided."
+            );
+        }
+
+        [Test]
+        public void It_includes_www_authenticate_header()
+        {
+            _requestInfo.FrontendResponse.Headers.Should().ContainKey("WWW-Authenticate");
+            _requestInfo
+                .FrontendResponse.Headers["WWW-Authenticate"]
+                .Should()
+                .Be("Bearer error=\"invalid_token\"");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_No_Matching_ClaimSet : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]

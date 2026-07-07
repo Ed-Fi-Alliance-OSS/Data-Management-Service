@@ -21,6 +21,7 @@ public static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
+    private static readonly string _authenticationType = $"{_typePrefix}:security:authentication";
     private static readonly string _gatewayType = $"{_typePrefix}:bad-gateway";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
@@ -223,6 +224,24 @@ public static class FailureResponse
             validationErrors: [],
             errors: []
         );
+
+    /// <summary>
+    /// Produces the 401 authentication-failure problem details defined by the design doc
+    /// (urn:ed-fi:api:security:authentication), matching the ODS/API type, title, and detail.
+    /// Scenario-specific messages are carried in the errors array, and correlationId is
+    /// included per the DMS problem-details convention. Unlike <see cref="ForUnauthorized"/>,
+    /// no validationErrors member is emitted.
+    /// </summary>
+    public static JsonNode ForAuthenticationFailure(TraceId traceId, string[] errors) =>
+        new JsonObject
+        {
+            ["detail"] = "The caller could not be authenticated.",
+            ["type"] = _authenticationType,
+            ["title"] = "Authentication Failed",
+            ["status"] = 401,
+            ["correlationId"] = traceId.Value,
+            ["errors"] = JsonSerializer.SerializeToNode(errors, SerializerOptions),
+        };
 
     public static JsonNode ForForbidden(
         TraceId traceId,

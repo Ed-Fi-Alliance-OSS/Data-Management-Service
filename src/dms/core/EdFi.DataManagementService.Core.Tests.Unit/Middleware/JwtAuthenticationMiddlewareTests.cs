@@ -73,8 +73,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer valid-token",
-                        "Bearer ".Length,
+                        "valid-token",
                         A<CancellationToken>._
                     )
                 )
@@ -141,8 +140,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer invalid-token",
-                        "Bearer ".Length,
+                        "invalid-token",
                         A<CancellationToken>._
                     )
                 )
@@ -187,16 +185,16 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
-        {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Invalid token");
-        }
-
-        [Test]
         public void It_returns_body_as_JsonObject_not_string()
         {
             // Ensures the response body is a proper JsonNode object, not a serialized string.
             _requestInfo.FrontendResponse.Body.Should().BeOfType<JsonObject>();
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, "Invalid token");
         }
     }
 
@@ -246,9 +244,12 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
+        public void It_returns_the_authentication_failed_problem_details()
         {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
+            AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse!,
+                "Authorization header is missing."
+            );
         }
     }
 
@@ -301,9 +302,74 @@ public class JwtAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_includes_error_detail_in_response_body()
+        public void It_returns_the_authentication_failed_problem_details()
         {
-            _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Bearer token required");
+            AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse!,
+                "Unknown Authorization header scheme."
+            );
+        }
+    }
+
+    // One representative wiring case per error detail; the full header classification
+    // matrix lives in AuthorizationHeaderParserTests.
+    [TestFixture("Bearer", "Missing Authorization header bearer token value.")]
+    [TestFixture("", "Invalid Authorization header.")]
+    [TestFixture("BearerToken", "Unknown Authorization header scheme.")]
+    [Parallelizable]
+    public class Given_A_Request_With_A_Malformed_Bearer_Authorization_Header(
+        string _authHeader,
+        string _expectedError
+    ) : JwtAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = false;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontendRequest = new FrontendRequest(
+                Path: "/ed-fi/students",
+                Body: null,
+                Form: null,
+                Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = _authHeader,
+                },
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            var (middleware, _) = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_the_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_401_unauthorized()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        }
+
+        [Test]
+        public void It_returns_the_authentication_failed_problem_details()
+        {
+            AssertUnauthorizedProblemDetails(_requestInfo.FrontendResponse!, _expectedError);
         }
     }
 
@@ -346,8 +412,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer valid-token",
-                        "Bearer ".Length,
+                        "valid-token",
                         A<CancellationToken>._
                     )
                 )
