@@ -87,7 +87,10 @@ public static class CanonicalJsonSerializer
     /// <returns>The SHA-256 hash bytes.</returns>
     public static byte[] ComputeSha256Hash(JsonNode? node)
     {
-        return ComputeSha256HashCore(node, propertyNamesToSkip: null);
+        var hashBytes = new byte[SHA256.HashSizeInBytes];
+        ComputeSha256HashCore(node, propertyNamesToSkip: null, hashBytes);
+
+        return hashBytes;
     }
 
     internal static byte[] ComputeSha256HashExcludingPropertyNames(
@@ -100,16 +103,48 @@ public static class CanonicalJsonSerializer
         return ComputeSha256HashCore(node, propertyNamesToSkip);
     }
 
+    internal static int ComputeSha256HashExcludingPropertyNames(
+        JsonNode? node,
+        FrozenSet<string> propertyNamesToSkip,
+        Span<byte> destination
+    )
+    {
+        ArgumentNullException.ThrowIfNull(propertyNamesToSkip);
+
+        return ComputeSha256HashCore(node, propertyNamesToSkip, destination);
+    }
+
     private static byte[] ComputeSha256HashCore(JsonNode? node, FrozenSet<string>? propertyNamesToSkip)
     {
+        var hashBytes = new byte[SHA256.HashSizeInBytes];
+        ComputeSha256HashCore(node, propertyNamesToSkip, hashBytes);
+
+        return hashBytes;
+    }
+
+    private static int ComputeSha256HashCore(
+        JsonNode? node,
+        FrozenSet<string>? propertyNamesToSkip,
+        Span<byte> destination
+    )
+    {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        using var stream = new IncrementalHashWriteStream(hash);
-        using var writer = new Utf8JsonWriter(stream, WriterOptions);
+        using var hashBufferWriter = new IncrementalHashBufferWriter(hash);
+        using var writer = new Utf8JsonWriter(hashBufferWriter, WriterOptions);
 
         WriteCanonicalNode(writer, node, propertyNamesToSkip);
         writer.Flush();
+        hashBufferWriter.Flush();
 
-        return hash.GetHashAndReset();
+        if (!hash.TryGetHashAndReset(destination, out var bytesWritten))
+        {
+            throw new ArgumentException(
+                $"Destination must be at least {SHA256.HashSizeInBytes} bytes.",
+                nameof(destination)
+            );
+        }
+
+        return bytesWritten;
     }
 
     /// <summary>
@@ -301,47 +336,110 @@ public static class CanonicalJsonSerializer
         }
     }
 
-    private sealed class IncrementalHashWriteStream(IncrementalHash hash) : Stream
+    private sealed class IncrementalHashBufferWriter : IBufferWriter<byte>, IDisposable
     {
-        public override bool CanRead => false;
+        private const int DefaultBufferSize = 16 * 1024;
 
-        public override bool CanSeek => false;
+        private readonly IncrementalHash _hash;
+        private byte[] _buffer;
+        private int _written;
+        private int _maxWritten;
+        private bool _disposed;
 
-        public override bool CanWrite => true;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
+        public IncrementalHashBufferWriter(IncrementalHash hash)
         {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
+            _hash = hash ?? throw new ArgumentNullException(nameof(hash));
+            _buffer = ArrayPool<byte>.Shared.Rent(DefaultBufferSize);
         }
 
-        public override void Flush() { }
-
-        public override int Read(byte[] buffer, int offset, int count)
+        public void Advance(int count)
         {
-            throw new NotSupportedException();
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (count < 0 || count > _buffer.Length - _written)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            _written += count;
+            _maxWritten = Math.Max(_maxWritten, _written);
+
+            if (_written == _buffer.Length)
+            {
+                Flush();
+            }
         }
 
-        public override long Seek(long offset, SeekOrigin origin)
+        public Memory<byte> GetMemory(int sizeHint = 0)
         {
-            throw new NotSupportedException();
+            EnsureWritableBuffer(sizeHint);
+
+            return _buffer.AsMemory(_written);
         }
 
-        public override void SetLength(long value)
+        public Span<byte> GetSpan(int sizeHint = 0)
         {
-            throw new NotSupportedException();
+            EnsureWritableBuffer(sizeHint);
+
+            return _buffer.AsSpan(_written);
         }
 
-        public override void Write(byte[] buffer, int offset, int count)
+        public void Flush()
         {
-            hash.AppendData(buffer, offset, count);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_written == 0)
+            {
+                return;
+            }
+
+            _hash.AppendData(_buffer.AsSpan(0, _written));
+            _written = 0;
         }
 
-        public override void Write(ReadOnlySpan<byte> buffer)
+        public void Dispose()
         {
-            hash.AppendData(buffer);
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (_buffer.Length > 0)
+            {
+                Array.Clear(_buffer, 0, _maxWritten);
+                ArrayPool<byte>.Shared.Return(_buffer);
+                _buffer = [];
+            }
+
+            _disposed = true;
+        }
+
+        private void EnsureWritableBuffer(int sizeHint)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (sizeHint < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sizeHint));
+            }
+
+            var requestedSize = sizeHint == 0 ? 1 : sizeHint;
+
+            if (_buffer.Length - _written >= requestedSize)
+            {
+                return;
+            }
+
+            Flush();
+
+            if (_buffer.Length >= requestedSize)
+            {
+                return;
+            }
+
+            ArrayPool<byte>.Shared.Return(_buffer, clearArray: true);
+            _buffer = ArrayPool<byte>.Shared.Rent(Math.Max(DefaultBufferSize, requestedSize));
+            _maxWritten = 0;
         }
     }
 }
