@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -63,7 +64,8 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator
+    IIfMatchEvaluator ifMatchEvaluator,
+    ILogger<RelationalCurrentEtagPreconditionChecker> logger
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
@@ -74,6 +76,9 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
 
     private readonly IIfMatchEvaluator _ifMatchEvaluator =
         ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
+
+    private readonly ILogger<RelationalCurrentEtagPreconditionChecker> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
         MappingSet mappingSet,
@@ -162,11 +167,23 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
         };
 
+        var evaluation = _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag);
+
+        _logger.LogDebug(
+            "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
+                + "currentTag={CurrentTag}, matched={IsMatch}",
+            request.TargetContext.DocumentId,
+            request.Precondition.IsWildcard,
+            request.Precondition.Value,
+            currentEtag,
+            evaluation.IsMatch
+        );
+
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
             currentEtag,
-            _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag).IsMatch
+            evaluation.IsMatch
         );
     }
 

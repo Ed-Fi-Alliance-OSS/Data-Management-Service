@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -39,7 +40,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _sut = new RelationalCurrentEtagPreconditionChecker(
             _currentStateLoader,
             new ServedEtagComposer(new EtagComposer()),
-            new IfMatchEvaluator()
+            new IfMatchEvaluator(),
+            NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
         );
 
         A.CallTo(() => _writeSession.CreateCommand(A<RelationalCommand>._))
