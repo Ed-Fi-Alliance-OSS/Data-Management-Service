@@ -108,9 +108,17 @@ public abstract record RelationalWriteTargetLookupResult
 }
 
 /// <summary>
-/// The committed root document identity returned by a successful persistence pass.
+/// The committed root document identity plus the final persisted <c>ContentVersion</c> stamp
+/// returned by a successful persistence pass. <c>ContentVersion</c> is read after every table
+/// mutation so stamp-trigger bumps from child-table writes are captured. Defaults to 0 for the
+/// incremental rollout; production persistence always sets a positive value and
+/// <see cref="RelationalWritePersistedTargetValidator"/> enforces that on applied writes.
 /// </summary>
-internal sealed record RelationalWritePersistResult(long DocumentId, DocumentUuid DocumentUuid);
+internal sealed record RelationalWritePersistResult(
+    long DocumentId,
+    DocumentUuid DocumentUuid,
+    long ContentVersion = 0
+);
 
 /// <summary>
 /// Backend-local input contract for flattening a validated write body into relational buffers and candidates.
