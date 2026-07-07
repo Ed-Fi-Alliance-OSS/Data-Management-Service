@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -31,7 +32,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
-    ILogger<DefaultRelationalWriteExecutor>? logger = null
+    ILogger<DefaultRelationalWriteExecutor>? logger = null,
+    ILoggerFactory? loggerFactory = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -56,7 +58,8 @@ internal sealed class DefaultRelationalWriteExecutor(
         currentStateLoader,
         currentEtagPreconditionChecker,
         servedEtagComposer,
-        ifMatchEvaluator
+        ifMatchEvaluator,
+        (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
     private readonly RelationalWriteMergeOrchestrator _mergeOrchestrator = new(

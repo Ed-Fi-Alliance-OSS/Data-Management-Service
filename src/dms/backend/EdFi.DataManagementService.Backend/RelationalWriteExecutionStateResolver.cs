@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -15,7 +17,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator
+    IIfMatchEvaluator ifMatchEvaluator,
+    ILogger<RelationalWriteExecutionStateResolver> logger
 )
 {
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
@@ -33,6 +36,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
     private readonly IIfMatchEvaluator _ifMatchEvaluator =
         ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
+
+    private readonly ILogger<RelationalWriteExecutionStateResolver> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
@@ -135,6 +141,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (currentState is null)
         {
+            var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+            _logger.LogDebug(
+                "Deferred If-Match precondition for document {DocumentId}: no current representation "
+                    + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); precondition fails",
+                missingTarget.DocumentId,
+                request.OperationKind,
+                ifMatch.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(ifMatch.Value)
+            );
             return request.OperationKind switch
             {
                 RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
@@ -167,7 +182,20 @@ internal sealed class RelationalWriteExecutionStateResolver(
             )
         );
 
-        return _ifMatchEvaluator.Evaluate(ifMatch, currentEtag).IsMatch
+        var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+        var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+
+        _logger.LogDebug(
+            "Deferred If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+            existing.DocumentId,
+            ifMatch.IsWildcard,
+            LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+            currentEtag,
+            evaluation.IsMatch
+        );
+
+        return evaluation.IsMatch
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }
