@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Plans;
 
 public sealed class RelationshipAuthorizationPlanner
 {
+    private const int MaxCachedSupportedStrategyPlans = 4096;
+
     private static readonly ConditionalWeakTable<
         MappingSet,
         SupportedStrategyPlanCache
@@ -1933,26 +1935,91 @@ public sealed class RelationshipAuthorizationPlanner
             SupportedStrategyPlanCacheKey,
             Lazy<SupportedStrategyPlan>
         > _plansByKey = new();
+        private int _planCount;
 
         public SupportedStrategyPlan GetOrAdd(
             SupportedStrategyPlanCacheKey cacheKey,
             Func<SupportedStrategyPlan> createPlan
         )
         {
+            if (_plansByKey.TryGetValue(cacheKey, out var cachedPlan))
+            {
+                return GetCachedPlan(cacheKey, cachedPlan);
+            }
+
+            // The cache is already scoped by MappingSet, but a MappingSet can still see many
+            // one-off claim-set or write-plan shapes. Keep hot plans bounded and compile rare
+            // overflow shapes uncached so they do not live for the MappingSet lifetime.
+            if (!TryReserveCacheSlot())
+            {
+                return createPlan();
+            }
+
             var lazyPlan = new Lazy<SupportedStrategyPlan>(
                 createPlan,
                 LazyThreadSafetyMode.ExecutionAndPublication
             );
-            var cachedPlan = _plansByKey.GetOrAdd(cacheKey, lazyPlan);
+            cachedPlan = _plansByKey.GetOrAdd(cacheKey, lazyPlan);
 
+            if (!ReferenceEquals(cachedPlan, lazyPlan))
+            {
+                ReleaseCacheSlot();
+            }
+
+            return GetCachedPlan(cacheKey, cachedPlan);
+        }
+
+        private bool TryReserveCacheSlot()
+        {
+            while (true)
+            {
+                var planCount = Volatile.Read(ref _planCount);
+
+                if (planCount >= MaxCachedSupportedStrategyPlans)
+                {
+                    return false;
+                }
+
+                if (Interlocked.CompareExchange(ref _planCount, planCount + 1, planCount) == planCount)
+                {
+                    return true;
+                }
+            }
+        }
+
+        private void ReleaseCacheSlot()
+        {
+            Interlocked.Decrement(ref _planCount);
+        }
+
+        private SupportedStrategyPlan GetCachedPlan(
+            SupportedStrategyPlanCacheKey cacheKey,
+            Lazy<SupportedStrategyPlan> cachedPlan
+        )
+        {
             try
             {
                 return cachedPlan.Value;
             }
             catch
             {
-                _plansByKey.TryRemove(cacheKey, out _);
+                Remove(cacheKey, cachedPlan);
                 throw;
+            }
+        }
+
+        private void Remove(SupportedStrategyPlanCacheKey cacheKey, Lazy<SupportedStrategyPlan> cachedPlan)
+        {
+            if (
+                _plansByKey.TryRemove(
+                    new KeyValuePair<SupportedStrategyPlanCacheKey, Lazy<SupportedStrategyPlan>>(
+                        cacheKey,
+                        cachedPlan
+                    )
+                )
+            )
+            {
+                ReleaseCacheSlot();
             }
         }
     }
