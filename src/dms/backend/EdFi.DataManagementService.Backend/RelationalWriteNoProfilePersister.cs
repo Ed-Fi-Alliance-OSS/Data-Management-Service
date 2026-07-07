@@ -99,7 +99,19 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
-        return new RelationalWritePersistResult(rootDocumentId, GetTargetDocumentUuid(targetContext));
+        var contentVersion = await ReadCommittedContentVersionAsync(
+                request.MappingSet.Key.Dialect,
+                rootDocumentId,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new RelationalWritePersistResult(
+            rootDocumentId,
+            GetTargetDocumentUuid(targetContext),
+            contentVersion
+        );
     }
 
     public async Task AuthorizeProposedRelationshipAsync(
@@ -410,6 +422,29 @@ internal sealed class RelationalWriteNoProfilePersister(
         {
             throw new InvalidOperationException(
                 $"Document insert for resource '{RelationalWriteSupport.FormatResource(resource)}' did not return a DocumentId."
+            );
+        }
+
+        return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<long> ReadCommittedContentVersionAsync(
+        SqlDialect dialect,
+        long rootDocumentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = writeSession.CreateCommand(
+            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, rootDocumentId)
+        );
+
+        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (scalarResult is null or DBNull)
+        {
+            throw new InvalidOperationException(
+                $"Relational write persistence found no ContentVersion for committed document id {rootDocumentId}."
             );
         }
 

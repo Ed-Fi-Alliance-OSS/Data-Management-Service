@@ -61,6 +61,7 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         var result = await _sut.PersistAsync(request, mergeResult, writeSession);
@@ -70,10 +71,11 @@ public class Given_Relational_Write_No_Profile_Persister
             .Be(
                 new RelationalWritePersistResult(
                     910L,
-                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                    77L
                 )
             );
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO dms.\"Document\"");
         GetParameterValue(writeSession.Commands[0], "@documentUuid")
             .Should()
@@ -88,6 +90,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[2].CommandText.Should().Be(rootExtensionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[2], "@DocumentId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[2], "@ExtensionCode").Should().Be("BLUE");
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(910L);
     }
 
     [Test]
@@ -117,12 +122,14 @@ public class Given_Relational_Write_No_Profile_Persister
                 ]
             ),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         var result = await _sut.PersistAsync(request, mergeResult, writeSession);
 
         result.DocumentId.Should().Be(910L);
-        writeSession.Commands.Should().HaveCount(2);
+        result.ContentVersion.Should().Be(77L);
+        writeSession.Commands.Should().HaveCount(3);
         var authorizationAndDocumentInsertCommand = writeSession.Commands[0];
         authorizationAndDocumentInsertCommand
             .CommandText.IndexOf("AUTH1", StringComparison.Ordinal)
@@ -146,6 +153,9 @@ public class Given_Relational_Write_No_Profile_Persister
 
         writeSession.Commands[1].CommandText.Should().Be(rootPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(910L);
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(910L);
     }
 
     [Test]
@@ -430,7 +440,10 @@ public class Given_Relational_Write_No_Profile_Persister
             ],
             supportsGuardedNoOp: true
         );
-        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
 
         var result = await _sut.PersistAsync(request, mergeResult, writeSession);
 
@@ -439,15 +452,19 @@ public class Given_Relational_Write_No_Profile_Persister
             .Be(
                 new RelationalWritePersistResult(
                     345L,
-                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    77L
                 )
             );
-        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands.Should().HaveCount(2);
         writeSession.Commands[0].CommandText.Should().Be(rootPlan.UpdateSql);
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
         GetParameterValue(writeSession.Commands[0], "@SchoolId").Should().Be(255901);
         GetParameterValue(writeSession.Commands[0], "@Name").Should().Be("Lincoln High Updated");
         GetParameterValue(writeSession.Commands[0], "@ShortName").Should().BeNull();
+
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -468,13 +485,19 @@ public class Given_Relational_Write_No_Profile_Persister
             ],
             supportsGuardedNoOp: true
         );
-        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands.Should().HaveCount(2);
         writeSession.Commands[0].CommandText.Should().Be(rootExtensionPlan.DeleteByParentSql);
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
         GetParameterValue(writeSession.Commands[0], "@ExtensionCode").Should().Be("BLUE");
+
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -505,13 +528,19 @@ public class Given_Relational_Write_No_Profile_Persister
             ],
             supportsGuardedNoOp: true
         );
-        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands.Should().HaveCount(2);
         writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.UpdateSql);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor").Should().Be("Red");
+
+        writeSession.Commands[1].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -567,11 +596,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands.Should().HaveCount(3);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -591,6 +621,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange");
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_1").Should().Be(47L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_1").Should().Be("Purple");
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -651,11 +684,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands.Should().HaveCount(3);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -675,6 +709,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange-Updated");
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_1").Should().Be(47L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_1").Should().Be("Purple-Updated");
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -730,11 +767,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands.Should().HaveCount(3);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -754,6 +792,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange");
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_1").Should().Be(47L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_1").Should().Be("Purple");
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -789,10 +830,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(collectionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
@@ -803,6 +845,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[2].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
         GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[2], "@FavoriteColor").Should().Be("Blue");
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -845,10 +890,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
 
         writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.DeleteByParentSql);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(45L);
@@ -861,6 +907,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[2].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
         GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(46L);
         GetParameterValue(writeSession.Commands[2], "@FavoriteColor").Should().Be("Orange");
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -890,10 +939,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands.Should().HaveCount(5);
 
         writeSession
             .Commands[0]
@@ -916,6 +966,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
         GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
         GetParameterValue(writeSession.Commands[3], "@AddressType").Should().Be("Physical");
+
+        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -953,10 +1006,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 911L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands.Should().HaveCount(5);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
@@ -971,6 +1025,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[3], "@ParentCollectionItemId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[3], "@BeginDate").Should().Be("2026-09-01");
+
+        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1003,10 +1060,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands.Should().HaveCount(5);
 
         writeSession
             .Commands[0]
@@ -1029,6 +1087,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
         GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
         GetParameterValue(writeSession.Commands[3], "@InterventionCode").Should().Be("Coach");
+
+        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1067,10 +1128,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 91L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands.Should().HaveCount(5);
 
         writeSession
             .Commands[0]
@@ -1095,6 +1157,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(44L);
         GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
         GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Tutor");
+
+        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1132,10 +1197,11 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 911L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands.Should().HaveCount(5);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
@@ -1150,6 +1216,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(910L);
         GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
         GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Bus");
+
+        writeSession.Commands[4].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[4], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1197,11 +1266,12 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -1222,6 +1292,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
         GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1263,11 +1336,12 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -1290,6 +1364,9 @@ public class Given_Relational_Write_No_Profile_Persister
             .Be(collectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
         writeSession.Commands[2].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1331,11 +1408,12 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands.Should().HaveCount(4);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -1358,6 +1436,9 @@ public class Given_Relational_Write_No_Profile_Persister
             .Be(collectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
         writeSession.Commands[2].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+
+        writeSession.Commands[3].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[3], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1392,11 +1473,12 @@ public class Given_Relational_Write_No_Profile_Persister
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands.Should().HaveCount(3);
 
         // A sequential swap from 0<->1 would collide on the sibling-order uniqueness constraint unless the first pass
         // moves both matched rows out of the way.
@@ -1417,6 +1499,9 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(44L);
         GetParameterValue(writeSession.Commands[1], "@Ordinal_0").Should().Be(0);
         GetParameterValue(writeSession.Commands[1], "@Ordinal_1").Should().Be(1);
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1473,11 +1558,12 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(6);
+        writeSession.Commands.Should().HaveCount(7);
 
         writeSession.Commands[0].CommandText.Should().Contain("generate_series");
         GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
@@ -1501,6 +1587,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
         GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
+
+        writeSession.Commands[6].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[6], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1544,11 +1633,12 @@ public class Given_Relational_Write_No_Profile_Persister
                 ]
             ),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands.Should().HaveCount(3);
         writeSession
             .Commands[0]
             .CommandText.Should()
@@ -1558,6 +1648,9 @@ public class Given_Relational_Write_No_Profile_Persister
         AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+
+        writeSession.Commands[2].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[2], "@documentId").Should().Be(345L);
     }
 
     [Test]
@@ -1614,11 +1707,12 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
             new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
         ]);
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
-        writeSession.Commands.Should().HaveCount(6);
+        writeSession.Commands.Should().HaveCount(7);
 
         writeSession
             .Commands[0]
@@ -1651,6 +1745,9 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
         GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
         GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
+
+        writeSession.Commands[6].CommandText.Should().Contain("ContentVersion");
+        GetParameterValue(writeSession.Commands[6], "@documentId").Should().Be(345L);
     }
 
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
