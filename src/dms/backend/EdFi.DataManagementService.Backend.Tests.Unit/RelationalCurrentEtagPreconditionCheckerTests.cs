@@ -36,7 +36,11 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     {
         _currentStateLoader = A.Fake<IRelationalWriteCurrentStateLoader>();
         _writeSession = A.Fake<IRelationalWriteSession>();
-        _sut = new RelationalCurrentEtagPreconditionChecker(_currentStateLoader, new EtagComposer());
+        _sut = new RelationalCurrentEtagPreconditionChecker(
+            _currentStateLoader,
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator()
+        );
 
         A.CallTo(() => _writeSession.CreateCommand(A<RelationalCommand>._))
             .Invokes(call => _capturedLockCommand = call.GetArgument<RelationalCommand>(0)!)
