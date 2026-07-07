@@ -69,6 +69,6 @@ public class Given_VariantKey
     [Test]
     public void It_formats_components_back_into_the_wire_value()
     {
-        VariantKey.Format("a1b2c3d4", "j", "_", "l").Value.Should().Be("a1b2c3d4.j._.l");
+        VariantKey.FromComponents("a1b2c3d4", "j", "_", "l").Value.Should().Be("a1b2c3d4.j._.l");
     }
 }

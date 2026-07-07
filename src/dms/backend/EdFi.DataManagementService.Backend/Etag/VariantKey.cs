@@ -31,7 +31,7 @@ public readonly record struct VariantKey(string Value)
     public const int ComponentCount = 4;
 
     /// <summary>Builds a variantKey wire value from its four components (fixed order).</summary>
-    public static VariantKey Format(
+    public static VariantKey FromComponents(
         string schemaEpoch,
         string formatCode,
         string profileCode,
@@ -63,10 +63,6 @@ public readonly record struct VariantKey(string Value)
     public override string ToString() => Value;
 
     /// <summary>The parsed components of a variantKey, in fixed order.</summary>
-    // The nested Format property intentionally shares its name with the enclosing type's static
-    // builder method; they are unrelated members, and the shared name mirrors the wire grammar term
-    // used throughout this file's documentation.
-#pragma warning disable S3218 // Format property does not shadow the outer type's static Format method.
     public readonly record struct Components(
         string SchemaEpoch,
         string Format,
@@ -74,7 +70,6 @@ public readonly record struct VariantKey(string Value)
         string LinkFlag
     )
     {
-#pragma warning restore S3218
         /// <summary>
         /// The subset that remains significant for RFC 7232 If-Match comparison. Per the 2026-07-04
         /// ADR amendment this is <see cref="SchemaEpoch"/> only; format, profileCode, and linkFlag are
@@ -109,7 +104,7 @@ public static class VariantKeyFactory
         var formatCode = FormatCode(format);
         var linkFlag = linksEnabled ? "l" : "n";
 
-        return VariantKey.Format(schemaEpoch, formatCode, profileCode, linkFlag);
+        return VariantKey.FromComponents(schemaEpoch, formatCode, profileCode, linkFlag);
     }
 
     // First 8 lowercase hex characters of the in-force EffectiveSchemaHash (already lowercase hex,
