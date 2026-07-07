@@ -40,11 +40,12 @@ public sealed record RelationalReadMaterializationRequest(
     public HydratedDocumentReferenceLookup? DocumentReferenceLookup { get; init; }
 
     /// <summary>
-    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>. When set (and
-    /// <see cref="MappingSet"/> is present) on an <see cref="RelationalGetRequestReadMode.ExternalResponse"/>
-    /// materialization, the served <c>_etag</c> is composed as <c>"{ContentVersion}-{variantKey}"</c>.
-    /// <see langword="null"/> on callers that have not yet been converted; those fall back to the
-    /// legacy content hash.
+    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>, required on every
+    /// <see cref="RelationalGetRequestReadMode.ExternalResponse"/> materialization (together with
+    /// <see cref="MappingSet"/>); the served <c>_etag</c> is composed as
+    /// <c>"{ContentVersion}-{variantKey}"</c>. <c>ComposeEtag</c> throws when this is
+    /// <see langword="null"/> on an external response — absence indicates a wiring bug in the caller,
+    /// not a fallback. There is no legacy content-hash path.
     /// </summary>
     public EtagVariantInputs? EtagVariant { get; init; }
 }
@@ -66,8 +67,9 @@ public sealed record RelationalReadPageMaterializationRequest(
 
     /// <summary>
     /// Representation inputs for composing a ContentVersion-based <c>_etag</c>; see
-    /// <see cref="RelationalReadMaterializationRequest.EtagVariant"/>. <see langword="null"/> callers
-    /// fall back to the legacy content hash.
+    /// <see cref="RelationalReadMaterializationRequest.EtagVariant"/>. Required on every external-response
+    /// materialization; absence is a wiring bug in the caller, not a fallback. There is no legacy
+    /// content-hash path.
     /// </summary>
     public EtagVariantInputs? EtagVariant { get; init; }
 }
