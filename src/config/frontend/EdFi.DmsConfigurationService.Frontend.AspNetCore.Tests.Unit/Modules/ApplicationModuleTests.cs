@@ -32,6 +32,7 @@ public class ApplicationModuleTests
     private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
     private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+    private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
 
     public ApplicationModuleTests()
     {
@@ -43,6 +44,18 @@ public class ApplicationModuleTests
                     new DataStoreIdsExistResult.Success([.. ids])
                 );
             });
+
+        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new EdFi.DmsConfigurationService.DataModel.Model.Profile.ProfileResponse
+                    {
+                        Id = 1,
+                        Name = "Test Profile",
+                        Definition = "<Profile/>",
+                    }
+                )
+            );
     }
 
     private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
@@ -80,7 +93,8 @@ public class ApplicationModuleTests
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _clientRepository)
                     .AddTransient((_) => _dataStoreRepository)
-                    .AddTransient((_) => _vendorRepository);
+                    .AddTransient((_) => _vendorRepository)
+                    .AddTransient((_) => _profileRepository);
             });
         });
         var client = factory.CreateClient();
@@ -1551,6 +1565,11 @@ public class ApplicationModuleTests
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
+            // The update path pre-validates profile references at the module layer, so a
+            // missing profile is reported before the identity provider client is touched.
+            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+                .Returns(new ProfileGetResult.FailureNotFound());
+
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -1662,6 +1681,58 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_not_update_identity_provider_when_update_profile_id_is_invalid()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1],
+                        "ProfileIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            // Assert - the identity provider client was never mutated for an invalid
+            // profile reference, so a rejected update cannot leave the client out of sync
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
         }
     }
 
@@ -1901,7 +1972,8 @@ public class ApplicationModuleTests
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _clientRepository)
                         .AddTransient((_) => _dataStoreRepository)
-                        .AddTransient((_) => _vendorRepository);
+                        .AddTransient((_) => _vendorRepository)
+                        .AddTransient((_) => _profileRepository);
                 });
             });
             var client = factory.CreateClient();

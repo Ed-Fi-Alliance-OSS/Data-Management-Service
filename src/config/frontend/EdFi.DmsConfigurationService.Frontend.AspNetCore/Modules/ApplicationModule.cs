@@ -247,6 +247,38 @@ public class ApplicationModule : IEndpointModule
         return null;
     }
 
+    /// <summary>
+    /// Validates that every requested profile id exists. Throws a ValidationException
+    /// when one is missing, returns a failure result for infrastructure errors, and
+    /// returns null when the request is valid. Profiles are not tenant-scoped, so this
+    /// existence check mirrors the repository's foreign-key validation exactly.
+    /// </summary>
+    private static async Task<IResult?> ValidateProfileIdsExist(
+        long[] profileIds,
+        IProfileRepository profileRepository,
+        HttpContext httpContext,
+        ILogger<ApplicationModule> logger
+    )
+    {
+        foreach (var profileId in profileIds.Distinct())
+        {
+            switch (await profileRepository.GetProfile(profileId))
+            {
+                case ProfileGetResult.Success:
+                    break;
+                case ProfileGetResult.FailureNotFound:
+                    throw new ValidationException([
+                        new ValidationFailure("ProfileId", "Profile does not exist."),
+                    ]);
+                case ProfileGetResult.FailureUnknown failure:
+                    logger.LogError("Error validating ProfileId: {Message}", SanitizeForLog(failure.Message));
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+
+        return null;
+    }
+
     private static async Task<IResult> Update(
         long id,
         ApplicationUpdateCommand.Validator validator,
@@ -255,6 +287,7 @@ public class ApplicationModule : IEndpointModule
         IApplicationRepository repository,
         IVendorRepository vendorRepository,
         IDataStoreRepository dataStoreRepository,
+        IProfileRepository profileRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
@@ -273,8 +306,12 @@ public class ApplicationModule : IEndpointModule
                 var client = success.Clients.FirstOrDefault();
                 if (client != null)
                 {
-                    // Validate references before mutating the identity provider so a
-                    // failed repository update cannot leave an orphaned client change.
+                    // Validate the request's references (vendor, data stores, profiles)
+                    // before mutating the identity provider so a rejected reference cannot
+                    // leave the client update stranded ahead of a failed repository update.
+                    // The duplicate-application-name constraint is still enforced by the
+                    // repository after this point; a collision there is reconciled by the
+                    // next successful update rather than pre-validated here.
                     switch (await vendorRepository.GetVendor(command.VendorId))
                     {
                         case VendorGetResult.Success:
@@ -302,6 +339,19 @@ public class ApplicationModule : IEndpointModule
                     )
                     {
                         return dataStoreFailure;
+                    }
+
+                    if (
+                        await ValidateProfileIdsExist(
+                            command.ProfileIds,
+                            profileRepository,
+                            httpContext,
+                            logger
+                        ) is
+                        { } profileFailure
+                    )
+                    {
+                        return profileFailure;
                     }
 
                     logger.LogInformation("Updating client {ClientId}", client.ClientId);
