@@ -208,7 +208,8 @@ public class ClaimSetTests : DatabaseTest
             _applicationRepository = new ApplicationRepository(
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             ApplicationInsertCommand application = new()

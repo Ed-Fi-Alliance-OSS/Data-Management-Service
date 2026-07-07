@@ -551,7 +551,8 @@ public class DataStoreTests : DatabaseTest
             var applicationRepository = new ApplicationRepository(
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             ApplicationInsertCommand application = new()

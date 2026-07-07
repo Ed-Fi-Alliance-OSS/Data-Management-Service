@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
@@ -18,9 +19,59 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class ApiClientRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ApiClientRepository> logger,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IApiClientRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
+    /// <summary>
+    /// SQL condition constraining an ApiClient row to the current tenant through its
+    /// owning Application's Vendor.
+    /// </summary>
+    private string TenantScopedApplicationCondition(string? tableAlias = null)
+    {
+        var column = string.IsNullOrEmpty(tableAlias)
+            ? "\"ApplicationId\""
+            : $"{tableAlias}.\"ApplicationId\"";
+        return $"""
+            {column} IN (
+                SELECT a."Id" FROM "dmscs"."Application" a
+                JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                WHERE {TenantContext.TenantWhereClause("v")}
+            )
+            """;
+    }
+
+    private string ApplicationInTenantExistsCondition =>
+        $"""
+            EXISTS (
+                SELECT 1 FROM "dmscs"."Application" a
+                JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                WHERE a."Id" = @ApplicationId AND {TenantContext.TenantWhereClause("v")}
+            )
+            """;
+
+    private async Task<bool> AllDataStoresInTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long[] dataStoreIds
+    )
+    {
+        string sql = $"""
+            SELECT COUNT(1) FROM "dmscs"."DataStore"
+            WHERE "Id" = ANY(@DataStoreIds) AND {TenantContext.TenantWhereClause()};
+            """;
+        int count = await connection.ExecuteScalarAsync<int>(
+            sql,
+            new { DataStoreIds = dataStoreIds, TenantId },
+            transaction
+        );
+        return count == dataStoreIds.Distinct().Count();
+    }
+
     public async Task<ApiClientInsertResult> InsertApiClient(
         ApiClientInsertCommand command,
         ApiClientCommand clientCommand
@@ -31,13 +82,14 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
+                SELECT @ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy
+                WHERE {ApplicationInTenantExistsCondition}
                 RETURNING "Id";
                 """;
 
-            long apiClientId = await connection.ExecuteScalarAsync<long>(
+            long? apiClientId = await connection.ExecuteScalarAsync<long?>(
                 sql,
                 new
                 {
@@ -47,12 +99,27 @@ public class ApiClientRepository(
                     command.Name,
                     command.IsApproved,
                     CreatedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 },
                 transaction
             );
 
+            if (apiClientId is null)
+            {
+                logger.LogWarning("Application not found");
+                await transaction.RollbackAsync();
+                return new ApiClientInsertResult.FailureApplicationNotFound();
+            }
+
             if (command.DataStoreIds.Length > 0)
             {
+                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
+                {
+                    logger.LogWarning("Data store not found");
+                    await transaction.RollbackAsync();
+                    return new ApiClientInsertResult.FailureDataStoreNotFound();
+                }
+
                 sql = """
                     INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
                     VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
@@ -70,7 +137,7 @@ public class ApiClientRepository(
             }
 
             await transaction.CommitAsync();
-            return new ApiClientInsertResult.Success(apiClientId);
+            return new ApiClientInsertResult.Success(apiClientId.Value);
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
@@ -114,14 +181,14 @@ public class ApiClientRepository(
     private static string BuildOrderByClause(ApiClientQuery query, string? tableAlias = null) =>
         PostgresqlIdentifier.OrderBy(ResolveOrderByColumnName(query), query.IsDescending, tableAlias);
 
-    private static string BuildFilterClause(ApiClientQuery query)
+    private string BuildFilterClause(ApiClientQuery query)
     {
-        var conditions = new List<string>();
+        var conditions = new List<string> { TenantScopedApplicationCondition() };
         if (query.ApplicationId.HasValue)
         {
             conditions.Add("\"ApplicationId\" = @ApplicationId");
         }
-        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+        return "WHERE " + string.Join(" AND ", conditions);
     }
 
     public async Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query)
@@ -156,6 +223,7 @@ public class ApiClientRepository(
                     query.Limit,
                     query.Offset,
                     query.ApplicationId,
+                    TenantId,
                 },
                 splitOn: "DataStoreId"
             );
@@ -185,12 +253,12 @@ public class ApiClientRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
-                WHERE ac."ClientId" = @ClientId;
+                WHERE ac."ClientId" = @ClientId AND {TenantScopedApplicationCondition("ac")};
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
@@ -203,7 +271,7 @@ public class ApiClientRepository(
                     }
                     return apiClient;
                 },
-                param: new { ClientId = clientId },
+                param: new { ClientId = clientId, TenantId },
                 splitOn: "DataStoreId"
             );
 
@@ -234,12 +302,12 @@ public class ApiClientRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
-                WHERE ac."Id" = @Id;
+                WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")};
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
@@ -252,7 +320,7 @@ public class ApiClientRepository(
                     }
                     return apiClient;
                 },
-                param: new { Id = id },
+                param: new { Id = id, TenantId },
                 splitOn: "DataStoreId"
             );
 
@@ -284,25 +352,32 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // Check if ApiClient exists
-            string checkSql = """SELECT COUNT(1) FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""";
-            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { command.Id }, transaction);
+            // Check if ApiClient exists within the current tenant
+            string checkSql = $"""
+                SELECT COUNT(1) FROM "dmscs"."ApiClient"
+                WHERE "Id" = @Id AND {TenantScopedApplicationCondition()};
+                """;
+            int exists = await connection.ExecuteScalarAsync<int>(
+                checkSql,
+                new { command.Id, TenantId },
+                transaction
+            );
             if (exists == 0)
             {
                 await transaction.RollbackAsync();
                 return new ApiClientUpdateResult.FailureNotFound();
             }
 
-            // Update ApiClient record
-            string updateSql = """
+            // Update ApiClient record; the target application must belong to the current tenant
+            string updateSql = $"""
                 UPDATE "dmscs"."ApiClient"
                 SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
                     "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
-                WHERE "Id" = @Id;
+                WHERE "Id" = @Id AND {ApplicationInTenantExistsCondition};
                 """;
 
-            await connection.ExecuteAsync(
+            int updatedRows = await connection.ExecuteAsync(
                 updateSql,
                 new
                 {
@@ -313,9 +388,27 @@ public class ApiClientRepository(
                     ClientUuid = command.ClientUuid,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 },
                 transaction
             );
+
+            if (updatedRows == 0)
+            {
+                logger.LogWarning("Application not found");
+                await transaction.RollbackAsync();
+                return new ApiClientUpdateResult.FailureApplicationNotFound();
+            }
+
+            if (
+                command.DataStoreIds.Length > 0
+                && !await AllDataStoresInTenant(connection, transaction, command.DataStoreIds)
+            )
+            {
+                logger.LogWarning("Data store not found");
+                await transaction.RollbackAsync();
+                return new ApiClientUpdateResult.FailureDataStoreNotFound();
+            }
 
             // Delete existing data store mappings
             string deleteSql = """DELETE FROM "dmscs"."ApiClientDataStore" WHERE "ApiClientId" = @Id;""";
@@ -376,9 +469,16 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // Check if ApiClient exists
-            string checkSql = """SELECT COUNT(1) FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""";
-            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { Id = id }, transaction);
+            // Check if ApiClient exists within the current tenant
+            string checkSql = $"""
+                SELECT COUNT(1) FROM "dmscs"."ApiClient"
+                WHERE "Id" = @Id AND {TenantScopedApplicationCondition()};
+                """;
+            int exists = await connection.ExecuteScalarAsync<int>(
+                checkSql,
+                new { Id = id, TenantId },
+                transaction
+            );
             if (exists == 0)
             {
                 await transaction.RollbackAsync();

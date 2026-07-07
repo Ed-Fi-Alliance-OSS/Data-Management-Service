@@ -217,7 +217,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             [SetUp]
@@ -413,13 +414,15 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApplicationRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             [SetUp]
