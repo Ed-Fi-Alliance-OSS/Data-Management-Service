@@ -826,6 +826,228 @@ public class Given_A_Postgresql_Unprofiled_Put_Using_The_Current_Profiled_Get_Et
         _unprofiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
 }
 
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Unprofiled_Delete_Using_The_Current_Profiled_Get_Etag
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("b1c2d3e4-0006-4a1b-9c2d-1a2b3c4d5e06")
+    );
+
+    private const int NamingStressItemId = 7611;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private DeleteResult _unprofiledDeleteResult = null!;
+    private GetResult _getAfterDelete = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            PostgresqlProfileRootTableOnlyMergeSupport.NamingStressFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostgresqlProfileIfMatchEtagTestSupport.CreateServiceProvider();
+
+        var seedBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 42,
+        };
+
+        (
+            await PostgresqlProfileIfMatchEtagTestSupport.SeedAsync(
+                _serviceProvider,
+                _database,
+                _mappingSet,
+                NamingStressItemId,
+                seedBody,
+                DocumentUuid,
+                "pg-unprofiled-delete-profiled-etag-seed"
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+
+        var profiledGet = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-unprofiled-delete-profiled-etag-get",
+            PostgresqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext()
+        );
+
+        var profiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(profiledGet)
+        );
+
+        // DELETE has no profile lens (unprofiled is the only DELETE path), guarded by the etag
+        // captured from the profiled read.
+        _unprofiledDeleteResult = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteDeleteAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-unprofiled-delete-profiled-etag-delete",
+            profiledEtag
+        );
+
+        _getAfterDelete = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-unprofiled-delete-profiled-etag-get-after"
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public void It_accepts_the_profiled_get_etag_for_an_unprofiled_delete() =>
+        _unprofiledDeleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+
+    [Test]
+    public void It_removes_the_document() =>
+        _getAfterDelete.Should().BeOfType<GetResult.GetFailureNotExists>();
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden_Field_Change
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("b1c2d3e4-0007-4a1b-9c2d-1a2b3c4d5e07")
+    );
+
+    private const int NamingStressItemId = 7622;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private DeleteResult _staleDeleteResult = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            PostgresqlProfileRootTableOnlyMergeSupport.NamingStressFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostgresqlProfileIfMatchEtagTestSupport.CreateServiceProvider();
+
+        var seedBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 42,
+        };
+
+        (
+            await PostgresqlProfileIfMatchEtagTestSupport.SeedAsync(
+                _serviceProvider,
+                _database,
+                _mappingSet,
+                NamingStressItemId,
+                seedBody,
+                DocumentUuid,
+                "pg-delete-stale-profiled-etag-seed"
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+
+        var profiledGetBeforeHiddenChange = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-delete-stale-profiled-etag-get-before",
+            PostgresqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext()
+        );
+
+        var staleProfiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(profiledGetBeforeHiddenChange)
+        );
+
+        var hiddenFieldChangeBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 43,
+        };
+
+        (
+            await PostgresqlProfileIfMatchEtagTestSupport.ExecuteUnprofiledUpdateAsync(
+                _serviceProvider,
+                _database.ConnectionString,
+                _mappingSet,
+                NamingStressItemId,
+                DocumentUuid,
+                hiddenFieldChangeBody,
+                "pg-delete-stale-profiled-etag-hidden-field-change"
+            )
+        )
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+
+        // DELETE has no profile lens (unprofiled is the only DELETE path), guarded by the now-stale
+        // etag captured before the hidden-field change bumped ContentVersion.
+        _staleDeleteResult = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteDeleteAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-delete-stale-profiled-etag-delete",
+            staleProfiledEtag
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public void It_returns_412_for_a_delete_using_the_stale_profiled_etag() =>
+        _staleDeleteResult.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  RFC 7232 wildcard (If-Match: *) end-to-end behavior against a real database.
 // ─────────────────────────────────────────────────────────────────────────────
