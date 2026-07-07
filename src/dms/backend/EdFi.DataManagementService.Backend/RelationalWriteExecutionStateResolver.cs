@@ -14,7 +14,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IEtagComposer etagComposer
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator
 )
 {
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
@@ -27,8 +28,11 @@ internal sealed class RelationalWriteExecutionStateResolver(
         currentEtagPreconditionChecker
         ?? throw new ArgumentNullException(nameof(currentEtagPreconditionChecker));
 
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
 
     public static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
@@ -144,26 +148,20 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         // If-Match compares the state-significant projection of the composed etag (ContentVersion,
         // schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode as of the
-        // 2026-07-04 ADR amendment), so the values passed for them here are not significant. A wildcard
-        // precondition (If-Match: *) short-circuits to a match because currentState being non-null means
-        // the target row exists.
-        var currentEtag = _etagComposer.Compose(
-            currentState.DocumentMetadata.ContentVersion,
-            VariantKeyFactory.Create(
+        // 2026-07-04 ADR amendment), so the values passed for them here are not significant. The
+        // evaluator handles the wildcard precondition (If-Match: *) internally, short-circuiting to a
+        // match because currentState being non-null means the target row exists.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
                 request.MappingSet.Key.EffectiveSchemaHash,
                 ResponseFormat.Json,
-                ProfileVariantCode.Of(request.ProfileWriteContext?.ProfileName),
-                linksEnabled: true
+                request.ProfileWriteContext?.ProfileName,
+                LinksEnabled: true,
+                currentState.DocumentMetadata.ContentVersion
             )
         );
 
-        return
-            ifMatch.IsWildcard
-            || string.Equals(
-                EtagMatchProjection.Of(ifMatch.Value),
-                EtagMatchProjection.Of(currentEtag),
-                StringComparison.Ordinal
-            )
+        return _ifMatchEvaluator.Evaluate(ifMatch, currentEtag).IsMatch
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }

@@ -26,7 +26,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
-    IEtagComposer etagComposer,
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
@@ -54,7 +55,8 @@ internal sealed class DefaultRelationalWriteExecutor(
         targetLookupResolver,
         currentStateLoader,
         currentEtagPreconditionChecker,
-        etagComposer
+        servedEtagComposer,
+        ifMatchEvaluator
     );
 
     private readonly RelationalWriteMergeOrchestrator _mergeOrchestrator = new(

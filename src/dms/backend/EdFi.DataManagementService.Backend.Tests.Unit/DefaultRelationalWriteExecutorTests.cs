@@ -78,7 +78,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator()
         );
     }
 
@@ -666,7 +667,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             parameterConfigurator
         );
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -750,7 +752,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
@@ -807,7 +810,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
         );
@@ -1509,7 +1513,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator()
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -5787,7 +5792,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 providerMessage
