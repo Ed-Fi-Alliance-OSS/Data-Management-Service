@@ -181,7 +181,9 @@ internal sealed class DescriptorWriteHandler(
             {
                 case DescriptorLockedPreconditionResult.CreateNew:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch();
+                    return new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    );
 
                 case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -366,7 +368,9 @@ internal sealed class DescriptorWriteHandler(
                         // missing PUT target yields the precondition-failed (412) result rather than
                         // not-exists (404).
                         return ifMatch.IsWildcard
-                            ? new UpdateResult.UpdateFailureETagMisMatch()
+                            ? new UpdateResult.UpdateFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new UpdateResult.UpdateFailureNotExists();
 
                     case DescriptorLockedPreconditionResult.MissingDescriptor(
@@ -687,7 +691,9 @@ internal sealed class DescriptorWriteHandler(
                         // than not-exists (404).
                         DescriptorLockedPreconditionResult.NotFound
                         or DescriptorLockedPreconditionResult.MissingDocument => ifMatch.IsWildcard
-                            ? new DeleteResult.DeleteFailureETagMisMatch()
+                            ? new DeleteResult.DeleteFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new DeleteResult.DeleteFailureNotExists(),
                         DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
                             new DeleteResult.UnknownFailure(

@@ -431,7 +431,9 @@ public sealed class RelationalDocumentStoreRepository(
                     // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing
                     // DELETE target yields the precondition-failed (412) result rather than 404.
                     outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                        ? new DeleteResult.DeleteFailureETagMisMatch()
+                        ? new DeleteResult.DeleteFailureETagMisMatch(
+                            ETagPreconditionFailureReason.TargetDoesNotExist
+                        )
                         : new DeleteResult.DeleteFailureNotExists();
                 }
                 else
@@ -448,7 +450,9 @@ public sealed class RelationalDocumentStoreRepository(
                         // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
                         // target that vanished before locking yields 412 rather than 404.
                         outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                            ? new DeleteResult.DeleteFailureETagMisMatch()
+                            ? new DeleteResult.DeleteFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new DeleteResult.DeleteFailureNotExists();
                     }
                     else
@@ -591,7 +595,9 @@ public sealed class RelationalDocumentStoreRepository(
                 // RFC 7232 If-Match: * requires the target to exist; a wildcard whose recheck cannot
                 // re-lock the target (a concurrent delete) yields 412 rather than 404.
                 return ifMatch.IsWildcard
-                    ? new DeleteResult.DeleteFailureETagMisMatch()
+                    ? new DeleteResult.DeleteFailureETagMisMatch(
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
                     : new DeleteResult.DeleteFailureNotExists();
             }
 
@@ -2265,7 +2271,10 @@ public sealed class RelationalDocumentStoreRepository(
             return new TargetContextResolution(
                 null,
                 writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(operationKind)
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        operationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
         }

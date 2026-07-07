@@ -1104,7 +1104,11 @@ public class Given_A_Postgresql_Wildcard_IfMatch_Put_Against_A_Missing_Document
 
     [Test]
     public void It_returns_412_and_not_404_for_a_wildcard_put_against_a_missing_document() =>
-        _wildcardPutResult.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        _wildcardPutResult
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }
 
 [TestFixture]
@@ -1161,7 +1165,11 @@ public class Given_A_Postgresql_Wildcard_IfMatch_Delete_Against_A_Missing_Docume
 
     [Test]
     public void It_returns_412_and_not_404_for_a_wildcard_delete_against_a_missing_document() =>
-        _wildcardDeleteResult.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        _wildcardDeleteResult
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }
 
 [TestFixture]
@@ -1229,5 +1237,9 @@ public class Given_A_Postgresql_Wildcard_IfMatch_Post_Resolving_To_Insert
 
     [Test]
     public void It_returns_412_for_a_wildcard_post_resolving_to_insert() =>
-        _wildcardPostResult.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        _wildcardPostResult
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }

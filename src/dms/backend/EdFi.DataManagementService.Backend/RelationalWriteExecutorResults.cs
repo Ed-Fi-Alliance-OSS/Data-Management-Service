@@ -301,16 +301,17 @@ internal static class RelationalWriteExecutorResults
     }
 
     public static RelationalWriteExecutorResult BuildPreconditionFailureResult(
-        RelationalWriteOperationKind operationKind
+        RelationalWriteOperationKind operationKind,
+        ETagPreconditionFailureReason reason = ETagPreconditionFailureReason.Concurrency
     )
     {
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureETagMisMatch()
+                new UpsertResult.UpsertFailureETagMisMatch(reason)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureETagMisMatch()
+                new UpdateResult.UpdateFailureETagMisMatch(reason)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };

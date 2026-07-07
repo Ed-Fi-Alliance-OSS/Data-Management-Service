@@ -115,7 +115,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
         {
-            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
+            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                request.OperationKind,
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
@@ -140,7 +143,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
                 // target yields the precondition-failed (412) result rather than not-exists (404).
                 RelationalWriteOperationKind.Put => ifMatch.IsWildcard
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        request.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             };
@@ -337,7 +343,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 // target yields the precondition-failed (412) result rather than not-exists (404).
                 request.WritePrecondition
                     is WritePrecondition.IfMatch { IsWildcard: true }
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        request.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             ),
             RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>

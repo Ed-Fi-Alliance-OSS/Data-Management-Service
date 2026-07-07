@@ -44,7 +44,13 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        // The advisory target re-resolves as CreateNew, so there is no current representation to
+        // satisfy If-Match against, and the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -123,12 +129,57 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            );
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_put_when_if_match_mismatches()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
@@ -364,7 +415,12 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        // The PUT target does not exist, so the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -634,7 +690,13 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandleDeleteAsync(request);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -815,7 +877,12 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandleDeleteAsync(request);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        // The DELETE target does not exist, so the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);

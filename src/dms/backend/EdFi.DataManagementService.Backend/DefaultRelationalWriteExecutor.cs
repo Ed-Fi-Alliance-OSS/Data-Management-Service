@@ -156,7 +156,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        executionRequest.OperationKind
+                        executionRequest.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
                     );
                 }
             }
