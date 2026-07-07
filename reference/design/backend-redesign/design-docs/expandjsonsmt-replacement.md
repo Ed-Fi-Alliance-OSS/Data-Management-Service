@@ -147,12 +147,13 @@ hierarchy-array shape is a legacy concern.
 
 ### Relational Kafka streaming contract (DMS-1245) and E2E follow-up (DMS-1232)
 
-`KafkaMessaging.feature` scenarios 02–04 are `@ignore` / DMS-1232 ("until
-relational backend Kafka streaming supports document create/update/delete").
-Existing checked-in connector configs are legacy-oriented and do not implement
-the DMS-1245 relational CDC contract. Relational change tracking today is the
-polling Change Queries API (`ContentVersion`), a separate mechanism from
-Debezium/Kafka.
+Legacy Kafka E2E expectations were tied to DMS-1232 ("until relational backend
+Kafka streaming supports document create/update/delete"). The current DMS
+checkout does not carry active legacy Kafka feature coverage; DMS-1232 should add
+or replace E2E coverage for the relational CDC contract. Existing checked-in
+connector configs are legacy-oriented and do not implement the DMS-1245
+relational CDC contract. Relational change tracking today is the polling Change
+Queries API (`ContentVersion`), a separate mechanism from Debezium/Kafka.
 
 **Consequence:** DMS-911 must not encode the relational stream shape inside the
 SMT itself. The stream shape is now owned by the DMS-1245 CDC decision records:
@@ -332,9 +333,9 @@ Acceptance criteria:
   field, invalid JSON failure mode, and output under
   `schemas.enable=false`. Tests assert the **Ed-Fi contract**, not RedHat
   behavior.
-- **DMS E2E:** the natural home is the quarantined `KafkaMessaging.feature`
-  scenarios once relational-backend streaming lands; DMS-1232 should assert the
-  DMS-1245 v1 contract rather than the legacy `deleted=true` / `EdFiDoc` shape.
+- **DMS E2E:** DMS-1232 should add or replace relational CDC scenarios once
+  relational-backend streaming lands, asserting the DMS-1245 v1 contract rather
+  than the legacy `deleted=true` / `EdFiDoc` shape.
 
 ## References
 
@@ -348,9 +349,9 @@ Acceptance criteria:
   `eng/docker-compose/postgresql_connector.json`,
   `eng/docker-compose/data_store_connector_template.json`,
   `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Infrastructure/DebeziumConnectorClient.cs`
-- Streaming status: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/KafkaMessaging.feature`
-  (DMS-1232 quarantine); reference architecture `reference/design/cdc-streaming.md`
-  and `reference/design/backend-redesign/design-docs/cdc/`
+- Streaming status: DMS-1232 owns replacement relational CDC E2E coverage;
+  reference architecture `reference/design/cdc-streaming.md` and
+  `reference/design/backend-redesign/design-docs/cdc/`
 - Local context: `eng/docker-compose/kafka.yml` (Kafka 3.9.0 broker; Connect
   image `edfialliance/ed-fi-kafka-connect:pre`)
 - Upstream: [RedHatInsights/expandjsonsmt](https://github.com/RedHatInsights/expandjsonsmt)

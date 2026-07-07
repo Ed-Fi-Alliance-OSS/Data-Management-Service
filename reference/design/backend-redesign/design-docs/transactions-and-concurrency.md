@@ -521,7 +521,7 @@ Invalidation approaches:
 `dms.DocumentCache` is an optional **materialized JSON projection** of GET/query results, intended for:
 - accelerating GET/query response assembly (skip reconstitution),
 - CDC streaming (e.g., Debezium → Kafka), and
-- downstream indexing (e.g., OpenSearch).
+- downstream indexing and external integrations.
 
 When relational CDC/Kafka is enabled, `dms.DocumentCache` is conditionally required and is the Debezium
 capture source. CDC still observes projection writes rather than original resource-table writes, so
