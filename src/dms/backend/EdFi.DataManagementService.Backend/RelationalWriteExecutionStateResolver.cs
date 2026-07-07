@@ -146,7 +146,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
                 _logger.LogDebug(
                     "Deferred If-Match precondition for document {DocumentId}: no current representation "
-                        + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); precondition fails",
+                        + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); "
+                        + "resolving missing-target outcome",
                     missingTarget.DocumentId,
                     request.OperationKind,
                     ifMatch.IsWildcard,
