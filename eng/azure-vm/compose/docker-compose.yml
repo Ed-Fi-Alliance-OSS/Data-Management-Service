@@ -35,7 +35,6 @@ x-dms-common-env: &dms-common-env
   # below, so it works with the self-signed cert too. JWT validation is unaffected (it uses
   # JwtAuthentication__MetadataAddress).
   AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
-  AppSettings__DeployDatabaseOnStartup: "false"  # DMS data DBs are provisioned out-of-band by the dms-schema tool, not on startup
   Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
   AppSettings__MaskRequestBodyInLogs: "true"
   AppSettings__MaximumPageSize: "500"
@@ -59,7 +58,6 @@ x-dms-common-env: &dms-common-env
   ConfigurationServiceSettings__Scope: "${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
   ConfigurationServiceSettings__ClientSecret: "${CONFIG_SERVICE_CLIENT_SECRET:?set CONFIG_SERVICE_CLIENT_SECRET in .env}"
   ConfigurationServiceSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
-  ConfigurationServiceSettings__CacheExpirationMinutes: "${CACHE_EXPIRATION_MINUTES:-10}"
   # JWT validation. Authority = public issuer (must match token `iss`);
   # MetadataAddress = internal so DMS never has to trust the gateway cert.
   JwtAuthentication__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
@@ -108,7 +106,6 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__RequireHttpsMetadata: "false"
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   IdentitySettings__EncryptionKey: "${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:?set DMS_CONFIG_IDENTITY_ENCRYPTION_KEY in .env}"
-  IdentitySettings__HashingIterations: "210000"
   # Embedded claim sets include E2E-NoFurtherAuthRequiredClaimSet (full access),
   # E2E-NameSpaceBasedClaimSet, and E2E-RelationshipsWithEdOrgsOnlyClaimSet (school/district-level).
   # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load custom claim set JSON dropped into ./claims
@@ -169,7 +166,6 @@ services:
       AppSettings__PathBase: "st-dms"
       AppSettings__MultiTenancy: "false"
       AppSettings__RouteQualifierSegments: ""
-      ConnectionStrings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st;NoResetOnClose=true;"
       DATABASE_CONNECTION_STRING_ADMIN: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st;"
       ConfigurationServiceSettings__BaseUrl: "http://st-config:8081"
     volumes:
@@ -217,7 +213,6 @@ services:
       AppSettings__PathBase: "mt-dms"
       AppSettings__MultiTenancy: "true"
       AppSettings__RouteQualifierSegments: "${ROUTE_QUALIFIER_SEGMENTS:-schoolYear}"
-      ConnectionStrings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt;NoResetOnClose=true;"
       DATABASE_CONNECTION_STRING_ADMIN: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt;"
       ConfigurationServiceSettings__BaseUrl: "http://mt-config:8081"
     volumes:

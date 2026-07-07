@@ -136,10 +136,9 @@ of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
 ## Provisioning method (as deployed)
 
 The DMS data databases use the **relational backend** (per-resource `edfi.*` tables + a
-`dms.EffectiveSchema` fingerprint), so they are **provisioned out of band**: the DMS
-services run with `AppSettings__DeployDatabaseOnStartup=false` and the legacy installer
-disabled (`NEED_DATABASE_SETUP=false`), and the staged ApiSchema is mounted read-only at
-`/app/ApiSchema` so the running fingerprint matches the provisioned schema by construction.
+`dms.EffectiveSchema` fingerprint), so they are **provisioned out of band**: the DMS never
+deploys schema on startup, and the staged ApiSchema is mounted read-only at `/app/ApiSchema`
+so the running fingerprint matches the provisioned schema by construction.
 
 Order used to stand the environment up (and that a re-deploy should follow):
 
