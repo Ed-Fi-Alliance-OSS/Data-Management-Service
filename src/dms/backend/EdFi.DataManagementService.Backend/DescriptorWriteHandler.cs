@@ -971,15 +971,18 @@ internal sealed class DescriptorWriteHandler(
         {
             var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
 
-            _logger.LogDebug(
-                "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
-                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
-                existingTargetContext.DocumentId,
-                ifMatch.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
-                currentEtag,
-                evaluation.IsMatch
-            );
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(
+                    "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                        + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                    existingTargetContext.DocumentId,
+                    ifMatch.IsWildcard,
+                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                    currentEtag,
+                    evaluation.IsMatch
+                );
+            }
 
             return evaluation.IsMatch
                 ? new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag)

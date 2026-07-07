@@ -141,15 +141,18 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (currentState is null)
         {
-            var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
-            _logger.LogDebug(
-                "Deferred If-Match precondition for document {DocumentId}: no current representation "
-                    + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); precondition fails",
-                missingTarget.DocumentId,
-                request.OperationKind,
-                ifMatch.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(ifMatch.Value)
-            );
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+                _logger.LogDebug(
+                    "Deferred If-Match precondition for document {DocumentId}: no current representation "
+                        + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); precondition fails",
+                    missingTarget.DocumentId,
+                    request.OperationKind,
+                    ifMatch.IsWildcard,
+                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value)
+                );
+            }
             return request.OperationKind switch
             {
                 RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
@@ -182,18 +185,21 @@ internal sealed class RelationalWriteExecutionStateResolver(
             )
         );
 
-        var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
         var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
 
-        _logger.LogDebug(
-            "Deferred If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
-                + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
-            existing.DocumentId,
-            ifMatch.IsWildcard,
-            LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
-            currentEtag,
-            evaluation.IsMatch
-        );
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+            _logger.LogDebug(
+                "Deferred If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                existing.DocumentId,
+                ifMatch.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
 
         return evaluation.IsMatch
             ? null

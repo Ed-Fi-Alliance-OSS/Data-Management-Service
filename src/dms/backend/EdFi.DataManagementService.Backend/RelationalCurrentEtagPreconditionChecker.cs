@@ -170,15 +170,18 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
 
         var evaluation = _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag);
 
-        _logger.LogDebug(
-            "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
-                + "currentTag={CurrentTag}, matched={IsMatch}",
-            request.TargetContext.DocumentId,
-            request.Precondition.IsWildcard,
-            LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
-            currentEtag,
-            evaluation.IsMatch
-        );
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
+                    + "currentTag={CurrentTag}, matched={IsMatch}",
+                request.TargetContext.DocumentId,
+                request.Precondition.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
 
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
