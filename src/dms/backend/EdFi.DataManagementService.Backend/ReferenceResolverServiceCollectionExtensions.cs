@@ -67,6 +67,8 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<ISessionDocumentHydrator, TSessionDocumentHydrator>());
         // Stateless composer for the ContentVersion-based _etag; singleton so it is reused.
         services.TryAdd(ServiceDescriptor.Singleton<IEtagComposer, EtagComposer>());
+        services.TryAdd(ServiceDescriptor.Singleton<IServedEtagComposer, ServedEtagComposer>());
+        services.TryAdd(ServiceDescriptor.Singleton<IIfMatchEvaluator, IfMatchEvaluator>());
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalReadMaterializer, RelationalReadMaterializer>());
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
