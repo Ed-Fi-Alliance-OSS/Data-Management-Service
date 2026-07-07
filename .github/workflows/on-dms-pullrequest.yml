@@ -37,6 +37,10 @@ on:
       # must still trigger this workflow's DMS + DS 6.1 validation.
       - "src/config/**"
 
+  merge_group:
+    types:
+      - checks_requested
+
   workflow_dispatch:
     inputs:
       mssql_generated_ddl_provision_max_concurrency:
@@ -89,6 +93,13 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
             changed_files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")"
+          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            base_sha="${{ github.event.merge_group.base_sha }}"
+
+            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --name-only "$base_sha" "${{ github.sha }}")"; then
+              echo "fresh_build_required=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             before="${{ github.event.before }}"
 
@@ -415,7 +426,7 @@ jobs:
       # E2E/OpenAPI jobs rebuilding local images while rolling this change back or forward.
       REBUILD_DOWNSTREAM_IMAGES: ${{ vars.REBUILD_DOWNSTREAM_IMAGES }}
       IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-      PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Prepare CI image tags
         id: prepare-images
