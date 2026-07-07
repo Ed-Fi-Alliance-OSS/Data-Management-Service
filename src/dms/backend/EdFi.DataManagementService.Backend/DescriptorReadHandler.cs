@@ -22,7 +22,7 @@ internal sealed record DescriptorQueryRowsPage(long? TotalCount, IReadOnlyList<D
 internal sealed class DescriptorReadHandler(
     IRelationalCommandExecutor commandExecutor,
     IReadableProfileProjector readableProfileProjector,
-    IEtagComposer etagComposer,
+    IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger
 ) : IDescriptorReadHandler
 {
@@ -36,8 +36,8 @@ internal sealed class DescriptorReadHandler(
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
     private readonly ILogger<DescriptorReadHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -444,9 +444,6 @@ internal sealed class DescriptorReadHandler(
 
         JsonArray edfiDocs = [];
 
-        // Build the fixed descriptor variant key once per request rather than per row.
-        var variantKey = DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash);
-
         foreach (var descriptorRow in descriptorRows)
         {
             edfiDocs.Add(
@@ -454,7 +451,7 @@ internal sealed class DescriptorReadHandler(
                     descriptorRow,
                     RelationalGetRequestReadMode.ExternalResponse,
                     request.ReadableProfileProjectionContext,
-                    variantKey
+                    request.MappingSet.Key.EffectiveSchemaHash
                 )
             );
         }
@@ -462,31 +459,55 @@ internal sealed class DescriptorReadHandler(
         return edfiDocs;
     }
 
+    // Descriptors carry no reference links and are always served as JSON, so the served etag's
+    // linkFlag/format components are the fixed descriptor values ("n" / "j"); only the profile
+    // component varies, and only for ExternalResponse reads that a readable profile actually
+    // projects. This condition mirrors RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection
+    // so the descriptor and non-descriptor read paths stay in lockstep.
     private JsonNode MaterializeDescriptorDocument(
         DescriptorReadRow descriptorRow,
         RelationalGetRequestReadMode readMode,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
-        VariantKey variantKey
+        string effectiveSchemaHash
     )
     {
+        var appliesReadableProfileProjection =
+            readMode == RelationalGetRequestReadMode.ExternalResponse
+            && readableProfileProjectionContext is not null;
+
+        string? composedEtag = null;
+
+        if (readMode == RelationalGetRequestReadMode.ExternalResponse)
+        {
+            string? etagProfileName = appliesReadableProfileProjection
+                ? readableProfileProjectionContext!.ProfileName
+                : null;
+
+            composedEtag = _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    effectiveSchemaHash,
+                    ResponseFormat.Json,
+                    etagProfileName,
+                    LinksEnabled: false,
+                    descriptorRow.ContentVersion
+                )
+            );
+        }
+
         var materializedDocument = DescriptorDocumentMaterializer.Materialize(
             descriptorRow,
             readMode,
-            _etagComposer,
-            variantKey
+            composedEtag
         );
 
-        if (
-            readMode != RelationalGetRequestReadMode.ExternalResponse
-            || readableProfileProjectionContext is null
-        )
+        if (!appliesReadableProfileProjection)
         {
             return materializedDocument;
         }
 
         var projectedDocument = _readableProfileProjector.Project(
             materializedDocument,
-            readableProfileProjectionContext.ContentTypeDefinition,
+            readableProfileProjectionContext!.ContentTypeDefinition,
             readableProfileProjectionContext.IdentityPropertyNames
         );
 
@@ -501,7 +522,7 @@ internal sealed class DescriptorReadHandler(
             descriptorRow,
             request.ReadMode,
             request.ReadableProfileProjectionContext,
-            DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash)
+            request.MappingSet.Key.EffectiveSchemaHash
         );
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)

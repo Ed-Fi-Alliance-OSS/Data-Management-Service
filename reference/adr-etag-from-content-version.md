@@ -9,6 +9,8 @@ compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode
 compatibility — see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted). \
 **Amended 2026-07-05:** bare `If-Match: *` honored as an existence precondition per RFC 7232 §3.1 —
 see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching). \
+**Amended 2026-07-07:** the served descriptor `_etag` is now profile-sensitive for conditional-GET
+correctness — see [Amendment (2026-07-07, descriptor profile etag)](#amendment-2026-07-07-descriptor-served-etag-varies-by-readable-profile). \
 **Date:** 2026-06-30 (accepted 2026-07-03) \
 **Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
@@ -333,3 +335,34 @@ Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendmen
 ### Consequence
 
 `If-Match: *` becomes a working existence precondition — succeeding on any current version of an existing resource and returning `412` when the resource does not exist — instead of an unconditional `412` in all cases. Optimistic-concurrency behavior for specific-tag `If-Match` is unchanged.
+
+## Amendment (2026-07-07): descriptor served `_etag` varies by readable profile
+
+**Status:** Accepted — closes a gap left open when the profile-sensitive served etag (see "ETag format and HTTP validator semantics (RFC 7232)") was implemented only for non-descriptor resources. \
+**Date:** 2026-07-07 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-07 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+A feasibility spike confirmed that descriptors **are** subject to readable-profile projection on GET: `ProfileResolutionMiddleware` runs on the descriptor GET pipelines, `Handler/Utility.CreateReadableProfileProjectionContext` special-cases `IsDescriptor` to seed the identity-property allow-list, and `DescriptorReadHandler.MaterializeDescriptorDocument` already applied `IReadableProfileProjector.Project(...)` to the served descriptor body when a projection context was present. Despite that, the served descriptor `_etag` was composed via the fixed `DescriptorVariantKey.For(effectiveSchemaHash)`, whose `profileCode` is hardcoded to the no-profile sentinel `_` regardless of whether a profile actually projected the body. Two profile-different descriptor representations therefore shared one strong `ETag` — a violation of RFC 7232 §2.1 for the same reason the main ADR text gives for non-descriptor resources.
+
+`DescriptorReadHandler` now composes the served descriptor etag through `IServedEtagComposer`, passing the active readable profile's name (when one actually projects the read) instead of the fixed descriptor variant key. `DescriptorDocumentMaterializer.Materialize` no longer composes the etag itself; it accepts the caller's precomposed string, so the handler alone decides profile-sensitivity — mirroring the pattern already used by the non-descriptor path (`RelationalReadMaterializer.ComposeEtag`). The condition that selects the profile name mirrors `RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection` exactly (`ExternalResponse` read mode **and** a non-null projection context), so the descriptor and non-descriptor read paths stay in lockstep.
+
+### What did not change
+
+- **Descriptor `If-Match` remains profile-insensitive.** `EtagMatchProjection.Of` (unaffected by this change) drops `profileCode` — along with `format` and `linkFlag` — from every precondition comparison, descriptor or not (see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison)). A descriptor PUT/DELETE using an `If-Match` value obtained from a profiled GET still succeeds whenever `ContentVersion` and `schemaEpoch` agree, exactly as for non-descriptor resources.
+- **Descriptor write-response etags remain unprofiled.** `DescriptorWriteHandler` already composed its response etag via `IServedEtagComposer` with `ProfileName: null` before this change and continues to do so; only the *read* path changes.
+- `DescriptorVariantKey` is left in place: it remains the correct, still-used shorthand for the fixed "no profile, no links, JSON" variant in the descriptor *write*-side tests (`DescriptorWriteHandlerPreconditionTests`, `DescriptorWriteHandlerResponseEtagTests`), where the represented etag genuinely is always profile-insensitive. It is simply no longer invoked from descriptor *read* production code.
+
+### Scope of the code change
+
+- `DescriptorReadHandler` (`src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs`): constructor now takes `IServedEtagComposer` instead of `IEtagComposer`; the descriptor GET-by-id and query materialization paths compose the served etag from `ServedEtagContext` with the resolved profile name (or `null`) rather than the fixed `DescriptorVariantKey`.
+- `DescriptorDocumentMaterializer` (`src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs`): `Materialize` now takes a precomposed `string? composedEtag` instead of `IEtagComposer` + `VariantKey`, and throws if an `ExternalResponse` read is materialized without one.
+- Test updates: `DescriptorReadHandlerTests`, `DescriptorDocumentMaterializerTests`, and `DescriptorReadHandlerNamespaceAuthorizationTests` updated for the new signatures; the previous pinning test (which asserted a profiled and unprofiled descriptor read shared one `_etag`) was flipped to assert they now differ, and a case was added proving unprofiled descriptor reads still yield the `_` profile code. `DescriptorWriteHandlerPreconditionTests` gained PUT and DELETE cases proving a profile-obtained descriptor etag still satisfies `If-Match` against an unprofiled write.
+
+### Consequence
+
+Two profile-different descriptor GET representations now carry distinct strong `ETag` values, closing the RFC 7232 §2.1 gap for descriptors specifically (the main ADR text already closed it for non-descriptor resources). `If-Match` / `If-None-Match` semantics for descriptor writes are unaffected — a client may still read a descriptor under one profile and write it back unprofiled using the same etag.

@@ -5,7 +5,6 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
@@ -18,15 +17,20 @@ internal static class DescriptorDocumentMaterializer
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
 
+    /// <summary>
+    /// Materializes a descriptor document. <paramref name="composedEtag"/> must be the fully composed
+    /// served <c>_etag</c> string (see <see cref="EdFi.DataManagementService.Backend.Etag.IServedEtagComposer"/>)
+    /// for <see cref="RelationalGetRequestReadMode.ExternalResponse"/> reads; the caller decides the
+    /// profile-sensitivity of that value, so this materializer performs no etag composition itself. Ignored
+    /// (and may be <see langword="null"/>) for <see cref="RelationalGetRequestReadMode.StoredDocument"/> reads.
+    /// </summary>
     public static JsonObject Materialize(
         DescriptorReadRow descriptorRow,
         RelationalGetRequestReadMode readMode,
-        IEtagComposer etagComposer,
-        VariantKey variantKey
+        string? composedEtag
     )
     {
         ArgumentNullException.ThrowIfNull(descriptorRow);
-        ArgumentNullException.ThrowIfNull(etagComposer);
 
         var descriptorBody = BuildDescriptorBody(descriptorRow);
 
@@ -35,10 +39,17 @@ internal static class DescriptorDocumentMaterializer
             return descriptorBody;
         }
 
+        if (composedEtag is null)
+        {
+            throw new InvalidOperationException(
+                "Descriptor external response materialization requires a composed etag."
+            );
+        }
+
         var externalResponse = (JsonObject)descriptorBody.DeepClone();
 
         externalResponse[IdPropertyName] = descriptorRow.DocumentUuid.ToString();
-        externalResponse[EtagPropertyName] = etagComposer.Compose(descriptorRow.ContentVersion, variantKey);
+        externalResponse[EtagPropertyName] = composedEtag;
         externalResponse[LastModifiedDatePropertyName] =
             descriptorRow.ContentLastModifiedAt.UtcDateTime.ToString(
                 LastModifiedDateFormat,
