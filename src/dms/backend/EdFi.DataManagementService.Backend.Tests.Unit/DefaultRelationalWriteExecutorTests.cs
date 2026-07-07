@@ -1178,8 +1178,6 @@ public class Given_Default_Relational_Write_Executor
         _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _committedRepresentationReader.CapturedRequest.Should().BeEquivalentTo(request);
         _committedRepresentationReader.CapturedPersistedTarget.Should().BeEquivalentTo(persistedTarget);
-        _committedRepresentationReader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
-        _committedRepresentationReader.CommitCallCountObservedDuringRead.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -1254,6 +1252,13 @@ public class Given_Default_Relational_Write_Executor
             345L,
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
         );
+        // The guarded no-op path reads the reader from the target's ObservedContentVersion
+        // (44L, from the default Put ExistingDocument target context built by CreateRequest),
+        // not from any persister-produced stamp — no persister runs on this path.
+        var expectedPersistedTarget = persistedTarget with
+        {
+            ContentVersion = 44L,
+        };
         var committedResponse = CreateCommittedExternalResponse(
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
@@ -1275,9 +1280,9 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(1);
-        _committedRepresentationReader.CapturedPersistedTarget.Should().BeEquivalentTo(persistedTarget);
-        _committedRepresentationReader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
-        _committedRepresentationReader.CommitCallCountObservedDuringRead.Should().Be(0);
+        _committedRepresentationReader
+            .CapturedPersistedTarget.Should()
+            .BeEquivalentTo(expectedPersistedTarget);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeFreshnessChecker.CapturedRequest.Should().NotBeNull();
         _writeFreshnessChecker.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
@@ -8075,16 +8080,11 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWritePersistResult? CapturedPersistedTarget { get; private set; }
 
-        public IRelationalWriteSession? CapturedWriteSession { get; private set; }
-
-        public int? CommitCallCountObservedDuringRead { get; private set; }
-
         public JsonNode? ResultToReturn { get; set; }
 
         public Task<JsonNode> ReadAsync(
             RelationalWriteExecutorRequest request,
             RelationalWritePersistResult persistedTarget,
-            IRelationalWriteSession writeSession,
             CancellationToken cancellationToken = default
         )
         {
@@ -8092,10 +8092,6 @@ public class Given_Default_Relational_Write_Executor
             ReadCallCount++;
             CapturedRequest = request;
             CapturedPersistedTarget = persistedTarget;
-            CapturedWriteSession = writeSession;
-            CommitCallCountObservedDuringRead = (
-                writeSession as RecordingRelationalWriteSession
-            )?.CommitCallCount;
 
             return Task.FromResult(
                 ResultToReturn ?? CreateCommittedExternalResponse(persistedTarget, request.SelectedBody)
@@ -8255,10 +8251,11 @@ public class Given_Default_Relational_Write_Executor
         ) =>
             request.TargetContext switch
             {
-                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(910L, documentUuid),
+                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(910L, documentUuid, 77L),
                 RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) => new(
                     documentId,
-                    documentUuid
+                    documentUuid,
+                    77L
                 ),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request, null),
             };

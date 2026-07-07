@@ -333,9 +333,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest,
                         new RelationalWritePersistResult(
                             guardedTarget.DocumentId,
-                            guardedTarget.DocumentUuid
+                            guardedTarget.DocumentUuid,
+                            guardedTarget.ObservedContentVersion
                         ),
-                        writeSession,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -355,7 +355,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
 
             var committedResponse = await _committedRepresentationReader
-                .ReadAsync(executionRequest, persistedTarget, writeSession, cancellationToken)
+                .ReadAsync(executionRequest, persistedTarget, cancellationToken)
                 .ConfigureAwait(false);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
