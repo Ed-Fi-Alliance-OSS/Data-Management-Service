@@ -44,12 +44,11 @@ internal class JwtAuthenticationMiddleware(
             return;
         }
 
-        var token = authHeader["Bearer ".Length..];
-
         // Validate token and extract client authorizations
         (ClaimsPrincipal? principal, ClientAuthorizations? clientAuthorizations) =
             await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                token,
+                authHeader,
+                "Bearer ".Length,
                 CancellationToken.None
             );
 

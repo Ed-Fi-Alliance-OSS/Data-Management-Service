@@ -351,6 +351,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -366,6 +367,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -380,6 +382,7 @@
                   "name": "SchoolExtensionAddress"
                 },
                 "select_by_keyset_sql_sha256": "dfc172d0fd62794e1c6de277d7e0484e006a8642d1a67c8180e047466841e575",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -396,6 +399,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "f07db8ae6f3b7924ec6d24b91e102805a7ac17b2f9c6c947b1804bc3ed0b71cb",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -413,6 +417,7 @@
                   "name": "SchoolExtensionAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "923c2679a7d4fbe3f4c560ba9f7c4c25fb6f5f7f3adaae4c5723d005d5d97c3f",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -429,6 +434,7 @@
                   "name": "SchoolAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "dbf8a405b7c1691266ffae45718d13b0431ec0b43159cc63309cfa9d74f63425",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -810,6 +816,7 @@
                   "name": "School"
                 },
                 "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_by_single_document_sql_sha256": "fa4562f0d5a1410bd98427de623e0945e5bc385fb2fa23a6d7dfa5386db50d83",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "NameOfInstitution",
@@ -825,6 +832,7 @@
                   "name": "SchoolExtension"
                 },
                 "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_by_single_document_sql_sha256": "fdf80f2b0fdeb44d57a1af5203ada38de0ee37b2acff4bf30db881b5cb0228a2",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "CampusCode"
@@ -839,6 +847,7 @@
                   "name": "SchoolExtensionAddress"
                 },
                 "select_by_keyset_sql_sha256": "27a3a8f4dde6fdf7363ce336ca2c7f770f51c6f1abaaf09971b17869f5ec86d0",
+                "select_by_single_document_sql_sha256": "4f07aa961eca6cf0489fa2c5f0f7b0fb2b9462310ec784e2f63c7a80065bc3e6",
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -855,6 +864,7 @@
                   "name": "SchoolAddress"
                 },
                 "select_by_keyset_sql_sha256": "a2b834672562b9bcb68322a01e0fc732f4134febe1617fc42c9d56e8501d87ef",
+                "select_by_single_document_sql_sha256": "090c2cf7fddca3465221bd64abcfffcf91dc3f32f2f8742368ca8c972cf485da",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",
@@ -872,6 +882,7 @@
                   "name": "SchoolExtensionAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "b8b96552c0bea1e072c6efbd945e686abbe72b0bc77c6b9530a71440f9371f2b",
+                "select_by_single_document_sql_sha256": "df09769637ed7cd70b4039aa4f046aaf5bbdeaf477833f66a9fe6449af23ff0c",
                 "select_list_columns_in_order": [
                   "BaseCollectionItemId",
                   "School_DocumentId",
@@ -888,6 +899,7 @@
                   "name": "SchoolAddressPeriod"
                 },
                 "select_by_keyset_sql_sha256": "926288cd46ec444c861aef1acae47566367414d170dce05d0b0915530d1283ec",
+                "select_by_single_document_sql_sha256": "1c4bad702a572094de4b060b50637e68033caa93ccb2ba03a7e1a72c5b5bbd9e",
                 "select_list_columns_in_order": [
                   "CollectionItemId",
                   "Ordinal",

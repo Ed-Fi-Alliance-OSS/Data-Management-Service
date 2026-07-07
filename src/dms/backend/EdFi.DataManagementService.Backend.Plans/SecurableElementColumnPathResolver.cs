@@ -33,8 +33,16 @@ internal static class SecurableElementColumnPathResolver
     public static IReadOnlyList<ResolvedSecurableElementPath> ResolveAll(
         ConcreteResourceModel subjectResource,
         IReadOnlyList<ConcreteResourceModel> allResources
+    ) => ResolveAll(subjectResource, PersonJoinPathResolver.BuildResourceLookup(allResources));
+
+    public static IReadOnlyList<ResolvedSecurableElementPath> ResolveAll(
+        ConcreteResourceModel subjectResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
+        ArgumentNullException.ThrowIfNull(subjectResource);
+        ArgumentNullException.ThrowIfNull(resourceLookup);
+
         var securableElements = subjectResource.SecurableElements;
         if (!securableElements.HasAny)
         {
@@ -91,8 +99,6 @@ internal static class SecurableElementColumnPathResolver
                 unresolvedPaths.Add(ns);
             }
         }
-
-        var resourceLookup = PersonJoinPathResolver.BuildResourceLookup(allResources);
 
         ResolvePersonPaths(
             subjectResource,
@@ -209,7 +215,7 @@ internal static class SecurableElementColumnPathResolver
         IReadOnlyList<string> personPaths,
         string personResourceName,
         SecurableElementKind kind,
-        Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<ResolvedSecurableElementPath> results,
         List<string> unresolvedPaths
     )

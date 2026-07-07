@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -18,14 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class ClaimSetCacheServiceTests
 {
-    protected static HybridCache CreateHybridCache()
-    {
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
-        services.AddHybridCache();
-        var serviceProvider = services.BuildServiceProvider();
-        return serviceProvider.GetRequiredService<HybridCache>();
-    }
+    protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
     protected static CacheSettings CreateCacheSettings() => new();
 
@@ -48,7 +41,7 @@ public class ClaimSetCacheServiceTests
 
             _service = new CachedClaimSetProvider(
                 _securityMetadataProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -84,12 +77,12 @@ public class ClaimSetCacheServiceTests
             A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
                 .Returns(_expectedClaims);
 
-            // Use the same HybridCache for both calls
-            var hybridCache = CreateHybridCache();
+            // Use the same memory cache for both calls
+            var memoryCache = CreateMemoryCache();
 
             _service = new CachedClaimSetProvider(
                 _securityMetadataProvider,
-                hybridCache,
+                memoryCache,
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -173,7 +166,7 @@ public class ClaimSetCacheServiceTests
 
             _service = new CachedClaimSetProvider(
                 _securityMetadataProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -237,7 +230,7 @@ public class ClaimSetCacheServiceTests
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -269,7 +262,7 @@ public class ClaimSetCacheServiceTests
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
-                CreateHybridCache(),
+                CreateMemoryCache(),
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -294,10 +287,10 @@ public class ClaimSetCacheServiceTests
             A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
                 .Returns(expectedClaims);
 
-            var hybridCache = CreateHybridCache();
+            var memoryCache = CreateMemoryCache();
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
-                hybridCache,
+                memoryCache,
                 CreateCacheSettings(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
@@ -311,6 +304,116 @@ public class ClaimSetCacheServiceTests
             // Assert - provider should be called only once per tenant (2 times total)
             A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
                 .MustHaveHappened(2, Times.Exactly);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Cache_Is_Invalidated : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Should_Fetch_From_Provider_After_Invalidation()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var firstClaims = new List<ClaimSet> { new("FirstClaimSet", []) };
+            var secondClaims = new List<ClaimSet> { new("SecondClaimSet", []) };
+
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .ReturnsNextFromSequence(firstClaims, secondClaims);
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            var cachedClaims = await service.GetAllClaimSets();
+            await service.InvalidateCacheAsync();
+            var reloadedClaims = await service.GetAllClaimSets();
+
+            cachedClaims[0].Name.Should().Be("FirstClaimSet");
+            reloadedClaims[0].Name.Should().Be("SecondClaimSet");
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustHaveHappened(2, Times.Exactly);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Provider_Returns_Null : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Should_Not_Cache_Null_ClaimSets()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(Task.FromResult<IList<ClaimSet>>(null!));
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            var firstClaims = await service.GetAllClaimSets();
+            var secondClaims = await service.GetAllClaimSets();
+
+            firstClaims.Should().BeEmpty();
+            secondClaims.Should().BeEmpty();
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustHaveHappened(2, Times.Exactly);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Large_ClaimSet_Payload : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Should_Cache_Payloads_Above_HybridCache_Default_Limit()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var expectedClaims = CreateLargeClaimSetPayload();
+
+            JsonSerializer.SerializeToUtf8Bytes(expectedClaims).Length.Should().BeGreaterThan(1_048_576);
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(expectedClaims);
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            var firstClaims = await service.GetAllClaimSets();
+            var secondClaims = await service.GetAllClaimSets();
+
+            firstClaims.Should().HaveCount(expectedClaims.Count);
+            secondClaims.Should().HaveCount(expectedClaims.Count);
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        private static List<ClaimSet> CreateLargeClaimSetPayload()
+        {
+            var largeNameSegment = new string('x', 1_024);
+            return Enumerable
+                .Range(0, 1_200)
+                .Select(index => new ClaimSet(
+                    $"ClaimSet{index}",
+                    [
+                        new ResourceClaim(
+                            $"http://ed-fi.org/ods/identity/claims/domains/edFiTypes/{largeNameSegment}/{index}",
+                            "Create",
+                            [new AuthorizationStrategy($"Strategy{largeNameSegment}{index}")]
+                        ),
+                    ]
+                ))
+                .ToList();
         }
     }
 }

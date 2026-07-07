@@ -26,35 +26,37 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        if (!string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
+        string? duplicatePath = requestInfo.FrontendRequest.DuplicatePropertyPath;
+
+        if (duplicatePath == null && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
-            string? duplicatePath = FindDuplicatePropertyPath(requestInfo.FrontendRequest.Body);
+            duplicatePath = FindDuplicatePropertyPath(requestInfo.FrontendRequest.Body);
+        }
 
-            if (duplicatePath != null)
+        if (duplicatePath != null)
+        {
+            var validationErrors = new Dictionary<string, string[]>
             {
-                var validationErrors = new Dictionary<string, string[]>
-                {
-                    { duplicatePath, ["An item with the same key has already been added."] },
-                };
+                { duplicatePath, ["An item with the same key has already been added."] },
+            };
 
-                logger.LogDebug(
-                    "Duplicate key found at {DuplicatePath} - {TraceId}",
-                    duplicatePath,
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
+            logger.LogDebug(
+                "Duplicate key found at {DuplicatePath} - {TraceId}",
+                duplicatePath,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
 
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    Body: ForDataValidation(
-                        "Data validation failed. See 'validationErrors' for details.",
-                        traceId: requestInfo.FrontendRequest.TraceId,
-                        validationErrors,
-                        []
-                    ),
-                    Headers: []
-                );
-                return;
-            }
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    validationErrors,
+                    []
+                ),
+                Headers: []
+            );
+            return;
         }
 
         await next();

@@ -42,7 +42,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var personCandidates = ResolvePersonCandidates(
             concreteResourceModel,
-            mappingSet.Model.ConcreteResourcesInNameOrder
+            mappingSet.Model.GetConcreteResourceModelsByResource()
         );
         List<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures =
         [
@@ -140,7 +140,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
     private static ResolvedPeopleCandidates ResolvePersonCandidates(
         ConcreteResourceModel concreteResourceModel,
-        IReadOnlyList<ConcreteResourceModel> allResources
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
         var rootTableModel = concreteResourceModel.RelationalModel.Root;
@@ -149,8 +149,6 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             rootTableModel,
             "people relationship authorization planning"
         );
-        var resourceLookup = PersonJoinPathResolver.BuildResourceLookup(allResources);
-
         List<ResolvedPeopleCandidate> candidates = [];
         List<UnresolvedPersonPath> unresolvedPaths = [];
         List<SkippedPersonPath> skippedPaths = [];

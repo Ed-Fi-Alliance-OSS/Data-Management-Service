@@ -12,7 +12,8 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeCheck(
     IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
     AuthorizationClaimEducationOrganizationIdParameterization ClaimEducationOrganizationIdParameterization,
     int EmittedAuth1Index,
-    IReadOnlyList<ProposedRelationshipAuthorizationRuntimeStrategy> Strategies
+    IReadOnlyList<ProposedRelationshipAuthorizationRuntimeStrategy> Strategies,
+    RelationshipAuthorizationExecutableShape? ExecutableShape = null
 );
 
 internal sealed record ProposedRelationshipAuthorizationRuntimeStrategy(
@@ -200,7 +201,8 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                 authorized.CheckSpecs,
                 claimParameterization,
                 emittedAuth1Index,
-                runtimeStrategies
+                runtimeStrategies,
+                authorized.ExecutableShape
             )
         );
     }

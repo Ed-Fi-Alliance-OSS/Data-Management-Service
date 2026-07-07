@@ -251,6 +251,131 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_accept_single_document_sql_validation_for_pgsql_and_mssql_read_plans()
+    {
+        var pgsqlAct = ValidateSingleDocumentSql(_pgsqlProjectionReadPlan, SqlDialect.Pgsql);
+        var mssqlAct = ValidateSingleDocumentSql(_mssqlProjectionReadPlan, SqlDialect.Mssql);
+
+        pgsqlAct.Should().NotThrow();
+        mssqlAct.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_skip_single_document_sql_validation_for_non_relational_storage()
+    {
+        var readPlan = _pgsqlProjectionReadPlan with
+        {
+            Model = _pgsqlProjectionReadPlan.Model with
+            {
+                StorageKind = ResourceStorageKind.SharedDescriptorTable,
+            },
+            TablePlansInDependencyOrder = [],
+            DescriptorProjectionPlansInOrder = [],
+            DocumentReferenceLookup = null,
+        };
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Pgsql);
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_pgsql_table_read_plans_missing_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithTableSingleDocumentSql(_pgsqlProjectionReadPlan, null);
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Pgsql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "table read plan at index '0' for table 'edfi.StudentProjection' is missing required SelectBySingleDocumentSql for PostgreSQL read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_pgsql_descriptor_projection_plans_missing_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithDescriptorProjectionSingleDocumentSql(
+            _pgsqlProjectionReadPlan,
+            null
+        );
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Pgsql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection plan at index '0' is missing required SelectBySingleDocumentSql for PostgreSQL read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_pgsql_document_reference_lookup_plans_missing_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithDocumentReferenceLookupSingleDocumentSql(
+            _pgsqlProjectionReadPlan,
+            null
+        );
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Pgsql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan is missing required SelectBySingleDocumentSql for PostgreSQL read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_mssql_table_read_plans_with_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithTableSingleDocumentSql(_mssqlProjectionReadPlan, "SELECT 1;");
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "table read plan at index '0' for table 'edfi.StudentProjection' has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_mssql_descriptor_projection_plans_with_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithDescriptorProjectionSingleDocumentSql(
+            _mssqlProjectionReadPlan,
+            "SELECT 1;"
+        );
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection plan at index '0' has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_mssql_document_reference_lookup_plans_with_single_document_sql()
+    {
+        var readPlan = CreateReadPlanWithDocumentReferenceLookupSingleDocumentSql(
+            _mssqlProjectionReadPlan,
+            "SELECT 1;"
+        );
+
+        var act = ValidateSingleDocumentSql(readPlan, SqlDialect.Mssql);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
     public void It_should_reject_missing_reference_identity_projection_plans_when_document_reference_bindings_are_present()
     {
         var readPlan = CreateReadPlanWithoutReferenceIdentityProjectionPlans(_pgsqlProjectionReadPlan);
@@ -822,6 +947,37 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_single_document_sql_for_single_binding_with_SELECT_DISTINCT()
+    {
+        var lookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectBySingleDocumentSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc."DocumentId",
+                    doc."DocumentUuid",
+                    doc."ResourceKeyId"
+                FROM
+                    (
+                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentProjection" t0
+                        WHERE t0."DocumentId" = @DocumentId
+                        AND t0."School_DocumentId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
+                ORDER BY
+                    doc."DocumentId" ASC
+                ;
+
+                """
+            );
+        lookup.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN \"page\"");
+    }
+
+    [Test]
     public void It_should_emit_exact_mssql_DocumentReferenceLookup_sql_for_single_binding_with_SELECT_DISTINCT()
     {
         var lookup = _mssqlProjectionReadPlan.DocumentReferenceLookup;
@@ -849,6 +1005,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 
                 """
             );
+    }
+
+    [Test]
+    public void It_should_leave_mssql_DocumentReferenceLookup_single_document_sql_null()
+    {
+        _mssqlProjectionReadPlan.DocumentReferenceLookup.Should().NotBeNull();
+        _mssqlProjectionReadPlan.DocumentReferenceLookup!.SelectBySingleDocumentSql.Should().BeNull();
     }
 
     [Test]
@@ -896,6 +1059,116 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .SourcesInOrder.Select(static source => source.Table)
             .Should()
             .AllBeEquivalentTo(readPlan.Model.Root.Table);
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_single_document_sql_for_multiple_bindings_joined_with_UNION()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var lookup = readPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectBySingleDocumentSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc."DocumentId",
+                    doc."DocumentUuid",
+                    doc."ResourceKeyId"
+                FROM
+                    (
+                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentReferenceProjection" t0
+                        WHERE t0."DocumentId" = @DocumentId
+                        AND t0."School_DocumentId" IS NOT NULL
+                        UNION
+                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentReferenceProjection" t1
+                        WHERE t1."DocumentId" = @DocumentId
+                        AND t1."Calendar_DocumentId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
+                ORDER BY
+                    doc."DocumentId" ASC
+                ;
+
+                """
+            );
+        lookup.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN \"page\"");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_join_DocumentReferenceLookup_keysets_through_explicit_root_locators_for_stable_key_tables(
+        SqlDialect dialect
+    )
+    {
+        var model = CreateStableKeyDocumentReferenceLookupResourceModel(dialect);
+        var readPlan = new ReadPlanCompiler(dialect).Compile(model);
+        var lookup = readPlan.DocumentReferenceLookup;
+        var rootTable = readPlan.Model.Root;
+        var collectionTable = readPlan.Model.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*]"
+        );
+        var alignedExtensionTable = readPlan.Model.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$._ext.sample.addresses[*]._ext.sample"
+        );
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SourcesInOrder.Select(static source => source.Table)
+            .Should()
+            .Equal(rootTable.Table, alignedExtensionTable.Table, collectionTable.Table);
+        lookup
+            .SourcesInOrder.Select(static source => source.FkColumn.Value)
+            .Should()
+            .Equal("LocalEducationAgency_DocumentId", "Bus_DocumentId", "County_DocumentId");
+
+        AssertDocumentReferenceLookupKeysetJoinUsesExpectedRootLocator(
+            lookup.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 0,
+            tableModel: rootTable
+        );
+        AssertDocumentReferenceLookupKeysetJoinUsesExpectedRootLocator(
+            lookup.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 1,
+            tableModel: alignedExtensionTable
+        );
+        AssertDocumentReferenceLookupKeysetJoinUsesExpectedRootLocator(
+            lookup.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 2,
+            tableModel: collectionTable
+        );
+
+        if (dialect is SqlDialect.Mssql)
+        {
+            lookup.SelectBySingleDocumentSql.Should().BeNull();
+            return;
+        }
+
+        lookup.SelectBySingleDocumentSql.Should().NotBeNull();
+        lookup.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN \"page\"");
+        AssertDocumentReferenceLookupSingleDocumentWhereUsesExpectedRootLocator(
+            lookup.SelectBySingleDocumentSql!,
+            sourceIndex: 0,
+            tableModel: rootTable
+        );
+        AssertDocumentReferenceLookupSingleDocumentWhereUsesExpectedRootLocator(
+            lookup.SelectBySingleDocumentSql!,
+            sourceIndex: 1,
+            tableModel: alignedExtensionTable
+        );
+        AssertDocumentReferenceLookupSingleDocumentWhereUsesExpectedRootLocator(
+            lookup.SelectBySingleDocumentSql!,
+            sourceIndex: 2,
+            tableModel: collectionTable
+        );
     }
 
     [Test]
@@ -1235,6 +1508,34 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_emit_exact_pgsql_DescriptorProjection_single_document_sql_for_projection_metadata_resources()
+    {
+        var descriptorPlan = _pgsqlProjectionReadPlan.DescriptorProjectionPlansInOrder.Single();
+
+        descriptorPlan
+            .SelectBySingleDocumentSql.Should()
+            .Be(
+                """
+                SELECT
+                    p."DescriptorId",
+                    d."Uri"
+                FROM
+                    (
+                        SELECT DISTINCT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
+                        FROM "edfi"."StudentProjection" t0
+                        WHERE t0."DocumentId" = @DocumentId
+                        AND t0."AcademicSubjectDescriptorId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                ORDER BY
+                    p."DescriptorId" ASC
+                ;
+
+                """
+            );
+    }
+
+    [Test]
     public void It_should_emit_exact_mssql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
@@ -1257,6 +1558,16 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 
             """
         );
+    }
+
+    [Test]
+    public void It_should_leave_mssql_DescriptorProjection_single_document_sql_null()
+    {
+        _mssqlProjectionReadPlan.DescriptorProjectionPlansInOrder.Should().ContainSingle();
+        _mssqlProjectionReadPlan
+            .DescriptorProjectionPlansInOrder[0]
+            .SelectBySingleDocumentSql.Should()
+            .BeNull();
     }
 
     [Test]
@@ -1417,6 +1728,47 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Equal(5, 4, 6);
     }
 
+    [Test]
+    public void It_should_emit_exact_pgsql_DescriptorProjection_single_document_sql_for_multiple_sources_joined_with_UNION()
+    {
+        var model = CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource();
+        var descriptorProjectionPlans = CompileDescriptorProjectionPlans(
+            model,
+            SqlDialect.Pgsql,
+            CreateHydrationColumnOrdinalsExcludingStorageOnlyColumns(model.Root)
+        );
+
+        descriptorProjectionPlans.Should().ContainSingle();
+
+        descriptorProjectionPlans
+            .Single()
+            .SelectBySingleDocumentSql.Should()
+            .Be(
+                """
+                SELECT
+                    p."DescriptorId",
+                    d."Uri"
+                FROM
+                    (
+                        SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
+                        FROM "edfi"."Student" t0
+                        WHERE t0."DocumentId" = @DocumentId
+                        AND t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                        UNION
+                        SELECT t1."ProgramTypeDescriptorId" AS "DescriptorId"
+                        FROM "edfi"."Student" t1
+                        WHERE t1."DocumentId" = @DocumentId
+                        AND t1."ProgramTypeDescriptorId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                ORDER BY
+                    p."DescriptorId" ASC
+                ;
+
+                """
+            );
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_join_descriptor_projection_keysets_through_explicit_root_locators_for_stable_key_tables(
@@ -1465,6 +1817,30 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         AssertDescriptorProjectionKeysetJoinUsesExpectedRootLocator(
             descriptorProjectionPlan.SelectByKeysetSql,
             dialect,
+            sourceIndex: 2,
+            tableModel: alignedExtensionTable
+        );
+
+        if (dialect is SqlDialect.Mssql)
+        {
+            descriptorProjectionPlan.SelectBySingleDocumentSql.Should().BeNull();
+            return;
+        }
+
+        descriptorProjectionPlan.SelectBySingleDocumentSql.Should().NotBeNull();
+        descriptorProjectionPlan.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN \"page\"");
+        AssertDescriptorProjectionSingleDocumentWhereUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectBySingleDocumentSql!,
+            sourceIndex: 0,
+            tableModel: rootTable
+        );
+        AssertDescriptorProjectionSingleDocumentWhereUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectBySingleDocumentSql!,
+            sourceIndex: 1,
+            tableModel: collectionTable
+        );
+        AssertDescriptorProjectionSingleDocumentWhereUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectBySingleDocumentSql!,
             sourceIndex: 2,
             tableModel: alignedExtensionTable
         );
@@ -1814,12 +2190,30 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_emit_pgsql_single_document_select_list_filter_and_order_by_columns_in_model_order_for_every_table_plan()
+    {
+        AssertPgsqlSingleDocumentSqlProjectionAndOrderingMatchesModel(_pgsqlRootOnlyReadPlan);
+        AssertPgsqlSingleDocumentSqlProjectionAndOrderingMatchesModel(_pgsqlReadPlan);
+    }
+
+    [Test]
     public void It_should_use_stable_root_table_non_root_table_and_keyset_aliases_across_dialects()
     {
         AssertStableAliases(_pgsqlRootOnlyReadPlan);
         AssertStableAliases(_mssqlRootOnlyReadPlan);
         AssertStableAliases(_pgsqlReadPlan);
         AssertStableAliases(_mssqlReadPlan);
+    }
+
+    [Test]
+    public void It_should_leave_mssql_table_single_document_sql_null()
+    {
+        _mssqlRootOnlyReadPlan
+            .TablePlansInDependencyOrder.Should()
+            .AllSatisfy(static tablePlan => tablePlan.SelectBySingleDocumentSql.Should().BeNull());
+        _mssqlReadPlan
+            .TablePlansInDependencyOrder.Should()
+            .AllSatisfy(static tablePlan => tablePlan.SelectBySingleDocumentSql.Should().BeNull());
     }
 
     [Test]
@@ -1836,6 +2230,28 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 r."SchoolYearAlias"
             FROM "edfi"."Student" r
             INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
+            ORDER BY
+                r."DocumentId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_SelectBySingleDocumentSql_for_root_only_tables()
+    {
+        AssertSelectBySingleDocumentSql(
+            _pgsqlRootOnlyReadPlan,
+            "Student",
+            """
+            SELECT
+                r."DocumentId",
+                r."SchoolYear",
+                r."LocalEducationAgencyId",
+                r."SchoolYearAlias"
+            FROM "edfi"."Student" r
+            WHERE r."DocumentId" = @DocumentId
             ORDER BY
                 r."DocumentId" ASC
             ;
@@ -1932,6 +2348,80 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 t."FavoriteColor"
             FROM "sample"."StudentExtension" t
             INNER JOIN "page" k ON t."DocumentId" = k."DocumentId"
+            ORDER BY
+                t."DocumentId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_SelectBySingleDocumentSql_for_root_child_nested_and_extension_tables()
+    {
+        AssertSelectBySingleDocumentSql(
+            _pgsqlReadPlan,
+            "Student",
+            """
+            SELECT
+                r."DocumentId",
+                r."StudentUniqueId"
+            FROM "edfi"."Student" r
+            WHERE r."DocumentId" = @DocumentId
+            ORDER BY
+                r."DocumentId" ASC
+            ;
+
+            """
+        );
+
+        AssertSelectBySingleDocumentSql(
+            _pgsqlReadPlan,
+            "StudentAddress",
+            """
+            SELECT
+                t."Student_DocumentId",
+                t."Ordinal",
+                t."City"
+            FROM "edfi"."StudentAddress" t
+            WHERE t."Student_DocumentId" = @DocumentId
+            ORDER BY
+                t."Student_DocumentId" ASC,
+                t."Ordinal" ASC
+            ;
+
+            """
+        );
+
+        AssertSelectBySingleDocumentSql(
+            _pgsqlReadPlan,
+            "StudentAddressPeriod",
+            """
+            SELECT
+                t."Student_DocumentId",
+                t."AddressOrdinal",
+                t."Ordinal",
+                t."BeginDate"
+            FROM "edfi"."StudentAddressPeriod" t
+            WHERE t."Student_DocumentId" = @DocumentId
+            ORDER BY
+                t."Student_DocumentId" ASC,
+                t."AddressOrdinal" ASC,
+                t."Ordinal" ASC
+            ;
+
+            """
+        );
+
+        AssertSelectBySingleDocumentSql(
+            _pgsqlReadPlan,
+            "StudentExtension",
+            """
+            SELECT
+                t."DocumentId",
+                t."FavoriteColor"
+            FROM "sample"."StudentExtension" t
+            WHERE t."DocumentId" = @DocumentId
             ORDER BY
                 t."DocumentId" ASC
             ;
@@ -2343,6 +2833,18 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(expectedSql);
     }
 
+    private static void AssertSelectBySingleDocumentSql(
+        ResourceReadPlan readPlan,
+        string tableName,
+        string expectedSql
+    )
+    {
+        readPlan
+            .TablePlansInDependencyOrder.Single(tablePlan => tablePlan.TableModel.Table.Name == tableName)
+            .SelectBySingleDocumentSql.Should()
+            .Be(expectedSql);
+    }
+
     private static void AssertSqlProjectionAndOrderingMatchesModel(ResourceReadPlan readPlan)
     {
         foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
@@ -2376,6 +2878,37 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
                 .Should()
                 .Equal(expectedOrderBy);
+        }
+    }
+
+    private static void AssertPgsqlSingleDocumentSqlProjectionAndOrderingMatchesModel(
+        ResourceReadPlan readPlan
+    )
+    {
+        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        {
+            var expectedSelectList = tablePlan
+                .TableModel.Columns.Select(static column => column.ColumnName.Value)
+                .ToArray();
+            var expectedOrderBy = RelationalResourceModelCompileValidator
+                .ResolveHydrationOrderingColumnsOrThrow(tablePlan.TableModel, "read plan")
+                .Select(static column => column.Value)
+                .ToArray();
+            var expectedWhereColumn =
+                RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                    tablePlan.TableModel,
+                    "read plan"
+                );
+            var sql = tablePlan.SelectBySingleDocumentSql;
+
+            sql.Should().NotBeNull();
+            ReadPlanSqlShape.ExtractSelectedColumnNames(sql!).Should().Equal(expectedSelectList);
+            ReadPlanSqlShape.ExtractWhereLeftColumnName(sql!).Should().Be(expectedWhereColumn.Value);
+            ReadPlanSqlShape
+                .ExtractWhereRightParameterName(sql!)
+                .Should()
+                .Be(HydrationSqlConventions.SingleDocumentIdParameterName);
+            ReadPlanSqlShape.ExtractOrderByColumnNames(sql!).Should().Equal(expectedOrderBy);
         }
     }
 
@@ -2555,6 +3088,92 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             );
     }
 
+    private static void AssertDescriptorProjectionSingleDocumentWhereUsesExpectedRootLocator(
+        string sql,
+        int sourceIndex,
+        DbTableModel tableModel
+    )
+    {
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "descriptor projection plan"
+            );
+        var expectedWhereCondition =
+            $"WHERE t{sourceIndex}.\"{rootScopeLocatorColumn.Value}\" = @"
+            + HydrationSqlConventions.SingleDocumentIdParameterName;
+
+        sql.Should().Contain(expectedWhereCondition);
+
+        var firstKeyColumn = tableModel.Key.Columns[0].ColumnName;
+
+        if (firstKeyColumn.Equals(rootScopeLocatorColumn))
+        {
+            return;
+        }
+
+        sql.Should().NotContain($"WHERE t{sourceIndex}.\"{firstKeyColumn.Value}\" = @");
+    }
+
+    private static void AssertDocumentReferenceLookupKeysetJoinUsesExpectedRootLocator(
+        string sql,
+        SqlDialect dialect,
+        int sourceIndex,
+        DbTableModel tableModel
+    )
+    {
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "document-reference lookup plan"
+            );
+        var expectedJoinCondition =
+            $" ON t{sourceIndex}.{QuoteIdentifier(dialect, rootScopeLocatorColumn.Value)} = "
+            + $"k.{QuoteIdentifier(dialect, "DocumentId")}";
+
+        sql.Should().Contain(expectedJoinCondition);
+
+        var firstKeyColumn = tableModel.Key.Columns[0].ColumnName;
+
+        if (firstKeyColumn.Equals(rootScopeLocatorColumn))
+        {
+            return;
+        }
+
+        sql.Should()
+            .NotContain(
+                $" ON t{sourceIndex}.{QuoteIdentifier(dialect, firstKeyColumn.Value)} = "
+                    + $"k.{QuoteIdentifier(dialect, "DocumentId")}"
+            );
+    }
+
+    private static void AssertDocumentReferenceLookupSingleDocumentWhereUsesExpectedRootLocator(
+        string sql,
+        int sourceIndex,
+        DbTableModel tableModel
+    )
+    {
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "document-reference lookup plan"
+            );
+        var expectedWhereCondition =
+            $"WHERE t{sourceIndex}.\"{rootScopeLocatorColumn.Value}\" = @"
+            + HydrationSqlConventions.SingleDocumentIdParameterName;
+
+        sql.Should().Contain(expectedWhereCondition);
+
+        var firstKeyColumn = tableModel.Key.Columns[0].ColumnName;
+
+        if (firstKeyColumn.Equals(rootScopeLocatorColumn))
+        {
+            return;
+        }
+
+        sql.Should().NotContain($"WHERE t{sourceIndex}.\"{firstKeyColumn.Value}\" = @");
+    }
+
     private static string QuoteIdentifier(SqlDialect dialect, string identifier)
     {
         return dialect == SqlDialect.Pgsql ? $"\"{identifier}\"" : $"[{identifier}]";
@@ -2563,6 +3182,66 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     private static string CreateReadPlanFingerprint(ResourceReadPlan readPlan)
     {
         return NormalizedPlanDtoJson.EmitCanonicalJson(NormalizedPlanContractCodec.Encode(readPlan));
+    }
+
+    private static Action ValidateSingleDocumentSql(ResourceReadPlan readPlan, SqlDialect dialect)
+    {
+        return () =>
+            ReadPlanSingleDocumentSqlValidator.ValidateOrThrow(
+                readPlan,
+                PlanSqlDialectFactory.Create(dialect),
+                reason => new InvalidOperationException(reason)
+            );
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithTableSingleDocumentSql(
+        ResourceReadPlan readPlan,
+        string? selectBySingleDocumentSql,
+        int tablePlanIndex = 0
+    )
+    {
+        var tablePlans = readPlan.TablePlansInDependencyOrder.ToArray();
+        tablePlans[tablePlanIndex] = tablePlans[tablePlanIndex] with
+        {
+            SelectBySingleDocumentSql = selectBySingleDocumentSql,
+        };
+
+        return readPlan with
+        {
+            TablePlansInDependencyOrder = [.. tablePlans],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDescriptorProjectionSingleDocumentSql(
+        ResourceReadPlan readPlan,
+        string? selectBySingleDocumentSql,
+        int descriptorPlanIndex = 0
+    )
+    {
+        var descriptorPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        descriptorPlans[descriptorPlanIndex] = descriptorPlans[descriptorPlanIndex] with
+        {
+            SelectBySingleDocumentSql = selectBySingleDocumentSql,
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorPlans],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDocumentReferenceLookupSingleDocumentSql(
+        ResourceReadPlan readPlan,
+        string? selectBySingleDocumentSql
+    )
+    {
+        return readPlan with
+        {
+            DocumentReferenceLookup = readPlan.DocumentReferenceLookup! with
+            {
+                SelectBySingleDocumentSql = selectBySingleDocumentSql,
+            },
+        };
     }
 
     private static RelationalResourceModel CreateRootOnlyResourceModel()
@@ -2958,6 +3637,148 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
+    private static RelationalResourceModel CreateStableKeyDocumentReferenceLookupResourceModel(
+        SqlDialect dialect
+    )
+    {
+        const string fixturePath =
+            "Fixtures/runtime-plan-compilation/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
+        var model = BuildFixtureResourceModel(
+            fixturePath,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            dialect,
+            reverseResourceSchemaOrder: false
+        );
+
+        var localEducationAgencyReferencePath = CreatePath(
+            "$.localEducationAgencyReference",
+            new JsonPathSegment.Property("localEducationAgencyReference")
+        );
+        var localEducationAgencyIdPath = CreatePath(
+            "$.localEducationAgencyReference.localEducationAgencyId",
+            new JsonPathSegment.Property("localEducationAgencyReference"),
+            new JsonPathSegment.Property("localEducationAgencyId")
+        );
+        var countyReferencePath = CreatePath(
+            "$.addresses[*].countyReference",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("countyReference")
+        );
+        var countyIdPath = CreatePath(
+            "$.addresses[*].countyReference.countyId",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("countyReference"),
+            new JsonPathSegment.Property("countyId")
+        );
+        var busReferencePath = CreatePath(
+            "$._ext.sample.addresses[*]._ext.sample.busReference",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("busReference")
+        );
+        var busIdPath = CreatePath(
+            "$._ext.sample.addresses[*]._ext.sample.busReference.busId",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("busReference"),
+            new JsonPathSegment.Property("busId")
+        );
+
+        var localEducationAgencyResource = new QualifiedResourceName("Ed-Fi", "LocalEducationAgency");
+        var countyResource = new QualifiedResourceName("Ed-Fi", "County");
+        var busResource = new QualifiedResourceName("Ed-Fi", "Bus");
+
+        var rootLocalEducationAgencyDocumentIdColumn = new DbColumnName("LocalEducationAgency_DocumentId");
+        var rootLocalEducationAgencyIdentityColumn = new DbColumnName(
+            "LocalEducationAgency_RefLocalEducationAgencyId"
+        );
+        var countyDocumentIdColumn = new DbColumnName("County_DocumentId");
+        var countyIdentityColumn = new DbColumnName("County_RefCountyId");
+        var busDocumentIdColumn = new DbColumnName("Bus_DocumentId");
+        var busIdentityColumn = new DbColumnName("Bus_RefBusId");
+
+        var rootTable = AppendDocumentReferenceColumns(
+            model.Root,
+            rootLocalEducationAgencyDocumentIdColumn,
+            localEducationAgencyReferencePath,
+            rootLocalEducationAgencyIdentityColumn,
+            localEducationAgencyIdPath,
+            localEducationAgencyResource
+        );
+        var collectionTable = AppendDocumentReferenceColumns(
+            model.TablesInDependencyOrder.Single(table => table.JsonScope.Canonical == "$.addresses[*]"),
+            countyDocumentIdColumn,
+            countyReferencePath,
+            countyIdentityColumn,
+            countyIdPath,
+            countyResource
+        );
+        var alignedExtensionTable = AppendDocumentReferenceColumns(
+            model.TablesInDependencyOrder.Single(table =>
+                table.JsonScope.Canonical == "$._ext.sample.addresses[*]._ext.sample"
+            ),
+            busDocumentIdColumn,
+            busReferencePath,
+            busIdentityColumn,
+            busIdPath,
+            busResource
+        );
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder =
+            [
+                .. model.TablesInDependencyOrder.Select(table =>
+                    table.JsonScope.Canonical switch
+                    {
+                        "$" => rootTable,
+                        "$.addresses[*]" => collectionTable,
+                        "$._ext.sample.addresses[*]._ext.sample" => alignedExtensionTable,
+                        _ => table,
+                    }
+                ),
+            ],
+            DocumentReferenceBindings =
+            [
+                CreateDocumentReferenceBinding(
+                    rootTable,
+                    rootLocalEducationAgencyDocumentIdColumn,
+                    localEducationAgencyReferencePath,
+                    rootLocalEducationAgencyIdentityColumn,
+                    localEducationAgencyIdPath,
+                    localEducationAgencyResource
+                ),
+                CreateDocumentReferenceBinding(
+                    collectionTable,
+                    countyDocumentIdColumn,
+                    countyReferencePath,
+                    countyIdentityColumn,
+                    countyIdPath,
+                    countyResource
+                ),
+                CreateDocumentReferenceBinding(
+                    alignedExtensionTable,
+                    busDocumentIdColumn,
+                    busReferencePath,
+                    busIdentityColumn,
+                    busIdPath,
+                    busResource
+                ),
+            ],
+        };
+    }
+
     private static DbTableModel AppendDescriptorColumn(
         DbTableModel tableModel,
         DbColumnName columnName,
@@ -2980,6 +3801,66 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 ),
             ],
         };
+    }
+
+    private static DbTableModel AppendDocumentReferenceColumns(
+        DbTableModel tableModel,
+        DbColumnName fkColumnName,
+        JsonPathExpression referenceObjectPath,
+        DbColumnName identityColumnName,
+        JsonPathExpression identityPath,
+        QualifiedResourceName targetResource
+    )
+    {
+        return tableModel with
+        {
+            Columns =
+            [
+                .. tableModel.Columns,
+                new DbColumnModel(
+                    ColumnName: fkColumnName,
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: referenceObjectPath,
+                    TargetResource: targetResource
+                ),
+                new DbColumnModel(
+                    ColumnName: identityColumnName,
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: identityPath,
+                    TargetResource: null
+                ),
+            ],
+        };
+    }
+
+    private static DocumentReferenceBinding CreateDocumentReferenceBinding(
+        DbTableModel tableModel,
+        DbColumnName fkColumnName,
+        JsonPathExpression referenceObjectPath,
+        DbColumnName identityColumnName,
+        JsonPathExpression identityPath,
+        QualifiedResourceName targetResource
+    )
+    {
+        return new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: referenceObjectPath,
+            Table: tableModel.Table,
+            FkColumn: fkColumnName,
+            TargetResource: targetResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: identityPath,
+                    ReferenceJsonPath: identityPath,
+                    Column: identityColumnName
+                ),
+            ]
+        );
     }
 
     private static DescriptorEdgeSource CreateDescriptorEdgeSource(

@@ -283,6 +283,16 @@ $files += @(
     "local-dms.yml"
 )
 
+$enableDotnetDiagnostics = [string]::Equals(
+    (Get-EnvValue -EnvValues $envValues -Name "DMS_ENABLE_DOTNET_DIAGNOSTICS" -DefaultValue "false"),
+    "true",
+    [System.StringComparison]::OrdinalIgnoreCase
+)
+if ($enableDotnetDiagnostics) {
+    Write-Output "Using .NET diagnostics Docker Compose override."
+    $files += @("-f", "local-dms-diagnostics.yml")
+}
+
 # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
 # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
 # from SQL and registers no connector, so Kafka is omitted.

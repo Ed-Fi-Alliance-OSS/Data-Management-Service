@@ -18,7 +18,8 @@ public sealed record SingleRecordRelationshipAuthorizationExecutionRequest(
     long DocumentId,
     IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
     AuthorizationClaimEducationOrganizationIdParameterization ClaimEducationOrganizationIdParameterization,
-    int EmittedAuth1Index
+    int EmittedAuth1Index,
+    RelationshipAuthorizationExecutableShape? ExecutableShape = null
 );
 
 public abstract record SingleRecordRelationshipAuthorizationExecutionResult
@@ -72,14 +73,21 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(request.MappingSet.Key.Dialect);
-        var sqlPlan = compiler.Compile(
-            new SingleRecordRelationshipAuthorizationSqlSpec(
-                request.CheckSpecs,
+        var sqlPlan = request.ExecutableShape is { } executableShape
+            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                request.MappingSet,
+                executableShape,
                 request.ClaimEducationOrganizationIdParameterization,
                 request.EmittedAuth1Index
             )
-        );
+            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                request.MappingSet,
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    request.CheckSpecs,
+                    request.ClaimEducationOrganizationIdParameterization,
+                    request.EmittedAuth1Index
+                )
+            );
         if (sqlPlan.ProposedValueParametersInOrder.Count > 0)
         {
             throw new InvalidOperationException(
@@ -161,7 +169,10 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         IRelationalParameterConfigurator parameterConfigurator
     )
     {
-        Dictionary<string, object?> valuesByParameterName = new(StringComparer.Ordinal)
+        Dictionary<string, object?> valuesByParameterName = new(
+            sqlPlan.ParametersInOrder.Count,
+            StringComparer.Ordinal
+        )
         {
             [SingleRecordRelationshipAuthorizationSqlSpecDefaults.DocumentIdParameterName] =
                 request.DocumentId,
@@ -172,18 +183,20 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
             request.ClaimEducationOrganizationIdParameterization
         );
 
-        return new RelationalCommand(
-            sqlPlan.AuthorizationSql,
-            [
-                .. sqlPlan.ParametersInOrder.Select(parameter =>
-                    RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
-                        parameter,
-                        valuesByParameterName[parameter.ParameterName],
-                        parameterConfigurator
-                    )
-                ),
-            ]
-        );
+        List<RelationalParameter> parameters = new(sqlPlan.ParametersInOrder.Count);
+
+        foreach (var parameter in sqlPlan.ParametersInOrder)
+        {
+            parameters.Add(
+                RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
+                    parameter,
+                    valuesByParameterName[parameter.ParameterName],
+                    parameterConfigurator
+                )
+            );
+        }
+
+        return new RelationalCommand(sqlPlan.AuthorizationSql, parameters);
     }
 
     private static async Task<SingleRecordRelationshipAuthorizationExecutionResult> ReadAuthorizedResultAsync(

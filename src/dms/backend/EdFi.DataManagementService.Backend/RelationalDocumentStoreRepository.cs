@@ -974,7 +974,8 @@ public sealed class RelationalDocumentStoreRepository(
                     documentId,
                     authorized.CheckSpecs,
                     authorized.ClaimEducationOrganizationIdParameterization,
-                    DeleteRelationshipAuthorizationAuth1Index
+                    DeleteRelationshipAuthorizationAuth1Index,
+                    authorized.ExecutableShape
                 )
             )
             .ConfigureAwait(false);
@@ -2436,7 +2437,8 @@ public sealed class RelationalDocumentStoreRepository(
             // URIs are still needed for both read modes.
             var hydrationExecutionOptions = new HydrationExecutionOptions(
                 IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
-                    == RelationalGetRequestReadMode.ExternalResponse
+                    == RelationalGetRequestReadMode.ExternalResponse,
+                UseSingleDocumentFastPath: true
             );
             var hydratedPage = await _documentHydrator
                 .HydrateAsync(
@@ -2949,7 +2951,8 @@ public sealed class RelationalDocumentStoreRepository(
                     documentId,
                     authorized.CheckSpecs,
                     authorized.ClaimEducationOrganizationIdParameterization,
-                    GetByIdRelationshipAuthorizationAuth1Index
+                    GetByIdRelationshipAuthorizationAuth1Index,
+                    authorized.ExecutableShape
                 )
             )
             .ConfigureAwait(false);

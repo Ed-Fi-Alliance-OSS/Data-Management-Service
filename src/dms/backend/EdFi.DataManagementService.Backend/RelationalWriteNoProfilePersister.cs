@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
@@ -43,6 +44,10 @@ internal sealed class RelationalWriteNoProfilePersister(
 ) : IRelationalWritePersister
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
+    private static readonly ConditionalWeakTable<
+        ResourceWritePlan,
+        string[]
+    > _reservedWriteParameterNamesByPlan = new();
 
     private readonly IRelationalParameterConfigurator _parameterConfigurator =
         parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
@@ -70,7 +75,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
                 request.MappingSet,
-                request.WritePlan.Model.Resource,
+                request.WritePlan,
                 targetContext,
                 mergeResult,
                 writeSession,
@@ -123,7 +128,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         {
             await ExecuteProposedRelationshipAuthorizationAsync(
                     writeSession,
-                    BuildProposedRelationshipAuthorizationCommand(request.MappingSet, mergeResult),
+                    BuildProposedRelationshipAuthorizationCommand(
+                        request.MappingSet,
+                        request.WritePlan,
+                        mergeResult
+                    ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -216,11 +225,12 @@ internal sealed class RelationalWriteNoProfilePersister(
         CancellationToken cancellationToken
     )
     {
-        var pendingTableStates = mergeResult.TablesInDependencyOrder.ToArray();
+        IReadOnlyList<RelationalWriteMergedTableState> pendingTableStates =
+            mergeResult.TablesInDependencyOrder;
 
-        while (pendingTableStates.Length > 0)
+        while (pendingTableStates.Count > 0)
         {
-            List<RelationalWriteMergedTableState> deferredTableStates = [];
+            List<RelationalWriteMergedTableState> deferredTableStates = new(pendingTableStates.Count);
             var persistedTableCount = 0;
 
             foreach (var tableState in pendingTableStates)
@@ -300,7 +310,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 );
             }
 
-            pendingTableStates = [.. deferredTableStates];
+            pendingTableStates = deferredTableStates;
         }
     }
 
@@ -339,7 +349,7 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private async Task<long> ResolveRootDocumentIdAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
         RelationalWriteTargetContext targetContext,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -350,7 +360,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         {
             RelationalWriteTargetContext.CreateNew(var documentUuid) => await InsertDocumentAsync(
                     mappingSet,
-                    resource,
+                    writePlan,
                     documentUuid,
                     mergeResult,
                     writeSession,
@@ -364,13 +374,14 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private async Task<long> InsertDocumentAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
         DocumentUuid documentUuid,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
+        var resource = writePlan.Model.Resource;
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
         var command = BuildInsertDocumentCommand(mappingSet.Key.Dialect, documentUuid, resourceKeyId);
         var relationshipAuthorizationRuntimeCheck = mergeResult.ProposedRelationshipAuthorizationRuntimeCheck;
@@ -381,7 +392,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             {
                 return await ExecuteAuthorizedInsertDocumentAsync(
                         writeSession,
-                        BuildAuthorizedInsertDocumentCommand(mappingSet, mergeResult, command),
+                        BuildAuthorizedInsertDocumentCommand(mappingSet, writePlan, mergeResult, command),
                         resource,
                         cancellationToken
                     )
@@ -482,11 +493,13 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private RelationalCommand BuildProposedRelationshipAuthorizationCommand(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult
     )
     {
         var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
             mappingSet,
+            writePlan,
             mergeResult
         );
 
@@ -498,23 +511,48 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private RelationalCommand BuildAuthorizedInsertDocumentCommand(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult,
         RelationalCommand insertDocumentCommand
     )
     {
         var proposedAuthorizationCommand = BuildProposedRelationshipAuthorizationCommandParts(
             mappingSet,
+            writePlan,
             mergeResult
         );
 
         return new RelationalCommand(
             $"{proposedAuthorizationCommand.AuthorizationSql}{Environment.NewLine}{insertDocumentCommand.CommandText}",
-            [.. proposedAuthorizationCommand.Parameters, .. insertDocumentCommand.Parameters]
+            CombineParameters(proposedAuthorizationCommand.Parameters, insertDocumentCommand.Parameters)
         );
+    }
+
+    private static IReadOnlyList<RelationalParameter> CombineParameters(
+        IReadOnlyList<RelationalParameter> first,
+        IReadOnlyList<RelationalParameter> second
+    )
+    {
+        if (first.Count == 0)
+        {
+            return second;
+        }
+
+        if (second.Count == 0)
+        {
+            return first;
+        }
+
+        List<RelationalParameter> combined = new(first.Count + second.Count);
+        combined.AddRange(first);
+        combined.AddRange(second);
+
+        return combined;
     }
 
     private ProposedRelationshipAuthorizationCommandParts BuildProposedRelationshipAuthorizationCommandParts(
         MappingSet mappingSet,
+        ResourceWritePlan writePlan,
         RelationalWriteMergeResult mergeResult
     )
     {
@@ -523,15 +561,24 @@ internal sealed class RelationalWriteNoProfilePersister(
             ?? throw new InvalidOperationException(
                 "Cannot build a proposed authorization command without a runtime authorization check."
             );
-        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(mappingSet.Key.Dialect);
-        var sqlPlan = compiler.Compile(
-            new SingleRecordRelationshipAuthorizationSqlSpec(
-                relationshipAuthorizationRuntimeCheck.CheckSpecs,
+        var reservedParameterNames = GetReservedWriteParameterNames(writePlan);
+        var sqlPlan = relationshipAuthorizationRuntimeCheck.ExecutableShape is { } executableShape
+            ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                mappingSet,
+                executableShape,
                 relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
                 relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
-                ReservedParameterNames: GetReservedWriteParameterNames(mergeResult)
+                reservedParameterNames
             )
-        );
+            : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                mappingSet,
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    relationshipAuthorizationRuntimeCheck.CheckSpecs,
+                    relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization,
+                    relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
+                    ReservedParameterNames: reservedParameterNames
+                )
+            );
 
         return new ProposedRelationshipAuthorizationCommandParts(
             sqlPlan.AuthorizationSql,
@@ -549,7 +596,10 @@ internal sealed class RelationalWriteNoProfilePersister(
         ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck
     )
     {
-        Dictionary<string, object?> valuesByParameterName = new(StringComparer.Ordinal);
+        Dictionary<string, object?> valuesByParameterName = new(
+            sqlPlan.ParametersInOrder.Count,
+            StringComparer.Ordinal
+        );
 
         AddProposedValueParameterValues(
             valuesByParameterName,
@@ -561,16 +611,20 @@ internal sealed class RelationalWriteNoProfilePersister(
             relationshipAuthorizationRuntimeCheck.ClaimEducationOrganizationIdParameterization
         );
 
-        return
-        [
-            .. sqlPlan.ParametersInOrder.Select(parameter =>
+        List<RelationalParameter> parameters = new(sqlPlan.ParametersInOrder.Count);
+
+        foreach (var parameter in sqlPlan.ParametersInOrder)
+        {
+            parameters.Add(
                 RelationshipAuthorizationCommandParameterBuilder.BuildParameter(
                     parameter,
                     valuesByParameterName[parameter.ParameterName],
                     _parameterConfigurator
                 )
-            ),
-        ];
+            );
+        }
+
+        return parameters;
     }
 
     private static void AddProposedValueParameterValues(
@@ -582,14 +636,15 @@ internal sealed class RelationalWriteNoProfilePersister(
         Dictionary<
             (int StrategyOrdinal, int SubjectOrdinal),
             ProposedRelationshipAuthorizationRuntimeValue
-        > valuesByOrdinal = relationshipAuthorizationRuntimeCheck
-            .Strategies.SelectMany(strategy =>
-                strategy.Subjects.Select(subject => new KeyValuePair<
-                    (int, int),
-                    ProposedRelationshipAuthorizationRuntimeValue
-                >((strategy.StrategyOrdinal, subject.SubjectOrdinal), subject.RuntimeValue))
-            )
-            .ToDictionary(static entry => entry.Key, static entry => entry.Value);
+        > valuesByOrdinal = new(CountRuntimeSubjects(relationshipAuthorizationRuntimeCheck.Strategies));
+
+        foreach (var strategy in relationshipAuthorizationRuntimeCheck.Strategies)
+        {
+            foreach (var subject in strategy.Subjects)
+            {
+                valuesByOrdinal.Add((strategy.StrategyOrdinal, subject.SubjectOrdinal), subject.RuntimeValue);
+            }
+        }
 
         foreach (var proposedValueParameter in sqlPlan.ProposedValueParametersInOrder)
         {
@@ -619,18 +674,50 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
     }
 
-    private static IReadOnlyList<string> GetReservedWriteParameterNames(
-        RelationalWriteMergeResult mergeResult
-    ) =>
-        [
-            .. mergeResult
-                .TablesInDependencyOrder.SelectMany(static tableState =>
-                    tableState.TableWritePlan.ColumnBindings.Select(static binding =>
-                        binding.ParameterName.TrimStart('@')
-                    )
-                )
-                .Distinct(StringComparer.OrdinalIgnoreCase),
-        ];
+    private static int CountRuntimeSubjects(
+        IReadOnlyList<ProposedRelationshipAuthorizationRuntimeStrategy> strategies
+    )
+    {
+        var count = 0;
+
+        foreach (var strategy in strategies)
+        {
+            count += strategy.Subjects.Count;
+        }
+
+        return count;
+    }
+
+    private static IReadOnlyList<string> GetReservedWriteParameterNames(ResourceWritePlan writePlan) =>
+        _reservedWriteParameterNamesByPlan.GetValue(writePlan, BuildReservedWriteParameterNames);
+
+    private static string[] BuildReservedWriteParameterNames(ResourceWritePlan writePlan)
+    {
+        var columnBindingCount = 0;
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            columnBindingCount += tablePlan.ColumnBindings.Length;
+        }
+
+        List<string> reservedNames = new(columnBindingCount);
+        HashSet<string> seenNames = new(columnBindingCount, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            foreach (var binding in tablePlan.ColumnBindings)
+            {
+                var parameterName = binding.ParameterName.TrimStart('@');
+
+                if (seenNames.Add(parameterName))
+                {
+                    reservedNames.Add(parameterName);
+                }
+            }
+        }
+
+        return [.. reservedNames];
+    }
 
     private bool TryMapRelationshipAuthorizationFailure(
         SqlDialect dialect,
@@ -845,7 +932,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             );
         }
 
-        List<RelationalWriteMergedTableRow> rowsToDelete = [];
+        List<RelationalWriteMergedTableRow> rowsToDelete = new(tableState.CurrentRows.Length);
 
         foreach (var currentRow in tableState.CurrentRows)
         {
@@ -888,8 +975,8 @@ internal sealed class RelationalWriteNoProfilePersister(
             "current",
             tableState.TableWritePlan
         );
-        List<RelationalWriteMergedTableRow> rowsToUpdate = [];
-        List<RelationalWriteMergedTableRow> rowsToInsert = [];
+        List<RelationalWriteMergedTableRow> rowsToUpdate = new(tableState.MergedRows.Length);
+        List<RelationalWriteMergedTableRow> rowsToInsert = new(tableState.MergedRows.Length);
 
         foreach (var mergedRow in tableState.MergedRows)
         {
@@ -930,15 +1017,27 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
-        foreach (
-            var insertBatch in rowsToInsert.Chunk(
-                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
-            )
+        if (rowsToInsert.Count == 0)
+        {
+            return;
+        }
+
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
+
+        for (
+            var batchStart = 0;
+            batchStart < rowsToInsert.Count;
+            batchStart += tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
         )
         {
+            var batchCount = Math.Min(
+                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch,
+                rowsToInsert.Count - batchStart
+            );
+
             await ReserveCollectionItemIdsAsync(
                     dialect,
-                    GetUnresolvedCollectionItemIds(insertBatch),
+                    GetUnresolvedCollectionItemIds(rowsToInsert, batchStart, batchCount),
                     reservedCollectionItemIds,
                     writeSession,
                     cancellationToken
@@ -946,9 +1045,11 @@ internal sealed class RelationalWriteNoProfilePersister(
                 .ConfigureAwait(false);
 
             await ExecuteCollectionInsertBatchAsync(
-                    dialect,
+                    batchSqlEmitter,
                     tableState.TableWritePlan,
-                    insertBatch,
+                    rowsToInsert,
+                    batchStart,
+                    batchCount,
                     rootDocumentId,
                     reservedCollectionItemIds,
                     writeSession,
@@ -973,7 +1074,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 $"Collection table '{FormatTable(tableState.TableWritePlan)}' does not have a compiled collection merge plan."
             );
         var retainedStableRowIdentities = GetRetainedStableRowIdentities(tableState);
-        List<RelationalWriteMergedTableRow> rowsToDelete = [];
+        List<RelationalWriteMergedTableRow> rowsToDelete = new(tableState.CurrentRows.Length);
 
         foreach (var currentRow in tableState.CurrentRows)
         {
@@ -1022,14 +1123,23 @@ internal sealed class RelationalWriteNoProfilePersister(
             ?? throw new InvalidOperationException(
                 $"Collection table '{FormatTable(tableState.TableWritePlan)}' does not have a compiled collection merge plan."
             );
-        var currentRowsByStableRowIdentity = tableState.CurrentRows.ToDictionary(currentRow =>
-            ResolveStableRowIdentityLiteral(
-                tableState.TableWritePlan,
-                currentRow.Values[mergePlan.StableRowIdentityBindingIndex]
-            )
+        Dictionary<long, RelationalWriteMergedTableRow> currentRowsByStableRowIdentity = new(
+            tableState.CurrentRows.Length
         );
-        List<RelationalWriteMergedTableRow> rowsToUpdate = [];
-        List<RelationalWriteMergedTableRow> rowsToInsert = [];
+
+        foreach (var currentRow in tableState.CurrentRows)
+        {
+            currentRowsByStableRowIdentity.Add(
+                ResolveStableRowIdentityLiteral(
+                    tableState.TableWritePlan,
+                    currentRow.Values[mergePlan.StableRowIdentityBindingIndex]
+                ),
+                currentRow
+            );
+        }
+
+        List<RelationalWriteMergedTableRow> rowsToUpdate = new(tableState.MergedRows.Length);
+        List<RelationalWriteMergedTableRow> rowsToInsert = new(tableState.MergedRows.Length);
         var hasOrdinalReorder = false;
 
         foreach (var mergedRow in tableState.MergedRows)
@@ -1113,15 +1223,32 @@ internal sealed class RelationalWriteNoProfilePersister(
             )
             .ConfigureAwait(false);
 
-        foreach (
-            var insertBatch in rowsToInsert.Chunk(
-                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
-            )
+        if (rowsToInsert.Count == 0)
+        {
+            return;
+        }
+
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
+
+        for (
+            var batchStart = 0;
+            batchStart < rowsToInsert.Count;
+            batchStart += tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
         )
         {
+            var batchCount = Math.Min(
+                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch,
+                rowsToInsert.Count - batchStart
+            );
+
             await ReserveCollectionItemIdsAsync(
                     dialect,
-                    GetStableRowIdentityTokens(insertBatch, mergePlan.StableRowIdentityBindingIndex),
+                    GetStableRowIdentityTokens(
+                        rowsToInsert,
+                        batchStart,
+                        batchCount,
+                        mergePlan.StableRowIdentityBindingIndex
+                    ),
                     reservedCollectionItemIds,
                     writeSession,
                     cancellationToken
@@ -1129,9 +1256,11 @@ internal sealed class RelationalWriteNoProfilePersister(
                 .ConfigureAwait(false);
 
             await ExecuteCollectionInsertBatchAsync(
-                    dialect,
+                    batchSqlEmitter,
                     tableState.TableWritePlan,
-                    insertBatch,
+                    rowsToInsert,
+                    batchStart,
+                    batchCount,
                     rootDocumentId,
                     reservedCollectionItemIds,
                     writeSession,
@@ -1148,7 +1277,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             ?? throw new InvalidOperationException(
                 $"Collection table '{FormatTable(tableState.TableWritePlan)}' does not have a compiled collection merge plan."
             );
-        HashSet<long> retainedStableRowIdentities = [];
+        HashSet<long> retainedStableRowIdentities = new(tableState.MergedRows.Length);
 
         foreach (var mergedRow in tableState.MergedRows)
         {
@@ -1227,18 +1356,24 @@ internal sealed class RelationalWriteNoProfilePersister(
             return;
         }
 
-        var missingCollectionItemIds = unresolvedCollectionItemIds
-            .Where(unresolvedCollectionItemId =>
-                !reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId)
-            )
-            .ToArray();
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> missingCollectionItemIds = new(
+            unresolvedCollectionItemIds.Count
+        );
 
-        if (missingCollectionItemIds.Length == 0)
+        foreach (var unresolvedCollectionItemId in unresolvedCollectionItemIds)
+        {
+            if (!reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId))
+            {
+                missingCollectionItemIds.Add(unresolvedCollectionItemId);
+            }
+        }
+
+        if (missingCollectionItemIds.Count == 0)
         {
             return;
         }
 
-        if (missingCollectionItemIds.Length == 1)
+        if (missingCollectionItemIds.Count == 1)
         {
             await ReserveCollectionItemIdAsync(
                     dialect,
@@ -1252,17 +1387,17 @@ internal sealed class RelationalWriteNoProfilePersister(
         }
 
         await using var dbCommand = writeSession.CreateCommand(
-            BuildReserveCollectionItemIdsCommand(dialect, missingCollectionItemIds.Length)
+            BuildReserveCollectionItemIdsCommand(dialect, missingCollectionItemIds.Count)
         );
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var reservedValuesInOrder = await ReadReservedCollectionItemIdsAsync(
                 reader,
-                missingCollectionItemIds.Length,
+                missingCollectionItemIds.Count,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        for (var index = 0; index < missingCollectionItemIds.Length; index++)
+        for (var index = 0; index < missingCollectionItemIds.Count; index++)
         {
             reservedCollectionItemIds.Add(missingCollectionItemIds[index], reservedValuesInOrder[index]);
         }
@@ -1398,22 +1533,30 @@ internal sealed class RelationalWriteNoProfilePersister(
         string sql,
         Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        int rowOffset,
+        int rowCount,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (rows.Count == 0)
+        if (rowCount == 0)
         {
             return;
         }
 
-        if (rows.Count == 1)
+        if (rowCount == 1)
         {
             await ExecuteNonQueryAsync(
                     writeSession,
-                    BuildRowCommand(tableWritePlan, sql, rows[0], rootDocumentId, reservedCollectionItemIds),
+                    BuildRowCommand(
+                        tableWritePlan,
+                        sql,
+                        rows[rowOffset],
+                        rootDocumentId,
+                        reservedCollectionItemIds
+                    ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1423,9 +1566,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         await ExecuteNonQueryAsync(
                 writeSession,
                 BuildBatchCommand(
-                    emitBatchSql(batchSqlEmitter, rows.Count),
+                    emitBatchSql(batchSqlEmitter, rowCount),
                     tableWritePlan,
                     rows,
+                    rowOffset,
+                    rowCount,
                     rootDocumentId,
                     reservedCollectionItemIds
                 ),
@@ -1448,14 +1593,25 @@ internal sealed class RelationalWriteNoProfilePersister(
     {
         var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
 
-        foreach (var updateBatch in rows.Chunk(tableWritePlan.BulkInsertBatching.MaxRowsPerBatch))
+        for (
+            var batchStart = 0;
+            batchStart < rows.Count;
+            batchStart += tableWritePlan.BulkInsertBatching.MaxRowsPerBatch
+        )
         {
+            var batchCount = Math.Min(
+                tableWritePlan.BulkInsertBatching.MaxRowsPerBatch,
+                rows.Count - batchStart
+            );
+
             await ExecuteParameterizedBatchAsync(
                     batchSqlEmitter,
                     tableWritePlan,
                     sql,
                     emitBatchSql,
-                    updateBatch,
+                    rows,
+                    batchStart,
+                    batchCount,
                     rootDocumentId,
                     reservedCollectionItemIds,
                     writeSession,
@@ -1466,28 +1622,30 @@ internal sealed class RelationalWriteNoProfilePersister(
     }
 
     private static async Task ExecuteCollectionInsertBatchAsync(
-        SqlDialect dialect,
+        WritePlanBatchSqlEmitter batchSqlEmitter,
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        int rowOffset,
+        int rowCount,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (rows.Count == 0)
+        if (rowCount == 0)
         {
             return;
         }
 
-        if (rows.Count == 1)
+        if (rowCount == 1)
         {
             await ExecuteNonQueryAsync(
                     writeSession,
                     BuildRowCommand(
                         tableWritePlan,
                         tableWritePlan.InsertSql,
-                        rows[0],
+                        rows[rowOffset],
                         rootDocumentId,
                         reservedCollectionItemIds
                     ),
@@ -1500,9 +1658,11 @@ internal sealed class RelationalWriteNoProfilePersister(
         await ExecuteNonQueryAsync(
                 writeSession,
                 BuildBatchCommand(
-                    new WritePlanBatchSqlEmitter(dialect).EmitInsertBatch(tableWritePlan, rows.Count),
+                    batchSqlEmitter.EmitInsertBatch(tableWritePlan, rowCount),
                     tableWritePlan,
                     rows,
+                    rowOffset,
+                    rowCount,
                     rootDocumentId,
                     reservedCollectionItemIds
                 ),
@@ -1538,6 +1698,7 @@ internal sealed class RelationalWriteNoProfilePersister(
     )
     {
         Dictionary<string, RelationalWriteMergedTableRow> rowsByPhysicalIdentity = new(
+            rows.Count,
             StringComparer.Ordinal
         );
 
@@ -1570,7 +1731,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             );
         }
 
-        StringBuilder builder = new();
+        StringBuilder builder = new(CalculatePhysicalRowIdentityKeyCapacity(identityColumns));
 
         for (var index = 0; index < identityColumns.Count; index++)
         {
@@ -1604,6 +1765,18 @@ internal sealed class RelationalWriteNoProfilePersister(
         };
     }
 
+    private static int CalculatePhysicalRowIdentityKeyCapacity(IReadOnlyList<DbColumnName> identityColumns)
+    {
+        var capacity = Math.Max(0, identityColumns.Count - 1);
+
+        foreach (var identityColumn in identityColumns)
+        {
+            capacity += identityColumn.Value.Length + 1 + 32;
+        }
+
+        return capacity;
+    }
+
     private static RelationalCommand BuildRowCommand(
         TableWritePlan tableWritePlan,
         string sql,
@@ -1612,7 +1785,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
     {
-        List<RelationalParameter> parameters = [];
+        List<RelationalParameter> parameters = new(tableWritePlan.ColumnBindings.Length);
 
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
         {
@@ -1636,14 +1809,18 @@ internal sealed class RelationalWriteNoProfilePersister(
         string sql,
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        int rowOffset,
+        int rowCount,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
     {
-        List<RelationalParameter> parameters = [];
+        List<RelationalParameter> parameters = new(rowCount * tableWritePlan.ColumnBindings.Length);
 
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
         {
+            var row = rows[rowOffset + rowIndex];
+
             for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
             {
                 var parameterName = NormalizeParameterName(
@@ -1654,7 +1831,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 );
                 var parameterValue = ResolveParameterValue(
                     tableWritePlan,
-                    rows[rowIndex].Values[bindingIndex],
+                    row.Values[bindingIndex],
                     rootDocumentId,
                     reservedCollectionItemIds
                 );
@@ -1689,15 +1866,17 @@ internal sealed class RelationalWriteNoProfilePersister(
 
     private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetStableRowIdentityTokens(
         IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        int rowOffset,
+        int rowCount,
         int stableRowIdentityBindingIndex
     )
     {
-        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = new(rowCount);
 
-        foreach (var row in rows)
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
         {
             if (
-                row.Values[stableRowIdentityBindingIndex]
+                rows[rowOffset + rowIndex].Values[stableRowIdentityBindingIndex]
                 is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId
             )
             {
@@ -1709,25 +1888,26 @@ internal sealed class RelationalWriteNoProfilePersister(
     }
 
     private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
-        IReadOnlyList<RelationalWriteMergedTableRow> rows
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        int rowOffset,
+        int rowCount
     )
     {
-        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = new(rowCount);
 
-        foreach (var row in rows)
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
         {
-            unresolvedCollectionItemIds.AddRange(GetUnresolvedCollectionItemIds(row.Values));
+            AddUnresolvedCollectionItemIds(unresolvedCollectionItemIds, rows[rowOffset + rowIndex].Values);
         }
 
         return unresolvedCollectionItemIds;
     }
 
-    private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
+    private static void AddUnresolvedCollectionItemIds(
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds,
         IReadOnlyList<FlattenedWriteValue> values
     )
     {
-        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];
-
         foreach (var value in values)
         {
             if (value is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId)
@@ -1735,8 +1915,6 @@ internal sealed class RelationalWriteNoProfilePersister(
                 unresolvedCollectionItemIds.Add(unresolvedCollectionItemId);
             }
         }
-
-        return unresolvedCollectionItemIds;
     }
 
     private static object? ResolveParameterValue(

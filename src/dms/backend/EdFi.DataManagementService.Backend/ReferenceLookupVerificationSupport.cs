@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
@@ -23,8 +25,203 @@ internal sealed record ReferenceLookupVerificationElement(
     bool IsDescriptorReference
 );
 
+internal sealed class ReferenceLookupVerificationShapeKey(
+    IReadOnlyList<ReferenceLookupVerificationResourceShape> resourceShapes,
+    int hashCode
+) : IEquatable<ReferenceLookupVerificationShapeKey>
+{
+    private readonly IReadOnlyList<ReferenceLookupVerificationResourceShape> _resourceShapes = resourceShapes;
+    private readonly int _hashCode = hashCode;
+
+    public IReadOnlyList<ReferenceLookupVerificationResourceShape> ResourceShapes => _resourceShapes;
+
+    public static ReferenceLookupVerificationShapeKey Create(
+        IReadOnlyList<ReferenceLookupRequestEntry> lookups
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lookups);
+
+        Dictionary<QualifiedResourceName, ReferenceLookupVerificationResourceShape> shapeByResource = [];
+        List<ReferenceLookupVerificationResourceShape> orderedResourceShapes = [];
+
+        foreach (var lookup in lookups)
+        {
+            if (shapeByResource.TryGetValue(lookup.RequestedResource, out var existingShape))
+            {
+                if (!existingShape.HasSameIdentityPathOrder(lookup.RequestedIdentity))
+                {
+                    throw ReferenceLookupVerificationSupport.CreateIdentityShapeMismatchException(
+                        lookup.RequestedResource
+                    );
+                }
+
+                continue;
+            }
+
+            var candidateShape = ReferenceLookupVerificationResourceShape.Create(lookup);
+            shapeByResource[lookup.RequestedResource] = candidateShape;
+            orderedResourceShapes.Add(candidateShape);
+        }
+
+        var resourceShapes = orderedResourceShapes.ToArray();
+        var hash = new HashCode();
+
+        foreach (var resourceShape in resourceShapes)
+        {
+            hash.Add(resourceShape);
+        }
+
+        return new ReferenceLookupVerificationShapeKey(resourceShapes, hash.ToHashCode());
+    }
+
+    public bool Equals(ReferenceLookupVerificationShapeKey? other)
+    {
+        if (
+            other is null
+            || _hashCode != other._hashCode
+            || _resourceShapes.Count != other._resourceShapes.Count
+        )
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _resourceShapes.Count; index++)
+        {
+            if (!_resourceShapes[index].Equals(other._resourceShapes[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is ReferenceLookupVerificationShapeKey other && Equals(other);
+
+    public override int GetHashCode() => _hashCode;
+}
+
+internal sealed class ReferenceLookupVerificationResourceShape(
+    QualifiedResourceName requestedResource,
+    IReadOnlyList<string> identityJsonPaths,
+    int hashCode
+) : IEquatable<ReferenceLookupVerificationResourceShape>
+{
+    private readonly QualifiedResourceName _requestedResource = requestedResource;
+    private readonly IReadOnlyList<string> _identityJsonPaths = identityJsonPaths;
+    private readonly int _hashCode = hashCode;
+
+    public QualifiedResourceName RequestedResource => _requestedResource;
+
+    public IReadOnlyList<string> IdentityJsonPaths => _identityJsonPaths;
+
+    public static ReferenceLookupVerificationResourceShape Create(ReferenceLookupRequestEntry lookup)
+    {
+        ArgumentNullException.ThrowIfNull(lookup);
+
+        var identityJsonPaths = lookup
+            .RequestedIdentity.DocumentIdentityElements.Select(static identityElement =>
+                identityElement.IdentityJsonPath.Value
+            )
+            .ToArray();
+
+        var hash = new HashCode();
+        hash.Add(lookup.RequestedResource);
+
+        foreach (var identityJsonPath in identityJsonPaths)
+        {
+            hash.Add(identityJsonPath, StringComparer.Ordinal);
+        }
+
+        return new ReferenceLookupVerificationResourceShape(
+            lookup.RequestedResource,
+            identityJsonPaths,
+            hash.ToHashCode()
+        );
+    }
+
+    public bool HasSameIdentityPathOrder(ReferenceLookupVerificationResourceShape other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        return HasSameIdentityPathOrder(other._identityJsonPaths);
+    }
+
+    public bool HasSameIdentityPathOrder(DocumentIdentity requestedIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(requestedIdentity);
+
+        if (_identityJsonPaths.Count != requestedIdentity.DocumentIdentityElements.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _identityJsonPaths.Count; index++)
+        {
+            if (
+                !StringComparer.Ordinal.Equals(
+                    _identityJsonPaths[index],
+                    requestedIdentity.DocumentIdentityElements[index].IdentityJsonPath.Value
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool HasSameIdentityPathOrder(IReadOnlyList<string> identityJsonPaths)
+    {
+        if (_identityJsonPaths.Count != identityJsonPaths.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _identityJsonPaths.Count; index++)
+        {
+            if (!StringComparer.Ordinal.Equals(_identityJsonPaths[index], identityJsonPaths[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool Equals(ReferenceLookupVerificationResourceShape? other)
+    {
+        if (
+            other is null
+            || _hashCode != other._hashCode
+            || !_requestedResource.Equals(other._requestedResource)
+            || !HasSameIdentityPathOrder(other)
+        )
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is ReferenceLookupVerificationResourceShape other && Equals(other);
+
+    public override int GetHashCode() => _hashCode;
+}
+
 internal static class ReferenceLookupVerificationSupport
 {
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        ConcurrentDictionary<
+            ReferenceLookupVerificationResourceShape,
+            ReferenceLookupVerificationProjectionCacheEntry
+        >
+    > ProjectionByResourceShapeByMappingSet = new();
+
     public static string BuildExpectedVerificationIdentityKey(
         DocumentIdentity requestedIdentity,
         bool normalizeDescriptorValues = false
@@ -67,47 +264,75 @@ internal static class ReferenceLookupVerificationSupport
     )
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.MappingSet);
 
-        Dictionary<QualifiedResourceName, ReferenceLookupRequestEntry> representativeLookupByResource = [];
-        List<QualifiedResourceName> orderedRequestedResources = [];
+        return BuildProjections(
+            request.MappingSet,
+            ReferenceLookupVerificationShapeKey.Create(request.Lookups)
+        );
+    }
 
-        foreach (var lookup in request.Lookups)
-        {
-            if (representativeLookupByResource.TryGetValue(lookup.RequestedResource, out var existingLookup))
-            {
-                EnsureCompatibleIdentityShape(existingLookup, lookup);
-                continue;
-            }
+    public static ReferenceLookupVerificationShapeKey CreateShapeKey(ReferenceLookupRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
-            representativeLookupByResource[lookup.RequestedResource] = lookup;
-            orderedRequestedResources.Add(lookup.RequestedResource);
-        }
+        return ReferenceLookupVerificationShapeKey.Create(request.Lookups);
+    }
+
+    public static IReadOnlyList<ReferenceLookupVerificationProjection> BuildProjections(
+        MappingSet mappingSet,
+        ReferenceLookupVerificationShapeKey shapeKey
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(shapeKey);
+
+        var projectionByResourceShape = ProjectionByResourceShapeByMappingSet.GetValue(
+            mappingSet,
+            static _ => new ConcurrentDictionary<
+                ReferenceLookupVerificationResourceShape,
+                ReferenceLookupVerificationProjectionCacheEntry
+            >()
+        );
 
         List<ReferenceLookupVerificationProjection> projections = [];
 
-        foreach (var requestedResource in orderedRequestedResources)
+        foreach (var resourceShape in shapeKey.ResourceShapes)
         {
-            var lookup = representativeLookupByResource[requestedResource];
+            var projectionEntry = projectionByResourceShape.GetOrAdd(
+                resourceShape,
+                static (staticResourceShape, staticMappingSet) =>
+                    BuildProjectionCacheEntry(staticMappingSet, staticResourceShape),
+                mappingSet
+            );
 
-            if (
-                TryBuildProjection(request.MappingSet, requestedResource, lookup, out var projection)
-                && projection is not null
-            )
+            if (projectionEntry.Projection is not null)
             {
-                projections.Add(projection);
+                projections.Add(projectionEntry.Projection);
             }
         }
 
-        return projections;
+        return projections.ToArray();
+    }
+
+    private static ReferenceLookupVerificationProjectionCacheEntry BuildProjectionCacheEntry(
+        MappingSet mappingSet,
+        ReferenceLookupVerificationResourceShape resourceShape
+    )
+    {
+        return TryBuildProjection(mappingSet, resourceShape, out var projection) && projection is not null
+            ? new ReferenceLookupVerificationProjectionCacheEntry(projection)
+            : ReferenceLookupVerificationProjectionCacheEntry.Empty;
     }
 
     private static bool TryBuildProjection(
         MappingSet mappingSet,
-        QualifiedResourceName requestedResource,
-        ReferenceLookupRequestEntry lookup,
+        ReferenceLookupVerificationResourceShape resourceShape,
         out ReferenceLookupVerificationProjection? projection
     )
     {
+        var requestedResource = resourceShape.RequestedResource;
+
         if (!mappingSet.ResourceKeyIdByResource.TryGetValue(requestedResource, out var resourceKeyId))
         {
             throw new InvalidOperationException(
@@ -136,7 +361,7 @@ internal static class ReferenceLookupVerificationSupport
                 SourceTable: concreteResourceModel.RelationalModel.Root.Table,
                 IdentityElements: BuildIdentityElements(
                     requestedResource,
-                    lookup.RequestedIdentity,
+                    resourceShape.IdentityJsonPaths,
                     BuildConcreteColumnByPath(concreteResourceModel.RelationalModel.Root.Columns)
                 )
             );
@@ -152,7 +377,7 @@ internal static class ReferenceLookupVerificationSupport
                 SourceTable: abstractUnionView.ViewName,
                 IdentityElements: BuildIdentityElements(
                     requestedResource,
-                    lookup.RequestedIdentity,
+                    resourceShape.IdentityJsonPaths,
                     BuildAbstractColumnByPath(abstractUnionView.OutputColumnsInSelectOrder)
                 )
             );
@@ -168,11 +393,11 @@ internal static class ReferenceLookupVerificationSupport
 
     private static IReadOnlyList<ReferenceLookupVerificationElement> BuildIdentityElements(
         QualifiedResourceName requestedResource,
-        DocumentIdentity requestedIdentity,
+        IReadOnlyList<string> requestedIdentityPaths,
         IReadOnlyDictionary<string, VerificationSourceColumn> columnByPath
     )
     {
-        if (requestedIdentity.DocumentIdentityElements.Length == 0)
+        if (requestedIdentityPaths.Count == 0)
         {
             throw new InvalidOperationException(
                 $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
@@ -180,20 +405,20 @@ internal static class ReferenceLookupVerificationSupport
             );
         }
 
-        return requestedIdentity
-            .DocumentIdentityElements.Select(identityElement =>
+        return requestedIdentityPaths
+            .Select(identityJsonPath =>
             {
-                if (!columnByPath.TryGetValue(identityElement.IdentityJsonPath.Value, out var sourceColumn))
+                if (!columnByPath.TryGetValue(identityJsonPath, out var sourceColumn))
                 {
                     throw new InvalidOperationException(
                         $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
-                            + $"no authoritative column was found for identity path '{identityElement.IdentityJsonPath.Value}'."
+                            + $"no authoritative column was found for identity path '{identityJsonPath}'."
                     );
                 }
 
                 return new ReferenceLookupVerificationElement(
                     sourceColumn.Column,
-                    identityElement.IdentityJsonPath.Value,
+                    identityJsonPath,
                     sourceColumn.ScalarType,
                     sourceColumn.IsDescriptorReference
                 );
@@ -273,37 +498,10 @@ internal static class ReferenceLookupVerificationSupport
         }
     }
 
-    private static void EnsureCompatibleIdentityShape(
-        ReferenceLookupRequestEntry existingLookup,
-        ReferenceLookupRequestEntry candidateLookup
-    )
-    {
-        if (
-            existingLookup.RequestedIdentity.DocumentIdentityElements.Length
-            != candidateLookup.RequestedIdentity.DocumentIdentityElements.Length
-        )
-        {
-            throw CreateIdentityShapeMismatchException(existingLookup);
-        }
-
-        for (var index = 0; index < existingLookup.RequestedIdentity.DocumentIdentityElements.Length; index++)
-        {
-            if (
-                existingLookup.RequestedIdentity.DocumentIdentityElements[index].IdentityJsonPath.Value
-                == candidateLookup.RequestedIdentity.DocumentIdentityElements[index].IdentityJsonPath.Value
-            )
-            {
-                continue;
-            }
-
-            throw CreateIdentityShapeMismatchException(existingLookup);
-        }
-    }
-
-    private static Exception CreateIdentityShapeMismatchException(ReferenceLookupRequestEntry existingLookup)
+    internal static Exception CreateIdentityShapeMismatchException(QualifiedResourceName requestedResource)
     {
         return new InvalidOperationException(
-            $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(existingLookup.RequestedResource)}': "
+            $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
                 + "multiple lookup entries for the same resource used different identity path orderings."
         );
     }
@@ -333,4 +531,13 @@ internal static class ReferenceLookupVerificationSupport
         bool IsPreferred,
         bool IsDescriptorReference
     );
+
+    private sealed record ReferenceLookupVerificationProjectionCacheEntry(
+        ReferenceLookupVerificationProjection? Projection
+    )
+    {
+        public static readonly ReferenceLookupVerificationProjectionCacheEntry Empty = new(
+            (ReferenceLookupVerificationProjection?)null
+        );
+    }
 }

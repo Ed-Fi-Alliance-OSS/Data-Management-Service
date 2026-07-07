@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -114,6 +115,44 @@ public class ParseBodyMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Post_Request_With_Whitespace_Only_Body : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: " \r\n\t ",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_error_message_body()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("A non-empty request body is required");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_With_Invalid_Json : ParseBodyMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
@@ -150,6 +189,109 @@ public class ParseBodyMiddlewareTests
         public void It_returns_error_message_body()
         {
             _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data validation failed.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_Preparsed_Json : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private JsonNode _parsedBody = new JsonObject();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _parsedBody = JsonNode.Parse("""{"id":"value","name":"firstname"}""")!;
+
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                ParsedBody: _parsedBody
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_sets_the_parsed_body()
+        {
+            _requestInfo.ParsedBody.Should().BeSameAs(_parsedBody);
+        }
+
+        [Test]
+        public void It_continues_the_pipeline()
+        {
+            _nextWasCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_an_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_Frontend_Parse_Error : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("correlation-id"),
+                RouteQualifiers: [],
+                BodyParseErrorMessage: "'n' is invalid after a value."
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_data_validation_error_message_body()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data validation failed.")
+                .And.Contain("invalid after a value.");
+        }
+
+        [Test]
+        public void It_preserves_the_correlation_id()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("\"correlationId\":\"correlation-id\"");
         }
     }
 }

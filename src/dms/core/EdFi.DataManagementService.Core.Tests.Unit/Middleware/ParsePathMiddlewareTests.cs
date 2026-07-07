@@ -85,6 +85,28 @@ public class ParsePathMiddlewareTests
                     )
                 )
             );
+        A.CallTo(() =>
+                jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                    A<string>._,
+                    A<int>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>(
+                    (
+                        new ClaimsPrincipal(),
+                        new ClientAuthorizations(
+                            ClientId: "test-client",
+                            TokenId: "test-token",
+                            ClaimSetName: "test-claimset",
+                            EducationOrganizationIds: [],
+                            NamespacePrefixes: [],
+                            DataStoreIds: [new DataStoreId(1)]
+                        )
+                    )
+                )
+            );
 
         services.AddSingleton<IJwtValidationService>(jwtValidationService);
         services.AddTransient<JwtAuthenticationMiddleware>();

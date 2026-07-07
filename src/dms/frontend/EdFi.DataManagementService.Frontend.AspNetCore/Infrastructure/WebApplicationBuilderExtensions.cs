@@ -117,7 +117,7 @@ public static class WebApplicationBuilderExtensions
 
         ConfigurationManager config = webAppBuilder.Configuration;
 
-        // For Token handling and HybridCache stampede protection
+        // MemoryCache backs claim-set caching; HybridCache backs token, application-context, and profile caches.
         webAppBuilder.Services.AddMemoryCache();
         webAppBuilder.Services.AddHybridCache();
 
@@ -170,7 +170,7 @@ public static class WebApplicationBuilderExtensions
             ConfigurationServiceClaimSetProvider
         >();
 
-        // Register CachedClaimSetProvider as IClaimSetProvider with HybridCache stampede protection
+        // Register CachedClaimSetProvider as IClaimSetProvider with in-process stampede protection
         webAppBuilder.Services.AddSingleton<CachedClaimSetProvider>();
         webAppBuilder.Services.AddSingleton<IClaimSetProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<CachedClaimSetProvider>()
@@ -231,13 +231,8 @@ public static class WebApplicationBuilderExtensions
         }
 
         logger.Information("Injecting relational document store repository surface");
-        webAppBuilder.Services.AddScoped<RelationalDocumentStoreRepository>();
-        webAppBuilder.Services.AddScoped<IDocumentStoreRepository>(serviceProvider =>
-            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-        );
-        webAppBuilder.Services.AddScoped<IQueryHandler>(serviceProvider =>
-            serviceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-        );
+        webAppBuilder.Services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
+        webAppBuilder.Services.AddScoped<IQueryHandler, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.Replace(
             ServiceDescriptor.Singleton<IBackendMappingInitializer, RelationalBackendMappingInitializer>()
         );

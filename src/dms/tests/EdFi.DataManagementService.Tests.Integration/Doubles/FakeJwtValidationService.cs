@@ -39,6 +39,15 @@ internal static class FakeJwtValidationService
         A.CallTo(() => fake.ValidateAndExtractClientAuthorizationsAsync(A<string>._, A<CancellationToken>._))
             .Returns(Task.FromResult(((ClaimsPrincipal?)principal, (ClientAuthorizations?)authorizations)));
 
+        A.CallTo(() =>
+                fake.ValidateAndExtractClientAuthorizationsAsync(
+                    A<string>._,
+                    A<int>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(((ClaimsPrincipal?)principal, (ClientAuthorizations?)authorizations)));
+
         return fake;
     }
 }

@@ -16,9 +16,51 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public static class MappingSetResourceLookupExtensions
 {
     private static readonly ConditionalWeakTable<
-        MappingSet,
+        DerivedRelationalModelSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
-    > ConcreteResourceModelsByResource = new();
+    > ConcreteResourceModelsByResourceByModelSet = new();
+
+    /// <summary>
+    /// Gets the concrete resource models keyed by qualified resource name from the model set's canonical
+    /// resource list. Duplicate names keep the first model, matching <c>PersonJoinPathResolver.BuildResourceLookup</c>.
+    /// </summary>
+    public static IReadOnlyDictionary<
+        QualifiedResourceName,
+        ConcreteResourceModel
+    > GetConcreteResourceModelsByResource(this DerivedRelationalModelSet modelSet)
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+
+        return ConcreteResourceModelsByResourceByModelSet.GetValue(
+            modelSet,
+            static staticModelSet =>
+                BuildConcreteResourceModelsByResource(staticModelSet.ConcreteResourcesInNameOrder)
+                    .ToFrozenDictionary()
+        );
+    }
+
+    /// <summary>
+    /// Builds a concrete resource lookup keyed by the canonical resource key identity. Duplicate
+    /// names keep the first model, matching <c>PersonJoinPathResolver.BuildResourceLookup</c>.
+    /// </summary>
+    public static Dictionary<
+        QualifiedResourceName,
+        ConcreteResourceModel
+    > BuildConcreteResourceModelsByResource(IReadOnlyList<ConcreteResourceModel> concreteResourcesInNameOrder)
+    {
+        ArgumentNullException.ThrowIfNull(concreteResourcesInNameOrder);
+
+        var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>(
+            concreteResourcesInNameOrder.Count
+        );
+
+        foreach (var concreteResourceModel in concreteResourcesInNameOrder)
+        {
+            resourcesByName.TryAdd(concreteResourceModel.ResourceKey.Resource, concreteResourceModel);
+        }
+
+        return resourcesByName;
+    }
 
     /// <summary>
     /// Attempts to resolve the concrete resource model from the mapping set's canonical resource list.
@@ -31,30 +73,7 @@ public static class MappingSetResourceLookupExtensions
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
 
-        var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
-            mappingSet,
-            static staticMappingSet =>
-            {
-                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>();
-
-                foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
-                {
-                    var candidateResource = concreteResourceModel.RelationalModel.Resource;
-
-                    if (!resourcesByName.TryAdd(candidateResource, concreteResourceModel))
-                    {
-                        throw new InvalidOperationException(
-                            $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
-                                + $"'{FormatResource(candidateResource)}' in ConcreteResourcesInNameOrder."
-                        );
-                    }
-                }
-
-                return resourcesByName.ToFrozenDictionary();
-            }
-        );
-
-        return concreteResourcesByResource.TryGetValue(resource, out model);
+        return mappingSet.Model.GetConcreteResourceModelsByResource().TryGetValue(resource, out model);
     }
 
     /// <summary>

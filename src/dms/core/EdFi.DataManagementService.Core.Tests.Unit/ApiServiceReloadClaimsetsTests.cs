@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -31,13 +31,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
     private ApiService _apiService = null!;
     private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
 
-    protected static HybridCache CreateHybridCache()
-    {
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
-        services.AddHybridCache();
-        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
-    }
+    protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
     private ApiService CreateApiService(
         IConfigurationServiceClaimSetProvider configServiceClaimSetProvider,
@@ -69,13 +63,12 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         var services = new ServiceCollection();
         var serviceProvider = services.BuildServiceProvider();
 
-        var hybridCache = CreateHybridCache();
+        var memoryCache = CreateMemoryCache();
         var cacheSettings = new CacheSettings();
 
-        // Create CachedClaimSetProvider with HybridCache
         var cachedClaimSetProvider = new CachedClaimSetProvider(
             configServiceClaimSetProvider,
-            hybridCache,
+            memoryCache,
             cacheSettings,
             NullLogger<CachedClaimSetProvider>.Instance
         );
@@ -194,13 +187,7 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
     private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
     private int _statusCode;
 
-    protected static HybridCache CreateHybridCache()
-    {
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
-        services.AddHybridCache();
-        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
-    }
+    protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
     private ApiService CreateApiService(IConfigurationServiceClaimSetProvider configServiceClaimSetProvider)
     {
@@ -229,12 +216,12 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
         var services = new ServiceCollection();
         var serviceProvider = services.BuildServiceProvider();
 
-        var hybridCache = CreateHybridCache();
+        var memoryCache = CreateMemoryCache();
         var cacheSettings = new CacheSettings();
 
         var cachedClaimSetProvider = new CachedClaimSetProvider(
             configServiceClaimSetProvider,
-            hybridCache,
+            memoryCache,
             cacheSettings,
             NullLogger<CachedClaimSetProvider>.Instance
         );

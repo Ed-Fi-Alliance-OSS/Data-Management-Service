@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Utilities;
 
@@ -58,8 +57,7 @@ public static class ProjectSchemaMetadataExtractor
 
         // Compute per-project hash using canonical JSON serialization.
         // Note: OpenAPI payloads have already been stripped by ApiSchemaInputNormalizer.
-        byte[] canonicalBytes = CanonicalJsonSerializer.SerializeToUtf8Bytes(projectSchema);
-        byte[] projectHashBytes = SHA256.HashData(canonicalBytes);
+        byte[] projectHashBytes = CanonicalJsonSerializer.ComputeSha256Hash(projectSchema);
         var projectHash = Convert.ToHexStringLower(projectHashBytes);
 
         return new ProjectSchemaMetadata(

@@ -63,6 +63,28 @@ public class InvalidResourceSchemasTests
                         )
                     )
                 );
+            A.CallTo(() =>
+                    fakeJwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<int>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult<(System.Security.Claims.ClaimsPrincipal?, ClientAuthorizations?)>(
+                        (
+                            new System.Security.Claims.ClaimsPrincipal(),
+                            new ClientAuthorizations(
+                                ClientId: "test-client",
+                                TokenId: "test-token",
+                                ClaimSetName: "test-claimset",
+                                EducationOrganizationIds: [],
+                                NamespacePrefixes: [],
+                                DataStoreIds: [new DataStoreId(1)]
+                            )
+                        )
+                    )
+                );
 
             // Register the fake as singleton first, before any other registrations
             services.AddSingleton<IJwtValidationService>(fakeJwtValidationService);

@@ -744,6 +744,102 @@ public class Given_ExternalPlanContracts
             .DescriptorProjectionPlansInOrder[0]
             .ResultShape.Should()
             .Be(new ExternalPlans.DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1));
+        readPlan.DescriptorProjectionPlansInOrder[0].SelectBySingleDocumentSql.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_default_optional_single_document_read_sql_to_null_and_preserve_explicit_values()
+    {
+        var rootPath = new JsonPathExpression("$", []);
+        var descriptorPath = new JsonPathExpression(
+            "$.gradeLevelDescriptor",
+            [new JsonPathSegment.Property("gradeLevelDescriptor")]
+        );
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Student"),
+            rootPath,
+            new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var keysetTablePlan = new ExternalPlans.TableReadPlan(tableModel, "SELECT keyset table;");
+        var singleDocumentTablePlan = new ExternalPlans.TableReadPlan(
+            tableModel,
+            "SELECT keyset table;",
+            "SELECT single table;"
+        );
+
+        var keysetDescriptorPlan = new ExternalPlans.DescriptorProjectionPlan(
+            SelectByKeysetSql: "SELECT keyset descriptor;",
+            ResultShape: new ExternalPlans.DescriptorProjectionResultShape(
+                DescriptorIdOrdinal: 0,
+                UriOrdinal: 1
+            ),
+            SourcesInOrder: []
+        );
+        var singleDocumentDescriptorPlan = new ExternalPlans.DescriptorProjectionPlan(
+            SelectByKeysetSql: "SELECT keyset descriptor;",
+            ResultShape: new ExternalPlans.DescriptorProjectionResultShape(
+                DescriptorIdOrdinal: 0,
+                UriOrdinal: 1
+            ),
+            SourcesInOrder:
+            [
+                new ExternalPlans.DescriptorProjectionSource(
+                    descriptorPath,
+                    tableModel.Table,
+                    new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                    DescriptorIdColumnOrdinal: 0
+                ),
+            ],
+            SelectBySingleDocumentSql: "SELECT single descriptor;"
+        );
+
+        var keysetLookupPlan = new ExternalPlans.DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT keyset lookup;",
+            ResultShape: new ExternalPlans.DocumentReferenceLookupResultShape(
+                DocumentIdOrdinal: 0,
+                DocumentUuidOrdinal: 1,
+                ResourceKeyIdOrdinal: 2
+            ),
+            SourcesInOrder: []
+        );
+        var singleDocumentLookupPlan = new ExternalPlans.DocumentReferenceLookupPlan(
+            SelectByKeysetSql: "SELECT keyset lookup;",
+            ResultShape: new ExternalPlans.DocumentReferenceLookupResultShape(
+                DocumentIdOrdinal: 0,
+                DocumentUuidOrdinal: 1,
+                ResourceKeyIdOrdinal: 2
+            ),
+            SourcesInOrder:
+            [
+                new ExternalPlans.DocumentReferenceLookupSource(
+                    tableModel.Table,
+                    new DbColumnName("School_DocumentId")
+                ),
+            ],
+            SelectBySingleDocumentSql: "SELECT single lookup;"
+        );
+
+        keysetTablePlan.SelectBySingleDocumentSql.Should().BeNull();
+        singleDocumentTablePlan.SelectBySingleDocumentSql.Should().Be("SELECT single table;");
+        keysetDescriptorPlan.SelectBySingleDocumentSql.Should().BeNull();
+        singleDocumentDescriptorPlan.SelectBySingleDocumentSql.Should().Be("SELECT single descriptor;");
+        keysetLookupPlan.SelectBySingleDocumentSql.Should().BeNull();
+        singleDocumentLookupPlan.SelectBySingleDocumentSql.Should().Be("SELECT single lookup;");
     }
 
     [Test]
@@ -909,6 +1005,16 @@ public class Given_ExternalPlanContracts
             .KeyUnificationPlans[0]
             .MembersInOrder.Should()
             .ContainSingle();
+    }
+
+    [Test]
+    public void It_should_default_single_document_hydration_fast_path_to_disabled()
+    {
+        var options = new ExternalPlans.HydrationExecutionOptions();
+
+        options.IncludeDescriptorProjection.Should().BeTrue();
+        options.IncludeDocumentReferenceLookup.Should().BeTrue();
+        options.UseSingleDocumentFastPath.Should().BeFalse();
     }
 
     private static ExternalPlans.TableWritePlan CreateCollectionTableWritePlan(

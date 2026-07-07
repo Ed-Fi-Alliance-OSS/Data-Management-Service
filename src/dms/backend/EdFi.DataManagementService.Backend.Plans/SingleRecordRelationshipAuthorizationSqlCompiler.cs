@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -14,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect dialect)
 {
+    private const int MaxCachedSqlPlans = 4096;
     private const string RootAlias = "r";
     private const string DocumentAlias = "d";
     private const string TargetCte = "target";
@@ -33,6 +36,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly string[] _defaultReservedParameterNames = ["documentUuid", "resourceKeyId"];
     private static readonly string _pgsqlEdOrgSubjectValueSqlType = ResolvePgsqlEdOrgSubjectValueSqlType();
+    private static readonly ConditionalWeakTable<MappingSet, SqlPlanCache> _sqlPlanCachesByMappingSet = new();
 
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
@@ -59,6 +63,94 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             parametersInOrder,
             normalizedSpec.ProposedValueParametersInOrder
         );
+    }
+
+    public static SingleRecordRelationshipAuthorizationSqlPlan CompileCached(
+        MappingSet mappingSet,
+        SingleRecordRelationshipAuthorizationSqlSpec spec
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var dialect = mappingSet.Key.Dialect;
+        ValidateCacheableSpecShape(dialect, spec);
+
+        var cacheKey = SqlPlanCacheKey.Create(dialect, spec);
+        var sqlPlanCache = _sqlPlanCachesByMappingSet.GetValue(mappingSet, static _ => new SqlPlanCache());
+
+        return sqlPlanCache.GetOrAdd(cacheKey, spec);
+    }
+
+    public static SingleRecordRelationshipAuthorizationSqlPlan CompileCached(
+        MappingSet mappingSet,
+        RelationshipAuthorizationExecutableShape executableShape,
+        AuthorizationClaimEducationOrganizationIdParameterization claimEducationOrganizationIdParameterization,
+        int emittedAuth1Index,
+        IReadOnlyList<string>? reservedParameterNames = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(executableShape);
+        ArgumentNullException.ThrowIfNull(claimEducationOrganizationIdParameterization);
+
+        var spec = new SingleRecordRelationshipAuthorizationSqlSpec(
+            executableShape.CheckSpecs,
+            claimEducationOrganizationIdParameterization,
+            emittedAuth1Index,
+            ReservedParameterNames: reservedParameterNames
+        );
+        var dialect = mappingSet.Key.Dialect;
+        ValidateCacheableSpecShape(dialect, spec);
+
+        var cacheKey = SqlPlanCacheKey.Create(
+            dialect,
+            executableShape.SqlShapeKey,
+            claimEducationOrganizationIdParameterization,
+            emittedAuth1Index,
+            spec.DocumentIdParameterName,
+            reservedParameterNames
+        );
+        var sqlPlanCache = _sqlPlanCachesByMappingSet.GetValue(mappingSet, static _ => new SqlPlanCache());
+
+        return sqlPlanCache.GetOrAdd(cacheKey, spec);
+    }
+
+    private static void ValidateCacheableSpecShape(
+        SqlDialect dialect,
+        SingleRecordRelationshipAuthorizationSqlSpec spec
+    )
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(spec.CheckSpecs);
+        ArgumentNullException.ThrowIfNull(spec.ClaimEducationOrganizationIdParameterization);
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            spec.DocumentIdParameterName,
+            nameof(spec.DocumentIdParameterName)
+        );
+
+        if (spec.EmittedAuth1Index < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(spec),
+                spec.EmittedAuth1Index,
+                "Emitted AUTH1 index cannot be negative."
+            );
+        }
+
+        AuthorizationClaimEducationOrganizationIdParameterizationValidator.ValidateOrThrow(
+            spec.ClaimEducationOrganizationIdParameterization,
+            dialect,
+            $"{nameof(spec)}.{nameof(spec.ClaimEducationOrganizationIdParameterization)}",
+            "Single-record relationship authorization"
+        );
+
+        foreach (var parameterName in spec.ReservedParameterNames ?? Array.Empty<string>())
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(
+                parameterName,
+                $"{nameof(spec)}.{nameof(spec.ReservedParameterNames)}"
+            );
+        }
     }
 
     private NormalizedSqlSpec NormalizeSpec(SingleRecordRelationshipAuthorizationSqlSpec spec)
@@ -464,6 +556,154 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
 
         return proposedValueParameters;
+    }
+
+    private sealed class SqlPlanCache
+    {
+        private readonly ConcurrentDictionary<
+            SqlPlanCacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan>
+        > _cachedSqlPlans = new();
+        private int _cachedSqlPlanCount;
+
+        public SingleRecordRelationshipAuthorizationSqlPlan GetOrAdd(
+            SqlPlanCacheKey cacheKey,
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        )
+        {
+            if (_cachedSqlPlans.TryGetValue(cacheKey, out var cachedPlan))
+            {
+                return GetCachedSqlPlan(cacheKey, cachedPlan);
+            }
+
+            if (!TryReserveCacheSlot())
+            {
+                return CompileUncached(cacheKey.Dialect, spec);
+            }
+
+            var lazyPlan = new Lazy<SingleRecordRelationshipAuthorizationSqlPlan>(
+                () => CompileUncached(cacheKey.Dialect, spec),
+                LazyThreadSafetyMode.ExecutionAndPublication
+            );
+            cachedPlan = _cachedSqlPlans.GetOrAdd(cacheKey, lazyPlan);
+
+            if (!ReferenceEquals(cachedPlan, lazyPlan))
+            {
+                ReleaseCacheSlot();
+            }
+
+            return GetCachedSqlPlan(cacheKey, cachedPlan);
+        }
+
+        private bool TryReserveCacheSlot()
+        {
+            while (true)
+            {
+                var cachedSqlPlanCount = Volatile.Read(ref _cachedSqlPlanCount);
+
+                if (cachedSqlPlanCount >= MaxCachedSqlPlans)
+                {
+                    return false;
+                }
+
+                if (
+                    Interlocked.CompareExchange(
+                        ref _cachedSqlPlanCount,
+                        cachedSqlPlanCount + 1,
+                        cachedSqlPlanCount
+                    ) == cachedSqlPlanCount
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        private void ReleaseCacheSlot()
+        {
+            Interlocked.Decrement(ref _cachedSqlPlanCount);
+        }
+
+        private SingleRecordRelationshipAuthorizationSqlPlan GetCachedSqlPlan(
+            SqlPlanCacheKey cacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan> cachedPlan
+        )
+        {
+            try
+            {
+                return cachedPlan.Value;
+            }
+            catch
+            {
+                Remove(cacheKey, cachedPlan);
+                throw;
+            }
+        }
+
+        private void Remove(
+            SqlPlanCacheKey cacheKey,
+            Lazy<SingleRecordRelationshipAuthorizationSqlPlan> cachedPlan
+        )
+        {
+            if (
+                _cachedSqlPlans.TryRemove(cacheKey, out var removedPlan)
+                && ReferenceEquals(removedPlan, cachedPlan)
+            )
+            {
+                ReleaseCacheSlot();
+            }
+        }
+
+        private static SingleRecordRelationshipAuthorizationSqlPlan CompileUncached(
+            SqlDialect dialect,
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        ) =>
+            new SingleRecordRelationshipAuthorizationSqlCompiler(dialect).Compile(
+                CreateCacheableCompileSpec(spec)
+            );
+
+        private static SingleRecordRelationshipAuthorizationSqlSpec CreateCacheableCompileSpec(
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        )
+        {
+            var parameterization = spec.ClaimEducationOrganizationIdParameterization;
+            string[] parameterNamesInOrder = [.. parameterization.ParameterNamesInOrder];
+
+            return new SingleRecordRelationshipAuthorizationSqlSpec(
+                spec.CheckSpecs,
+                new AuthorizationClaimEducationOrganizationIdParameterization(
+                    parameterization.Kind,
+                    parameterization.BaseParameterName,
+                    CreatePlaceholderClaimEducationOrganizationIds(
+                        parameterization.Kind,
+                        parameterNamesInOrder.Length
+                    ),
+                    parameterNamesInOrder
+                ),
+                spec.EmittedAuth1Index,
+                spec.DocumentIdParameterName,
+                spec.ReservedParameterNames is null ? [] : [.. spec.ReservedParameterNames]
+            );
+        }
+
+        private static long[] CreatePlaceholderClaimEducationOrganizationIds(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind claimKind,
+            int parameterNameCount
+        )
+        {
+            var count =
+                claimKind is AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar
+                    ? parameterNameCount
+                    : 1;
+            long[] claimEducationOrganizationIds = new long[count];
+
+            for (var index = 0; index < claimEducationOrganizationIds.Length; index++)
+            {
+                claimEducationOrganizationIds[index] = index + 1L;
+            }
+
+            return claimEducationOrganizationIds;
+        }
     }
 
     private static HashSet<string> BuildReservedParameterNameSet(
@@ -1634,6 +1874,222 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
                     nameof(spec)
                 );
             }
+        }
+    }
+
+    private sealed class SqlPlanCacheKey : IEquatable<SqlPlanCacheKey>
+    {
+        private readonly int _hashCode;
+
+        private SqlPlanCacheKey(
+            SqlDialect dialect,
+            RelationshipAuthorizationSqlShapeKey shapeKey,
+            AuthorizationClaimEducationOrganizationIdParameterizationKind claimKind,
+            string baseParameterName,
+            int claimParameterCount,
+            int emittedAuth1Index,
+            string documentIdParameterName,
+            ReservedParameterNamesCacheKey reservedParameterNames
+        )
+        {
+            Dialect = dialect;
+            ShapeKey = shapeKey;
+            ClaimKind = claimKind;
+            BaseParameterName = baseParameterName;
+            ClaimParameterCount = claimParameterCount;
+            EmittedAuth1Index = emittedAuth1Index;
+            DocumentIdParameterName = documentIdParameterName;
+            ReservedParameterNames = reservedParameterNames;
+            _hashCode = BuildHashCode();
+        }
+
+        public SqlDialect Dialect { get; }
+
+        private RelationshipAuthorizationSqlShapeKey ShapeKey { get; }
+
+        private AuthorizationClaimEducationOrganizationIdParameterizationKind ClaimKind { get; }
+
+        private string BaseParameterName { get; }
+
+        private int ClaimParameterCount { get; }
+
+        private int EmittedAuth1Index { get; }
+
+        private string DocumentIdParameterName { get; }
+
+        private ReservedParameterNamesCacheKey ReservedParameterNames { get; }
+
+        public static SqlPlanCacheKey Create(
+            SqlDialect dialect,
+            SingleRecordRelationshipAuthorizationSqlSpec spec
+        )
+        {
+            var parameterization = spec.ClaimEducationOrganizationIdParameterization;
+
+            return new SqlPlanCacheKey(
+                dialect,
+                RelationshipAuthorizationSqlShapeKey.Create(spec.CheckSpecs),
+                parameterization.Kind,
+                parameterization.BaseParameterName,
+                parameterization.ParameterNamesInOrder.Count,
+                spec.EmittedAuth1Index,
+                spec.DocumentIdParameterName,
+                ReservedParameterNamesCacheKey.Create(spec.ReservedParameterNames)
+            );
+        }
+
+        public static SqlPlanCacheKey Create(
+            SqlDialect dialect,
+            RelationshipAuthorizationSqlShapeKey shapeKey,
+            AuthorizationClaimEducationOrganizationIdParameterization parameterization,
+            int emittedAuth1Index,
+            string documentIdParameterName,
+            IReadOnlyList<string>? reservedParameterNames
+        ) =>
+            new(
+                dialect,
+                shapeKey,
+                parameterization.Kind,
+                parameterization.BaseParameterName,
+                parameterization.ParameterNamesInOrder.Count,
+                emittedAuth1Index,
+                documentIdParameterName,
+                ReservedParameterNamesCacheKey.Create(reservedParameterNames)
+            );
+
+        public bool Equals(SqlPlanCacheKey? other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            return other is not null
+                && _hashCode == other._hashCode
+                && Dialect == other.Dialect
+                && ShapeKey.Equals(other.ShapeKey)
+                && ClaimKind == other.ClaimKind
+                && string.Equals(BaseParameterName, other.BaseParameterName, StringComparison.Ordinal)
+                && ClaimParameterCount == other.ClaimParameterCount
+                && EmittedAuth1Index == other.EmittedAuth1Index
+                && string.Equals(
+                    DocumentIdParameterName,
+                    other.DocumentIdParameterName,
+                    StringComparison.Ordinal
+                )
+                && ReservedParameterNames.Equals(other.ReservedParameterNames);
+        }
+
+        public override bool Equals(object? obj) => obj is SqlPlanCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private int BuildHashCode()
+        {
+            HashCode hashCode = new();
+            hashCode.Add(Dialect);
+            hashCode.Add(ShapeKey);
+            hashCode.Add(ClaimKind);
+            hashCode.Add(BaseParameterName, StringComparer.Ordinal);
+            hashCode.Add(ClaimParameterCount);
+            hashCode.Add(EmittedAuth1Index);
+            hashCode.Add(DocumentIdParameterName, StringComparer.Ordinal);
+            hashCode.Add(ReservedParameterNames);
+
+            return hashCode.ToHashCode();
+        }
+    }
+
+    private sealed class ReservedParameterNamesCacheKey : IEquatable<ReservedParameterNamesCacheKey>
+    {
+        private static readonly string[] _emptyParameterNames = [];
+        private static readonly ReservedParameterNamesCacheKey _empty = new(_emptyParameterNames);
+        private static readonly ConditionalWeakTable<string[], ReservedParameterNamesCacheKey> _keysByArray =
+            new();
+
+        private readonly IReadOnlyList<string> _parameterNames;
+        private readonly int _hashCode;
+
+        private ReservedParameterNamesCacheKey(IReadOnlyList<string> parameterNames)
+        {
+            _parameterNames = parameterNames;
+            _hashCode = BuildHashCode();
+        }
+
+        public static ReservedParameterNamesCacheKey Create(IReadOnlyList<string>? parameterNames)
+        {
+            if (parameterNames is null || parameterNames.Count == 0)
+            {
+                return _empty;
+            }
+
+            if (parameterNames is string[] parameterNameArray)
+            {
+                return _keysByArray.GetValue(
+                    parameterNameArray,
+                    static array => new ReservedParameterNamesCacheKey(array)
+                );
+            }
+
+            return new ReservedParameterNamesCacheKey([.. parameterNames]);
+        }
+
+        public bool Equals(ReservedParameterNamesCacheKey? other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            return other is not null
+                && _hashCode == other._hashCode
+                && StringsEqual(_parameterNames, other._parameterNames);
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is ReservedParameterNamesCacheKey other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private int BuildHashCode()
+        {
+            HashCode hashCode = new();
+            AddStringSequenceHashCodes(ref hashCode, _parameterNames);
+
+            return hashCode.ToHashCode();
+        }
+
+        private static void AddStringSequenceHashCodes(ref HashCode hashCode, IReadOnlyList<string> values)
+        {
+            hashCode.Add(values.Count);
+
+            foreach (var value in values)
+            {
+                hashCode.Add(value, StringComparer.Ordinal);
+            }
+        }
+
+        private static bool StringsEqual(IReadOnlyList<string> first, IReadOnlyList<string> second)
+        {
+            if (ReferenceEquals(first, second))
+            {
+                return true;
+            }
+
+            if (first.Count != second.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < first.Count; index++)
+            {
+                if (!string.Equals(first[index], second[index], StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

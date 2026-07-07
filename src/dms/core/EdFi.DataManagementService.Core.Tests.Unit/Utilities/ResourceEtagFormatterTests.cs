@@ -139,4 +139,71 @@ public class Given_ResourceEtagFormatter
             .Should()
             .Be(ResourceEtagFormatter.FormatEtag(documentWithoutServerFields));
     }
+
+    [Test]
+    public void It_does_not_mutate_the_document_when_ignoring_server_generated_fields()
+    {
+        var document = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "name": "Lincoln High",
+              "schoolReference": {
+                "schoolId": 255901,
+                "link": {
+                  "href": "/ed-fi/schools/bbbbbbbb-1111-2222-3333-cccccccccccc"
+                }
+              }
+            }
+            """
+        )!;
+        var originalJson = document.ToJsonString();
+
+        ResourceEtagFormatter.FormatEtag(document);
+
+        document.ToJsonString().Should().Be(originalJson);
+    }
+
+    [Test]
+    public void It_formats_a_representative_write_payload_repeatedly_with_the_same_etag()
+    {
+        var document = JsonNode.Parse(
+            """
+            {
+              "studentUniqueId": "10001",
+              "educationOrganizationReference": {
+                "educationOrganizationId": 255901
+              },
+              "addresses": [
+                {
+                  "streetNumberName": "100 Main St",
+                  "city": "Austin",
+                  "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                  "periods": [
+                    {
+                      "beginDate": "2025-08-15",
+                      "endDate": "2026-05-29"
+                    }
+                  ]
+                }
+              ],
+              "electronicMails": [
+                {
+                  "electronicMailTypeDescriptor": "uri://ed-fi.org/ElectronicMailTypeDescriptor#Home/Personal",
+                  "electronicMailAddress": "student@example.test"
+                }
+              ],
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-13T12:00:00Z"
+            }
+            """
+        )!;
+        var expected = ResourceEtagFormatter.FormatEtag(document);
+
+        for (var index = 0; index < 100; index++)
+        {
+            ResourceEtagFormatter.FormatEtag(document).Should().Be(expected);
+        }
+    }
 }

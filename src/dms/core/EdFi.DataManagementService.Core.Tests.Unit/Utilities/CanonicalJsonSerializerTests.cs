@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Utilities;
@@ -140,6 +141,68 @@ public class CanonicalJsonSerializerTests
     }
 
     [TestFixture]
+    public class Given_Stream_Output : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private byte[] _streamBytes = null!;
+        private byte[] _serializedBytes = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject
+            {
+                ["z"] = new JsonObject { ["b"] = 2, ["a"] = 1 },
+                ["a"] = new JsonArray("first", null, "third"),
+            };
+
+            using var stream = new MemoryStream();
+
+            CanonicalJsonSerializer.SerializeToStream(stream, _input);
+
+            _streamBytes = stream.ToArray();
+            _serializedBytes = CanonicalJsonSerializer.SerializeToUtf8Bytes(_input);
+        }
+
+        [Test]
+        public void It_matches_the_canonical_byte_serializer()
+        {
+            _streamBytes.Should().Equal(_serializedBytes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Sha256_Hash : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private byte[] _expectedHash = null!;
+        private byte[] _actualHash = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject
+            {
+                ["name"] = "Lincoln High",
+                ["address"] = new JsonObject
+                {
+                    ["stateAbbreviationDescriptor"] = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    ["city"] = "Austin",
+                },
+            };
+
+            _expectedHash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(_input));
+            _actualHash = CanonicalJsonSerializer.ComputeSha256Hash(_input);
+        }
+
+        [Test]
+        public void It_matches_hashing_the_canonical_byte_output()
+        {
+            _actualHash.Should().Equal(_expectedHash);
+        }
+    }
+
+    [TestFixture]
     public class Given_Ordinal_String_Comparison : CanonicalJsonSerializerTests
     {
         private JsonObject _input = null!;
@@ -163,6 +226,26 @@ public class CanonicalJsonSerializerTests
         {
             // ASCII order: 'A' (65) < 'a' (97)
             _result.Should().Be("""{"ALPHA":3,"Alpha":2,"alpha":1}""");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Property_Names_With_Escaped_Characters : CanonicalJsonSerializerTests
+    {
+        private JsonObject _input = null!;
+        private string _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _input = new JsonObject { ["z\"quote"] = 1, ["a<unsafe>&"] = 2 };
+            _result = CanonicalJsonSerializer.SerializeToString(_input);
+        }
+
+        [Test]
+        public void It_preserves_relaxed_escaping_while_escaping_required_json_syntax()
+        {
+            _result.Should().Be("""{"a<unsafe>&":2,"z\"quote":1}""");
         }
     }
 

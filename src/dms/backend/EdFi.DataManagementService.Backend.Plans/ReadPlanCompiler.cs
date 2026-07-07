@@ -17,6 +17,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
     private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
     private readonly DocumentReferenceLookupPlanCompiler _documentReferenceLookupPlanCompiler = new(dialect);
 
@@ -95,10 +96,19 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             var tableAlias = tableModel.Equals(rootScopeTableModel)
                 ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
                 : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
+            var tableReadSqlMetadata = ResolveTableReadSqlMetadata(tableModel);
 
             tablePlans[index] = new TableReadPlan(
                 TableModel: tableModel,
-                SelectByKeysetSql: EmitSelectByKeysetSql(tableModel, keysetTable, tableAlias)
+                SelectByKeysetSql: EmitSelectByKeysetSql(
+                    tableModel,
+                    keysetTable,
+                    tableAlias,
+                    tableReadSqlMetadata
+                ),
+                SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
+                    ? EmitSelectBySingleDocumentSql(tableModel, tableAlias, tableReadSqlMetadata)
+                    : null
             );
         }
 
@@ -132,6 +142,15 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             reason => new InvalidOperationException(
                 $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': "
                     + $"compiled projection metadata is invalid. {reason}. This indicates a read-plan compiler bug."
+            )
+        );
+
+        ReadPlanSingleDocumentSqlValidator.ValidateOrThrow(
+            readPlan,
+            _planSqlDialect,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': "
+                    + $"compiled single-document SQL is invalid. {reason}. This indicates a read-plan compiler bug."
             )
         );
 
@@ -377,13 +396,9 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits canonical keyset-join hydration SQL for a single table.
+    /// Validates and resolves metadata shared by all table hydration SQL forms.
     /// </summary>
-    private string EmitSelectByKeysetSql(
-        DbTableModel tableModel,
-        KeysetTableContract keysetTable,
-        string tableAlias
-    )
+    private static TableReadSqlMetadata ResolveTableReadSqlMetadata(DbTableModel tableModel)
     {
         if (tableModel.Columns.Count == 0)
         {
@@ -399,7 +414,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             );
         }
 
-        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var rootDocumentIdKeyColumn =
             RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
                 tableModel,
@@ -410,8 +424,67 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 tableModel,
                 "read plan"
             );
+
+        return new TableReadSqlMetadata(rootDocumentIdKeyColumn, hydrationOrderingColumns);
+    }
+
+    /// <summary>
+    /// Emits canonical keyset-join hydration SQL for a single table.
+    /// </summary>
+    private string EmitSelectByKeysetSql(
+        DbTableModel tableModel,
+        KeysetTableContract keysetTable,
+        string tableAlias,
+        TableReadSqlMetadata metadata
+    )
+    {
+        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var writer = new SqlWriter(_sqlDialect);
 
+        AppendTableSelect(writer, tableModel, tableAlias);
+
+        writer.Append("INNER JOIN ").AppendRelation(keysetTable.Table).Append($" {keysetAlias} ON ");
+        AppendQualifiedColumn(writer, tableAlias, metadata.RootScopeLocatorColumn);
+        writer.Append(" = ");
+        AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
+        writer.AppendLine();
+
+        AppendTableOrderBy(writer, tableAlias, metadata.HydrationOrderingColumns);
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// Emits canonical single-document hydration SQL for a PostgreSQL table plan.
+    /// </summary>
+    private string EmitSelectBySingleDocumentSql(
+        DbTableModel tableModel,
+        string tableAlias,
+        TableReadSqlMetadata metadata
+    )
+    {
+        var writer = new SqlWriter(_sqlDialect);
+
+        AppendTableSelect(writer, tableModel, tableAlias);
+
+        writer.Append("WHERE ");
+        AppendQualifiedColumn(writer, tableAlias, metadata.RootScopeLocatorColumn);
+        writer.Append(" = ");
+        writer.AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
+        writer.AppendLine();
+
+        AppendTableOrderBy(writer, tableAlias, metadata.HydrationOrderingColumns);
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// Appends the common table hydration SELECT list and FROM relation.
+    /// </summary>
+    private static void AppendTableSelect(SqlWriter writer, DbTableModel tableModel, string tableAlias)
+    {
         writer.AppendLine("SELECT");
 
         using (writer.Indent())
@@ -432,13 +505,17 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         }
 
         writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
+    }
 
-        writer.Append("INNER JOIN ").AppendRelation(keysetTable.Table).Append($" {keysetAlias} ON ");
-        AppendQualifiedColumn(writer, tableAlias, rootDocumentIdKeyColumn);
-        writer.Append(" = ");
-        AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
-        writer.AppendLine();
-
+    /// <summary>
+    /// Appends the common deterministic hydration ORDER BY clause.
+    /// </summary>
+    private static void AppendTableOrderBy(
+        SqlWriter writer,
+        string tableAlias,
+        IReadOnlyList<DbColumnName> hydrationOrderingColumns
+    )
+    {
         writer.AppendLine("ORDER BY");
 
         using (writer.Indent())
@@ -458,10 +535,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 }
             }
         }
-
-        writer.AppendLine(";");
-
-        return writer.ToString();
     }
 
     /// <summary>
@@ -475,5 +548,10 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     private sealed record HydrationPlanMetadata(
         IReadOnlyDictionary<DbTableName, DbTableModel> TablesByName,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> ColumnOrdinalsByTable
+    );
+
+    private sealed record TableReadSqlMetadata(
+        DbColumnName RootScopeLocatorColumn,
+        IReadOnlyList<DbColumnName> HydrationOrderingColumns
     );
 }

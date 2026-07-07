@@ -17,6 +17,15 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
     private const string BinaryStringEqualityCollation = "Latin1_General_100_BIN2";
 
+    /// <inheritdoc />
+    public SqlDialect Dialect => SqlDialect.Mssql;
+
+    /// <inheritdoc />
+    public string DisplayName => "SQL Server";
+
+    /// <inheritdoc />
+    public bool SupportsSingleDocumentHydration => false;
+
     /// <summary>
     /// Appends a SQL Server <c>OFFSET</c>/<c>FETCH NEXT</c> paging clause.
     /// </summary>
@@ -65,6 +74,17 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(keyset);
 
         DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+    }
+
+    /// <inheritdoc />
+    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(documentIdParameterName);
+
+        throw new NotSupportedException(
+            $"{DisplayName} plan dialect does not support single-document hydration."
+        );
     }
 
     /// <inheritdoc />

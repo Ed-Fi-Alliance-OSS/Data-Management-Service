@@ -12,60 +12,25 @@ public static class ResourceEtagFormatter
 {
     public static string FormatEtag(JsonNode document)
     {
-        var canonicalDocument = BuildCanonicalDocument(document);
-        var hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(canonicalDocument));
+        ValidateRootDocument(document);
 
-        return Convert.ToBase64String(hash);
+        Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+        var bytesWritten = CanonicalJsonSerializer.ComputeSha256HashExcludingPropertyNames(
+            document,
+            ServerGeneratedFieldNames.Names,
+            hash
+        );
+
+        return Convert.ToBase64String(hash[..bytesWritten]);
     }
 
-    private static JsonObject BuildCanonicalDocument(JsonNode document)
+    private static void ValidateRootDocument(JsonNode document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var canonicalDocument = document.DeepClone();
-
-        if (canonicalDocument is not JsonObject documentObject)
+        if (document is not JsonObject)
         {
             throw new InvalidOperationException("API ETag formatting requires a root JSON object.");
-        }
-
-        RemoveServerGeneratedFields(documentObject);
-
-        return documentObject;
-    }
-
-    private static void RemoveServerGeneratedFields(JsonNode node)
-    {
-        switch (node)
-        {
-            case JsonObject objectNode:
-                foreach (var propertyName in ServerGeneratedFieldNames.Names)
-                {
-                    objectNode.Remove(propertyName);
-                }
-
-                foreach (var (_, childNode) in objectNode)
-                {
-                    if (childNode is not null)
-                    {
-                        RemoveServerGeneratedFields(childNode);
-                    }
-                }
-
-                break;
-
-            case JsonArray arrayNode:
-                for (var index = 0; index < arrayNode.Count; index++)
-                {
-                    var childNode = arrayNode[index];
-
-                    if (childNode is not null)
-                    {
-                        RemoveServerGeneratedFields(childNode);
-                    }
-                }
-
-                break;
         }
     }
 }

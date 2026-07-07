@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [Parallelizable]
 public class WebApplicationBuilderExtensionsTests
 {
-    private static ServiceProvider CreateServices(
+    private static IServiceCollection CreateServiceCollection(
         string datastore,
         Dictionary<string, string?>? additionalConfiguration = null
     )
@@ -56,7 +56,31 @@ public class WebApplicationBuilderExtensionsTests
 
         builder.AddServices();
 
-        return builder.Services.BuildServiceProvider();
+        return builder.Services;
+    }
+
+    private static ServiceProvider CreateServices(
+        string datastore,
+        Dictionary<string, string?>? additionalConfiguration = null
+    ) => CreateServiceCollection(datastore, additionalConfiguration).BuildServiceProvider();
+
+    private static void AssertDirectRelationalRepositoryRegistrations(IServiceCollection services)
+    {
+        AssertDirectScopedRepositoryRegistration<IDocumentStoreRepository>(services);
+        AssertDirectScopedRepositoryRegistration<IQueryHandler>(services);
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(RelationalDocumentStoreRepository));
+    }
+
+    private static void AssertDirectScopedRepositoryRegistration<TService>(IServiceCollection services)
+    {
+        var descriptor = services.Single(descriptor => descriptor.ServiceType == typeof(TService));
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor.ImplementationType.Should().Be(typeof(RelationalDocumentStoreRepository));
+        descriptor.ImplementationFactory.Should().BeNull();
+        descriptor.ImplementationInstance.Should().BeNull();
     }
 
     [TestFixture]
@@ -71,6 +95,14 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<PostgresqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_uses_direct_typed_relational_repository_registrations()
+        {
+            var services = CreateServiceCollection("postgresql");
+
+            AssertDirectRelationalRepositoryRegistrations(services);
         }
 
         [Test]
@@ -216,6 +248,14 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<MssqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_uses_direct_typed_relational_repository_registrations()
+        {
+            var services = CreateServiceCollection("mssql");
+
+            AssertDirectRelationalRepositoryRegistrations(services);
         }
 
         [Test]

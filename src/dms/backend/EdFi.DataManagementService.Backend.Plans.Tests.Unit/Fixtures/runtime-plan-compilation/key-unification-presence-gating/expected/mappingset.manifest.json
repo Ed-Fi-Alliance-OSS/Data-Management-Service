@@ -119,6 +119,7 @@
                   "name": "PresenceGateExample"
                 },
                 "select_by_keyset_sql_sha256": "5568aea267d644c571e9c03aad741c3af091ab5f0a31d13657f698189a024ab0",
+                "select_by_single_document_sql_sha256": null,
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "PrimarySchoolTypeDescriptor_DescriptorId_Present",
@@ -137,6 +138,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "20e0c2a2d66dc303a8bedbe47b05b1c32abe04b6f9d4299876e90bcb434bbfae",
+                "select_by_single_document_sql_sha256": null,
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -327,6 +329,7 @@
                   "name": "PresenceGateExample"
                 },
                 "select_by_keyset_sql_sha256": "49eb0398d73417022717e648a7905cf2eb0444ba1c7d1adff6a044b0251b11a2",
+                "select_by_single_document_sql_sha256": "3a7e000a60f91a3971550aa374c91edaac574fdd6f296ee77c660bddb41b3a03",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "PrimarySchoolTypeDescriptor_DescriptorId_Present",
@@ -345,6 +348,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "24f7931c9c443dd6b33af1d3e3057c0cdc07b097ba2767cac360b00f0223900e",
+                "select_by_single_document_sql_sha256": "6b91898c9de740edfb9e1fe45e68af690d802c598cb0b9c9b042d7ca64e239de",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1

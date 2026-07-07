@@ -16,6 +16,15 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
 {
     private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
 
+    /// <inheritdoc />
+    public SqlDialect Dialect => SqlDialect.Pgsql;
+
+    /// <inheritdoc />
+    public string DisplayName => "PostgreSQL";
+
+    /// <inheritdoc />
+    public bool SupportsSingleDocumentHydration => true;
+
     /// <summary>
     /// Appends a PostgreSQL <c>LIMIT</c>/<c>OFFSET</c> paging clause.
     /// </summary>
@@ -58,6 +67,19 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(keyset);
 
         DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+    }
+
+    /// <inheritdoc />
+    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(documentIdParameterName);
+
+        DocumentMetadataColumns.AppendSingleDocumentMetadataSelectBody(
+            writer,
+            DocumentTable,
+            documentIdParameterName
+        );
     }
 
     /// <inheritdoc />

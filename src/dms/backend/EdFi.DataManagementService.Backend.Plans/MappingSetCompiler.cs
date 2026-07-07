@@ -99,6 +99,7 @@ public sealed class MappingSetCompiler
 
         var securableElementPathsByResource =
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>();
+        var concreteResourcesByResource = modelSet.GetConcreteResourceModelsByResource();
 
         foreach (var concreteResource in modelSet.ConcreteResourcesInNameOrder)
         {
@@ -106,7 +107,7 @@ public sealed class MappingSetCompiler
             {
                 var paths = SecurableElementColumnPathResolver.ResolveAll(
                     concreteResource,
-                    modelSet.ConcreteResourcesInNameOrder
+                    concreteResourcesByResource
                 );
                 if (paths.Count > 0)
                 {

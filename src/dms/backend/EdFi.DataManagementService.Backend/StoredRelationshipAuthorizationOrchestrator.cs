@@ -531,7 +531,8 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                     authorized.ClaimEducationOrganizationIdParameterization,
                     RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
                         request.OperationKind
-                    )
+                    ),
+                    authorized.ExecutableShape
                 ),
                 cancellationToken
             )

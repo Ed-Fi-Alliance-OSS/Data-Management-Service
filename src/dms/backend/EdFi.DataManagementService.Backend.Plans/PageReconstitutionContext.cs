@@ -275,15 +275,17 @@ internal sealed class PageReconstitutionContext
         ArgumentNullException.ThrowIfNull(documentLinkLookupById);
 
         var hydratedRowsByTable = BuildHydratedRowsByTable(tableRowsInDependencyOrder);
-        var rowNodesByTableAndPhysicalIdentity = new Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>>();
-        var rootRowsByDocumentId = new Dictionary<long, RowNode>();
+        var rowNodesByTableAndPhysicalIdentity = new Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>>(
+            compiledPlan.TablePlansInDependencyOrder.Length
+        );
+        var rootRowsByDocumentId = new Dictionary<long, RowNode>(documentMetadataRows.Count);
 
         ValidateNoUnexpectedHydratedTables(compiledPlan, hydratedRowsByTable);
 
         foreach (var tablePlan in compiledPlan.TablePlansInDependencyOrder)
         {
             var tableRows = GetHydratedRowsOrThrow(hydratedRowsByTable, tablePlan.Table, compiledPlan);
-            var rowNodesByPhysicalIdentity = new Dictionary<ScopeKey, RowNode>();
+            var rowNodesByPhysicalIdentity = new Dictionary<ScopeKey, RowNode>(tableRows.Rows.Count);
 
             foreach (var row in tableRows.Rows)
             {
@@ -415,8 +417,8 @@ internal sealed class PageReconstitutionContext
     )
     {
         var documentsInOrder = ImmutableArray.CreateBuilder<DocumentPageNode>(documentMetadataRows.Count);
-        var documentsById = new Dictionary<long, DocumentPageNode>();
-        HashSet<long> metadataDocumentIds = [];
+        var documentsById = new Dictionary<long, DocumentPageNode>(documentMetadataRows.Count);
+        HashSet<long> metadataDocumentIds = new(documentMetadataRows.Count);
 
         foreach (var documentMetadata in documentMetadataRows)
         {
@@ -507,12 +509,19 @@ internal sealed class PageReconstitutionContext
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
-        Dictionary<long, string> descriptorUrisById = [];
+        var descriptorRowCount = 0;
 
         foreach (var descriptorRows in descriptorRowsInPlanOrder)
         {
             ArgumentNullException.ThrowIfNull(descriptorRows);
 
+            descriptorRowCount += descriptorRows.Rows.Count;
+        }
+
+        Dictionary<long, string> descriptorUrisById = new(descriptorRowCount);
+
+        foreach (var descriptorRows in descriptorRowsInPlanOrder)
+        {
             foreach (var row in descriptorRows.Rows)
             {
                 if (descriptorUrisById.TryGetValue(row.DescriptorId, out var existingUri))
@@ -539,7 +548,9 @@ internal sealed class PageReconstitutionContext
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
     )
     {
-        Dictionary<DbTableName, HydratedTableRows> hydratedRowsByTable = [];
+        Dictionary<DbTableName, HydratedTableRows> hydratedRowsByTable = new(
+            tableRowsInDependencyOrder.Count
+        );
 
         foreach (var tableRows in tableRowsInDependencyOrder)
         {
@@ -703,7 +714,14 @@ internal sealed class PageReconstitutionContext
             );
         }
 
-        return new ScopeKey(ordinals.Select(ordinal => row[ordinal]));
+        var parts = new object?[ordinals.Length];
+
+        for (var index = 0; index < ordinals.Length; index++)
+        {
+            parts[index] = row[ordinals[index]];
+        }
+
+        return new ScopeKey(parts);
     }
 
     private static string GetResourceDisplayName(CompiledReconstitutionPlan compiledPlan) =>

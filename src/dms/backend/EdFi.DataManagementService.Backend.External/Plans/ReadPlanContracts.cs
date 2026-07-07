@@ -104,13 +104,21 @@ public sealed record TableReadPlan
     /// <param name="SelectByKeysetSql">
     /// Parameterized SQL that joins to a materialized keyset table and returns rows for the page.
     /// </param>
-    public TableReadPlan(DbTableModel TableModel, string SelectByKeysetSql)
+    /// <param name="SelectBySingleDocumentSql">
+    /// Optional parameterized SQL that returns rows for one document without materializing a keyset table.
+    /// </param>
+    public TableReadPlan(
+        DbTableModel TableModel,
+        string SelectByKeysetSql,
+        string? SelectBySingleDocumentSql = null
+    )
     {
         ArgumentNullException.ThrowIfNull(TableModel);
         ArgumentNullException.ThrowIfNull(SelectByKeysetSql);
 
         this.TableModel = TableModel;
         this.SelectByKeysetSql = SelectByKeysetSql;
+        this.SelectBySingleDocumentSql = SelectBySingleDocumentSql;
     }
 
     /// <summary>
@@ -122,6 +130,11 @@ public sealed record TableReadPlan
     /// Parameterized SQL that joins to a materialized keyset table and returns rows for the page.
     /// </summary>
     public string SelectByKeysetSql { get; init; }
+
+    /// <summary>
+    /// Optional parameterized SQL that returns rows for one document without materializing a keyset table.
+    /// </summary>
+    public string? SelectBySingleDocumentSql { get; init; }
 }
 
 /// <summary>
@@ -146,10 +159,14 @@ public sealed record DocumentReferenceLookupPlan
     /// </param>
     /// <param name="ResultShape">Ordinal contract for the lookup result rows.</param>
     /// <param name="SourcesInOrder">Document-reference FK source metadata in deterministic dedup'd order.</param>
+    /// <param name="SelectBySingleDocumentSql">
+    /// Optional parameterized SQL that emits document-reference lookup rows for one document.
+    /// </param>
     public DocumentReferenceLookupPlan(
         string SelectByKeysetSql,
         DocumentReferenceLookupResultShape ResultShape,
-        IEnumerable<DocumentReferenceLookupSource> SourcesInOrder
+        IEnumerable<DocumentReferenceLookupSource> SourcesInOrder,
+        string? SelectBySingleDocumentSql = null
     )
     {
         this.SelectByKeysetSql = PlanContractArgumentValidator.RequireNotNull(
@@ -161,12 +178,18 @@ public sealed record DocumentReferenceLookupPlan
             SourcesInOrder,
             nameof(SourcesInOrder)
         );
+        this.SelectBySingleDocumentSql = SelectBySingleDocumentSql;
     }
 
     /// <summary>
     /// Parameterized SQL that emits document-reference lookup rows for the current page keyset.
     /// </summary>
     public string SelectByKeysetSql { get; init; }
+
+    /// <summary>
+    /// Optional parameterized SQL that emits document-reference lookup rows for one document.
+    /// </summary>
+    public string? SelectBySingleDocumentSql { get; init; }
 
     /// <summary>
     /// Ordinal contract describing the lookup result row shape.

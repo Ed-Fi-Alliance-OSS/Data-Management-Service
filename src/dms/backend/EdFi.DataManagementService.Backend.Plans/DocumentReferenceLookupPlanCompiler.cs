@@ -10,10 +10,10 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles the page-batched document-reference auxiliary lookup plan from
+/// Compiles the document-reference auxiliary lookup plan from
 /// <see cref="RelationalResourceModel.DocumentReferenceBindings"/>. Emits a
-/// keyset-joined SELECT that returns one <c>(DocumentId, DocumentUuid, ResourceKeyId)</c>
-/// row per distinct <c>..._DocumentId</c> value reachable from the page's source tables.
+/// SELECT that returns one <c>(DocumentId, DocumentUuid, ResourceKeyId)</c>
+/// row per distinct <c>..._DocumentId</c> value reachable from the source tables.
 /// </summary>
 internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
 {
@@ -23,6 +23,7 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
     private static readonly DbColumnName _resourceKeyIdColumn = new("ResourceKeyId");
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     public DocumentReferenceLookupPlan? Compile(
         RelationalResourceModel resourceModel,
@@ -55,7 +56,10 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                 DocumentUuidOrdinal: 1,
                 ResourceKeyIdOrdinal: 2
             ),
-            SourcesInOrder: compiledSources
+            SourcesInOrder: compiledSources,
+            SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
+                ? EmitSelectBySingleDocumentSql(deduplicatedSources)
+                : null
         );
     }
 
@@ -118,9 +122,21 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
         KeysetTableContract keysetTable
     )
     {
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.Keyset(keysetTable));
+    }
+
+    private string EmitSelectBySingleDocumentSql(IReadOnlyList<DocumentReferenceLookupSqlSource> sqlSources)
+    {
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.SingleDocument);
+    }
+
+    private string EmitSelectSql(
+        IReadOnlyList<DocumentReferenceLookupSqlSource> sqlSources,
+        ProjectionSourceFilter sourceFilter
+    )
+    {
         const string projectionAlias = "p";
 
-        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var documentAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Document);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
         var writer = new SqlWriter(_sqlDialect);
@@ -147,11 +163,6 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                     var sqlSource = sqlSources[index];
                     var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
-                    var rootScopeLocatorColumn =
-                        RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
-                            tableModel,
-                            "document-reference lookup plan"
-                        );
 
                     writer.Append("SELECT ");
 
@@ -163,17 +174,14 @@ internal sealed class DocumentReferenceLookupPlanCompiler(SqlDialect dialect)
                     AppendQualifiedColumn(writer, tableAlias, sqlSource.FkColumn);
                     writer.Append(" AS ").AppendQuoted(_documentIdColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    writer
-                        .Append("INNER JOIN ")
-                        .AppendRelation(keysetTable.Table)
-                        .Append($" {keysetAlias} ON ");
-                    AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-                    writer.Append(" = ");
-                    AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
-                    writer.AppendLine();
-                    writer.Append("WHERE ");
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.FkColumn);
-                    writer.AppendLine(" IS NOT NULL");
+                    ProjectionSourceFilterSql.Append(
+                        writer,
+                        tableModel,
+                        tableAlias,
+                        sqlSource.FkColumn,
+                        sourceFilter,
+                        "document-reference lookup plan"
+                    );
 
                     if (index + 1 < sqlSources.Count)
                     {

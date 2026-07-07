@@ -440,6 +440,494 @@ public class Given_A_Single_DocumentId_Keyset
 
 [TestFixture]
 [NonParallelizable]
+public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorProjection_And_DocumentReferenceLookup
+{
+    private const string TestSchema = "hydfastpath";
+    private const long ResourceDocumentId = 10001L;
+    private static readonly PageKeysetSpec.Single _keyset = new(ResourceDocumentId);
+    private static readonly HydrationExecutionOptions _keysetOptions = new(
+        IncludeDescriptorProjection: true,
+        IncludeDocumentReferenceLookup: true,
+        UseSingleDocumentFastPath: false
+    );
+    private static readonly HydrationExecutionOptions _fastPathOptions = new(
+        IncludeDescriptorProjection: true,
+        IncludeDocumentReferenceLookup: true,
+        UseSingleDocumentFastPath: true
+    );
+
+    private NpgsqlDataSource _dataSource = null!;
+    private ResourceReadPlan _plan = null!;
+    private HydratedPage _keysetResult = null!;
+    private HydratedPage _fastPathResult = null!;
+    private string _fastPathBatchSql = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydfastpath CASCADE;
+            CREATE SCHEMA hydfastpath;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS dms."Descriptor" (
+                "DocumentId" bigint PRIMARY KEY,
+                "Namespace" varchar(255) NOT NULL DEFAULT '',
+                "CodeValue" varchar(50) NOT NULL DEFAULT '',
+                "ShortDescription" varchar(75) NOT NULL DEFAULT '',
+                "Description" varchar(1024) NULL,
+                "EffectiveBeginDate" date NULL,
+                "EffectiveEndDate" date NULL,
+                "Discriminator" varchar(128) NOT NULL DEFAULT '',
+                "Uri" varchar(306) NOT NULL
+            );
+
+            CREATE TABLE hydfastpath."StudentSchoolAssociation" (
+                "DocumentId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NULL,
+                "School_SchoolId" bigint NULL,
+                "EntryGradeLevelDescriptor_DescriptorId" bigint NULL
+            );
+
+            CREATE TABLE hydfastpath."StudentSchoolAssociationProgram" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "StudentSchoolAssociation_DocumentId" bigint NOT NULL REFERENCES hydfastpath."StudentSchoolAssociation"("DocumentId"),
+                "Ordinal" integer NOT NULL,
+                "Program_DocumentId" bigint NULL,
+                "Program_ProgramName" varchar(100) NULL,
+                "ProgramTypeDescriptor_DescriptorId" bigint NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (12001, 12002, 12003);
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (10001, 10002, 11001, 11002, 11003, 12001, 12002, 12003);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion")
+            VALUES
+                (10001, '00000000-0000-0000-0000-000000010001', 1, 11, 11),
+                (10002, '00000000-0000-0000-0000-000000010002', 1, 12, 12),
+                (11001, '00000000-0000-0000-0000-000000011001', 2, 1, 1),
+                (11002, '00000000-0000-0000-0000-000000011002', 3, 1, 1),
+                (11003, '00000000-0000-0000-0000-000000011003', 4, 1, 1),
+                (12001, '00000000-0000-0000-0000-000000012001', 5, 1, 1),
+                (12002, '00000000-0000-0000-0000-000000012002', 6, 1, 1),
+                (12003, '00000000-0000-0000-0000-000000012003', 7, 1, 1);
+
+            INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri")
+            VALUES
+                (12001, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Ninth grade'),
+                (12002, 'uri://ed-fi.org/ProgramTypeDescriptor', 'Gifted', 'Gifted', 'edfi.ProgramTypeDescriptor', 'uri://ed-fi.org/ProgramTypeDescriptor#Gifted'),
+                (12003, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade', 'Tenth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Tenth grade');
+
+            INSERT INTO hydfastpath."StudentSchoolAssociation"
+                ("DocumentId", "School_DocumentId", "School_SchoolId", "EntryGradeLevelDescriptor_DescriptorId")
+            VALUES
+                (10001, 11001, 255901, 12001),
+                (10002, 11003, 255902, 12003);
+
+            INSERT INTO hydfastpath."StudentSchoolAssociationProgram"
+                ("CollectionItemId", "StudentSchoolAssociation_DocumentId", "Ordinal", "Program_DocumentId", "Program_ProgramName", "ProgramTypeDescriptor_DescriptorId")
+            VALUES
+                (20001, 10001, 0, 11002, 'Gifted', 12002),
+                (20002, 10001, 1, NULL, NULL, NULL),
+                (20003, 10002, 0, 11003, 'Other', 12003);
+            """
+        );
+
+        _plan = BuildReadPlan();
+        _fastPathBatchSql = HydrationBatchBuilder.Build(_plan, _keyset, SqlDialect.Pgsql, _fastPathOptions);
+
+        await using var keysetConnection = await _dataSource.OpenConnectionAsync();
+        _keysetResult = await HydrationExecutor.ExecuteAsync(
+            keysetConnection,
+            _plan,
+            _keyset,
+            SqlDialect.Pgsql,
+            _keysetOptions,
+            CancellationToken.None
+        );
+
+        await using var fastPathConnection = await _dataSource.OpenConnectionAsync();
+        _fastPathResult = await HydrationExecutor.ExecuteAsync(
+            fastPathConnection,
+            _plan,
+            _keyset,
+            SqlDialect.Pgsql,
+            _fastPathOptions,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydfastpath CASCADE;
+                DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (12001, 12002, 12003);
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (10001, 10002, 11001, 11002, 11003, 12001, 12002, 12003);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_generates_a_batch_without_the_page_temp_table()
+    {
+        _fastPathBatchSql.Should().NotContain("\"page\"");
+        _fastPathBatchSql.Should().NotContain("CREATE TEMP TABLE");
+        _fastPathBatchSql.Should().NotContain("DROP TABLE");
+    }
+
+    [Test]
+    public void It_matches_the_existing_keyset_hydration_result()
+    {
+        AssertHydratedPagesMatch(_keysetResult, _fastPathResult);
+    }
+
+    [Test]
+    public void It_filters_child_descriptor_and_lookup_rows_to_the_single_document()
+    {
+        _fastPathResult.DocumentMetadata.Should().ContainSingle();
+        _fastPathResult.DocumentMetadata[0].DocumentId.Should().Be(ResourceDocumentId);
+
+        var childRows = _fastPathResult.TableRowsInDependencyOrder[1].Rows;
+        childRows.Should().HaveCount(2);
+        childRows.Select(row => (long)row[1]!).Should().Equal(ResourceDocumentId, ResourceDocumentId);
+        childRows.Select(row => row[5]).Should().Equal(12002L, null);
+
+        _fastPathResult
+            .DescriptorRowsInPlanOrder.Should()
+            .ContainSingle()
+            .Which.Rows.Select(row => row.DescriptorId)
+            .Should()
+            .Equal(12001L, 12002L);
+
+        var documentReferenceLookup = _fastPathResult.DocumentReferenceLookup;
+
+        documentReferenceLookup.Should().NotBeNull();
+        documentReferenceLookup!.Rows.Select(row => row.DocumentId).Should().Equal(11001L, 11002L);
+    }
+
+    private static ResourceReadPlan BuildReadPlan()
+    {
+        var schema = new DbSchemaName(TestSchema);
+        var rootTableName = new DbTableName(schema, "StudentSchoolAssociation");
+        var childTableName = new DbTableName(schema, "StudentSchoolAssociationProgram");
+
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var schoolIdPath = new JsonPathExpression(
+            "$.schoolReference.schoolId",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+        var entryGradePath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var programsPath = new JsonPathExpression(
+            "$.programs[*]",
+            [new JsonPathSegment.Property("programs"), new JsonPathSegment.AnyArrayElement()]
+        );
+        var programReferencePath = new JsonPathExpression(
+            "$.programs[*].programReference",
+            [
+                new JsonPathSegment.Property("programs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("programReference"),
+            ]
+        );
+        var programNamePath = new JsonPathExpression(
+            "$.programs[*].programReference.programName",
+            [
+                new JsonPathSegment.Property("programs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("programReference"),
+                new JsonPathSegment.Property("programName"),
+            ]
+        );
+        var programTypeDescriptorPath = new JsonPathExpression(
+            "$.programs[*].programTypeDescriptor",
+            [
+                new JsonPathSegment.Property("programs"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("programTypeDescriptor"),
+            ]
+        );
+
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var programResource = new QualifiedResourceName("Ed-Fi", "Program");
+        var gradeLevelDescriptorResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var programTypeDescriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
+
+        var rootTable = new DbTableModel(
+            Table: rootTableName,
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentSchoolAssociation",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart, ScalarKind.Int64, false, null, null),
+                CreateColumn(
+                    "School_DocumentId",
+                    ColumnKind.DocumentFk,
+                    ScalarKind.Int64,
+                    true,
+                    schoolReferencePath,
+                    schoolResource
+                ),
+                CreateColumn(
+                    "School_SchoolId",
+                    ColumnKind.Scalar,
+                    ScalarKind.Int64,
+                    true,
+                    schoolIdPath,
+                    null
+                ),
+                CreateColumn(
+                    "EntryGradeLevelDescriptor_DescriptorId",
+                    ColumnKind.DescriptorFk,
+                    ScalarKind.Int64,
+                    true,
+                    entryGradePath,
+                    gradeLevelDescriptorResource
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var childTable = new DbTableModel(
+            Table: childTableName,
+            JsonScope: programsPath,
+            Key: new TableKey(
+                ConstraintName: "PK_StudentSchoolAssociationProgram",
+                Columns:
+                [
+                    new DbKeyColumn(
+                        new DbColumnName("StudentSchoolAssociation_DocumentId"),
+                        ColumnKind.ParentKeyPart
+                    ),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                CreateColumn(
+                    "CollectionItemId",
+                    ColumnKind.CollectionKey,
+                    ScalarKind.Int64,
+                    false,
+                    null,
+                    null
+                ),
+                CreateColumn(
+                    "StudentSchoolAssociation_DocumentId",
+                    ColumnKind.ParentKeyPart,
+                    ScalarKind.Int64,
+                    false,
+                    null,
+                    null
+                ),
+                CreateColumn("Ordinal", ColumnKind.Ordinal, ScalarKind.Int32, false, null, null),
+                CreateColumn(
+                    "Program_DocumentId",
+                    ColumnKind.DocumentFk,
+                    ScalarKind.Int64,
+                    true,
+                    programReferencePath,
+                    programResource
+                ),
+                CreateColumn(
+                    "Program_ProgramName",
+                    ColumnKind.Scalar,
+                    ScalarKind.String,
+                    true,
+                    programNamePath,
+                    null
+                ),
+                CreateColumn(
+                    "ProgramTypeDescriptor_DescriptorId",
+                    ColumnKind.DescriptorFk,
+                    ScalarKind.Int64,
+                    true,
+                    programTypeDescriptorPath,
+                    programTypeDescriptorResource
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("StudentSchoolAssociation_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("StudentSchoolAssociation_DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
+            PhysicalSchema: schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: rootTableName,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdPath,
+                            ReferenceJsonPath: schoolIdPath,
+                            Column: new DbColumnName("School_SchoolId")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: programReferencePath,
+                    Table: childTableName,
+                    FkColumn: new DbColumnName("Program_DocumentId"),
+                    TargetResource: programResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: programNamePath,
+                            ReferenceJsonPath: programNamePath,
+                            Column: new DbColumnName("Program_ProgramName")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: entryGradePath,
+                    Table: rootTableName,
+                    FkColumn: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
+                    DescriptorResource: gradeLevelDescriptorResource
+                ),
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: programTypeDescriptorPath,
+                    Table: childTableName,
+                    FkColumn: new DbColumnName("ProgramTypeDescriptor_DescriptorId"),
+                    DescriptorResource: programTypeDescriptorResource
+                ),
+            ]
+        );
+
+        return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+    }
+
+    private static DbColumnModel CreateColumn(
+        string name,
+        ColumnKind kind,
+        ScalarKind scalarKind,
+        bool isNullable,
+        JsonPathExpression? sourceJsonPath,
+        QualifiedResourceName? targetResource
+    ) =>
+        new(
+            ColumnName: new DbColumnName(name),
+            Kind: kind,
+            ScalarType: scalarKind is ScalarKind.String
+                ? new RelationalScalarType(scalarKind, MaxLength: 100)
+                : new RelationalScalarType(scalarKind),
+            IsNullable: isNullable,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: targetResource
+        );
+
+    private static void AssertHydratedPagesMatch(HydratedPage expected, HydratedPage actual)
+    {
+        actual.TotalCount.Should().Be(expected.TotalCount);
+        actual.DocumentMetadata.Should().Equal(expected.DocumentMetadata);
+        actual.TableRowsInDependencyOrder.Should().HaveCount(expected.TableRowsInDependencyOrder.Count);
+
+        for (var tableIndex = 0; tableIndex < expected.TableRowsInDependencyOrder.Count; tableIndex++)
+        {
+            var expectedRows = expected.TableRowsInDependencyOrder[tableIndex].Rows;
+            var actualRows = actual.TableRowsInDependencyOrder[tableIndex].Rows;
+
+            actualRows.Should().HaveCount(expectedRows.Count);
+
+            for (var rowIndex = 0; rowIndex < expectedRows.Count; rowIndex++)
+            {
+                actualRows[rowIndex].Should().Equal(expectedRows[rowIndex]);
+            }
+        }
+
+        actual.DescriptorRowsInPlanOrder.Should().HaveCount(expected.DescriptorRowsInPlanOrder.Count);
+
+        for (var planIndex = 0; planIndex < expected.DescriptorRowsInPlanOrder.Count; planIndex++)
+        {
+            actual
+                .DescriptorRowsInPlanOrder[planIndex]
+                .Rows.Should()
+                .Equal(expected.DescriptorRowsInPlanOrder[planIndex].Rows);
+        }
+
+        actual.DocumentReferenceLookup.Should().NotBeNull();
+        expected.DocumentReferenceLookup.Should().NotBeNull();
+        actual.DocumentReferenceLookup!.Rows.Should().Equal(expected.DocumentReferenceLookup!.Rows);
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
 public class Given_A_Query_With_TotalCount_Requested
 {
     private NpgsqlDataSource _dataSource = null!;

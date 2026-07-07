@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -18,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// and <see cref="PageKeysetSpec"/> for single-command multi-result hydration.
 /// </summary>
 /// <remarks>
-/// The batch emits result sets in a deterministic sequence:
+/// The keyset batch emits result sets in a deterministic sequence:
 /// <list type="number">
 /// <item>Optional <c>TotalCount</c> (single row, single column)</item>
 /// <item><c>dms.Document</c> metadata joined to the page keyset</item>
@@ -30,10 +32,33 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <see cref="ResourceReadPlan.DocumentReferenceLookup"/> is non-null)
 /// </item>
 /// </list>
+/// When the dialect supports single-document hydration and that fast path is enabled for
+/// <see cref="PageKeysetSpec.Single"/>, the batch skips keyset materialization and starts with
+/// document metadata, followed by the same table, descriptor, and document-reference result-set sequence.
 /// </remarks>
 public static class HydrationBatchBuilder
 {
-    internal const string DocumentIdParameterName = "DocumentId";
+    private static readonly ConditionalWeakTable<
+        ResourceReadPlan,
+        ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>
+    > _singleDocumentBatchCache = new();
+
+    private readonly record struct SingleDocumentBatchCacheKey(
+        SqlDialect Dialect,
+        bool IncludeDescriptorProjection,
+        bool IncludeDocumentReferenceLookup
+    )
+    {
+        public static SingleDocumentBatchCacheKey From(
+            IPlanSqlDialect planDialect,
+            HydrationExecutionOptions executionOptions
+        ) =>
+            new(
+                planDialect.Dialect,
+                executionOptions.IncludeDescriptorProjection,
+                executionOptions.IncludeDocumentReferenceLookup
+            );
+    }
 
     /// <summary>
     /// Builds the complete SQL batch command text.
@@ -65,8 +90,73 @@ public static class HydrationBatchBuilder
 
         var sqlDialect = SqlDialectFactory.Create(dialect);
         var planDialect = PlanSqlDialectFactory.Create(dialect);
+
+        if (ShouldUseSingleDocumentBatch(keyset, planDialect, executionOptions))
+        {
+            return GetOrBuildSingleDocumentBatch(plan, planDialect, sqlDialect, executionOptions);
+        }
+
         var writer = new SqlWriter(sqlDialect);
 
+        return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
+    }
+
+    private static bool ShouldUseSingleDocumentBatch(
+        PageKeysetSpec keyset,
+        IPlanSqlDialect planDialect,
+        HydrationExecutionOptions executionOptions
+    ) =>
+        planDialect.SupportsSingleDocumentHydration
+        && keyset is PageKeysetSpec.Single
+        && executionOptions.UseSingleDocumentFastPath;
+
+    private static string GetOrBuildSingleDocumentBatch(
+        ResourceReadPlan plan,
+        IPlanSqlDialect planDialect,
+        ISqlDialect sqlDialect,
+        HydrationExecutionOptions executionOptions
+    )
+    {
+        var cacheKey = SingleDocumentBatchCacheKey.From(planDialect, executionOptions);
+        var cacheForPlan = _singleDocumentBatchCache.GetValue(
+            plan,
+            static _ => new ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>()
+        );
+        var cachedBatch = cacheForPlan.GetOrAdd(
+            cacheKey,
+            static (key, state) =>
+                new Lazy<string>(
+                    () =>
+                        BuildSingleDocumentBatch(
+                            state.Plan,
+                            state.PlanDialect,
+                            new SqlWriter(state.SqlDialect),
+                            key
+                        ),
+                    LazyThreadSafetyMode.ExecutionAndPublication
+                ),
+            (Plan: plan, PlanDialect: planDialect, SqlDialect: sqlDialect)
+        );
+
+        try
+        {
+            return cachedBatch.Value;
+        }
+        catch
+        {
+            cacheForPlan.TryRemove(cacheKey, out _);
+            throw;
+        }
+    }
+
+    private static string BuildExistingKeysetBatch(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        IPlanSqlDialect planDialect,
+        SqlWriter writer,
+        HydrationExecutionOptions executionOptions
+    )
+    {
         // 1. Create keyset temp table
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
@@ -117,6 +207,103 @@ public static class HydrationBatchBuilder
         return writer.ToString();
     }
 
+    private static string BuildSingleDocumentBatch(
+        ResourceReadPlan plan,
+        IPlanSqlDialect planDialect,
+        SqlWriter writer,
+        SingleDocumentBatchCacheKey cacheKey
+    )
+    {
+        // 1. Document metadata select
+        planDialect.AppendSingleDocumentMetadataSelect(
+            writer,
+            HydrationSqlConventions.SingleDocumentIdParameterName
+        );
+        writer.AppendLine();
+
+        // 2. Table hydration selects in dependency order
+        for (
+            var tablePlanIndex = 0;
+            tablePlanIndex < plan.TablePlansInDependencyOrder.Length;
+            tablePlanIndex++
+        )
+        {
+            var tablePlan = plan.TablePlansInDependencyOrder[tablePlanIndex];
+            writer.AppendLine(
+                EnsureTrailingSemicolon(
+                    RequireSingleDocumentSql(
+                        planDialect,
+                        $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
+                        tablePlan.SelectBySingleDocumentSql
+                    )
+                )
+            );
+            writer.AppendLine();
+        }
+
+        // 3. Descriptor projection selects in deterministic plan order
+        if (cacheKey.IncludeDescriptorProjection)
+        {
+            for (
+                var descriptorPlanIndex = 0;
+                descriptorPlanIndex < plan.DescriptorProjectionPlansInOrder.Length;
+                descriptorPlanIndex++
+            )
+            {
+                writer.AppendLine(
+                    EnsureTrailingSemicolon(
+                        RequireSingleDocumentSql(
+                            planDialect,
+                            $"descriptor projection plan at index '{descriptorPlanIndex}'",
+                            plan.DescriptorProjectionPlansInOrder[
+                                descriptorPlanIndex
+                            ].SelectBySingleDocumentSql
+                        )
+                    )
+                );
+                writer.AppendLine();
+            }
+        }
+
+        // 4. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers that discard the lookup result opt out).
+        if (
+            cacheKey.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookup
+        )
+        {
+            writer.AppendLine(
+                EnsureTrailingSemicolon(
+                    RequireSingleDocumentSql(
+                        planDialect,
+                        "document-reference lookup plan",
+                        documentReferenceLookup.SelectBySingleDocumentSql
+                    )
+                )
+            );
+            writer.AppendLine();
+        }
+
+        return writer.ToString();
+    }
+
+    private static string RequireSingleDocumentSql(
+        IPlanSqlDialect planDialect,
+        string planDescription,
+        string? sql
+    )
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            throw new InvalidOperationException(
+                $"{planDialect.DisplayName} single-document hydration requires "
+                    + $"{planDescription} to provide SelectBySingleDocumentSql."
+            );
+        }
+
+        return sql;
+    }
+
     /// <summary>
     /// Adds parameters to a <see cref="DbCommand"/> based on the keyset specification.
     /// </summary>
@@ -130,7 +317,11 @@ public static class HydrationBatchBuilder
         switch (keyset)
         {
             case PageKeysetSpec.Single single:
-                AddScalarParameter(command, DocumentIdParameterName, single.DocumentId);
+                AddScalarParameter(
+                    command,
+                    HydrationSqlConventions.SingleDocumentIdParameterName,
+                    single.DocumentId
+                );
                 break;
 
             case PageKeysetSpec.Query query:
@@ -163,7 +354,7 @@ public static class HydrationBatchBuilder
                     .Append(" (")
                     .Append(quotedDocIdCol)
                     .Append(") VALUES (")
-                    .AppendParameter(DocumentIdParameterName)
+                    .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName)
                     .AppendLine(");");
                 break;
 

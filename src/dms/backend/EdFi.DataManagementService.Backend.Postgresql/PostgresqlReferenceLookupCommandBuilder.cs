@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -19,6 +21,12 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 internal static class PostgresqlReferenceLookupCommandBuilder
 {
     private const string ReferentialIdsParameterName = "@referentialIds";
+
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        ConcurrentDictionary<ReferenceLookupVerificationShapeKey, string>
+    > CommandTextByShapeByMappingSet = new();
+
     private static readonly NpgsqlDbType ReferentialIdsParameterDbType = (NpgsqlDbType)(
         (int)NpgsqlDbType.Array | (int)NpgsqlDbType.Uuid
     );
@@ -66,8 +74,26 @@ internal static class PostgresqlReferenceLookupCommandBuilder
 
     private static string BuildCommandText(ReferenceLookupRequest request)
     {
+        var shapeKey = ReferenceLookupVerificationSupport.CreateShapeKey(request);
+        var commandTextByShape = CommandTextByShapeByMappingSet.GetValue(
+            request.MappingSet,
+            static _ => new ConcurrentDictionary<ReferenceLookupVerificationShapeKey, string>()
+        );
+
+        return commandTextByShape.GetOrAdd(
+            shapeKey,
+            static (staticShapeKey, staticMappingSet) =>
+                BuildCommandText(
+                    ReferenceLookupVerificationSupport.BuildProjections(staticMappingSet, staticShapeKey)
+                ),
+            request.MappingSet
+        );
+    }
+
+    private static string BuildCommandText(IReadOnlyList<ReferenceLookupVerificationProjection> projections)
+    {
         var descriptorVerificationPrefix = EscapeSqlLiteral(_descriptorVerificationPrefix);
-        var verificationIdentitySql = BuildVerificationIdentitySql(request);
+        var verificationIdentitySql = BuildVerificationIdentitySql(projections);
 
         return $$"""
             WITH "LookupInput"("ReferentialId", "Ordinal") AS (
@@ -101,10 +127,10 @@ internal static class PostgresqlReferenceLookupCommandBuilder
             """;
     }
 
-    private static string BuildVerificationIdentitySql(ReferenceLookupRequest request)
+    private static string BuildVerificationIdentitySql(
+        IReadOnlyList<ReferenceLookupVerificationProjection> projections
+    )
     {
-        var projections = ReferenceLookupVerificationSupport.BuildProjections(request);
-
         return projections.Count == 0
             ? EmptyVerificationIdentitySql
             : string.Join(

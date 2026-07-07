@@ -108,4 +108,64 @@ public class Given_PostgresqlReferenceResolverAdapter
                 )
             );
     }
+
+    [Test]
+    public async Task It_reuses_command_text_for_same_lookup_shape_with_different_referential_ids()
+    {
+        var firstReferentialId = new ReferentialId(Guid.NewGuid());
+        var secondReferentialId = new ReferentialId(Guid.NewGuid());
+        var thirdReferentialId = new ReferentialId(Guid.NewGuid());
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateLookupRow(firstReferentialId, 101L)),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateLookupRow(secondReferentialId, 202L),
+                    CreateLookupRow(thirdReferentialId, 303L)
+                ),
+            ]),
+        ]);
+        var sut = new PostgresqlReferenceResolverAdapter(executor);
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(_requestResource);
+
+        await sut.ResolveAsync(
+            new ReferenceLookupRequest(
+                MappingSet: mappingSet,
+                RequestResource: _requestResource,
+                Lookups: [RelationalAccessTestData.CreateSchoolLookup(firstReferentialId)]
+            )
+        );
+        await sut.ResolveAsync(
+            new ReferenceLookupRequest(
+                MappingSet: mappingSet,
+                RequestResource: _requestResource,
+                Lookups:
+                [
+                    RelationalAccessTestData.CreateSchoolLookup(secondReferentialId),
+                    RelationalAccessTestData.CreateSchoolLookup(thirdReferentialId),
+                ]
+            )
+        );
+
+        executor.Commands.Should().HaveCount(2);
+        executor.Commands[1].CommandText.Should().BeSameAs(executor.Commands[0].CommandText);
+        ((Guid[])executor.Commands[0].Parameters[0].Value!).Should().Equal(firstReferentialId.Value);
+        ((Guid[])executor.Commands[1].Parameters[0].Value!)
+            .Should()
+            .Equal(secondReferentialId.Value, thirdReferentialId.Value);
+    }
+
+    private static IReadOnlyDictionary<string, object?> CreateLookupRow(
+        ReferentialId referentialId,
+        long documentId
+    ) =>
+        RelationalAccessTestData.CreateRow(
+            ("ReferentialId", referentialId.Value),
+            ("DocumentId", documentId),
+            ("ResourceKeyId", (short)11),
+            ("ReferentialIdentityResourceKeyId", (short)11),
+            ("IsDescriptor", false),
+            ("VerificationIdentityKey", "$.schoolId=255901")
+        );
 }

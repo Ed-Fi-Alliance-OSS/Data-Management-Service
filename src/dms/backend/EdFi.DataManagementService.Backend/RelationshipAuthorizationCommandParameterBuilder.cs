@@ -39,7 +39,7 @@ internal static class RelationshipAuthorizationCommandParameterBuilder
             ),
             QuerySqlParameterBindingKind.PgsqlArray => new RelationalParameter(
                 $"@{parameter.ParameterName}",
-                RequireInt64List(value, parameter.ParameterName).ToArray()
+                RequireInt64Array(value, parameter.ParameterName)
             ),
             QuerySqlParameterBindingKind.MssqlStructured => new RelationalParameter(
                 $"@{parameter.ParameterName}",
@@ -58,6 +58,24 @@ internal static class RelationshipAuthorizationCommandParameterBuilder
                 "Unsupported single-record authorization parameter binding kind."
             ),
         };
+    }
+
+    private static long[] RequireInt64Array(object? value, string parameterName)
+    {
+        if (value is long[] int64Array)
+        {
+            return int64Array;
+        }
+
+        var int64Values = RequireInt64List(value, parameterName);
+        var array = new long[int64Values.Count];
+
+        for (var index = 0; index < int64Values.Count; index++)
+        {
+            array[index] = int64Values[index];
+        }
+
+        return array;
     }
 
     private static IReadOnlyList<long> RequireInt64List(object? value, string parameterName)
@@ -79,6 +97,7 @@ internal static class RelationshipAuthorizationCommandParameterBuilder
     )
     {
         DataTable structuredTable = new();
+        structuredTable.MinimumCapacity = int64Values.Count;
         structuredTable.Columns.Add(structuredColumnName, typeof(long));
 
         foreach (var value in int64Values)

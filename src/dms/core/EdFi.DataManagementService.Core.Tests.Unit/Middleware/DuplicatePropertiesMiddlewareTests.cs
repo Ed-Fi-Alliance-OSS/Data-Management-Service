@@ -92,6 +92,54 @@ public class DuplicatePropertiesMiddlewareTest
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Pipeline_Context_With_Frontend_Detected_Duplicate_Property
+        : DuplicatePropertiesMiddlewareTest
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                DuplicatePropertyPath: "$.schoolId"
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ParsedBody = JsonNode.Parse("""{"schoolId":255901001}""")!,
+            };
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_failure_duplicated_property()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .ContainAll(
+                    "Data Validation Failed",
+                    """
+                    "validationErrors":{"$.schoolId":["An item with the same key has already been added."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_A_Collection_As_Duplicated_Property_On_First_Level
         : DuplicatePropertiesMiddlewareTest
     {

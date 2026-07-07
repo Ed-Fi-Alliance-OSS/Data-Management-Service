@@ -131,10 +131,14 @@ public sealed record DescriptorProjectionPlan
     /// </param>
     /// <param name="ResultShape">Ordinal contract for descriptor projection result rows.</param>
     /// <param name="SourcesInOrder">Descriptor FK source metadata in deterministic authoritative order.</param>
+    /// <param name="SelectBySingleDocumentSql">
+    /// Optional parameterized SQL that emits descriptor projection rows for one document.
+    /// </param>
     public DescriptorProjectionPlan(
         string SelectByKeysetSql,
         DescriptorProjectionResultShape ResultShape,
-        IEnumerable<DescriptorProjectionSource> SourcesInOrder
+        IEnumerable<DescriptorProjectionSource> SourcesInOrder,
+        string? SelectBySingleDocumentSql = null
     )
     {
         this.SelectByKeysetSql = PlanContractArgumentValidator.RequireNotNull(
@@ -146,12 +150,18 @@ public sealed record DescriptorProjectionPlan
             SourcesInOrder,
             nameof(SourcesInOrder)
         );
+        this.SelectBySingleDocumentSql = SelectBySingleDocumentSql;
     }
 
     /// <summary>
     /// Parameterized SQL that emits descriptor projection rows for the current page keyset.
     /// </summary>
     public string SelectByKeysetSql { get; init; }
+
+    /// <summary>
+    /// Optional parameterized SQL that emits descriptor projection rows for one document.
+    /// </summary>
+    public string? SelectBySingleDocumentSql { get; init; }
 
     /// <summary>
     /// Ordinal contract describing the descriptor projection result row shape.

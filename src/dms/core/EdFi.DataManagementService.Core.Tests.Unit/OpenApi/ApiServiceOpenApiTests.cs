@@ -13,7 +13,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -32,13 +32,7 @@ public class ApiServiceOpenApiTests
         return [new JsonObject { ["url"] = url }];
     }
 
-    private static HybridCache CreateHybridCache()
-    {
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
-        services.AddHybridCache();
-        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
-    }
+    private static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
     private static ApiService CreateApiService(
         ApiSchemaDocumentNodes apiSchemaDocumentNodes,
@@ -51,7 +45,7 @@ public class ApiServiceOpenApiTests
 
         var cachedClaimSetProvider = new CachedClaimSetProvider(
             A.Fake<IConfigurationServiceClaimSetProvider>(),
-            CreateHybridCache(),
+            CreateMemoryCache(),
             new CacheSettings(),
             NullLogger<CachedClaimSetProvider>.Instance
         );

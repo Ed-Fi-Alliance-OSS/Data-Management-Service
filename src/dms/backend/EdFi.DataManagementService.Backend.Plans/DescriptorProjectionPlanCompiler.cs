@@ -21,6 +21,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     private static readonly DbColumnName _uriColumn = new("Uri");
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     public IReadOnlyList<DescriptorProjectionPlan> Compile(
         RelationalResourceModel resourceModel,
@@ -72,7 +73,10 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             new DescriptorProjectionPlan(
                 SelectByKeysetSql: EmitSelectByKeysetSql(deduplicatedSqlSources, keysetTable),
                 ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                SourcesInOrder: compiledSources
+                SourcesInOrder: compiledSources,
+                SelectBySingleDocumentSql: _planSqlDialect.SupportsSingleDocumentHydration
+                    ? EmitSelectBySingleDocumentSql(deduplicatedSqlSources)
+                    : null
             ),
         ];
     }
@@ -130,9 +134,21 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         KeysetTableContract keysetTable
     )
     {
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.Keyset(keysetTable));
+    }
+
+    private string EmitSelectBySingleDocumentSql(IReadOnlyList<DescriptorProjectionSqlSource> sqlSources)
+    {
+        return EmitSelectSql(sqlSources, ProjectionSourceFilter.SingleDocument);
+    }
+
+    private string EmitSelectSql(
+        IReadOnlyList<DescriptorProjectionSqlSource> sqlSources,
+        ProjectionSourceFilter sourceFilter
+    )
+    {
         const string projectionAlias = "p";
 
-        var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var descriptorAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor);
         var tableAliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
         var writer = new SqlWriter(_sqlDialect);
@@ -161,11 +177,6 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     var sqlSource = sqlSources[index];
                     var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
-                    var rootScopeLocatorColumn =
-                        RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
-                            tableModel,
-                            "descriptor projection plan"
-                        );
 
                     writer.Append("SELECT ");
 
@@ -177,17 +188,14 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
                     writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
-                    writer
-                        .Append("INNER JOIN ")
-                        .AppendRelation(keysetTable.Table)
-                        .Append($" {keysetAlias} ON ");
-                    AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
-                    writer.Append(" = ");
-                    AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
-                    writer.AppendLine();
-                    writer.Append("WHERE ");
-                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
-                    writer.AppendLine(" IS NOT NULL");
+                    ProjectionSourceFilterSql.Append(
+                        writer,
+                        tableModel,
+                        tableAlias,
+                        sqlSource.StorageColumn,
+                        sourceFilter,
+                        "descriptor projection plan"
+                    );
 
                     if (index + 1 < sqlSources.Count)
                     {

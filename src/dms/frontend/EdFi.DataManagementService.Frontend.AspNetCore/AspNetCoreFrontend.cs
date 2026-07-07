@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Buffers;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -33,18 +35,298 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized request body
     /// </summary>
-    private static async Task<string?> ExtractJsonBodyFrom(HttpRequest request)
+    private static async Task<JsonBodyExtractionResult> ExtractJsonBodyFrom(HttpRequest request)
     {
-        using Stream body = request.Body;
-        using StreamReader bodyReader = new(body);
-        var requestBodyString = await bodyReader.ReadToEndAsync();
+        byte[] rentedBuffer = ArrayPool<byte>.Shared.Rent(GetInitialBodyBufferSize(request.ContentLength));
+        int bodyLength = 0;
 
-        if (string.IsNullOrEmpty(requestBodyString))
+        try
         {
-            return null;
+            while (true)
+            {
+                var readResult = await request.BodyReader.ReadAsync(request.HttpContext.RequestAborted);
+                var buffer = readResult.Buffer;
+
+                if (!buffer.IsEmpty)
+                {
+                    rentedBuffer = EnsureBodyBufferCapacity(rentedBuffer, bodyLength, buffer.Length);
+                    buffer.CopyTo(rentedBuffer.AsSpan(bodyLength));
+                    bodyLength += checked((int)buffer.Length);
+                }
+
+                request.BodyReader.AdvanceTo(buffer.End);
+
+                if (readResult.IsCompleted)
+                {
+                    break;
+                }
+            }
+
+            ReadOnlySpan<byte> body = StripUtf8Bom(rentedBuffer.AsSpan(0, bodyLength));
+
+            if (body.IsEmpty || IsWhiteSpace(body))
+            {
+                return JsonBodyExtractionResult.Empty;
+            }
+
+            try
+            {
+                return new JsonBodyExtractionResult(
+                    JsonNode.Parse(body),
+                    null,
+                    FindDuplicatePropertyPath(body)
+                );
+            }
+            catch (Exception ex)
+            {
+                return new JsonBodyExtractionResult(null, ex.Message, null);
+            }
+        }
+        finally
+        {
+            rentedBuffer.AsSpan(0, bodyLength).Clear();
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
+    }
+
+    private static async Task<string?> ExtractRawBodyFrom(HttpRequest request)
+    {
+        using StreamReader bodyReader = new(
+            request.Body,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 1024,
+            leaveOpen: true
+        );
+        string requestBody = await bodyReader.ReadToEndAsync();
+
+        return string.IsNullOrEmpty(requestBody) ? null : requestBody;
+    }
+
+    private static int GetInitialBodyBufferSize(long? contentLength)
+    {
+        const int DefaultInitialBufferSize = 4096;
+
+        if (contentLength is > 0 and <= int.MaxValue)
+        {
+            return Math.Max((int)contentLength, 1);
         }
 
-        return requestBodyString;
+        return DefaultInitialBufferSize;
+    }
+
+    private static byte[] EnsureBodyBufferCapacity(byte[] buffer, int length, long additionalLength)
+    {
+        if (additionalLength > int.MaxValue - length)
+        {
+            throw new InvalidOperationException("The request body is too large.");
+        }
+
+        int requiredLength = length + (int)additionalLength;
+
+        if (requiredLength <= buffer.Length)
+        {
+            return buffer;
+        }
+
+        int newLength = buffer.Length;
+        while (newLength < requiredLength)
+        {
+            newLength = checked(newLength * 2);
+        }
+
+        byte[] newBuffer = ArrayPool<byte>.Shared.Rent(newLength);
+        buffer.AsSpan(0, length).CopyTo(newBuffer);
+        buffer.AsSpan(0, length).Clear();
+        ArrayPool<byte>.Shared.Return(buffer);
+        return newBuffer;
+    }
+
+    // Keep normal JSON bodies on the allocation-free span path, but match the previous
+    // StreamReader/string.IsNullOrWhiteSpace behavior for BOM and Unicode whitespace.
+    private static ReadOnlySpan<byte> StripUtf8Bom(ReadOnlySpan<byte> body)
+    {
+        const byte utf8BomFirstByte = 0xEF;
+        const byte utf8BomSecondByte = 0xBB;
+        const byte utf8BomThirdByte = 0xBF;
+
+        return
+            body.Length >= 3
+            && body[0] == utf8BomFirstByte
+            && body[1] == utf8BomSecondByte
+            && body[2] == utf8BomThirdByte
+            ? body[3..]
+            : body;
+    }
+
+    private static bool IsWhiteSpace(ReadOnlySpan<byte> body)
+    {
+        for (int i = 0; i < body.Length; i++)
+        {
+            byte value = body[i];
+
+            if (value is (byte)' ' or (byte)'\t' or (byte)'\n' or (byte)'\v' or (byte)'\f' or (byte)'\r')
+            {
+                continue;
+            }
+
+            if (value < 0x80)
+            {
+                return false;
+            }
+
+            return IsUtf8WhiteSpace(body[i..]);
+        }
+
+        return true;
+    }
+
+    private static bool IsUtf8WhiteSpace(ReadOnlySpan<byte> body)
+    {
+        while (!body.IsEmpty)
+        {
+            OperationStatus status = Rune.DecodeFromUtf8(body, out Rune rune, out int bytesConsumed);
+
+            if (status != OperationStatus.Done || !Rune.IsWhiteSpace(rune))
+            {
+                return false;
+            }
+
+            body = body[bytesConsumed..];
+        }
+
+        return true;
+    }
+
+    private static string? FindDuplicatePropertyPath(ReadOnlySpan<byte> json)
+    {
+        var reader = new Utf8JsonReader(
+            json,
+            new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip }
+        );
+
+        var pathStack = new Stack<JsonPathSegment>();
+        var propertyNamesStack = new Stack<HashSet<string>>();
+
+        while (reader.Read())
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.StartObject:
+                    propertyNamesStack.Push([]);
+                    break;
+
+                case JsonTokenType.EndObject:
+                    if (propertyNamesStack.Count > 0)
+                    {
+                        propertyNamesStack.Pop();
+                    }
+
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+                    break;
+
+                case JsonTokenType.StartArray:
+                    pathStack.Push(new JsonPathSegment(IsArray: true, PropertyName: null, ArrayIndex: 0));
+                    break;
+
+                case JsonTokenType.EndArray:
+                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+                    break;
+
+                case JsonTokenType.PropertyName:
+                    string propertyName = reader.GetString()!;
+
+                    if (propertyNamesStack.Count > 0)
+                    {
+                        var currentProperties = propertyNamesStack.Peek();
+                        if (!currentProperties.Add(propertyName))
+                        {
+                            return BuildJsonPath(pathStack, propertyName);
+                        }
+                    }
+
+                    pathStack.Push(
+                        new JsonPathSegment(IsArray: false, PropertyName: propertyName, ArrayIndex: 0)
+                    );
+                    break;
+
+                case JsonTokenType.String:
+                case JsonTokenType.Number:
+                case JsonTokenType.True:
+                case JsonTokenType.False:
+                case JsonTokenType.Null:
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+
+                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
+                    {
+                        var arraySegment = pathStack.Pop();
+                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
+                    }
+                    break;
+            }
+
+            if (
+                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
+                && pathStack.Count > 0
+                && pathStack.Peek().IsArray
+            )
+            {
+                var arraySegment = pathStack.Pop();
+                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName)
+    {
+        var segments = pathStack.ToArray();
+        Array.Reverse(segments);
+
+        var pathBuilder = new StringBuilder("$");
+
+        for (int i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+
+            if (segment.IsArray)
+            {
+                pathBuilder.Append($"[{segment.ArrayIndex}]");
+            }
+            else if (segment.PropertyName != null)
+            {
+                pathBuilder.Append($".{segment.PropertyName}");
+            }
+        }
+
+        pathBuilder.Append($".{duplicatePropertyName}");
+        return pathBuilder.ToString();
+    }
+
+    private sealed record JsonPathSegment(bool IsArray, string? PropertyName, int ArrayIndex);
+
+    private readonly record struct JsonBodyExtractionResult(
+        JsonNode? ParsedBody,
+        string? ParseErrorMessage,
+        string? DuplicatePropertyPath
+    )
+    {
+        public static JsonBodyExtractionResult Empty { get; } = new(null, null, null);
     }
 
     /// <summary>
@@ -178,18 +460,28 @@ public static class AspNetCoreFrontend
         string dmsPath,
         IOptions<AppSettings> appSettings,
         bool includeBody,
-        bool includeForm
+        bool includeForm,
+        bool parseJsonBody = true
     )
     {
+        JsonBodyExtractionResult jsonBody =
+            includeBody && parseJsonBody
+                ? await ExtractJsonBodyFrom(httpRequest)
+                : JsonBodyExtractionResult.Empty;
+        string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
+
         return new(
-            Body: includeBody ? await ExtractJsonBodyFrom(httpRequest) : null,
+            Body: rawBody,
             Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
             RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
-            Tenant: ExtractTenantFrom(httpRequest, appSettings)
+            Tenant: ExtractTenantFrom(httpRequest, appSettings),
+            ParsedBody: jsonBody.ParsedBody,
+            BodyParseErrorMessage: jsonBody.ParseErrorMessage,
+            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath
         );
     }
 
@@ -354,7 +646,8 @@ public static class AspNetCoreFrontend
                     string.Empty,
                     appSettings,
                     includeBody: !isUrlEncodedForm,
-                    includeForm: isUrlEncodedForm
+                    includeForm: isUrlEncodedForm,
+                    parseJsonBody: false
                 )
             ),
             httpContext,

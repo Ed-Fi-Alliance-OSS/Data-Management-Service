@@ -84,13 +84,21 @@ internal static class SessionRelationalCommandFactory
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
     {
-        foreach (var parameter in parameters)
+        var parameterCount = parameters.Count;
+        if (parameterCount == 0)
         {
+            return;
+        }
+
+        var dbParameters = dbCommand.Parameters;
+        for (var parameterIndex = 0; parameterIndex < parameterCount; parameterIndex++)
+        {
+            var parameter = parameters[parameterIndex];
             var dbParameter = dbCommand.CreateParameter();
             dbParameter.ParameterName = parameter.Name;
             dbParameter.Value = parameter.Value ?? DBNull.Value;
             parameter.ConfigureParameter?.Invoke(dbParameter);
-            dbCommand.Parameters.Add(dbParameter);
+            dbParameters.Add(dbParameter);
         }
     }
 }

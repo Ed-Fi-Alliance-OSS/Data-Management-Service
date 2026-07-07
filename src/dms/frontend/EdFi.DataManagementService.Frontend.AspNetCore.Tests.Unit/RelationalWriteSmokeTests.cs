@@ -367,6 +367,17 @@ public class Given_A_Host_Using_The_Relational_Backend
                 TestMockHelper.AddEssentialMocks(services);
 
                 var jwtValidationService = A.Fake<IJwtValidationService>();
+                var principal = new ClaimsPrincipal(
+                    new ClaimsIdentity([new Claim("client_id", "smoke-client")], "test")
+                );
+                var clientAuthorizations = new ClientAuthorizations(
+                    TokenId: "smoke-token",
+                    ClientId: "smoke-client",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: [],
+                    DataStoreIds: [new DataStoreId(1)]
+                );
                 A.CallTo(() =>
                         jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
                             A<string>._,
@@ -375,21 +386,19 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(
                         Task.FromResult(
-                            (
-                                (ClaimsPrincipal?)
-                                    new ClaimsPrincipal(
-                                        new ClaimsIdentity([new Claim("client_id", "smoke-client")], "test")
-                                    ),
-                                (ClientAuthorizations?)
-                                    new ClientAuthorizations(
-                                        TokenId: "smoke-token",
-                                        ClientId: "smoke-client",
-                                        ClaimSetName: "SIS-Vendor",
-                                        EducationOrganizationIds: [],
-                                        NamespacePrefixes: [],
-                                        DataStoreIds: [new DataStoreId(1)]
-                                    )
-                            )
+                            ((ClaimsPrincipal?)principal, (ClientAuthorizations?)clientAuthorizations)
+                        )
+                    );
+                A.CallTo(() =>
+                        jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                            A<string>._,
+                            A<int>._,
+                            A<CancellationToken>._
+                        )
+                    )
+                    .Returns(
+                        Task.FromResult(
+                            ((ClaimsPrincipal?)principal, (ClientAuthorizations?)clientAuthorizations)
                         )
                     );
 
