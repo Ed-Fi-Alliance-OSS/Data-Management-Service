@@ -40,7 +40,7 @@ RedHat's edge-case behavior.
 
 The legacy backend is being **retired**, so its connector configs and the
 six-field `edfidoc` shape are going away — they are not a migration target. The
-relational stream is the only forward consumer. DMS-1245 finalized the
+relational stream is the only forward consumer. DMS-1245 will finalize the
 relational CDC/Kafka design: Debezium captures `dms.DocumentCache`, the public
 Kafka payload field is `document`, and the connector config uses
 `sourceFields=document`. DMS-1232 remains the E2E follow-up that replaces the
