@@ -267,7 +267,8 @@ public class Given_Descriptor_Write_Response_Etags
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
             NullLogger<DescriptorWriteHandler>.Instance,
-            _etagComposer
+            new ServedEtagComposer(_etagComposer),
+            new IfMatchEvaluator()
         );
     }
 
