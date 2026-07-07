@@ -948,6 +948,8 @@ public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
+    private GetResult _profiledGetBeforeHiddenChange = null!;
+    private GetResult _profiledGetAfterHiddenChange = null!;
     private DeleteResult _staleDeleteResult = null!;
 
     [OneTimeSetUp]
@@ -981,17 +983,20 @@ public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden
             .Should()
             .BeOfType<UpsertResult.InsertSuccess>();
 
-        var profiledGetBeforeHiddenChange = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+        var readableProfileProjectionContext =
+            PostgresqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext();
+
+        _profiledGetBeforeHiddenChange = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
             _serviceProvider,
             _database.ConnectionString,
             _mappingSet,
             DocumentUuid,
             "pg-delete-stale-profiled-etag-get-before",
-            PostgresqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext()
+            readableProfileProjectionContext
         );
 
         var staleProfiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
-            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(profiledGetBeforeHiddenChange)
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetBeforeHiddenChange)
         );
 
         var hiddenFieldChangeBody = new JsonObject
@@ -1014,6 +1019,18 @@ public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden
         )
             .Should()
             .BeOfType<UpdateResult.UpdateSuccess>();
+
+        // Capture the profiled etag after the hidden-field change, before the DELETE removes the
+        // document, so we can independently prove the profiled etag actually changed (rather than
+        // just observing a 412 that could also result from a "DELETE always fails" bug).
+        _profiledGetAfterHiddenChange = await PostgresqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "pg-delete-stale-profiled-etag-get-after",
+            readableProfileProjectionContext
+        );
 
         // DELETE has no profile lens (unprofiled is the only DELETE path), guarded by the now-stale
         // etag captured before the hidden-field change bumped ContentVersion.
@@ -1046,6 +1063,19 @@ public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden
     [Test]
     public void It_returns_412_for_a_delete_using_the_stale_profiled_etag() =>
         _staleDeleteResult.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+
+    [Test]
+    public void It_changes_the_profiled_etag_when_the_hidden_field_changes()
+    {
+        var staleProfiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetBeforeHiddenChange)
+        );
+        var currentProfiledEtag = PostgresqlProfileIfMatchEtagTestSupport.GetEtag(
+            PostgresqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetAfterHiddenChange)
+        );
+
+        currentProfiledEtag.Should().NotBe(staleProfiledEtag);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
