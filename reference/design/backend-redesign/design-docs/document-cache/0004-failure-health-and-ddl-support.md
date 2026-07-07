@@ -16,9 +16,9 @@ every cache row.
 
 Projection failures must be retryable, observable, and actionable. In
 `Projector:Mode = Async`, unresolved failures degrade cache/indexing health but do not
-break normal API correctness. In `Projector:Mode = CdcRequired`, unresolved failures,
-incomplete initial backfill, missing delete-source support, or lag above the configured
-threshold make CDC not ready.
+break normal API correctness. In `Projector:Mode = CdcRequired`, unresolved current
+projection failures, incomplete initial backfill, missing delete-source support, or lag
+above the configured threshold make CDC not ready.
 
 ## Required Projector State
 
@@ -69,6 +69,13 @@ A failure becomes dead-lettered when it is classified as non-retryable or exceed
 configured retry budget. Dead-lettered work remains visible until an operator or repair
 process marks it resolved or requeues it.
 
+For CDC readiness, the blocking unit is an unresolved current projection failure: a
+failure for a document whose current `dms.Document` stamp still requires a fresh
+`dms.DocumentCache` row. Dead-lettered failures are always readiness-blocking. A
+transient retry failure is readiness-blocking while it leaves the current document
+missing or stale, and it stops blocking when a newer successful projection supersedes
+or resolves it.
+
 Retry behavior must preserve stale-write fencing:
 
 - retrying an old `TargetContentVersion` must not overwrite a newer cache row,
@@ -98,7 +105,7 @@ CDC readiness requires all of the following:
 - initial backfill is complete,
 - stale-write fencing is active,
 - pre-delete source-row materialization is supported and provider-verified,
-- unresolved dead-letter failures are absent,
+- no unresolved current projection failures exist, including dead-lettered failures,
 - projector lag is within the configured threshold,
 - Kafka connector/database CDC prerequisites from DMS-1245 are satisfied.
 

@@ -34,8 +34,8 @@ through projector state.
 - Backfill status is recorded as `NotStarted`, `Running`, `Complete`, or `Failed`.
 - Backfill progress exposes scanned/projected content versions and counts where practical.
 - In `Async` mode, normal API traffic can continue while backfill is running.
-- In `CdcRequired` mode, CDC readiness remains false until backfill completes and no unresolved failures are
-  known.
+- In `CdcRequired` mode, CDC readiness remains false until backfill completes and no unresolved current
+  projection failures are known.
 - Cache truncation or rebuild resets readiness and backfill status appropriately.
 - Tests cover empty database, existing documents, restart/resume, concurrent update during backfill, and cache
   truncation/rebuild.

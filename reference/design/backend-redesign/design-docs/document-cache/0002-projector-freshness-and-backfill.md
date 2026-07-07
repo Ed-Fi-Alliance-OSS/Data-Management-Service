@@ -95,8 +95,8 @@ because cache misses fall back to relational reconstitution. Health should repor
 backfill progress and lag.
 
 For `Projector:Mode = CdcRequired`, CDC readiness is false until initial backfill has
-completed for every existing `dms.Document` row and no unresolved projection failures are
-known.
+completed for every existing `dms.Document` row and no unresolved current projection
+failures are known.
 
 Cache truncation or rebuild follows the same rule:
 

@@ -13,7 +13,8 @@ related:
 Add retry and dead-letter behavior for DocumentCache projection failures.
 
 Projection failures should be visible and actionable. In `Async` mode they degrade cache/indexing health but do
-not break normal API correctness. In `CdcRequired` mode unresolved dead-letter failures make CDC not ready.
+not break normal API correctness. In `CdcRequired` mode unresolved current projection failures, including
+dead-lettered failures, make CDC not ready.
 
 ## Dependencies
 
@@ -32,6 +33,7 @@ not break normal API correctness. In `CdcRequired` mode unresolved dead-letter f
   budget.
 - Dead-lettered failures remain visible until resolved or requeued.
 - Successful projection of a newer version can resolve older failures for the same `DocumentId`.
+- Stale historical failures that have been superseded by a successful newer projection do not block CDC readiness.
 - Retry preserves stale-write fencing and cannot overwrite newer rows or recreate rows after delete.
 - Operators have a documented way to requeue or mark failures resolved.
 - Tests cover transient retry, permanent dead letter, newer-version resolution, retry-after-delete, and

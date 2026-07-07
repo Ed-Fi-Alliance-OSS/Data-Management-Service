@@ -40,14 +40,14 @@ until the source table and projector guarantees are in place.
   - initial backfill is incomplete,
   - stale-write fencing is unavailable,
   - pre-delete materialization is unavailable,
-  - unresolved dead-letter failures exist,
+  - unresolved current projection failures exist, including dead-lettered failures,
   - projector lag exceeds the configured threshold,
   - provider-specific delete-source behavior has not been verified.
 - Non-CDC cache-backed reads can remain available when CDC readiness is false.
 - Metrics/logs cover projection attempts, successes, retries, failures, stale skips, backfill progress, cache
   hit/miss/stale fallback, pre-delete materialization, and projector lag.
-- Tests cover healthy async mode, healthy CDC-required mode, missing objects, incomplete backfill, dead letters,
-  excessive lag, and missing provider verification.
+- Tests cover healthy async mode, healthy CDC-required mode, missing objects, incomplete backfill, unresolved
+  current projection failures, dead letters, excessive lag, and missing provider verification.
 
 ## Tasks
 

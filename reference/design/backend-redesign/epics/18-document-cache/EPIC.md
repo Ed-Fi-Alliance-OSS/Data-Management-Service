@@ -56,7 +56,7 @@ captures it as the document-state source.
   enough that projector retries/backfill cannot overwrite newer rows or recreate rows after delete.
 - Story 08 depends on Stories 01, 03, and 07 so retries and dead letters use durable state and preserve fencing.
 - Story 09 depends on Stories 01, 04, 06, 07, and 08 because readiness must report backfill, delete support,
-  stale-write fencing, lag, and unresolved failures.
+  stale-write fencing, lag, and unresolved current projection failures.
 - Story 10 depends on Stories 06 and 07 and should be completed before CDC/Kafka deletes are considered
   supported for PostgreSQL or SQL Server.
 - Story 11 can start with draft docs and fixture tests, but final runbooks and integration coverage depend on
@@ -107,8 +107,8 @@ captures it as the document-state source.
 - DMS can run with asynchronous projection for cache-backed reads/indexing while falling back to relational
   reconstitution for cache misses, stale rows, or projector failures.
 - DMS can run with CDC-required projection only when initial backfill is complete, projector lag is visible,
-  unresolved dead-letter failures are absent, stale-write fencing is active, and provider-specific delete-source
-  behavior is verified.
+  no unresolved current projection failures remain, stale-write fencing is active, and provider-specific
+  delete-source behavior is verified.
 - CDC-mode deletes cannot remove `dms.Document` unless the delete transaction has verified or materialized the
   `dms.DocumentCache` source row needed for a Debezium row delete.
 - Projector, backfill, retry, read-through, and pre-delete materialization writes cannot overwrite newer cache

@@ -41,7 +41,7 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   - projector disabled,
   - projector unhealthy,
   - projector lag above the configured threshold,
-  - dead-lettered projection failures,
+  - unresolved current projection failures, including dead-lettered failures,
   - missing pre-delete materialization support,
   - unsupported database provider.
 - The CDC readiness contract does not make API write correctness, authorization, normal GET/query behavior, or
