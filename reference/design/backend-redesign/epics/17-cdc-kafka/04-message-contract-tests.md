@@ -17,19 +17,22 @@ write path for every case.
 ## Acceptance Criteria
 
 - Contract tests cover create/upsert records with:
-  - key as lowercase `DocumentUuid`,
+  - key bytes as UTF-8 lowercase `DocumentUuid` text, not a JSON string,
   - topic matching `<topic-prefix>.instance.<instance-key>.documents.v1`,
+  - value bytes as a UTF-8 JSON object produced without a Kafka Connect `schema` / `payload` wrapper,
   - `contractVersion = 1`,
   - lower-camel metadata envelope,
   - `etag` as a 44-character base64-encoded `SHA-256` value, not a 64-character hex digest,
+  - `lastModifiedAt` as a UTC RFC 3339 / ISO-8601 string with trailing `Z`,
   - expanded structured `document`,
   - no public `DocumentId`,
   - no public `ComputedAt`.
 - Contract tests cover update records and assert consumers can use `contentVersion` as a stale-write guard.
 - Contract tests cover delete tombstones:
-  - same `DocumentUuid` key,
+  - same UTF-8 `DocumentUuid` key bytes,
   - same instance document topic,
-  - null value,
+  - Kafka record-level null value,
+  - no JSON `null` value,
   - no `deleted=true` envelope.
 - Source-level or integration contract coverage proves a CDC-mode delete is driven by a `dms.DocumentCache` row
   delete, including the case where the cache row had to be synchronously materialized before delete.
@@ -51,6 +54,8 @@ write path for every case.
    row before `ON DELETE CASCADE` removes it.
 7. Add regression coverage that `etag` preserves the DMS API base64 `_etag` string from `DocumentCache.Etag`.
 8. Add regression coverage that `DocumentJson` is published as structured JSON, not an escaped string.
+9. Add regression coverage that schema wrappers, JSON-quoted keys, Debezium envelopes, and Avro/Protobuf-style
+   schema-registry payloads are not part of the v1 public topic.
 
 ## Out of Scope
 

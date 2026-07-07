@@ -50,6 +50,12 @@ Relational DMS publishes a compacted document-state stream:
 - Kafka value is a small lower-camel envelope plus the expanded `DocumentJson` payload,
 - delete is a Kafka tombstone for the same `DocumentUuid` key.
 
+The v1 wire format uses a Kafka Connect `org.apache.kafka.connect.storage.StringConverter`
+key and `org.apache.kafka.connect.json.JsonConverter` value with
+`value.converter.schemas.enable=false`: keys are UTF-8 lowercase `DocumentUuid` text,
+create/update/snapshot values are UTF-8 JSON objects without a Kafka Connect `schema` /
+`payload` wrapper, and deletes are Kafka record-level null values.
+
 Recommended topic pattern:
 
 ```text

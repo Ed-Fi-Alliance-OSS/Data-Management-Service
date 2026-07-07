@@ -23,13 +23,14 @@ metadata envelopes, expanded `document` payloads, and Kafka tombstones for delet
 - E2E setup registers the connector against the same provisioned E2E database used by the DMS test process.
 - Create scenario writes a representative resource through the API and observes a non-null Kafka value:
   - topic follows the v1 instance topic contract,
-  - key is the API `id` / `DocumentUuid`,
+  - key bytes are the API `id` / `DocumentUuid` as UTF-8 lowercase text,
+  - value bytes are a JSON object with no Kafka Connect `schema` / `payload` wrapper,
   - value has `contractVersion = 1`,
   - value has `resourceName`,
   - value has `etag` in the current DMS API base64 `SHA-256` format,
   - value has expanded `document`.
 - Update scenario observes a later value for the same `DocumentUuid` with a higher `contentVersion`.
-- Delete scenario observes a tombstone for the same `DocumentUuid`.
+- Delete scenario observes a Kafka record-level tombstone for the same `DocumentUuid`, not JSON `null`.
 - Delete coverage includes a create-then-delete path that does not rely on waiting for ordinary asynchronous
   projector catch-up before issuing the delete; CDC mode must still materialize the cache source row and publish
   the tombstone.

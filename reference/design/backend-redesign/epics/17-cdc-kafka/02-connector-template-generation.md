@@ -22,6 +22,11 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
 - Connector templates do not contain hard-coded database names, topic names, replication slot names, or data
   store IDs.
 - Connector configuration sets the Kafka key to `DocumentUuid` for create/update/delete records.
+- Connector templates configure the public wire serialization contract:
+  - key converter is `org.apache.kafka.connect.storage.StringConverter`,
+  - key bytes are UTF-8 lowercase `DocumentUuid` text with no JSON quoting,
+  - value converter is `org.apache.kafka.connect.json.JsonConverter` with `value.converter.schemas.enable=false`,
+  - values do not include a Kafka Connect `schema` / `payload` wrapper.
 - Transform pipeline produces:
   - lower-camel envelope fields,
   - `contractVersion = 1`,
@@ -29,11 +34,11 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
   - no public `DocumentId`,
   - no public `ComputedAt`,
   - structured `document`, using the Ed-Fi expand-JSON SMT from DMS-1240 when needed,
-  - tombstones with null values passed through unchanged,
+  - Kafka record-level tombstones with null values passed through unchanged, not JSON `null`,
   - topic routing to `<topic-prefix>.instance.<instance-key>.documents.v1`.
 - If stock Kafka Connect SMTs cannot produce the exact contract without breaking tombstones, the story adds a
   small Ed-Fi value-shaping SMT and tests it directly.
-- Template validation tests assert the published Kafka record shape, not only the connector JSON.
+- Template validation tests assert the published Kafka record bytes and parsed shape, not only the connector JSON.
 - Version-specific Debezium and SMT property names are verified against the pinned
   `edfialliance/ed-fi-kafka-connect` image.
 
@@ -49,6 +54,8 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
 6. Add a connector smoke test that starts the pinned Connect image and verifies the transform classes load.
 7. Add a fixture-based test that feeds representative Debezium records through the transform pipeline and asserts
    the v1 contract.
+8. Add serialized-record tests that catch schema-wrapper, quoted-key, escaped-document, timestamp-format, and
+   tombstone rewrites.
 
 ## Out of Scope
 

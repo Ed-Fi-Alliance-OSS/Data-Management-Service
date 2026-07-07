@@ -151,6 +151,17 @@ Recommended logical transform order:
 All value-shaping transforms must pass null tombstone values through unchanged. Key
 simplification and topic routing still apply to tombstones.
 
+Connector templates must pin the public wire serialization shape from
+[0002-kafka-topic-and-message-contract.md](0002-kafka-topic-and-message-contract.md):
+
+- key converter: Kafka Connect `org.apache.kafka.connect.storage.StringConverter`, yielding UTF-8 lowercase
+  `DocumentUuid` text with no JSON quoting,
+- value converter: Kafka Connect `org.apache.kafka.connect.json.JsonConverter` with
+  `value.converter.schemas.enable=false`,
+- create/update/snapshot values: UTF-8 JSON objects without a Kafka Connect
+  `schema` / `payload` wrapper,
+- deletes: Kafka record-level null values, not JSON `null`.
+
 The connector implementation may use stock Kafka Connect SMTs plus the Ed-Fi expand-JSON
 SMT where they are sufficient. If stock SMTs cannot produce this exact envelope and
 tombstone behavior cleanly, the implementation should add a small Ed-Fi value-shaping SMT

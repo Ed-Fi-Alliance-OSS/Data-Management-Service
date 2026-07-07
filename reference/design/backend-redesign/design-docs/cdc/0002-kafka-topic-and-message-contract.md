@@ -82,10 +82,17 @@ window.
 
 ## Message Key
 
-The public Kafka key is the lowercase `D`-format `DocumentUuid` string:
+The public Kafka key is the lowercase `D`-format `DocumentUuid` string.
 
-```json
-"f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
+Wire contract:
+
+- key converter: Kafka Connect `org.apache.kafka.connect.storage.StringConverter`,
+- key bytes: UTF-8 text for the lowercase `D`-format `DocumentUuid`,
+- no JSON quoting,
+- no Kafka Connect `schema` / `payload` wrapper.
+
+```text
+f81d4fae-7dec-11d0-a765-00a0c91e6bf6
 ```
 
 `DocumentUuid` is the stable public document identity. `DocumentId` is an internal
@@ -102,6 +109,15 @@ delete tombstones have a null value. `DocumentUuid` must be available in the Deb
 path so the tombstone can carry the correct public key.
 
 ## Message Value
+
+Wire contract:
+
+- value converter: Kafka Connect `org.apache.kafka.connect.json.JsonConverter`,
+- `value.converter.schemas.enable=false`,
+- value bytes for creates, updates, and initial snapshots: UTF-8 JSON object,
+- no Kafka Connect `{ "schema": ..., "payload": ... }` wrapper,
+- no Avro, Protobuf, or Schema Registry subject contract in v1,
+- JSON object field order is not contractual.
 
 For creates, updates, and initial snapshots, the value is a JSON object:
 
@@ -132,11 +148,14 @@ Field meanings:
 | `resourceVersion` | `dms.DocumentCache.ResourceVersion` | Project/schema resource version copied from `dms.ResourceKey`. |
 | `contentVersion` | `dms.DocumentCache.ContentVersion` | Representation version applied by the projector. |
 | `etag` | `dms.DocumentCache.Etag` | Full-resource `_etag` value for the cached representation: base64-encoded `SHA-256` over canonical resource-state JSON. |
-| `lastModifiedAt` | `dms.DocumentCache.LastModifiedAt` | Full-resource `_lastModifiedDate` source value. |
+| `lastModifiedAt` | `dms.DocumentCache.LastModifiedAt` | Full-resource `_lastModifiedDate` source value, serialized as a UTC RFC 3339 / ISO-8601 string with up to seven fractional second digits and a trailing `Z`. |
 | `document` | `dms.DocumentCache.DocumentJson` | Expanded structured JSON object, not an escaped JSON string. |
 
 The published field names are lower camel case even though the database column names are
 Pascal case. Connector transforms should rename columns after Debezium unwrap.
+
+`contractVersion` is a JSON number. `contentVersion` is a JSON number and consumers must
+treat it as a signed 64-bit integer. `documentUuid` must match the Kafka key exactly.
 
 `document` is exactly the cached caller-agnostic pre-profile projection. It is not
 profile-filtered and does not include authorization arrays or EdOrg hierarchy JSON. When
@@ -182,13 +201,16 @@ partition and documents that operational tradeoff.
 Delete is represented by a Kafka tombstone:
 
 ```text
-key = <DocumentUuid>
-value = null
+key bytes = UTF-8 lowercase DocumentUuid string
+value bytes = Kafka null
 ```
 
 The v1 document-state topic does not publish a separate `deleted=true` envelope and does
 not promise a deleted document body. Consumers that maintain resource-specific downstream
 stores must retain enough local state from prior upserts to route the tombstone.
+
+Kafka null is distinct from a JSON document containing `null`. The tombstone record has a
+null value at the Kafka record level.
 
 This replaces the legacy KafkaMessaging scenario shape that expected `deleted=false` /
 `deleted=true` and an `EdFiDoc` body. DMS-1232 should update or replace those scenarios
@@ -220,6 +242,18 @@ The message value does not include:
 
 The stream is still sensitive student data. Shared topics with instance filtering are not
 part of this contract.
+
+## Non-Contractual Shapes
+
+The v1 public topic must not publish:
+
+- Debezium `before` / `after` / `source` / `op` envelopes,
+- Kafka Connect `schema` / `payload` wrappers,
+- JSON-quoted keys,
+- escaped `DocumentJson` strings,
+- Avro, Protobuf, or Schema Registry subjects,
+- `deleted=true` delete envelopes,
+- legacy `EdFiDoc` payloads.
 
 ## Alternatives Considered
 
