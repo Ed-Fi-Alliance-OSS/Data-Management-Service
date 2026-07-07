@@ -56,9 +56,11 @@ internal static class AuthorizationHeaderParser
         // separating space(s) are stripped — the token is NOT Trim()'d — so a non-space separator
         // (e.g. "Bearer \t<token>") or any whitespace inside the token survives into the value and
         // is rejected below as malformed, rather than being silently discarded and passed through
-        // to JWT validation as if the header were well formed.
+        // to JWT validation as if the header were well formed. A comma is rejected for the same
+        // reason: the RFC 6750 token alphabet has no comma, and a comma is how a repeated
+        // Authorization header — unparseable per RFC 7235 — is folded into a single value.
         string parameter = remainder.TrimStart(' ');
-        if (parameter.Any(char.IsWhiteSpace))
+        if (parameter.Any(c => char.IsWhiteSpace(c) || c == ','))
         {
             return AuthorizationHeaderResult.Error("Invalid Authorization header.");
         }

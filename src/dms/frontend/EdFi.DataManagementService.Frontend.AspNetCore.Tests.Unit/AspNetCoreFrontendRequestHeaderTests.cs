@@ -6,6 +6,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -84,6 +85,41 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
 
         headers.Should().ContainKey("Authorization");
         headers["Authorization"].Should().Be("   ");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_authorization_header_unreduced()
+    {
+        // A repeated Authorization header is unparseable per RFC 7235. Delivering the comma-joined
+        // value lets core reject it as malformed ("Invalid Authorization header.") instead of
+        // authenticating the first value.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["Bearer valid", "junk"])
+        );
+
+        headers["Authorization"].Should().Be("Bearer valid,junk");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_authorization_header_with_a_blank_value_unreduced()
+    {
+        // A blank duplicate must survive the join (StringValues.ToString() would drop it),
+        // otherwise a valid token sent alongside a blank Authorization line authenticates.
+        var headers = ExtractHeaders(request =>
+            request.Headers["Authorization"] = new StringValues(["Bearer valid", ""])
+        );
+
+        headers["Authorization"].Should().Be("Bearer valid,");
+    }
+
+    [Test]
+    public void It_delivers_a_repeated_content_type_unreduced()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["Content-Type"] = new StringValues(["application/json", "text/plain"])
+        );
+
+        headers["Content-Type"].Should().Be("application/json,text/plain");
     }
 
     [Test]

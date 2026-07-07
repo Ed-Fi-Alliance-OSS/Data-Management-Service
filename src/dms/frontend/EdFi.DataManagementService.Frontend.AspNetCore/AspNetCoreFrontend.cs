@@ -342,11 +342,11 @@ public static class AspNetCoreFrontend
     private const string AuthorizationHeaderName = "Authorization";
 
     /// <summary>
-    /// Headers whose explicit blank/whitespace value core must be able to distinguish from an
-    /// absent header, so the value must survive the blank-value filtering in
-    /// <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit blank is rejected with 415)
-    /// and Authorization (an explicit blank is a malformed header rejected with 401, distinct
-    /// from a missing header, which reports "Authorization header is missing.").
+    /// Headers that must reach core verbatim rather than through the blank-dropping,
+    /// first-non-blank reduction in <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit
+    /// blank is rejected with 415) and Authorization (an explicit blank or a repeated header is
+    /// a malformed header rejected with 401, distinct from a missing header, which reports
+    /// "Authorization header is missing.").
     /// </summary>
     private static readonly string[] HeadersPreservedWhenExplicitlySent =
     [
@@ -356,9 +356,10 @@ public static class AspNetCoreFrontend
 
     /// <summary>
     /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
-    /// dropped, except for the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>,
-    /// whose explicit blank/whitespace value is restored verbatim so core can distinguish it
-    /// from a missing header.
+    /// dropped and multi-valued headers are reduced to their first non-blank value, except for
+    /// the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>, which are delivered
+    /// verbatim (blank preserved, multiple values comma-joined) so core can classify an
+    /// explicit blank or a repeated header as malformed rather than as missing or valid.
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
     {
@@ -371,16 +372,17 @@ public static class AspNetCoreFrontend
             .Where(h => h.Value != null)
             .ToDictionary(x => x.Key, x => x.Value!, StringComparer.OrdinalIgnoreCase);
 
-        // The filtering above discards headers that were sent but are blank/whitespace. Restore
-        // the ones core must treat as explicitly-present-but-invalid rather than as missing.
+        // The filtering above discards blank values and reduces a repeated header to its first
+        // non-blank value. Normalize the preserved headers to their full comma-joined value so
+        // an explicit blank reaches core as present-but-invalid and a repeated header is not
+        // reduced to a single authenticatable value. string.Join is used instead of
+        // StringValues.ToString() because ToString() drops empty entries, which would silently
+        // erase a blank duplicate sent alongside a valid value.
         foreach (string headerName in HeadersPreservedWhenExplicitlySent)
         {
-            if (
-                !headers.ContainsKey(headerName)
-                && request.Headers.TryGetValue(headerName, out StringValues value)
-            )
+            if (request.Headers.TryGetValue(headerName, out StringValues value))
             {
-                headers[headerName] = value.ToString();
+                headers[headerName] = string.Join(",", value.ToArray());
             }
         }
 

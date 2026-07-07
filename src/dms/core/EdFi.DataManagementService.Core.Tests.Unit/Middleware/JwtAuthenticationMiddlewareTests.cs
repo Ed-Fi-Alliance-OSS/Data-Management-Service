@@ -318,6 +318,8 @@ public class JwtAuthenticationMiddlewareTests
     [TestFixture("Bearer   ", "Missing Authorization header bearer token value.")]
     [TestFixture("bearer", "Missing Authorization header bearer token value.")]
     [TestFixture("Bearer abc def", "Invalid Authorization header.")]
+    [TestFixture("Bearer valid,junk", "Invalid Authorization header.")]
+    [TestFixture("Bearer valid,", "Invalid Authorization header.")]
     [TestFixture("Bearer\tabc", "Invalid Authorization header.")]
     [TestFixture("Bearer ab\tc", "Invalid Authorization header.")]
     [TestFixture("Bearer \tabc", "Invalid Authorization header.")]
