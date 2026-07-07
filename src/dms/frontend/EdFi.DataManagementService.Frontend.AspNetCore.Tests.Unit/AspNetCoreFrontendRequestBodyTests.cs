@@ -33,6 +33,11 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
     private static DefaultHttpContext CreateHttpContext(string body, string? contentType = null)
     {
         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+        return CreateHttpContext(bodyBytes, contentType);
+    }
+
+    private static DefaultHttpContext CreateHttpContext(byte[] bodyBytes, string? contentType = null)
+    {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Body = new MemoryStream(bodyBytes);
         httpContext.Request.ContentLength = bodyBytes.Length;
@@ -77,10 +82,48 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
     }
 
     [Test]
+    public async Task It_parses_utf8_bom_prefixed_json_request_bodies()
+    {
+        FrontendRequest? capturedRequest = null;
+        byte[] bodyBytes =
+        [
+            0xEF,
+            0xBB,
+            0xBF,
+            .. Encoding.UTF8.GetBytes("""{ "id":"value", "name":"School" }"""),
+        ];
+        var httpContext = CreateHttpContext(bodyBytes);
+        var apiService = CreateApiServiceForUpsert(request => capturedRequest = request);
+
+        await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Body.Should().BeNull();
+        capturedRequest.ParsedBody.Should().NotBeNull();
+        capturedRequest.ParsedBody!.ToJsonString().Should().Be("""{"id":"value","name":"School"}""");
+        capturedRequest.BodyParseErrorMessage.Should().BeNull();
+    }
+
+    [Test]
     public async Task It_treats_whitespace_only_json_request_bodies_as_missing_bodies()
     {
         FrontendRequest? capturedRequest = null;
-        var httpContext = CreateHttpContext(" \r\n\t ");
+        var httpContext = CreateHttpContext(" \r\n\t\v\f ");
+        var apiService = CreateApiServiceForUpsert(request => capturedRequest = request);
+
+        await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Body.Should().BeNull();
+        capturedRequest.ParsedBody.Should().BeNull();
+        capturedRequest.BodyParseErrorMessage.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_treats_unicode_whitespace_only_json_request_bodies_as_missing_bodies()
+    {
+        FrontendRequest? capturedRequest = null;
+        var httpContext = CreateHttpContext("\u00A0\u2003");
         var apiService = CreateApiServiceForUpsert(request => capturedRequest = request);
 
         await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());

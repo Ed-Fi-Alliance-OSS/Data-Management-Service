@@ -62,7 +62,7 @@ public static class AspNetCoreFrontend
                 }
             }
 
-            ReadOnlySpan<byte> body = rentedBuffer.AsSpan(0, bodyLength);
+            ReadOnlySpan<byte> body = StripUtf8Bom(rentedBuffer.AsSpan(0, bodyLength));
 
             if (body.IsEmpty || IsWhiteSpace(body))
             {
@@ -142,16 +142,57 @@ public static class AspNetCoreFrontend
         return newBuffer;
     }
 
+    // Keep normal JSON bodies on the allocation-free span path, but match the previous
+    // StreamReader/string.IsNullOrWhiteSpace behavior for BOM and Unicode whitespace.
+    private static ReadOnlySpan<byte> StripUtf8Bom(ReadOnlySpan<byte> body)
+    {
+        const byte utf8BomFirstByte = 0xEF;
+        const byte utf8BomSecondByte = 0xBB;
+        const byte utf8BomThirdByte = 0xBF;
+
+        return
+            body.Length >= 3
+            && body[0] == utf8BomFirstByte
+            && body[1] == utf8BomSecondByte
+            && body[2] == utf8BomThirdByte
+            ? body[3..]
+            : body;
+    }
+
     private static bool IsWhiteSpace(ReadOnlySpan<byte> body)
     {
         for (int i = 0; i < body.Length; i++)
         {
             byte value = body[i];
 
-            if (value is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
+            if (value is (byte)' ' or (byte)'\t' or (byte)'\n' or (byte)'\v' or (byte)'\f' or (byte)'\r')
+            {
+                continue;
+            }
+
+            if (value < 0x80)
             {
                 return false;
             }
+
+            return IsUtf8WhiteSpace(body[i..]);
+        }
+
+        return true;
+    }
+
+    private static bool IsUtf8WhiteSpace(ReadOnlySpan<byte> body)
+    {
+        while (!body.IsEmpty)
+        {
+            OperationStatus status = Rune.DecodeFromUtf8(body, out Rune rune, out int bytesConsumed);
+
+            if (status != OperationStatus.Done || !Rune.IsWhiteSpace(rune))
+            {
+                return false;
+            }
+
+            body = body[bytesConsumed..];
         }
 
         return true;
