@@ -1155,7 +1155,8 @@ public class Given_Default_Relational_Write_Executor
         );
         var persistedTarget = new RelationalWritePersistResult(
             910L,
-            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
+            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
+            77L
         );
         var committedResponse = CreateCommittedExternalResponse(
             persistedTarget,
@@ -4234,7 +4235,8 @@ public class Given_Default_Relational_Write_Executor
         };
         var persistedTarget = new RelationalWritePersistResult(
             910L,
-            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
+            ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
+            77L
         );
         var committedResponse = CreateCommittedExternalResponse(
             persistedTarget,
