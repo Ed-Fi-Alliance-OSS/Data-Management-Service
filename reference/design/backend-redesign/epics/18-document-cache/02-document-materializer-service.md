@@ -36,8 +36,11 @@ not part of the cached shape.
   - `Etag`,
   - `LastModifiedAt`,
   - `DocumentJson`.
-- `DocumentJson` is the caller-agnostic pre-profile full resource document.
-- When link injection is compiled into the read plan, `DocumentJson` includes `link` subtrees.
+- `DocumentJson` is the caller-agnostic, pre-profile, full API resource body.
+- `DocumentJson` includes top-level `id`, `_etag`, and `_lastModifiedDate`.
+- When link injection is compiled into the read plan, `DocumentJson` includes reference `link` subtrees.
+- `DocumentUuid`, `Etag`, and `LastModifiedAt` match the embedded `id`, `_etag`, and `_lastModifiedDate`
+  values in `DocumentJson`.
 - `DocumentJson` does not include authorization arrays, EdOrg hierarchy JSON, API client identity, or
   readable-profile-specific projection.
 - `Etag` is the DMS API base64 `SHA-256` `_etag` for the full resource state, not a hex digest.
@@ -52,7 +55,8 @@ not part of the cached shape.
 3. Add metadata lookup for `DocumentUuid`, resource names, resource version, `ContentVersion`, and
    `ContentLastModifiedAt`.
 4. Compute or reuse the full-resource `_etag` using the update-tracking rules.
-5. Add tests for shape, metadata, `_etag`, `_lastModifiedDate`, links, and absence of authorization/profile data.
+5. Add tests for shape, embedded metadata, cache-column/embedded-field consistency, links, and absence of
+   authorization/profile data.
 
 ## Out of Scope
 

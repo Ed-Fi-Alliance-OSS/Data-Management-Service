@@ -492,7 +492,8 @@ row is the database event Debezium captures to publish the Kafka tombstone.
 For the relational CDC source and Kafka contract, see [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md)
 and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
 
-The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
+The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body
+emitted by reconstitution. It includes top-level `id`, `_etag`, and `_lastModifiedDate`,
 with `link` subtrees already present when link injection is compiled into the read plan.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
 strip pass runs on the projected document immediately before serialization. The served `_etag` is
@@ -500,11 +501,11 @@ then specific to that representation context: `profileCode`, `linkFlag`, and `co
 participate in the request's `variantKey` (see
 [link-injection.md](link-injection.md#cache-and-etag)).
 
-Update tracking note: `dms.DocumentCache` stores the `ContentVersion` associated with the cached
-document, not one reusable `_etag`. Cache reads validate freshness against the current
-`dms.Document.ContentVersion`; the server composes `_etag` per request from that version and the
-request's `variantKey`. `LastModifiedAt` remains denormalized for the materialized projection and
-CDC/indexing consumers.
+Update tracking note: `dms.DocumentCache` stores the `ContentVersion` and `LastModifiedAt`
+associated with the cached document, not one reusable `_etag`. Cache reads validate freshness
+against the current `dms.Document.ContentVersion` and `ContentLastModifiedAt`; the server composes
+`_etag` per request from that version and the request's `variantKey`. `LastModifiedAt` remains
+denormalized for the materialized projection and CDC/indexing consumers.
 
 Denormalized resource naming:
 

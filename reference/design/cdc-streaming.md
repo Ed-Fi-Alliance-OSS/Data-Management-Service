@@ -97,10 +97,12 @@ EdOrg hierarchy arrays, API client identity, or readable-profile-specific projec
 The `etag` value is the current DMS API `_etag`: base64-encoded `SHA-256` over canonical
 resource-state JSON, 44 characters including padding.
 
-The `document` field is the caller-agnostic pre-profile JSON projection stored in
-`dms.DocumentCache.DocumentJson`. If link injection is compiled into the read plan, the
-cached document includes `link` subtrees. DMS does not maintain a second link-free Kafka
-projection.
+The `document` field is the caller-agnostic, pre-profile, full API resource body stored
+in `dms.DocumentCache.DocumentJson`, including top-level `id`, `_etag`, and
+`_lastModifiedDate`. If link injection is compiled into the read plan, the cached
+document includes reference `link` subtrees. DMS does not maintain a second link-free
+Kafka projection. Envelope `documentUuid`, `etag`, and `lastModifiedAt` values must match
+the embedded metadata fields in `document`.
 
 Deletes publish:
 
@@ -175,10 +177,10 @@ connectors.
 Connector registration should occur after the target data store is selected, the target
 database is provisioned, and `dms.DocumentCache` CDC readiness verifies the required
 projector/delete support. CDC should not be advertised as ready, and E2E writes that rely
-on Kafka observation should not begin, until initial `dms.DocumentCache` backfill has
-completed and connector/projector lag is acceptable. Connector templates must be generated
-or parameterized from the selected data-store context instead of using hard-coded database
-names.
+on Kafka observation should not begin, until the bounded initial `dms.DocumentCache`
+backfill epoch has completed and connector/projector lag above the completed backfill
+target is acceptable. Connector templates must be generated or parameterized from the
+selected data-store context instead of using hard-coded database names.
 
 ## Multitenancy and Security
 

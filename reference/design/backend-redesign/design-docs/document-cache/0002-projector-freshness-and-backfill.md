@@ -40,9 +40,9 @@ AND DocumentCache.LastModifiedAt == Document.ContentLastModifiedAt
 ```
 
 `Etag` is stored with the cache row and must correspond to the cached full-resource
-representation, but it is not the primary freshness comparator. `ComputedAt` is
-operational metadata only; it must not affect API response semantics, `_etag`,
-`_lastModifiedDate`, Change Queries, or the Kafka value contract.
+representation and embedded `DocumentJson._etag`, but it is not the primary freshness
+comparator. `ComputedAt` is operational metadata only; it must not affect API response
+semantics, `_etag`, `_lastModifiedDate`, Change Queries, or the Kafka value contract.
 
 When a cache row is missing or stale:
 
@@ -79,9 +79,23 @@ not corrupt cache state.
 
 ## Backfill and Rebuild
 
-Initial backfill is a first-class projector phase. It scans every existing
-`dms.Document` row and materializes a fresh `dms.DocumentCache` row for the current
-representation stamp.
+Initial backfill is a first-class projector phase. It captures a bounded
+high-watermark, scans the epoch's document set, and materializes a fresh
+`dms.DocumentCache` row for each still-current representation stamp.
+
+At backfill start, DMS must persist a bounded backfill epoch:
+
+- `BackfillEpochId`: a stable identifier for this backfill/rebuild attempt,
+- `BackfillTargetContentVersion`: the `max(dms.Document.ContentVersion)` captured when
+  the epoch starts,
+- `BackfillStartedAt` and `BackfillStatus = Running`.
+
+The initial backfill epoch is responsible only for documents whose current
+`ContentVersion` is less than or equal to `BackfillTargetContentVersion`. Writes that
+commit after the epoch starts and advance a document beyond that target are handled by
+the normal projector catch-up path and the ordinary lag readiness check. They must not
+move the epoch target forward, otherwise backfill completion can be starved by ongoing
+write traffic.
 
 Backfill must be:
 
@@ -90,21 +104,40 @@ Backfill must be:
 - safe to run while ordinary writes continue,
 - fenced by the same monotonic stale-write guard as normal projection.
 
-For `Projector:Mode = Async`, DMS may serve normal API traffic before backfill completes
-because cache misses fall back to relational reconstitution. Health should report
-backfill progress and lag.
+A backfill epoch is complete only when:
+
+- every non-deleted current `dms.Document` row with `ContentVersion <=
+  BackfillTargetContentVersion` has a fresh `dms.DocumentCache` row,
+- documents deleted or updated beyond the target while the epoch was running have been
+  skipped or resolved under the same stale-write guard,
+- no unresolved current projection failures are known for documents still in the bounded
+  epoch set.
+
+The CDC readiness cutover is the point where a completed `(BackfillEpochId,
+BackfillTargetContentVersion)` pair becomes the bootstrap boundary. At cutover,
+versions at or below the target are covered by the completed bounded epoch; versions
+above the target are covered by the live projector catch-up path and its lag threshold.
+
+A process restart resumes the same incomplete epoch and target. Cache truncation,
+operator-initiated rebuild, schema reprovisioning, or another explicit reset starts a
+new epoch with a newly captured target.
+
+For `Projector:Mode = Async`, DMS may serve normal API traffic before the bounded
+backfill epoch completes because cache misses fall back to relational reconstitution.
+Health should report backfill progress and lag.
 
 For `Projector:Mode = CdcRequired`, CDC readiness is false until initial backfill has
-completed for every existing `dms.Document` row and no unresolved current projection
-failures are known.
+completed for the bounded epoch, no unresolved current projection failures are known,
+and ongoing projector lag for versions above `BackfillTargetContentVersion` is within
+the configured readiness threshold.
 
 Cache truncation or rebuild follows the same rule:
 
 - In non-CDC modes, DMS may truncate/rebuild the cache and rely on read fallback while
-  backfill catches up.
+  the bounded backfill epoch catches up.
 - In CDC mode, truncation/rebuild makes CDC not ready. Operators must either quiesce CDC
-  expectations until backfill completes again or use a provider-specific resnapshot
-  procedure from the CDC runbook.
+  expectations until a bounded backfill epoch completes again or use a
+  provider-specific resnapshot procedure from the CDC runbook.
 
 Schema reprovisioning must not reuse cache rows across incompatible effective schemas.
 The existing `EffectiveSchemaHash` preflight prevents DMS from serving a database with a

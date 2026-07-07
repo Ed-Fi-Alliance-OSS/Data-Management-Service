@@ -42,7 +42,8 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - `etag` as the DMS API base64 `SHA-256` string stored in `dms.DocumentCache.Etag`,
   - consumer stale-write handling with `contentVersion`.
 - Documentation explains the CDC-mode `dms.DocumentCache` guarantees:
-  - initial backfill before CDC readiness,
+  - bounded initial backfill before CDC readiness,
+  - projector lag readiness above the completed backfill target,
   - stale-write fencing by `ContentVersion`,
   - synchronous pre-delete materialization,
   - delete failure behavior when the source row cannot be materialized.

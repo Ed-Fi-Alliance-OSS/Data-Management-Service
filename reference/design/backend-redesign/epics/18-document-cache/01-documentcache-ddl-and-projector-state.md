@@ -30,8 +30,9 @@ contract.
 - Generated PostgreSQL and SQL Server DDL include provider-equivalent companion objects for:
   - `dms.DocumentCacheProjectionState`,
   - `dms.DocumentCacheProjectionFailure`.
-- Projection state tracks logical fields for mode, backfill status, backfill timestamps, scanned/projected
-  content versions, last success/failure timestamps, and unresolved failure count.
+- Projection state tracks logical fields for mode, backfill epoch id, bounded backfill target content version,
+  backfill status, backfill timestamps, scanned/projected content versions, last success/failure timestamps, and
+  unresolved failure count.
 - Projection failure state tracks logical fields for document identity, target content version, failure kind,
   sanitized error summary, attempt count, timestamps, next retry time, and resolution time.
 - DDL does not add retry/dead-letter lifecycle columns to `dms.DocumentCache`.

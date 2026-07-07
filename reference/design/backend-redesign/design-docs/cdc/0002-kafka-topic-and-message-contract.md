@@ -149,7 +149,7 @@ Field meanings:
 | `contentVersion` | `dms.DocumentCache.ContentVersion` | Representation version applied by the projector. |
 | `etag` | `dms.DocumentCache.Etag` | Full-resource `_etag` value for the cached representation: base64-encoded `SHA-256` over canonical resource-state JSON. |
 | `lastModifiedAt` | `dms.DocumentCache.LastModifiedAt` | Full-resource `_lastModifiedDate` source value, serialized as a UTC RFC 3339 / ISO-8601 string with up to seven fractional second digits and a trailing `Z`. |
-| `document` | `dms.DocumentCache.DocumentJson` | Expanded structured JSON object, not an escaped JSON string. |
+| `document` | `dms.DocumentCache.DocumentJson` | Expanded structured full API resource body, not an escaped JSON string. |
 
 The published field names are lower camel case even though the database column names are
 Pascal case. Connector transforms should rename columns after Debezium unwrap.
@@ -157,13 +157,15 @@ Pascal case. Connector transforms should rename columns after Debezium unwrap.
 `contractVersion` is a JSON number. `contentVersion` is a JSON number and consumers must
 treat it as a signed 64-bit integer. `documentUuid` must match the Kafka key exactly.
 
-`document` is exactly the cached caller-agnostic pre-profile projection. It is not
-profile-filtered and does not include authorization arrays or EdOrg hierarchy JSON. When
-the read plan includes link injection, `document` contains `link` subtrees. DMS does not
+`document` is exactly the cached caller-agnostic, pre-profile, full API resource body. It
+includes top-level `id`, `_etag`, and `_lastModifiedDate`; is not profile-filtered; and
+does not include authorization arrays or EdOrg hierarchy JSON. When the read plan
+includes link injection, `document` contains reference `link` subtrees. DMS does not
 maintain a second link-free Kafka projection.
 
-The envelope values for `etag` and `lastModifiedAt` are authoritative. Consumers should
-not require `_etag` or `_lastModifiedDate` to be embedded inside `document`.
+The envelope values for `documentUuid`, `etag`, and `lastModifiedAt` are authoritative
+stream metadata and must match the embedded `id`, `_etag`, and `_lastModifiedDate` values
+inside `document`.
 
 The `etag` value is the DMS API `_etag` string as emitted today, not a hex digest and
 not an HTTP quoted entity-tag wrapper. For `SHA-256`, the encoded value is 44 base64

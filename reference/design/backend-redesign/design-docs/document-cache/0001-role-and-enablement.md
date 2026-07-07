@@ -52,7 +52,7 @@ Mode semantics:
 | --- | --- |
 | `Projector:Mode = Disabled` | DMS does not write `dms.DocumentCache`. The table may be absent unless provisioned for another purpose. |
 | `Projector:Mode = Async` | DMS maintains `dms.DocumentCache` asynchronously for read acceleration, indexing, or diagnostics. Rows may be missing or stale. |
-| `Projector:Mode = CdcRequired` | DMS maintains `dms.DocumentCache` with CDC readiness, stale-write fencing, initial backfill, visible health, and pre-delete source-row guarantees. |
+| `Projector:Mode = CdcRequired` | DMS maintains `dms.DocumentCache` with CDC readiness, stale-write fencing, bounded initial backfill, visible health, and pre-delete source-row guarantees. |
 | `ReadAcceleration:Enabled = true` | GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. |
 | `KafkaCdc:Enabled = true` | Requires `Projector:Mode = CdcRequired`, a provisioned `dms.DocumentCache`, and successful CDC readiness checks before connector registration is advertised as supported. |
 
@@ -65,13 +65,19 @@ Starting Kafka UI must not imply `KafkaCdc:Enabled`.
 
 ## Cached Shape
 
-`DocumentJson` contains the caller-agnostic pre-profile full resource document emitted by
-the same reconstitution/materialization path used for GET/query responses. When link
-injection is compiled into the read plan, the cached document includes `link` subtrees.
+`DocumentJson` contains the caller-agnostic, pre-profile, full API resource body emitted
+by the same reconstitution/materialization path used for GET/query responses. It
+includes the top-level server-generated fields `id`, `_etag`, and `_lastModifiedDate`.
+When link injection is compiled into the read plan, the cached document also includes
+reference `link` subtrees.
 
 Readable-profile projection and `DataManagement:ResourceLinks:Enabled` stripping happen
 after cache retrieval. They do not create separate cache rows and do not change the
 cached/full-resource `_etag`.
+
+The cache row also stores `DocumentUuid`, `Etag`, and `LastModifiedAt` as relational
+columns for freshness checks, diagnostics, indexing, and CDC metadata. Those column
+values must match the corresponding values embedded in `DocumentJson`.
 
 The cache row stores the metadata needed by reads, diagnostics, indexing, and CDC:
 

@@ -28,8 +28,13 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   selected data store.
 - When CDC is enabled, startup/bootstrap validation verifies that the DocumentCache projector mode required by
   DMS-1246 is enabled for the selected data store.
-- When CDC is enabled, readiness fails until initial backfill has materialized a fresh `dms.DocumentCache` row
-  for every existing `dms.Document` row.
+- When CDC is enabled, readiness fails until the bounded initial backfill epoch has materialized a fresh
+  `dms.DocumentCache` row for every still-current `dms.Document` row at or below the epoch's captured
+  `BackfillTargetContentVersion`.
+- When CDC is enabled, readiness also verifies normal projector lag for writes above the completed backfill
+  target is within the configured threshold.
+- When CDC is enabled, readiness exposes the completed backfill epoch id and target content version as the
+  cutover marker used to separate bounded bootstrap coverage from live projector catch-up coverage.
 - When CDC is enabled, readiness verifies that the delete path has the DMS-1246 pre-delete source-row guarantee:
   missing/stale cache rows are synchronously materialized before `dms.Document` is deleted, and failed
   materialization blocks the API delete with a retryable server-side error.
@@ -37,10 +42,10 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   retries cannot overwrite newer cache rows or recreate cache rows after delete.
 - The CDC readiness check exposes actionable diagnostics for:
   - missing `dms.DocumentCache`,
-  - incomplete initial backfill,
+  - incomplete bounded initial backfill epoch,
   - projector disabled,
   - projector unhealthy,
-  - projector lag above the configured threshold,
+  - projector lag above the completed backfill target,
   - unresolved current projection failures, including dead-lettered failures,
   - missing pre-delete materialization support,
   - unsupported database provider.
@@ -54,8 +59,8 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
 1. Add a CDC readiness abstraction that reports data-store-specific readiness for connector registration.
 2. Bind CDC enablement configuration separately from any read-cache or Kafka UI settings.
 3. Integrate readiness validation into local/bootstrap connector registration.
-4. Add checks/tests that CDC enablement fails when `dms.DocumentCache`, initial backfill, or required projector
-   state is absent.
+4. Add checks/tests that CDC enablement fails when `dms.DocumentCache`, bounded initial backfill state, or
+   required projector state is absent.
 5. Add checks/tests that CDC enablement fails when pre-delete materialization or stale-write fencing is not
    available for the selected data store.
 6. Add tests that non-CDC DMS startup remains valid without `dms.DocumentCache`.

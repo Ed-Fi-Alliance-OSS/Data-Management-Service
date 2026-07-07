@@ -29,7 +29,7 @@ until the source table and projector guarantees are in place.
 ## Acceptance Criteria
 
 - Health reports projector mode and whether required `dms.DocumentCache` objects exist.
-- Health reports initial backfill status and progress.
+- Health reports initial backfill status, epoch id, target content version, and progress.
 - Health reports projector lag by `ContentVersion` and by age of oldest missing/stale work where practical.
 - Health reports unresolved failure count, oldest unresolved failure age, last failure kind, and last successful
   projection timestamp.
@@ -37,17 +37,18 @@ until the source table and projector guarantees are in place.
 - CDC readiness fails when:
   - projector mode is not `CdcRequired`,
   - required cache/state objects are missing,
-  - initial backfill is incomplete,
+  - the bounded initial backfill epoch is incomplete,
   - stale-write fencing is unavailable,
   - pre-delete materialization is unavailable,
   - unresolved current projection failures exist, including dead-lettered failures,
-  - projector lag exceeds the configured threshold,
+  - projector lag above the completed backfill target exceeds the configured threshold,
   - provider-specific delete-source behavior has not been verified.
 - Non-CDC cache-backed reads can remain available when CDC readiness is false.
-- Metrics/logs cover projection attempts, successes, retries, failures, stale skips, backfill progress, cache
-  hit/miss/stale fallback, pre-delete materialization, and projector lag.
+- Metrics/logs cover projection attempts, successes, retries, failures, stale skips, backfill epoch target
+  capture, backfill progress, cache hit/miss/stale fallback, pre-delete materialization, and projector lag.
 - Tests cover healthy async mode, healthy CDC-required mode, missing objects, incomplete backfill, unresolved
-  current projection failures, dead letters, excessive lag, and missing provider verification.
+  current projection failures, dead letters, excessive lag above the completed backfill target, and missing
+  provider verification.
 
 ## Tasks
 

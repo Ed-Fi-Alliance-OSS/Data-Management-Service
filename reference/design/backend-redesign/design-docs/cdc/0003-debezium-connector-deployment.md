@@ -36,8 +36,8 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 - the relational schema is provisioned and validated,
 - `dms.DocumentCache` is provisioned,
 - the `dms.DocumentCache` projector is enabled and has the CDC guarantees from DMS-1246:
-  initial backfill, stale-write fencing, synchronous pre-delete materialization, visible
-  health/lag, and retry/dead-letter handling (see
+  bounded initial backfill, stale-write fencing, synchronous pre-delete materialization,
+  visible health/lag, and retry/dead-letter handling (see
   [../document-cache/](../document-cache/)),
 - Kafka and Kafka Connect are reachable,
 - the connector principal has the least database permissions required for CDC,
@@ -191,10 +191,13 @@ Recommended CDC enablement sequence for an existing instance:
 2. Register the connector with initial snapshot behavior before allowing write/delete
    traffic that the host expects Kafka CDC to observe. If that is not possible, quiesce
    writes/deletes until connector registration completes.
-3. Run or resume projector backfill until every existing `dms.Document` row has a fresh
-   `dms.DocumentCache` row.
-4. Monitor until connector lag, projector lag, and backfill status reach acceptable
-   thresholds, and only then advertise CDC as ready.
+3. Run or resume the bounded projector backfill epoch until every still-current
+   `dms.Document` row at or below the epoch's captured `BackfillTargetContentVersion`
+   has a fresh `dms.DocumentCache` row.
+4. Monitor until connector lag, projector lag above the completed backfill target, and
+   backfill status reach acceptable thresholds, and only then advertise CDC as ready.
+   The completed backfill epoch id and target content version are the readiness cutover
+   marker for this bootstrap.
 
 DMS-1246 owns the projector-side details that make this safe (see
 [../document-cache/](../document-cache/)), especially:

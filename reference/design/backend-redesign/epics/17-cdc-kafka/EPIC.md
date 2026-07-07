@@ -48,7 +48,7 @@ streaming feature.
   and provider-verified.
 - Story 00 consumes DMS-1246 and is the CDC readiness gate. The connector work can be developed with fakes or
   fixtures, but CDC should not be exposed as supported until the projector's CDC guarantees are implemented:
-  initial backfill, stale-write fencing, synchronous pre-delete materialization, and visible health/lag.
+  bounded initial backfill, stale-write fencing, synchronous pre-delete materialization, and visible health/lag.
 - Story 01 provides engine-specific database support that Story 02 connector templates consume, especially
   delete tombstone keys based on `DocumentUuid`.
 - Story 02 owns connector shape and transform order. Story 03 should register generated or parameterized
@@ -64,7 +64,7 @@ streaming feature.
 
 | This story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | Consumes configuration, projector state, backfill status, delete source-row materialization, fencing, failure state, health, and provider verification. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | Consumes configuration, projector state, bounded backfill status/target, delete source-row materialization, fencing, failure state, health, and provider verification. |
 | `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC setup can start from the existing cache table shape, but final provider proof depends on projector state DDL and delete-source verification. |
 | `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Templates can be built with fixture records; final delete/tombstone smoke coverage needs provider-verified cache deletes. |
 | `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap must not register connectors until DocumentCache CDC readiness passes. |

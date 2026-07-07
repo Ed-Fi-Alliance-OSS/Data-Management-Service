@@ -357,13 +357,14 @@ profile namespace; nevertheless, the flag participates in served `_etag` derivat
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
 flag is applied as the final response-shaping pass in the repository wrapper — after the
 readable-profile projection (when applicable) runs and before serialization. The cache stores the
-`ContentVersion` associated with `DocumentJson`, not a materialized `_etag`. At the serving boundary,
-DMS composes `_etag` from that cached `ContentVersion` plus the request's full `variantKey`, including
-the active `profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
-identity, and compressed responses can
-therefore share one caller-agnostic cached document while carrying distinct validators whenever
-their served bytes differ. CDC and indexing consumers observe the unprojected intermediate (with
-`link` subtrees); DMS does not maintain a second link-free projection. See
+`ContentVersion` and `LastModifiedAt` associated with `DocumentJson`, not a materialized
+`_etag`. At the serving boundary, DMS composes `_etag` from that cached `ContentVersion`
+plus the request's full `variantKey`, including the active `profileCode`, `linkFlag`, and
+`contentCoding`. Flag-on, flag-off, profiled, unprofiled, identity, and compressed
+responses can therefore share one caller-agnostic cached document while carrying distinct
+validators whenever their served bytes differ. CDC and indexing consumers observe the
+unprojected intermediate (with `link` subtrees); DMS does not maintain a second link-free
+projection. See
 [update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
@@ -374,6 +375,7 @@ Cache freshness follows the resource-state stamp:
 
 ```
 cached ContentVersion == dms.Document.ContentVersion
+AND cached LastModifiedAt == dms.Document.ContentLastModifiedAt
 ```
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or

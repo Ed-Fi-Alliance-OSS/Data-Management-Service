@@ -27,13 +27,16 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 - Integration tests cover DocumentCache disabled mode.
 - Integration tests cover async projection mode with create, update, backfill, cache hit, stale miss, and
   relational fallback.
-- Integration tests cover CDC-required mode readiness before and after backfill.
+- Integration tests cover CDC-required mode readiness before and after a bounded backfill epoch completes.
+- Integration tests cover backfill high-watermark behavior: writes above the captured target are handled by
+  normal projector catch-up and lag readiness, not by moving the epoch target.
 - Integration tests cover projection failure, retry, dead-letter, repair/requeue, and readiness impact.
 - Integration tests cover CDC-mode delete source-row materialization and non-CDC delete behavior.
 - Integration tests run against PostgreSQL and SQL Server where provider support exists.
 - Runbooks document:
   - configuration modes,
   - backfill/rebuild behavior,
+  - backfill epoch id and target content version semantics,
   - cache hit/miss/stale fallback semantics,
   - retry/dead-letter handling and repair,
   - health/readiness fields,

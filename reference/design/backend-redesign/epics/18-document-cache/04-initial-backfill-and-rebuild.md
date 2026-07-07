@@ -12,9 +12,11 @@ related:
 
 Add first-class backfill and rebuild support for `dms.DocumentCache`.
 
-Backfill scans every existing `dms.Document` row and materializes a fresh cache row for the current
-representation stamp. It must be restartable, idempotent, safe while ordinary writes continue, and visible
-through projector state.
+Backfill starts a bounded epoch by capturing `BackfillTargetContentVersion =
+max(dms.Document.ContentVersion)`, then materializes fresh cache rows for current documents at or below that
+target. It must be restartable, idempotent, safe while ordinary writes continue, and visible through projector
+state. Writes that advance beyond the target while backfill runs are handled by normal projector catch-up and
+lag readiness rather than extending the backfill target.
 
 ## Dependencies
 
@@ -28,25 +30,35 @@ through projector state.
 
 - Initial backfill starts automatically or through an explicit internal startup path when projector mode is
   `Async` or `CdcRequired` and backfill is not complete.
-- Backfill scans existing `dms.Document` rows and materializes the current representation stamp for each row.
+- Backfill creates a `BackfillEpochId` and captures `BackfillTargetContentVersion` at epoch start.
+- Backfill scans existing `dms.Document` rows with current `ContentVersion <= BackfillTargetContentVersion` and
+  materializes the current representation stamp for each still-current row.
 - Backfill is restartable after process restart without duplicating rows or losing progress.
+- Restart/resume uses the same incomplete epoch id and target content version rather than recapturing a moving
+  target.
 - Backfill is safe while writes continue; stale lower-version work cannot overwrite newer cache rows.
+- Documents deleted or updated beyond the target while backfill is running are skipped or resolved under the
+  same stale-write guard.
 - Backfill status is recorded as `NotStarted`, `Running`, `Complete`, or `Failed`.
-- Backfill progress exposes scanned/projected content versions and counts where practical.
+- Backfill progress exposes epoch id, target content version, scanned/projected content versions, and counts
+  where practical.
 - In `Async` mode, normal API traffic can continue while backfill is running.
-- In `CdcRequired` mode, CDC readiness remains false until backfill completes and no unresolved current
-  projection failures are known.
-- Cache truncation or rebuild resets readiness and backfill status appropriately.
+- In `CdcRequired` mode, CDC readiness remains false until the bounded backfill epoch completes, no unresolved
+  current projection failures are known, and normal projector lag above the epoch target is within threshold.
+- The completed backfill epoch id and target content version are exposed as the CDC readiness cutover marker:
+  versions at or below the target are covered by the bounded epoch, and versions above the target are covered by
+  normal projector catch-up lag.
+- Cache truncation or rebuild resets readiness, starts a new epoch, and captures a new target content version.
 - Tests cover empty database, existing documents, restart/resume, concurrent update during backfill, and cache
   truncation/rebuild.
 
 ## Tasks
 
 1. Add backfill orchestration using the projector materialization and guarded upsert paths.
-2. Persist backfill status and progress in projection state.
+2. Persist backfill epoch id, target content version, status, and progress in projection state.
 3. Add rebuild/reset behavior for cache truncation or operator-initiated rebuild.
 4. Add health/readiness hooks for backfill status.
-5. Add PostgreSQL and SQL Server integration coverage.
+5. Add PostgreSQL and SQL Server integration coverage for bounded epoch completion and cutover readiness.
 
 ## Out of Scope
 

@@ -17,8 +17,8 @@ every cache row.
 Projection failures must be retryable, observable, and actionable. In
 `Projector:Mode = Async`, unresolved failures degrade cache/indexing health but do not
 break normal API correctness. In `Projector:Mode = CdcRequired`, unresolved current
-projection failures, incomplete initial backfill, missing delete-source support, or lag
-above the configured threshold make CDC not ready.
+projection failures, incomplete bounded initial backfill, missing delete-source support,
+or lag above the completed backfill target make CDC not ready.
 
 ## Required Projector State
 
@@ -31,7 +31,9 @@ Logical `dms.DocumentCacheProjectionState` fields:
 | --- | --- |
 | `ProjectionName` | Stable key for the default DocumentCache projection. |
 | `Mode` | Last observed projector mode: `Async` or `CdcRequired`. |
+| `BackfillEpochId` | Stable identifier for the current/last bounded backfill or rebuild epoch. |
 | `BackfillStatus` | `NotStarted`, `Running`, `Complete`, or `Failed`. |
+| `BackfillTargetContentVersion` | `max(dms.Document.ContentVersion)` captured when the current backfill epoch started. |
 | `BackfillStartedAt` | UTC timestamp for the current/last backfill start. |
 | `BackfillCompletedAt` | UTC timestamp for the last completed backfill. |
 | `LastScannedContentVersion` | Highest `dms.Document.ContentVersion` scanned by backfill/projector. |
@@ -90,6 +92,7 @@ DocumentCache health should report:
 - projector mode,
 - whether the table and companion state exist,
 - initial backfill status,
+- current backfill epoch id and target content version,
 - current projector lag by `ContentVersion` and by age of the oldest missing/stale row,
 - unresolved failure count,
 - oldest unresolved failure age,
@@ -102,11 +105,11 @@ CDC readiness requires all of the following:
 
 - `Projector:Mode = CdcRequired`,
 - `dms.DocumentCache` and required companion objects are provisioned,
-- initial backfill is complete,
+- the bounded initial backfill epoch is complete,
 - stale-write fencing is active,
 - pre-delete source-row materialization is supported and provider-verified,
 - no unresolved current projection failures exist, including dead-lettered failures,
-- projector lag is within the configured threshold,
+- projector lag above the completed backfill target is within the configured threshold,
 - Kafka connector/database CDC prerequisites from DMS-1245 are satisfied.
 
 Non-CDC cache-backed reads may remain available when CDC readiness is false because they
@@ -147,7 +150,7 @@ when the physical DDL differs.
 The implementation should emit structured logs and metrics for:
 
 - projection attempts, successes, retries, and failures,
-- backfill start, progress, completion, and failure,
+- backfill epoch start, target capture, progress, completion, and failure,
 - stale-write skips,
 - read cache hits, misses, stale misses, and fallback reconstitution,
 - CDC pre-delete materialization attempts, successes, and failures,

@@ -40,10 +40,11 @@ for the relational design.
 
 The backend redesign already defines `dms.DocumentCache` as an optional, eventually
 consistent materialized JSON projection intended for read acceleration, downstream
-indexing, and CDC streaming. Its `DocumentJson` column contains the caller-agnostic
-pre-profile resource document emitted by reconstitution. When link injection is part of
-the read plan, this cached document includes `link` subtrees; readable-profile projection
-and `ResourceLinks:Enabled` stripping happen after cache retrieval and do not change the
+indexing, and CDC streaming. Its `DocumentJson` column contains the caller-agnostic,
+pre-profile, full API resource body emitted by reconstitution, including top-level
+`id`, `_etag`, and `_lastModifiedDate`. When link injection is part of the read plan,
+this cached document includes reference `link` subtrees; readable-profile projection and
+`ResourceLinks:Enabled` stripping happen after cache retrieval and do not change the
 full-resource `_etag`.
 
 Change Queries are a separate polling API surface based on `ContentVersion`,
@@ -57,8 +58,8 @@ streaming design.
   CDC/Kafka or cache-backed reads.
 - Debezium captures `dms.DocumentCache`, not the normalized per-resource tables and not
   `dms.Document` alone.
-- Kafka consumers observe the caller-agnostic cached projection, not a profile-filtered
-  response and not authorization metadata.
+- Kafka consumers observe the caller-agnostic cached API body, not a profile-filtered response
+  and not authorization metadata.
 - CDC consumers should treat `DocumentJson` as the document payload and the cache
   metadata as the stream envelope input:
   - `DocumentUuid`
@@ -89,10 +90,12 @@ streaming design.
   equivalent monotonic guard. A lower-`ContentVersion` retry/backfill must not overwrite a
   newer cache row or recreate a cache row after a CDC-mode delete has removed the
   document.
-- CDC readiness must require an initial `dms.DocumentCache` backfill for existing
-  `dms.Document` rows, no known projector dead-letter failures, and projector lag within
-  the configured operational threshold. Deployments may run below that threshold for
-  ordinary cache-backed reads, but should not advertise Kafka CDC as ready.
+- CDC readiness must require completion of a bounded initial `dms.DocumentCache`
+  backfill epoch for existing `dms.Document` rows, no known projector dead-letter
+  failures, and projector lag above the completed backfill target within the configured
+  operational threshold. Deployments may run below that threshold for ordinary
+  cache-backed reads, but should not advertise Kafka CDC as ready. The completed
+  backfill epoch id and target content version are the CDC readiness cutover marker.
 - Local Docker Compose, bootstrap, and CI connector registration should target the
   provisioned relational database and `dms.DocumentCache` once the projector and connector
   contract are implemented.
