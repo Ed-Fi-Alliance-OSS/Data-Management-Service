@@ -235,3 +235,42 @@ Feature: ETag validations
                       ]
                   }
                   """
+        @e2e-ci-shard-1
+        Scenario: 12 Ensure that a quoted If-Match (as emitted) is accepted on PUT
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the quoted ETag is in the response header
+             When a PUT if-match "{IfMatchQuoted}" request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga"
+                  }
+                  """
+             Then it should respond with 204
+        @e2e-ci-shard-1
+        Scenario: 13 Ensure that a quoted If-Match (as emitted) is accepted on DELETE
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the quoted ETag is in the response header
+             When a DELETE if-match "{IfMatchQuoted}" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 204
