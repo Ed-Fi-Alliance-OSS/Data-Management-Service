@@ -122,6 +122,27 @@ public static class FailureResponse
             errors: errors
         );
 
+    public static JsonNode ForETagMisMatch(ETagPreconditionFailureReason reason, TraceId traceId) =>
+        reason switch
+        {
+            ETagPreconditionFailureReason.TargetDoesNotExist => ForETagMisMatch(
+                "The If-Match precondition failed because the resource does not exist.",
+                traceId,
+                new[]
+                {
+                    "The 'If-Match' request header requires a current representation of the resource, but none exists. Do not retry with If-Match; create the resource first, or omit If-Match.",
+                }
+            ),
+            _ => ForETagMisMatch(
+                "The item has been modified by another user.",
+                traceId,
+                new[]
+                {
+                    "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                }
+            ),
+        };
+
     public static JsonNode ForNotFound(string detail, TraceId traceId) =>
         CreateBaseJsonObject(
             detail,
