@@ -567,6 +567,38 @@ public class ApplicationModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             responseBody.Should().Contain("Application not found");
+
+            // Assert - the identity provider client was never touched for an application
+            // that does not resolve for this tenant
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task Should_not_delete_identity_provider_client_when_application_does_not_resolve()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
+
+            // Assert - a missing or foreign-tenant application responds 404
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            // Assert - the identity provider client was never deleted for an application
+            // that does not resolve for this tenant
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored)).MustNotHaveHappened();
         }
     }
 
