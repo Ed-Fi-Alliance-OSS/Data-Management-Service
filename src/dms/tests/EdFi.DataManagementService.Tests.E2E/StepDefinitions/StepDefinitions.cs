@@ -48,6 +48,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _id = string.Empty;
         private string _location = string.Empty;
         private string _etag = string.Empty;
+        private string _rawEtag = string.Empty;
         private string _lastModifiedDate = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
@@ -566,6 +567,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
 
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            ifMatch = ifMatch.Replace("{IfMatchQuoted}", _rawEtag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -884,6 +886,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"DELETE url: {url}");
 
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            ifMatch = ifMatch.Replace("{IfMatchQuoted}", _rawEtag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeadersWithIfMatch(ifMatch) }
@@ -1640,6 +1643,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
             _etag.Should().NotBeNullOrEmpty();
+        }
+
+        [Then("the quoted ETag is in the response header")]
+        public void ThenTheQuotedEtagIsInTheResponseHeader()
+        {
+            _rawEtag = _apiResponse.Headers["etag"];
+            _rawEtag.Should().NotBeNullOrEmpty();
+            _rawEtag.Should().StartWith("\"").And.EndWith("\""); // RFC 7232 §2.3 quoted strong validator
         }
 
         // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
