@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -174,7 +175,7 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
                 + "currentTag={CurrentTag}, matched={IsMatch}",
             request.TargetContext.DocumentId,
             request.Precondition.IsWildcard,
-            request.Precondition.Value,
+            LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
             currentEtag,
             evaluation.IsMatch
         );
