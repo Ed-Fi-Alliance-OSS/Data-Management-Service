@@ -467,6 +467,7 @@ public class JwtRoleAuthenticationMiddlewareTests
     [TestFixture("Bearer abc def", "Invalid Authorization header.")]
     [TestFixture("Bearer\tabc", "Invalid Authorization header.")]
     [TestFixture("Bearer ab\tc", "Invalid Authorization header.")]
+    [TestFixture("Bearer \tabc", "Invalid Authorization header.")]
     [TestFixture("", "Invalid Authorization header.")]
     [TestFixture("   ", "Invalid Authorization header.")]
     [TestFixture("BearerToken", "Unknown Authorization header scheme.")]

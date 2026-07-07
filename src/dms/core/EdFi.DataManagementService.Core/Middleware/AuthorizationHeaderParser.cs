@@ -51,16 +51,13 @@ internal static class AuthorizationHeaderParser
             return AuthorizationHeaderResult.Error("Missing Authorization header bearer token value.");
         }
 
-        // A well-formed Bearer credential separates the scheme from the token with a single
-        // space and carries a whitespace-free token (a JWT never contains whitespace). A
-        // non-space separator (tab, newline) or a multi-token value is a malformed header,
-        // not a credential to pass through to JWT validation.
-        if (remainder[0] != ' ')
-        {
-            return AuthorizationHeaderResult.Error("Invalid Authorization header.");
-        }
-
-        string parameter = remainder.Trim();
+        // A well-formed Bearer credential separates the scheme from the token with one or more
+        // spaces and carries a whitespace-free token (a JWT never contains whitespace). Only the
+        // separating space(s) are stripped — the token is NOT Trim()'d — so a non-space separator
+        // (e.g. "Bearer \t<token>") or any whitespace inside the token survives into the value and
+        // is rejected below as malformed, rather than being silently discarded and passed through
+        // to JWT validation as if the header were well formed.
+        string parameter = remainder.TrimStart(' ');
         if (parameter.Any(char.IsWhiteSpace))
         {
             return AuthorizationHeaderResult.Error("Invalid Authorization header.");
