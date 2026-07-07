@@ -54,4 +54,14 @@ public class JwtAuthenticationOptions
     /// Required role claim value for non-data endpoints (e.g., "service")
     /// </summary>
     public string ClientRole { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Maximum number of successful JWT validations to cache in process. Set to 0 to disable caching.
+    /// </summary>
+    public int ValidatedTokenCacheMaxEntries { get; set; } = 1024;
+
+    /// <summary>
+    /// Maximum lifetime for a cached successful JWT validation, capped again by the token expiration.
+    /// </summary>
+    public int ValidatedTokenCacheEntryMaxLifetimeSeconds { get; set; } = 300;
 }

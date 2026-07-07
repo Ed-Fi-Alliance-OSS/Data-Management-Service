@@ -23,4 +23,27 @@ internal interface IJwtValidationService
         ClaimsPrincipal? Principal,
         ClientAuthorizations? ClientAuthorizations
     )> ValidateAndExtractClientAuthorizationsAsync(string token, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Validates the bearer token contained in an Authorization header without requiring callers to allocate
+    /// the token substring on cache hits.
+    /// </summary>
+    /// <param name="authorizationHeader">The full Authorization header value</param>
+    /// <param name="tokenStartIndex">The index where the bearer token starts in <paramref name="authorizationHeader"/></param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple containing the claims principal and client authorizations, or nulls if validation fails</returns>
+    Task<(
+        ClaimsPrincipal? Principal,
+        ClientAuthorizations? ClientAuthorizations
+    )> ValidateAndExtractClientAuthorizationsAsync(
+        string authorizationHeader,
+        int tokenStartIndex,
+        CancellationToken cancellationToken
+    )
+    {
+        return ValidateAndExtractClientAuthorizationsAsync(
+            authorizationHeader[tokenStartIndex..],
+            cancellationToken
+        );
+    }
 }

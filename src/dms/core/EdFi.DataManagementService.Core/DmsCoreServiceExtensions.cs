@@ -18,6 +18,7 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -239,6 +240,7 @@ public static class DmsCoreServiceExtensions
     {
         // Configure JWT authentication options
         services.Configure<JwtAuthenticationOptions>(configuration.GetSection("JwtAuthentication"));
+        services.TryAddSingleton(TimeProvider.System);
 
         // Register HttpClient for OIDC metadata retrieval
         services.AddHttpClient();

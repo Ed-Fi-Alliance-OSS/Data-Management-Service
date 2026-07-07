@@ -12,6 +12,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -30,7 +31,10 @@ public class JwtValidationServiceTests
         ILogger<JwtValidationService> logger,
         JwtSecurityTokenHandler tokenHandler,
         RsaSecurityKey signingKey
-    ) CreateService()
+    ) CreateService(
+        Action<JwtAuthenticationOptions>? configureOptions = null,
+        TimeProvider? timeProvider = null
+    )
     {
         var configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
         var options = A.Fake<IOptions<JwtAuthenticationOptions>>();
@@ -47,9 +51,10 @@ public class JwtValidationServiceTests
             ClockSkewSeconds = 30,
             RoleClaimType = "role",
         };
+        configureOptions?.Invoke(jwtOptions);
         A.CallTo(() => options.Value).Returns(jwtOptions);
 
-        var service = new JwtValidationService(configurationManager, options, logger);
+        var service = new JwtValidationService(configurationManager, options, logger, timeProvider);
 
         return (service, configurationManager, options, logger, tokenHandler, signingKey);
     }
@@ -60,13 +65,15 @@ public class JwtValidationServiceTests
         string audience,
         RsaSecurityKey signingKey,
         JwtSecurityTokenHandler tokenHandler,
-        bool expired = false
+        bool expired = false,
+        DateTime? nowUtc = null,
+        TimeSpan? validFor = null
     )
     {
         var signingCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256);
 
-        var now = DateTime.UtcNow;
-        var expires = expired ? now.AddMinutes(-10) : now.AddMinutes(10);
+        var now = nowUtc ?? DateTime.UtcNow;
+        var expires = expired ? now.AddMinutes(-10) : now.Add(validFor ?? TimeSpan.FromMinutes(10));
         var notBefore = expired ? now.AddMinutes(-15) : now.AddMinutes(-5);
 
         var jwt = new JwtSecurityToken(
@@ -429,6 +436,358 @@ public class JwtValidationServiceTests
         public void It_returns_the_same_token_id_each_time()
         {
             _results.Select(r => r.ClientAuthorizations!.TokenId).Should().AllBe("replayed-token-id");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Authorization_Header_Validated_Repeatedly : JwtValidationServiceTests
+    {
+        private JwtValidationService _service = null!;
+        private ClaimsPrincipal? _firstPrincipal = null;
+        private ClaimsPrincipal? _secondPrincipal = null;
+        private ClientAuthorizations? _firstClientAuthorizations = null;
+        private ClientAuthorizations? _secondClientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTimeProvider = new FakeTimeProvider(
+                new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero)
+            );
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                o =>
+                {
+                    o.ClockSkewSeconds = 0;
+                    o.ValidatedTokenCacheMaxEntries = 4;
+                },
+                fakeTimeProvider
+            );
+            _service = service;
+            signingKey.KeyId = "key-1";
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            var claims = new[] { new Claim("jti", "cached-token-id"), new Claim("scope", "edfi-admin") };
+            var token = CreateTestToken(
+                claims,
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime
+            );
+
+            string authorizationHeader = $"Bearer {token}";
+
+            (_firstPrincipal, _firstClientAuthorizations) =
+                await service.ValidateAndExtractClientAuthorizationsAsync(
+                    authorizationHeader,
+                    "Bearer ".Length,
+                    CancellationToken.None
+                );
+            (_secondPrincipal, _secondClientAuthorizations) =
+                await service.ValidateAndExtractClientAuthorizationsAsync(
+                    authorizationHeader,
+                    "Bearer ".Length,
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_accepts_each_presentation()
+        {
+            _firstPrincipal.Should().NotBeNull();
+            _secondPrincipal.Should().NotBeNull();
+            _firstClientAuthorizations.Should().NotBeNull();
+            _secondClientAuthorizations.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_caches_the_successful_validation()
+        {
+            _service.ValidatedTokenCacheCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_does_not_share_the_same_principal_instance_on_cache_hit()
+        {
+            _secondPrincipal.Should().NotBeSameAs(_firstPrincipal);
+        }
+
+        [Test]
+        public void It_reuses_the_cached_client_authorizations()
+        {
+            _secondClientAuthorizations.Should().BeSameAs(_firstClientAuthorizations);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Invalid_Token_With_Caching_Enabled : JwtValidationServiceTests
+    {
+        private JwtValidationService _service = null!;
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(o =>
+                o.ValidatedTokenCacheMaxEntries = 4
+            );
+            _service = service;
+
+            var validationKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "validation-key" };
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(validationKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            var token = CreateTestToken(
+                [new Claim("jti", "invalid-token-id")],
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_rejects_the_token()
+        {
+            _principal.Should().BeNull();
+            _clientAuthorizations.Should().BeNull();
+        }
+
+        [Test]
+        public void It_does_not_cache_the_failed_validation()
+        {
+            _service.ValidatedTokenCacheCount.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Validated_Token_Cache_With_A_One_Entry_Limit : JwtValidationServiceTests
+    {
+        private JwtValidationService _service = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTimeProvider = new FakeTimeProvider(
+                new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero)
+            );
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                o =>
+                {
+                    o.ClockSkewSeconds = 0;
+                    o.ValidatedTokenCacheMaxEntries = 1;
+                },
+                fakeTimeProvider
+            );
+            _service = service;
+            signingKey.KeyId = "key-1";
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            string firstToken = CreateTestToken(
+                [new Claim("jti", "first-token-id")],
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime
+            );
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(1));
+            string secondToken = CreateTestToken(
+                [new Claim("jti", "second-token-id")],
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime
+            );
+
+            await service.ValidateAndExtractClientAuthorizationsAsync(firstToken, CancellationToken.None);
+            await service.ValidateAndExtractClientAuthorizationsAsync(secondToken, CancellationToken.None);
+        }
+
+        [Test]
+        public void It_prunes_to_the_configured_entry_limit()
+        {
+            _service.ValidatedTokenCacheCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Cached_Token_After_Its_Expiration : JwtValidationServiceTests
+    {
+        private JwtValidationService _service = null!;
+        private ClaimsPrincipal? _firstPrincipal = null;
+        private ClaimsPrincipal? _secondPrincipal = null;
+        private ClientAuthorizations? _secondClientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTimeProvider = new FakeTimeProvider(
+                new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero)
+            );
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                o =>
+                {
+                    o.ClockSkewSeconds = 0;
+                    o.ValidatedTokenCacheMaxEntries = 4;
+                    o.ValidatedTokenCacheEntryMaxLifetimeSeconds = 300;
+                },
+                fakeTimeProvider
+            );
+            _service = service;
+            signingKey.KeyId = "key-1";
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "short-lived-token-id")],
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime,
+                validFor: TimeSpan.FromSeconds(2)
+            );
+
+            (_firstPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(3));
+
+            (_secondPrincipal, _secondClientAuthorizations) =
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None);
+        }
+
+        [Test]
+        public void It_accepts_the_token_before_expiration()
+        {
+            _firstPrincipal.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_does_not_accept_the_expired_token_from_cache()
+        {
+            _secondPrincipal.Should().BeNull();
+            _secondClientAuthorizations.Should().BeNull();
+        }
+
+        [Test]
+        public void It_removes_the_expired_cache_entry()
+        {
+            _service.ValidatedTokenCacheCount.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Cached_Token_After_The_Signing_Key_Changes : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _firstPrincipal = null;
+        private ClaimsPrincipal? _secondPrincipal = null;
+        private ClientAuthorizations? _secondClientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTimeProvider = new FakeTimeProvider(
+                new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero)
+            );
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                o =>
+                {
+                    o.ClockSkewSeconds = 0;
+                    o.ValidatedTokenCacheMaxEntries = 4;
+                },
+                fakeTimeProvider
+            );
+            signingKey.KeyId = "key-1";
+
+            var firstConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            firstConfig.SigningKeys.Add(signingKey);
+
+            var secondConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            secondConfig.SigningKeys.Add(new RsaSecurityKey(RSA.Create(2048)) { KeyId = "key-1" });
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ReturnsNextFromSequence(Task.FromResult(firstConfig), Task.FromResult(secondConfig));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "key-rollover-token-id")],
+                firstConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime
+            );
+
+            (_firstPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+            (_secondPrincipal, _secondClientAuthorizations) =
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None);
+        }
+
+        [Test]
+        public void It_accepts_the_token_with_the_original_signing_key()
+        {
+            _firstPrincipal.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_misses_the_cache_and_rejects_the_token_with_the_new_signing_key()
+        {
+            _secondPrincipal.Should().BeNull();
+            _secondClientAuthorizations.Should().BeNull();
         }
     }
 

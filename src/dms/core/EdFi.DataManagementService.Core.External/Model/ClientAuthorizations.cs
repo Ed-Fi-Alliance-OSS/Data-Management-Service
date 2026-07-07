@@ -21,13 +21,13 @@ public record ClientAuthorizations(
     /// <summary>
     /// Education organization id list associated with vendor application key and secret
     /// </summary>
-    List<EducationOrganizationId> EducationOrganizationIds,
+    IReadOnlyList<EducationOrganizationId> EducationOrganizationIds,
     /// <summary>
     /// Namespace prefixes associated with vendor application key and secret
     /// </summary>
-    List<NamespacePrefix> NamespacePrefixes,
+    IReadOnlyList<NamespacePrefix> NamespacePrefixes,
     /// <summary>
     /// data store identifiers associated with vendor application key and secret
     /// </summary>
-    List<DataStoreId> DataStoreIds
+    IReadOnlyList<DataStoreId> DataStoreIds
 );

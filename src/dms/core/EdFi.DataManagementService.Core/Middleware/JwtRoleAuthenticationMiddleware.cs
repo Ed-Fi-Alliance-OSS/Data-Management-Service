@@ -51,11 +51,10 @@ internal class JwtRoleAuthenticationMiddleware(
             return;
         }
 
-        var token = authHeader["Bearer ".Length..];
-
         // Validate token (we only need the principal, not ClientAuthorizations)
         var (principal, _) = await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-            token,
+            authHeader,
+            "Bearer ".Length,
             CancellationToken.None
         );
 

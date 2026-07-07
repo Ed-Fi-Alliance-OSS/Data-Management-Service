@@ -184,7 +184,8 @@ public class JwtRoleAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "invalid-token",
+                        "Bearer invalid-token",
+                        "Bearer ".Length,
                         A<CancellationToken>.Ignored
                     )
                 )
@@ -256,7 +257,8 @@ public class JwtRoleAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "valid-token",
+                        "Bearer valid-token",
+                        "Bearer ".Length,
                         A<CancellationToken>.Ignored
                     )
                 )
@@ -340,7 +342,8 @@ public class JwtRoleAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "valid-token",
+                        "Bearer valid-token",
+                        "Bearer ".Length,
                         A<CancellationToken>.Ignored
                     )
                 )
@@ -408,7 +411,8 @@ public class JwtRoleAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "valid-token",
+                        "Bearer valid-token",
+                        "Bearer ".Length,
                         A<CancellationToken>.Ignored
                     )
                 )
@@ -481,7 +485,8 @@ public class JwtRoleAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "valid-token",
+                        "Bearer valid-token",
+                        "Bearer ".Length,
                         A<CancellationToken>.Ignored
                     )
                 )
