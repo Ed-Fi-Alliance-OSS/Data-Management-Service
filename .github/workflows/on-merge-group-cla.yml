@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: CLA Merge Group Shim
+
+on:
+  merge_group:
+
+permissions:
+  statuses: write
+
+jobs:
+  report-cla-status:
+    name: Report license/cla for merge group
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post license/cla success status
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            // cla-assistant.io only responds to pull_request events, so the
+            // required "license/cla" status never appears on merge group
+            // commits and the queue times out waiting for it. A pull request
+            // cannot enter the merge queue until the real CLA check has passed
+            // on its head commit, so reporting success here is safe.
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.merge_group.head_sha,
+              state: "success",
+              context: "license/cla",
+              description: "CLA verified on the underlying pull request(s)",
+            });
