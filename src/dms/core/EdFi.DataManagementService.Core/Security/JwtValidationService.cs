@@ -31,6 +31,7 @@ internal class JwtValidationService(
     TimeProvider? timeProvider = null
 ) : IJwtValidationService
 {
+    private const int ValidationParametersCacheMaxEntries = 16;
     private static readonly TimeSpan CachePruneInterval = TimeSpan.FromSeconds(15);
 
     private readonly JwtSecurityTokenHandler _tokenHandler = new();
@@ -38,11 +39,13 @@ internal class JwtValidationService(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<TokenCacheKey, CachedTokenValidationResult> _validatedTokenCache =
         new();
-    private readonly ConcurrentDictionary<string, TokenValidationParameters> _validationParametersCache = [];
+    private readonly ConcurrentDictionary<string, CachedValidationParameters> _validationParametersCache = [];
+    private readonly ConditionalWeakTable<SecurityKey, string> _signingKeyMaterialFingerprints = new();
     private readonly object _cacheMaintenanceLock = new();
     private DateTimeOffset _lastCacheMaintenance = DateTimeOffset.MinValue;
 
     internal int ValidatedTokenCacheCount => _validatedTokenCache.Count;
+    internal int ValidationParametersCacheCount => _validationParametersCache.Count;
 
     /// <summary>
     /// Validates a JWT token and extracts client authorization information.
@@ -107,7 +110,8 @@ internal class JwtValidationService(
 
             TokenValidationParameters validationParameters = GetValidationParameters(
                 validationFingerprint,
-                oidcConfig
+                oidcConfig,
+                now
             );
 
             string token = authorizationHeader[tokenStartIndex..];
@@ -152,34 +156,42 @@ internal class JwtValidationService(
 
     private TokenValidationParameters GetValidationParameters(
         string validationFingerprint,
-        OpenIdConnectConfiguration oidcConfig
+        OpenIdConnectConfiguration oidcConfig,
+        DateTimeOffset now
     )
     {
-        return _validationParametersCache.GetOrAdd(
+        CachedValidationParameters cachedValidationParameters = _validationParametersCache.GetOrAdd(
             validationFingerprint,
-            _ => new TokenValidationParameters
-            {
-                // SECURITY CRITICAL: All must be true
-                ValidateIssuer = true,
-                ValidIssuer = oidcConfig.Issuer,
+            _ => new CachedValidationParameters(
+                new TokenValidationParameters
+                {
+                    // SECURITY CRITICAL: All must be true
+                    ValidateIssuer = true,
+                    ValidIssuer = oidcConfig.Issuer,
 
-                ValidateAudience = true,
-                ValidAudience = _options.Audience,
+                    ValidateAudience = true,
+                    ValidAudience = _options.Audience,
 
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKeys = [.. oidcConfig.SigningKeys],
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKeys = [.. oidcConfig.SigningKeys],
 
-                ValidateLifetime = true,
-                LifetimeValidator = ValidateLifetime,
-                RequireExpirationTime = true,
-                RequireSignedTokens = true,
+                    ValidateLifetime = true,
+                    LifetimeValidator = ValidateLifetime,
+                    RequireExpirationTime = true,
+                    RequireSignedTokens = true,
 
-                ClockSkew = TimeSpan.FromSeconds(_options.ClockSkewSeconds),
+                    ClockSkew = TimeSpan.FromSeconds(_options.ClockSkewSeconds),
 
-                NameClaimType = ClaimTypes.Name,
-                RoleClaimType = _options.RoleClaimType,
-            }
+                    NameClaimType = ClaimTypes.Name,
+                    RoleClaimType = _options.RoleClaimType,
+                },
+                now
+            )
         );
+
+        PruneValidationParametersCacheIfNeeded();
+
+        return cachedValidationParameters.Parameters;
     }
 
     private bool ValidateLifetime(
@@ -392,6 +404,43 @@ internal class JwtValidationService(
         }
     }
 
+    private void PruneValidationParametersCacheIfNeeded()
+    {
+        if (_validationParametersCache.Count <= ValidationParametersCacheMaxEntries)
+        {
+            return;
+        }
+
+        lock (_cacheMaintenanceLock)
+        {
+            while (_validationParametersCache.Count > ValidationParametersCacheMaxEntries)
+            {
+                string? oldestKey = null;
+                DateTimeOffset oldestCreatedAt = DateTimeOffset.MaxValue;
+                foreach (
+                    (
+                        string cacheKey,
+                        CachedValidationParameters cachedParameters
+                    ) in _validationParametersCache
+                )
+                {
+                    if (cachedParameters.CreatedAt < oldestCreatedAt)
+                    {
+                        oldestCreatedAt = cachedParameters.CreatedAt;
+                        oldestKey = cacheKey;
+                    }
+                }
+
+                if (oldestKey is not string cacheKeyToRemove)
+                {
+                    break;
+                }
+
+                _validationParametersCache.TryRemove(cacheKeyToRemove, out _);
+            }
+        }
+    }
+
     private string CreateValidationFingerprint(OpenIdConnectConfiguration oidcConfig)
     {
         StringBuilder builder = new();
@@ -404,19 +453,54 @@ internal class JwtValidationService(
             .Append('\u001f')
             .Append(_options.ClockSkewSeconds.ToString(CultureInfo.InvariantCulture));
 
+        if (oidcConfig.SigningKeys.Count == 1)
+        {
+            foreach (SecurityKey signingKey in oidcConfig.SigningKeys)
+            {
+                builder.Append('\u001e').Append(GetSigningKeyFingerprint(signingKey));
+            }
+
+            return builder.ToString();
+        }
+
+        string[] signingKeyFingerprints = new string[oidcConfig.SigningKeys.Count];
+        int signingKeyIndex = 0;
         foreach (SecurityKey signingKey in oidcConfig.SigningKeys)
         {
-            builder.Append('\u001e');
-            if (!string.IsNullOrEmpty(signingKey.KeyId))
-            {
-                builder.Append(signingKey.KeyId);
-            }
-            builder
-                .Append(':')
-                .Append(RuntimeHelpers.GetHashCode(signingKey).ToString(CultureInfo.InvariantCulture));
+            signingKeyFingerprints[signingKeyIndex++] = GetSigningKeyFingerprint(signingKey);
+        }
+
+        Array.Sort(signingKeyFingerprints, StringComparer.Ordinal);
+        foreach (string signingKeyFingerprint in signingKeyFingerprints)
+        {
+            builder.Append('\u001e').Append(signingKeyFingerprint);
         }
 
         return builder.ToString();
+    }
+
+    private string GetSigningKeyFingerprint(SecurityKey signingKey)
+    {
+        string keyType = signingKey.GetType().FullName ?? signingKey.GetType().Name;
+        string keyId = signingKey.KeyId ?? string.Empty;
+        string keyMaterialFingerprint = _signingKeyMaterialFingerprints.GetValue(
+            signingKey,
+            CreateSigningKeyMaterialFingerprint
+        );
+
+        return $"{keyType}:{keyId}:{keyMaterialFingerprint}";
+    }
+
+    private static string CreateSigningKeyMaterialFingerprint(SecurityKey signingKey)
+    {
+        // OIDC refreshes can recreate equivalent SecurityKey objects. Cache a stable
+        // JWK thumbprint per key object so hot token-cache checks do not repeatedly hash
+        // key material, while still invalidating cached validations when the material changes.
+        // Opaque custom keys fall back to object identity so an unknown key replacement
+        // cannot reuse successful validations created with a previous key object.
+        return signingKey.CanComputeJwkThumbprint()
+            ? $"jwk:{Base64UrlEncoder.Encode(signingKey.ComputeJwkThumbprint())}"
+            : string.Create(CultureInfo.InvariantCulture, $"object:{RuntimeHelpers.GetHashCode(signingKey)}");
     }
 
     private static TokenCacheKey CreateTokenCacheKey(
@@ -562,6 +646,11 @@ internal class JwtValidationService(
         ulong Hash2,
         ulong Hash3,
         string ValidationFingerprint
+    );
+
+    private sealed record CachedValidationParameters(
+        TokenValidationParameters Parameters,
+        DateTimeOffset CreatedAt
     );
 
     private sealed record CachedTokenValidationResult(
