@@ -93,7 +93,7 @@ public interface IRelationalReadMaterializer
 internal sealed class RelationalReadMaterializer(
     IDocumentLinkSlugResolver slugResolver,
     IOptions<ResourceLinksOptions> linksOptions,
-    IEtagComposer etagComposer
+    IServedEtagComposer servedEtagComposer
 ) : IRelationalReadMaterializer
 {
     private const string IdPropertyName = "id";
@@ -105,8 +105,8 @@ internal sealed class RelationalReadMaterializer(
         slugResolver ?? throw new ArgumentNullException(nameof(slugResolver));
     private readonly ResourceLinksOptions _linksOptions =
         linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -269,13 +269,14 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        var variantKey = VariantKeyFactory.Create(
-            mappingSetValue.Key.EffectiveSchemaHash,
-            variant.Format,
-            ProfileVariantCode.Of(variant.ProfileName),
-            _linksOptions.Enabled
+        return _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSetValue.Key.EffectiveSchemaHash,
+                variant.Format,
+                variant.ProfileName,
+                _linksOptions.Enabled,
+                documentMetadata.ContentVersion
+            )
         );
-
-        return _etagComposer.Compose(documentMetadata.ContentVersion, variantKey);
     }
 }
