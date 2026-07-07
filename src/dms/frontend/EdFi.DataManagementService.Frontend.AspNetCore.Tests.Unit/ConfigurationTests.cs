@@ -238,6 +238,40 @@ public class ConfigurationTests
     }
 
     [TestFixture]
+    public class Given_A_Bound_App_Settings_Without_Max_Request_Body_Size
+    {
+        [Test]
+        public void It_uses_the_default_request_body_size_and_validates_successfully()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["AppSettings:AuthenticationService"] = "http://localhost:5126/connect/token",
+                        ["AppSettings:Datastore"] = "postgresql",
+                        ["AppSettings:CorrelationIdHeader"] = "correlationid",
+                    }
+                )
+                .Build();
+
+            var appSettings = new AppSettings
+            {
+                AuthenticationService = "placeholder",
+                Datastore = "postgresql",
+                CorrelationIdHeader = "correlationid",
+            };
+            configuration.GetSection("AppSettings").Bind(appSettings);
+
+            appSettings
+                .MaxRequestBodySizeMegabytes.Should()
+                .Be(AppSettings.DefaultMaxRequestBodySizeMegabytes);
+
+            var validator = new AppSettingsValidator();
+            validator.Validate(null, appSettings).Succeeded.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Configuration_With_Invalid_Connection_Strings
     {
         private WebApplicationFactory<Program>? _factory;

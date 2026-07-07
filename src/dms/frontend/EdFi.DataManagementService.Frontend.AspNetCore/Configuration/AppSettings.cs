@@ -14,7 +14,7 @@ public class AppSettings
 
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
-    public int MaxRequestBodySizeMegabytes { get; set; }
+    public int MaxRequestBodySizeMegabytes { get; set; } = DefaultMaxRequestBodySizeMegabytes;
     public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
