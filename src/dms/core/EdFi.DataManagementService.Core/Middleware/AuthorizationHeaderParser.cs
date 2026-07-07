@@ -28,24 +28,39 @@ internal static class AuthorizationHeaderParser
         }
 
         string trimmed = authHeader.Trim();
-        int separatorIndex = trimmed.IndexOf(' ');
 
-        string scheme = separatorIndex < 0 ? trimmed : trimmed[..separatorIndex];
-        string parameter = separatorIndex < 0 ? string.Empty : trimmed[(separatorIndex + 1)..].Trim();
+        // The scheme is the leading run of non-whitespace characters. Reading up to the first
+        // whitespace of any kind (not only a literal space) means a header whose scheme and
+        // token are separated by a tab or other whitespace (e.g. "Bearer\tabc") is recognized
+        // as the Bearer scheme with a malformed separator rather than as an unknown scheme.
+        int schemeEnd = 0;
+        while (schemeEnd < trimmed.Length && !char.IsWhiteSpace(trimmed[schemeEnd]))
+        {
+            schemeEnd++;
+        }
 
+        string scheme = trimmed[..schemeEnd];
         if (!string.Equals(scheme, BearerScheme, StringComparison.OrdinalIgnoreCase))
         {
             return AuthorizationHeaderResult.Error("Unknown Authorization header scheme.");
         }
 
-        if (string.IsNullOrWhiteSpace(parameter))
+        string remainder = trimmed[schemeEnd..];
+        if (remainder.Length == 0)
         {
             return AuthorizationHeaderResult.Error("Missing Authorization header bearer token value.");
         }
 
-        // A Bearer token (a JWT) never contains whitespace. An embedded space means the value
-        // did not parse as a single "Bearer <token>" credential, so treat it as a malformed header
-        // rather than passing a multi-token value through to JWT validation.
+        // A well-formed Bearer credential separates the scheme from the token with a single
+        // space and carries a whitespace-free token (a JWT never contains whitespace). A
+        // non-space separator (tab, newline) or a multi-token value is a malformed header,
+        // not a credential to pass through to JWT validation.
+        if (remainder[0] != ' ')
+        {
+            return AuthorizationHeaderResult.Error("Invalid Authorization header.");
+        }
+
+        string parameter = remainder.Trim();
         if (parameter.Any(char.IsWhiteSpace))
         {
             return AuthorizationHeaderResult.Error("Invalid Authorization header.");

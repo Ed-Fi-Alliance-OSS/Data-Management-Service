@@ -339,12 +339,26 @@ public static class AspNetCoreFrontend
     }
 
     private const string ContentTypeHeaderName = "Content-Type";
+    private const string AuthorizationHeaderName = "Authorization";
+
+    /// <summary>
+    /// Headers whose explicit blank/whitespace value core must be able to distinguish from an
+    /// absent header, so the value must survive the blank-value filtering in
+    /// <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit blank is rejected with 415)
+    /// and Authorization (an explicit blank is a malformed header rejected with 401, distinct
+    /// from a missing header, which reports "Authorization header is missing.").
+    /// </summary>
+    private static readonly string[] HeadersPreservedWhenExplicitlySent =
+    [
+        ContentTypeHeaderName,
+        AuthorizationHeaderName,
+    ];
 
     /// <summary>
     /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
-    /// dropped, except for an explicitly supplied Content-Type. Core must distinguish a missing
-    /// Content-Type (exempt) from an explicit blank or whitespace value (rejected with 415), so
-    /// that value is preserved verbatim here instead of being discarded along with the header.
+    /// dropped, except for the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>,
+    /// whose explicit blank/whitespace value is restored verbatim so core can distinguish it
+    /// from a missing header.
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
     {
@@ -357,14 +371,17 @@ public static class AspNetCoreFrontend
             .Where(h => h.Value != null)
             .ToDictionary(x => x.Key, x => x.Value!, StringComparer.OrdinalIgnoreCase);
 
-        // The filtering above discards a Content-Type that was sent but is blank/whitespace.
-        // Restore it so core can reject the explicit value rather than treat it as missing.
-        if (
-            !headers.ContainsKey(ContentTypeHeaderName)
-            && request.Headers.TryGetValue(ContentTypeHeaderName, out StringValues contentType)
-        )
+        // The filtering above discards headers that were sent but are blank/whitespace. Restore
+        // the ones core must treat as explicitly-present-but-invalid rather than as missing.
+        foreach (string headerName in HeadersPreservedWhenExplicitlySent)
         {
-            headers[ContentTypeHeaderName] = contentType.ToString();
+            if (
+                !headers.ContainsKey(headerName)
+                && request.Headers.TryGetValue(headerName, out StringValues value)
+            )
+            {
+                headers[headerName] = value.ToString();
+            }
         }
 
         return headers;

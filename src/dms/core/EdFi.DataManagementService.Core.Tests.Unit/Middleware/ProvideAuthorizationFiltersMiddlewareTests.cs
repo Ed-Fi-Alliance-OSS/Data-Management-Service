@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -178,9 +177,12 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             _requestInfo.FrontendResponse.StatusCode.Should().Be(401);
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
-            JsonObject body = _requestInfo.FrontendResponse.Body!.AsObject();
-            body["title"]!.GetValue<string>().Should().Be("Authentication Failed");
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
+            // Pin the full authentication-failure body contract on the identical shared shape
+            // the sibling ResourceActionAuthorizationMiddleware path asserts.
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "No authorization information found. Ensure valid JWT token is provided."
+            );
         }
 
         [Test]

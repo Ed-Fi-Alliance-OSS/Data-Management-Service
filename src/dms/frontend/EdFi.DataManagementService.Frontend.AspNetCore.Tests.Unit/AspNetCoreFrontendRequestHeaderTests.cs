@@ -67,10 +67,41 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
     }
 
     [Test]
+    public void It_preserves_an_explicit_empty_authorization_header()
+    {
+        // A blank Authorization must survive extraction so core classifies it as a malformed
+        // header ("Invalid Authorization header.") rather than a missing one.
+        var headers = ExtractHeaders(request => request.Headers["Authorization"] = "");
+
+        headers.Should().ContainKey("Authorization");
+        headers["Authorization"].Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_preserves_an_explicit_whitespace_authorization_header()
+    {
+        var headers = ExtractHeaders(request => request.Headers["Authorization"] = "   ");
+
+        headers.Should().ContainKey("Authorization");
+        headers["Authorization"].Should().Be("   ");
+    }
+
+    [Test]
+    public void It_omits_a_missing_authorization_header()
+    {
+        // A genuinely absent Authorization stays absent, so core reports it as missing rather
+        // than malformed.
+        var headers = ExtractHeaders(_ => { });
+
+        headers.Should().NotContainKey("Authorization");
+    }
+
+    [Test]
     public void It_still_drops_other_blank_headers()
     {
-        // The Content-Type preservation is intentionally scoped; blank values of other headers
-        // continue to be dropped as before.
+        // Blank-value preservation is intentionally scoped to the headers core must distinguish
+        // from missing (Content-Type, Authorization); blank values of other headers continue to
+        // be dropped as before.
         var headers = ExtractHeaders(request => request.Headers["X-Custom"] = "");
 
         headers.Should().NotContainKey("X-Custom");

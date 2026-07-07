@@ -103,6 +103,11 @@ public static class TestHelper
         body["detail"]!.GetValue<string>().Should().Be("The caller could not be authenticated.");
         body["status"]!.GetValue<int>().Should().Be(401);
 
+        // correlationId is part of the DMS problem-details contract; assert it is present and
+        // non-empty so a silent drop from the factory is caught here (E2E strips it downstream).
+        body["correlationId"].Should().NotBeNull();
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
         // The contract carries exactly the one scenario message and, unlike the other
         // problem-details factories, emits no validationErrors member.
         body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);

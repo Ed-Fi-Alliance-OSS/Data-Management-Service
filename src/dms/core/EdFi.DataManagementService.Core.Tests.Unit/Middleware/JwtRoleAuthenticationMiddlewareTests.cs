@@ -463,8 +463,13 @@ public class JwtRoleAuthenticationMiddlewareTests
     [TestFixture("Bearer ", "Missing Authorization header bearer token value.")]
     [TestFixture("Bearer", "Missing Authorization header bearer token value.")]
     [TestFixture("Bearer   ", "Missing Authorization header bearer token value.")]
+    [TestFixture("bearer", "Missing Authorization header bearer token value.")]
     [TestFixture("Bearer abc def", "Invalid Authorization header.")]
+    [TestFixture("Bearer\tabc", "Invalid Authorization header.")]
+    [TestFixture("Bearer ab\tc", "Invalid Authorization header.")]
+    [TestFixture("", "Invalid Authorization header.")]
     [TestFixture("   ", "Invalid Authorization header.")]
+    [TestFixture("BearerToken", "Unknown Authorization header scheme.")]
     [Parallelizable]
     public class Given_A_Request_With_A_Malformed_Bearer_Authorization_Header(
         string _authHeader,
