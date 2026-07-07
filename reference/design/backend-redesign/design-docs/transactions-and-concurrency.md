@@ -529,6 +529,13 @@ projector lag and delete materialization are part of the CDC operational contrac
 [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md) and
 [cdc/0003-debezium-connector-deployment.md](cdc/0003-debezium-connector-deployment.md).
 
+CDC mode keeps ordinary upserts eventually consistent, but deletes have a stronger source-row
+guarantee: DMS must not delete `dms.Document` unless a corresponding `dms.DocumentCache`
+row exists in the same transaction. If the cache row is missing or stale, the delete path
+must synchronously materialize the current pre-delete representation first. If that
+materialization fails, the API delete fails rather than completing a delete that Debezium
+cannot turn into a Kafka tombstone.
+
 Correctness must not depend on this table:
 - rows may be missing/stale and rebuilt asynchronously,
 - authorization must not use it as a source of truth.
@@ -553,17 +560,25 @@ A minimal projector approach:
 3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
    contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
    stored in the cache.
+4. Fence projector/backfill writes so a lower `ContentVersion` cannot overwrite a newer
+   cache row, and queued work cannot recreate a cache row after the document has been
+   deleted.
 
 ---
 
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
-2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
-3. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup.
-4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
+2. If CDC is enabled, synchronously ensure a `dms.DocumentCache` source row exists for
+   the `DocumentId` under the same per-document write/projector fence. If the row is
+   missing or stale, materialize/upsert the current pre-delete representation before the
+   resource row is removed. If this cannot be done, fail the delete with a retryable
+   server-side error.
+3. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
+4. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup. In CDC mode, the cascaded `dms.DocumentCache` delete is the source event Debezium uses to publish the Kafka tombstone.
+5. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
-Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
+Steps 2 through 4 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale. The CDC pre-delete materialization also must run before the resource row is removed, because full document reconstitution is no longer possible afterward.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.

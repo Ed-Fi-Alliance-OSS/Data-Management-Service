@@ -35,6 +35,9 @@ Source documents:
 - Relational Debezium/Kafka CDC, when enabled, captures `dms.DocumentCache` and publishes a compacted
   topic-per-instance document-state stream keyed by `DocumentUuid`; `dms.DocumentCache` remains optional when
   CDC/Kafka is not enabled.
+- CDC mode narrows `dms.DocumentCache`'s eventual-consistency contract for deletes: upsert projection may lag,
+  but DMS must not delete `dms.Document` unless the delete transaction has a cache source row whose cascaded
+  delete Debezium can publish as the Kafka tombstone.
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and

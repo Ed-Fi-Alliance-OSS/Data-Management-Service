@@ -12,6 +12,8 @@ Document how to operate relational DMS CDC/Kafka streaming in local and producti
 
 The runbooks should make clear that Kafka CDC is optional, `dms.DocumentCache` is conditionally required when
 CDC is enabled, and the stream is a compacted document-state topic rather than a complete event history.
+They should also document that CDC-mode deletes depend on a synchronous pre-delete `dms.DocumentCache` source
+row guarantee; operators should treat failures in that path as write-path blocking while CDC is enabled.
 
 ## Acceptance Criteria
 
@@ -37,7 +39,13 @@ CDC is enabled, and the stream is a compacted document-state topic rather than a
   - topic-per-instance ACLs,
   - compacted topic behavior,
   - tombstone retention,
+  - `etag` as the DMS API base64 `SHA-256` string stored in `dms.DocumentCache.Etag`,
   - consumer stale-write handling with `contentVersion`.
+- Documentation explains the CDC-mode `dms.DocumentCache` guarantees:
+  - initial backfill before CDC readiness,
+  - stale-write fencing by `ContentVersion`,
+  - synchronous pre-delete materialization,
+  - delete failure behavior when the source row cannot be materialized.
 - Runbooks cover connector health, lag, last error, snapshot completion, restart, offset reset, resnapshot, and
   topic recreation.
 - Runbooks clearly mark offset reset, resnapshot, and topic deletion as destructive or replay-producing
@@ -54,8 +62,10 @@ CDC is enabled, and the stream is a compacted document-state topic rather than a
 4. Add PostgreSQL setup and recovery runbook.
 5. Add SQL Server setup and recovery runbook.
 6. Add Kafka topic/ACL/consumer guidance.
-7. Add troubleshooting commands for connector status, connector logs, topic listing, and sample consumption.
-8. Review documentation against the implemented scripts/templates before closing.
+7. Add troubleshooting guidance for incomplete backfill, projector dead letters, and pre-delete materialization
+   failures.
+8. Add troubleshooting commands for connector status, connector logs, topic listing, and sample consumption.
+9. Review documentation against the implemented scripts/templates before closing.
 
 ## Out of Scope
 

@@ -78,7 +78,7 @@ Create/update/snapshot values have this public shape:
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "etag": "4d967b6c8c9e2fd5c8a47e3f0a6db9d0f4b9bb5c7c30c1a4e31dd4c21f2a0123",
+  "etag": "TZZ7bIyeL9XIpH4/Cm250PS5u1x8MMGk4x3Uwh8qASM=",
   "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
   "document": {
     "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
@@ -88,6 +88,8 @@ Create/update/snapshot values have this public shape:
 
 The published value does not include `DocumentId`, `ComputedAt`, authorization arrays,
 EdOrg hierarchy arrays, API client identity, or readable-profile-specific projections.
+The `etag` value is the current DMS API `_etag`: base64-encoded `SHA-256` over canonical
+resource-state JSON, 44 characters including padding.
 
 The `document` field is the caller-agnostic pre-profile JSON projection stored in
 `dms.DocumentCache.DocumentJson`. If link injection is compiled into the read plan, the
@@ -102,6 +104,13 @@ value = null
 ```
 
 The relational v1 topic does not publish the legacy `deleted=true` / `EdFiDoc` shape.
+
+Because the tombstone comes from a captured `dms.DocumentCache` row delete, CDC mode
+requires a stronger projector guarantee than ordinary cache-backed reads. Upsert
+projection may be asynchronous, but DMS must not delete `dms.Document` unless a
+corresponding `dms.DocumentCache` row exists in the same transaction. If the cache row is
+missing or stale at delete time, DMS materializes the current pre-delete projection first;
+if it cannot, the API delete fails rather than losing the Kafka tombstone.
 
 ## Connector Deployment
 
@@ -158,9 +167,12 @@ connectors.
 `-EnableKafkaUI` starts Kafka UI only and must not imply connector registration.
 
 Connector registration should occur after the target data store is selected, the target
-database is provisioned, and `dms.DocumentCache` CDC readiness passes. Connector templates
-must be generated or parameterized from the selected data-store context instead of using
-hard-coded database names.
+database is provisioned, and `dms.DocumentCache` CDC readiness verifies the required
+projector/delete support. CDC should not be advertised as ready, and E2E writes that rely
+on Kafka observation should not begin, until initial `dms.DocumentCache` backfill has
+completed and connector/projector lag is acceptable. Connector templates must be generated
+or parameterized from the selected data-store context instead of using hard-coded database
+names.
 
 ## Multitenancy and Security
 

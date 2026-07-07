@@ -22,6 +22,10 @@ The epic delivers a compacted document-state stream sourced from `dms.DocumentCa
 per DMS instance, Kafka keys based on `DocumentUuid`, lower-camel envelope values, expanded structured
 `document` payloads, and Kafka tombstones for deletes.
 
+CDC mode requires a stronger `dms.DocumentCache` projector contract than ordinary cache-backed reads:
+upsert projection may lag, but deletes must synchronously ensure a cache source row exists before
+`dms.Document` is removed so Debezium can publish the tombstone.
+
 This epic does not implement a domain-event outbox and does not use polling Change Queries as the Kafka
 source. Change Queries remain an API compatibility feature, while Debezium/Kafka CDC is a database-log-backed
 streaming feature.
@@ -39,7 +43,8 @@ streaming feature.
 ## Cross-Story Dependency Notes
 
 - Story 00 consumes DMS-1246 and is the CDC readiness gate. The connector work can be developed with fakes or
-  fixtures, but CDC should not be exposed as supported until the projector's CDC guarantees are implemented.
+  fixtures, but CDC should not be exposed as supported until the projector's CDC guarantees are implemented:
+  initial backfill, stale-write fencing, synchronous pre-delete materialization, and visible health/lag.
 - Story 01 provides engine-specific database support that Story 02 connector templates consume, especially
   delete tombstone keys based on `DocumentUuid`.
 - Story 02 owns connector shape and transform order. Story 03 should register generated or parameterized
@@ -68,6 +73,10 @@ streaming feature.
 - A provisioned relational DMS instance can opt into CDC and publish create/update/delete changes from
   `dms.DocumentCache` to its instance document topic.
 - PostgreSQL and SQL Server implementations both preserve tombstones keyed by `DocumentUuid`.
+- CDC-mode deletes cannot complete unless `dms.DocumentCache` can supply the source row whose cascaded delete
+  produces the tombstone.
+- Projector/backfill retries cannot overwrite a newer cache row or recreate a cache row after a CDC-mode
+  delete.
 - Published records conform to the v1 topic/message contract from DMS-1245.
 - Local setup and E2E flows can register connectors against the selected data store without hard-coded database
   names.

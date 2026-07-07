@@ -21,6 +21,7 @@ write path for every case.
   - topic matching `<topic-prefix>.instance.<instance-key>.documents.v1`,
   - `contractVersion = 1`,
   - lower-camel metadata envelope,
+  - `etag` as a 44-character base64-encoded `SHA-256` value, not a 64-character hex digest,
   - expanded structured `document`,
   - no public `DocumentId`,
   - no public `ComputedAt`.
@@ -30,6 +31,8 @@ write path for every case.
   - same instance document topic,
   - null value,
   - no `deleted=true` envelope.
+- Source-level or integration contract coverage proves a CDC-mode delete is driven by a `dms.DocumentCache` row
+  delete, including the case where the cache row had to be synchronously materialized before delete.
 - Tests cover PostgreSQL and SQL Server connector/template differences where they affect keys, tombstones, or
   topic routing.
 - Tests include at least one realistic Ed-Fi document with nested arrays and a reference `link` subtree so JSON
@@ -44,10 +47,13 @@ write path for every case.
 3. Exercise the transform pipeline with PostgreSQL-shaped input records.
 4. Exercise the transform pipeline with SQL Server-shaped input records.
 5. Add regression coverage that null tombstone values pass through value-shaping transforms unchanged.
-6. Add regression coverage that `DocumentJson` is published as structured JSON, not an escaped string.
+6. Add provider smoke or fixture coverage for the pre-delete materialization path that creates the cache source
+   row before `ON DELETE CASCADE` removes it.
+7. Add regression coverage that `etag` preserves the DMS API base64 `_etag` string from `DocumentCache.Etag`.
+8. Add regression coverage that `DocumentJson` is published as structured JSON, not an escaped string.
 
 ## Out of Scope
 
 - API-level E2E create/update/delete scenarios.
-- Projector lag and backfill testing.
+- Full projector lag and backfill testing beyond the source-row delete contract.
 - Kafka ACL testing.

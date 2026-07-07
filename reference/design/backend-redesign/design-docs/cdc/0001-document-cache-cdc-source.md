@@ -16,6 +16,14 @@ When Debezium/Kafka CDC is enabled for the relational DMS backend, `dms.Document
 is required and is the authoritative database capture source for document-level Kafka
 messages.
 
+CDC mode adds a reliability invariant to the otherwise optional/eventual cache:
+
+- upsert materialization may be asynchronous, subject to projector lag and stale-write
+  guards,
+- delete materialization is synchronous enough that DMS must not delete `dms.Document`
+  unless a corresponding `dms.DocumentCache` source row exists in the same delete
+  transaction.
+
 `dms.DocumentCache` remains optional when CDC/Kafka is not enabled. It is not the
 canonical persistence model, and DMS write correctness, authorization, Change Queries,
 and normal GET/query behavior must not depend on it.
@@ -58,7 +66,7 @@ streaming design.
   - `ResourceName`
   - `ResourceVersion`
   - `ContentVersion`
-  - `Etag`
+  - `Etag` (base64-encoded `SHA-256` API `_etag`)
   - `LastModifiedAt`
   - `DocumentJson`
 - `DocumentId` may be useful for connector mechanics, ordering diagnostics, and internal
@@ -68,8 +76,23 @@ streaming design.
   not the original resource-table writes. Kafka ordering and lag semantics must therefore
   be documented in terms of projection application and `ContentVersion`.
 - Delete messages should be based on `dms.DocumentCache` row deletes and Kafka tombstone
-  behavior. DMS-1246 must define the projector/backfill guarantees required so a CDC
-  deployment does not miss delete events because cache rows were absent or stale.
+  behavior. In CDC mode, the delete path must synchronously ensure a `dms.DocumentCache`
+  row exists for the target `DocumentId` before deleting the resource row and
+  `dms.Document`. If the row is missing or stale, DMS must materialize/upsert the current
+  pre-delete representation under the same per-document write/projector fence, then
+  delete `dms.Document` so `ON DELETE CASCADE` removes the cache row and Debezium can
+  publish the tombstone.
+- If CDC is enabled and the delete path cannot materialize or verify the cache source row,
+  the API delete must fail with a retryable server-side error rather than silently
+  deleting the only row Debezium can use for the tombstone.
+- Projector and backfill writes must be fenced by `(DocumentId, ContentVersion)` or an
+  equivalent monotonic guard. A lower-`ContentVersion` retry/backfill must not overwrite a
+  newer cache row or recreate a cache row after a CDC-mode delete has removed the
+  document.
+- CDC readiness must require an initial `dms.DocumentCache` backfill for existing
+  `dms.Document` rows, no known projector dead-letter failures, and projector lag within
+  the configured operational threshold. Deployments may run below that threshold for
+  ordinary cache-backed reads, but should not advertise Kafka CDC as ready.
 - Local Docker Compose, bootstrap, and CI connector registration should target the
   provisioned relational database and `dms.DocumentCache` once the projector and connector
   contract are implemented.
@@ -120,5 +143,6 @@ DMS-1246 should finalize the `dms.DocumentCache` implementation design:
 - initial backfill and rebuild,
 - freshness and lag semantics,
 - retry, dead-letter, telemetry, and health checks,
-- delete coverage when CDC is enabled,
+- CDC-mode synchronous pre-delete materialization and failure behavior,
+- stale-write fencing for projector retries/backfill and post-delete races,
 - any additional indexes or projector state needed for reliable capture.

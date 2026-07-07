@@ -35,7 +35,9 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 
 - the relational schema is provisioned and validated,
 - `dms.DocumentCache` is provisioned,
-- the `dms.DocumentCache` projector is enabled and has the DMS-1246 CDC guarantees,
+- the `dms.DocumentCache` projector is enabled and has the CDC guarantees from DMS-1246:
+  initial backfill, stale-write fencing, synchronous pre-delete materialization, visible
+  health/lag, and retry/dead-letter handling,
 - Kafka and Kafka Connect are reachable,
 - the connector principal has the least database permissions required for CDC,
 - the target Kafka topic and ACLs are configured or can be created by the deployment.
@@ -172,16 +174,24 @@ Recommended CDC enablement sequence for a new instance:
 
 Recommended CDC enablement sequence for an existing instance:
 
-1. Enable `dms.DocumentCache` and the projector in CDC mode.
-2. Register the connector with initial snapshot behavior.
-3. Run or resume projector backfill.
-4. Monitor until connector lag and projector lag reach acceptable thresholds.
+1. Enable `dms.DocumentCache` and the projector in CDC mode, including stale-write
+   fencing and pre-delete materialization support.
+2. Register the connector with initial snapshot behavior before allowing write/delete
+   traffic that the host expects Kafka CDC to observe. If that is not possible, quiesce
+   writes/deletes until connector registration completes.
+3. Run or resume projector backfill until every existing `dms.Document` row has a fresh
+   `dms.DocumentCache` row.
+4. Monitor until connector lag, projector lag, and backfill status reach acceptable
+   thresholds, and only then advertise CDC as ready.
 
 DMS-1246 owns the projector-side details that make this safe, especially:
 
 - backfill must not write an older `contentVersion` after a newer one for the same
   `documentUuid`,
-- delete must emit a tombstone even if a cache row was missing before the delete request,
+- delete must synchronously materialize or verify a cache row before deleting
+  `dms.Document`, so a cache row that was missing before the delete request still yields a
+  Debezium row-delete and Kafka tombstone,
+- older queued projection work must not recreate a cache row after a CDC-mode delete,
 - projector failures must be visible through health, metrics, and retry/dead-letter
   signals.
 
@@ -197,7 +207,8 @@ Recommended local behavior:
 
 - `-EnableKafkaUI` starts Kafka UI only.
 - `-EnableKafkaCdc` starts Kafka and Kafka Connect if needed, verifies `dms.DocumentCache`
-  is provisioned, registers the instance connector, and prints the target topic.
+  is provisioned and CDC-ready, registers the instance connector, and prints the target
+  topic.
 - E2E setup that opts into CDC registers the connector after database provisioning and
   before the test writes it expects to observe.
 - The quarantined KafkaMessaging scenarios should be replaced or updated to assert:
@@ -279,6 +290,8 @@ optimization when the public contract is preserved.
 DMS-1245 should next define the implementation epic and stories for relational CDC:
 
 - DDL changes for `DocumentCache` CDC key/replica identity support,
+- CDC readiness checks for `DocumentCache` backfill, projector health, and pre-delete
+  materialization support,
 - connector template generation for PostgreSQL and SQL Server,
 - bootstrap `-EnableKafkaCdc` behavior,
 - E2E Kafka scenario replacement,

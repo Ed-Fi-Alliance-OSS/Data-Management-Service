@@ -23,13 +23,16 @@ database names.
   - the data store is selected,
   - the target database is provisioned,
   - `dms.DocumentCache` CDC readiness passes,
+  - initial `dms.DocumentCache` backfill is complete for existing documents,
+  - the CDC-mode pre-delete materialization guarantee is available for the selected data store,
   - provider-specific CDC DDL/setup is applied or validated.
 - Connector registration is idempotent for the same selected data store and connector name.
 - Bootstrap prints the connector name, provider, database, instance key, and target topic.
 - Teardown removes local connector registrations and Kafka state when the local stack is torn down with volumes.
 - E2E setup can opt into CDC and register the connector before test writes are issued.
 - Failure messages identify whether the problem is Kafka infrastructure, connector REST API, database CDC setup,
-  DocumentCache readiness, or connector validation.
+  DocumentCache readiness, incomplete backfill, missing pre-delete materialization support, or connector
+  validation.
 
 ## Tasks
 

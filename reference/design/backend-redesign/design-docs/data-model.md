@@ -481,6 +481,11 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
+CDC mode narrows the eventual-consistency contract for deletes: upsert projection may lag,
+but DMS must not delete the corresponding `dms.Document` row unless a `dms.DocumentCache`
+source row exists in the same transaction. The `ON DELETE CASCADE` cleanup of that cache
+row is the database event Debezium captures to publish the Kafka tombstone.
+
 For the relational CDC source and Kafka contract, see [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md)
 and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
 

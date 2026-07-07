@@ -26,9 +26,13 @@ metadata envelopes, expanded `document` payloads, and Kafka tombstones for delet
   - key is the API `id` / `DocumentUuid`,
   - value has `contractVersion = 1`,
   - value has `resourceName`,
+  - value has `etag` in the current DMS API base64 `SHA-256` format,
   - value has expanded `document`.
 - Update scenario observes a later value for the same `DocumentUuid` with a higher `contentVersion`.
 - Delete scenario observes a tombstone for the same `DocumentUuid`.
+- Delete coverage includes a create-then-delete path that does not rely on waiting for ordinary asynchronous
+  projector catch-up before issuing the delete; CDC mode must still materialize the cache source row and publish
+  the tombstone.
 - Scenarios do not assert legacy `EdFiDoc`, `deleted=false`, or `deleted=true` fields.
 - Scenarios wait on connector readiness before issuing API writes.
 - Scenarios collect connector logs and topic diagnostics when messages are not observed.
@@ -43,9 +47,10 @@ metadata envelopes, expanded `document` payloads, and Kafka tombstones for delet
 2. Update setup to pass the CDC enablement flag and selected environment file.
 3. Add a Kafka test helper that reads from the v1 instance topic and filters by `DocumentUuid` key.
 4. Update create/update/delete assertions to the v1 contract.
-5. Add connector readiness polling before API writes.
-6. Add failure diagnostics for connector status, recent connector logs, topic list, and consumed records.
-7. Remove old ignore markers only after the relational CDC scenarios pass consistently.
+5. Add a focused immediate-delete scenario or step that proves the pre-delete materialization guarantee.
+6. Add connector readiness polling before API writes.
+7. Add failure diagnostics for connector status, recent connector logs, topic list, and consumed records.
+8. Remove old ignore markers only after the relational CDC scenarios pass consistently.
 
 ## Out of Scope
 

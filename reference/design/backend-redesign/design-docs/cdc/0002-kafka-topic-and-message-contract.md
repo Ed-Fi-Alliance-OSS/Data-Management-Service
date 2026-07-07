@@ -113,7 +113,7 @@ For creates, updates, and initial snapshots, the value is a JSON object:
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "etag": "4d967b6c8c9e2fd5c8a47e3f0a6db9d0f4b9bb5c7c30c1a4e31dd4c21f2a0123",
+  "etag": "TZZ7bIyeL9XIpH4/Cm250PS5u1x8MMGk4x3Uwh8qASM=",
   "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
   "document": {
     "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
@@ -131,7 +131,7 @@ Field meanings:
 | `resourceName` | `dms.DocumentCache.ResourceName` | Resource name, such as `Student`. |
 | `resourceVersion` | `dms.DocumentCache.ResourceVersion` | Project/schema resource version copied from `dms.ResourceKey`. |
 | `contentVersion` | `dms.DocumentCache.ContentVersion` | Representation version applied by the projector. |
-| `etag` | `dms.DocumentCache.Etag` | Full-resource `_etag` value for the cached representation. |
+| `etag` | `dms.DocumentCache.Etag` | Full-resource `_etag` value for the cached representation: base64-encoded `SHA-256` over canonical resource-state JSON. |
 | `lastModifiedAt` | `dms.DocumentCache.LastModifiedAt` | Full-resource `_lastModifiedDate` source value. |
 | `document` | `dms.DocumentCache.DocumentJson` | Expanded structured JSON object, not an escaped JSON string. |
 
@@ -145,6 +145,10 @@ maintain a second link-free Kafka projection.
 
 The envelope values for `etag` and `lastModifiedAt` are authoritative. Consumers should
 not require `_etag` or `_lastModifiedDate` to be embedded inside `document`.
+
+The `etag` value is the DMS API `_etag` string as emitted today, not a hex digest and
+not an HTTP quoted entity-tag wrapper. For `SHA-256`, the encoded value is 44 base64
+characters including `=` padding.
 
 ## JSON Expansion
 
@@ -190,9 +194,16 @@ This replaces the legacy KafkaMessaging scenario shape that expected `deleted=fa
 `deleted=true` and an `EdFiDoc` body. DMS-1232 should update or replace those scenarios
 to assert the relational v1 contract.
 
-DMS-1246 must define the `dms.DocumentCache` projector guarantees needed for reliable
-delete capture when CDC is enabled. In particular, CDC-enabled deployments must not miss
-a delete because the cache row was never materialized.
+The tombstone depends on a real `dms.DocumentCache` row delete. Therefore, in CDC mode
+DMS must not delete `dms.Document` until the delete transaction has verified or created a
+corresponding `dms.DocumentCache` row for the target document. If the row is missing or
+stale, DMS must synchronously materialize the current pre-delete projection first, then
+delete `dms.Document` so the `ON DELETE CASCADE` path deletes the cache row captured by
+Debezium.
+
+If DMS cannot materialize or verify that cache source row while CDC is enabled, the API
+delete must fail with a retryable server-side error. It must not complete the resource
+delete and silently lose the Kafka tombstone.
 
 ## Security and Authorization
 
@@ -254,10 +265,13 @@ DMS-1245 should next define the connector deployment model:
 - snapshot mode and backfill behavior,
 - local Docker Compose/bootstrap registration.
 
-DMS-1246 should define the projector guarantees this contract depends on:
+DMS-1246 should finalize the implementation details for the projector guarantees this
+contract depends on:
 
 - cache materialization before delete when CDC is enabled,
 - lag and health signals for projection,
 - retry and dead-letter behavior,
 - rebuild/backfill semantics that do not create stale lower-`contentVersion` messages
-  after newer values for the same `documentUuid`.
+  after newer values for the same `documentUuid`,
+- projector fencing so an older queued projection cannot recreate a cache row after a
+  CDC-mode delete has removed the document.

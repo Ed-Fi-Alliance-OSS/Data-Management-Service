@@ -25,6 +25,7 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
 - Transform pipeline produces:
   - lower-camel envelope fields,
   - `contractVersion = 1`,
+  - `etag` as the base64-encoded `SHA-256` API `_etag`, passed through from `dms.DocumentCache.Etag`,
   - no public `DocumentId`,
   - no public `ComputedAt`,
   - structured `document`, using the Ed-Fi expand-JSON SMT from DMS-1240 when needed,
