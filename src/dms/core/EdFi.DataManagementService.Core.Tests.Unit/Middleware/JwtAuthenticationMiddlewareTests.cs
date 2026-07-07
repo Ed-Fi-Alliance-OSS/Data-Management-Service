@@ -73,8 +73,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer valid-token",
-                        "Bearer ".Length,
+                        "valid-token",
                         A<CancellationToken>._
                     )
                 )
@@ -141,8 +140,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer invalid-token",
-                        "Bearer ".Length,
+                        "invalid-token",
                         A<CancellationToken>._
                     )
                 )
@@ -414,8 +412,7 @@ public class JwtAuthenticationMiddlewareTests
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
-                        "Bearer valid-token",
-                        "Bearer ".Length,
+                        "valid-token",
                         A<CancellationToken>._
                     )
                 )
