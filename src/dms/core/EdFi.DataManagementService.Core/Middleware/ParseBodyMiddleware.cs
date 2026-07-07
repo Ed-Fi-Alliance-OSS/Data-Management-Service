@@ -46,6 +46,15 @@ namespace EdFi.DataManagementService.Core.Middleware
             return response;
         }
 
+        private static void SetValidationErrorResponse(RequestInfo requestInfo, string errorDetail)
+        {
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                GenerateFrontendValidationErrorResponse(errorDetail, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            );
+        }
+
         public async Task Execute(RequestInfo requestInfo, Func<Task> next)
         {
             _logger.LogDebug(
@@ -55,6 +64,27 @@ namespace EdFi.DataManagementService.Core.Middleware
 
             try
             {
+                if (requestInfo.FrontendRequest.BodyParseErrorMessage != null)
+                {
+                    _logger.LogDebug(
+                        "Unable to parse the request body as JSON - {TraceId}",
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
+
+                    SetValidationErrorResponse(
+                        requestInfo,
+                        requestInfo.FrontendRequest.BodyParseErrorMessage
+                    );
+                    return;
+                }
+
+                if (requestInfo.FrontendRequest.ParsedBody != null)
+                {
+                    requestInfo.ParsedBody = requestInfo.FrontendRequest.ParsedBody;
+                    await next();
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
                 {
                     requestInfo.FrontendResponse = new FrontendResponse(
@@ -82,11 +112,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    GenerateFrontendValidationErrorResponse(ex.Message, requestInfo.FrontendRequest.TraceId),
-                    Headers: []
-                );
+                SetValidationErrorResponse(requestInfo, ex.Message);
 
                 return;
             }

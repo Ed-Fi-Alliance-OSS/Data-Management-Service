@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Frontend;
@@ -46,5 +47,17 @@ public record FrontendRequest(
     /// The tenant identifier extracted from the URL path when multitenancy is enabled.
     /// Null when multitenancy is disabled.
     /// </summary>
-    string? Tenant = null
+    string? Tenant = null,
+    /// <summary>
+    /// Request body provided by the frontend service as a parsed JSON body, or null if there is no pre-parsed body
+    /// </summary>
+    JsonNode? ParsedBody = null,
+    /// <summary>
+    /// Error message from a failed frontend JSON parse, or null if parsing succeeded or was not attempted
+    /// </summary>
+    string? BodyParseErrorMessage = null,
+    /// <summary>
+    /// JSON path for the first duplicate property found by the frontend, or null if none was found or scanning was not attempted
+    /// </summary>
+    string? DuplicatePropertyPath = null
 );

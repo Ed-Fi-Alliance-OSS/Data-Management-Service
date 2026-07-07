@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -16,37 +17,55 @@ internal class RequestInfoBodyLoggingMiddleware(ILogger _logger, bool _maskReque
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
+        if (_logger.IsEnabled(LogLevel.Debug))
         {
-            _logger.LogDebug(
-                "Entering RequestInfoBodyLoggingMiddleware - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
-            );
+            string? body = GetBodyForLogging(requestInfo);
 
-            string body = UtilityService.MinifyRegex().Replace(requestInfo.FrontendRequest.Body, "$1");
-
-            if (!_maskRequestBodyInLogs)
+            if (!string.IsNullOrEmpty(body))
             {
                 _logger.LogDebug(
-                    MessageBody,
-                    requestInfo.Method,
-                    requestInfo.FrontendRequest.Path,
-                    body,
+                    "Entering RequestInfoBodyLoggingMiddleware - {TraceId}",
                     requestInfo.FrontendRequest.TraceId.Value
                 );
-            }
-            else
-            {
-                _logger.LogDebug(
-                    MessageBody,
-                    requestInfo.Method,
-                    requestInfo.FrontendRequest.Path,
-                    MaskRequestBody(body, _logger),
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
+
+                if (!_maskRequestBodyInLogs)
+                {
+                    _logger.LogDebug(
+                        MessageBody,
+                        requestInfo.Method,
+                        requestInfo.FrontendRequest.Path,
+                        body,
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        MessageBody,
+                        requestInfo.Method,
+                        requestInfo.FrontendRequest.Path,
+                        MaskRequestBody(body, _logger),
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
+                }
             }
         }
         await next();
+    }
+
+    private static string? GetBodyForLogging(RequestInfo requestInfo)
+    {
+        if (!string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
+        {
+            return UtilityService.MinifyRegex().Replace(requestInfo.FrontendRequest.Body, "$1");
+        }
+
+        if (!ReferenceEquals(requestInfo.ParsedBody, No.JsonNode))
+        {
+            return requestInfo.ParsedBody.ToJsonString();
+        }
+
+        return null;
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
