@@ -603,8 +603,9 @@ must not silently fail to create on SQL Server later, so a DMS model is required
 - **Detect** the SQL-Server-unsatisfiable condition during model derivation dialect-agnostically, and
   **fail derivation on both dialects** — so a non-portable schema is rejected up front regardless of
   the engine currently in use (schema soundness / cross-engine parity), **not** because PostgreSQL
-  requires it. (PostgreSQL alone would create and run such a graph; DMS refuses it as a portability
-  policy.)
+  requires it. (PostgreSQL alone has no 1785 DDL restriction and would accept such a graph at
+  create time; DMS refuses it as a portability policy. No claim is made about PostgreSQL propagating
+  identity through a cascade *cycle* at run time.)
 - **Emit** cascade pruning (`CASCADE` → `NO ACTION` rewrites) only for SQL Server DDL. PostgreSQL
   physical emission is unchanged: full-composite `ON UPDATE CASCADE` on every eligible edge.
 - **Prevent** the condition at authoring time in MetaEd (below), so neither engine encounters it in
@@ -652,8 +653,13 @@ DMS-1258 must add:
   there is nothing to attribute (a survivor is self-carrying; an immutable target never changes).
 - **Fail-fast derivation errors** for the two conditions in step 6, surfaced as hard derivation
   errors (not manifest warnings): a **cycle/SCC** error carrying the SCC tables and the FK edges in
-  the cycle; an **uncovered-diamond** error carrying the origin/root, the receiver, the two (or more)
-  distinct cascade paths, the candidate/pruned edges, and the coverage columns.
+  the cycle; and a **diamonds-cannot-be-jointly-broken** error covering both flavors of the second
+  condition — for a **single uncovered diamond**, the origin/root, the receiver, the two (or more)
+  distinct cascade paths, the candidate/pruned edges, and the coverage columns; and for **globally
+  infeasible overlapping diamonds** (no global assignment satisfies the retained-`NativeCascade`
+  invariant), the set of involved diamonds (their origins/roots and receivers), the shared edge(s)
+  whose single final mode is over-constrained, and the invariant clause (acyclic / multitree /
+  coverage) that could not be satisfied.
 
 PostgreSQL emission and its `OnUpdate` values are unchanged; `MssqlPropagationMode` is meaningful
 only for SQL Server model sets (it is absent / not applicable on PostgreSQL FKs).

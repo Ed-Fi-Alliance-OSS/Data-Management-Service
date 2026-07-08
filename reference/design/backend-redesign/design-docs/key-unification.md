@@ -1744,12 +1744,15 @@ Normative rules:
    `TransitivelyAllowIdentityUpdates = true`). Fail derivation fast on any cascade cycle/SCC.
 2. Detect diamonds by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
-   pruned. For each diamond, keep `ON UPDATE CASCADE` on the surviving path (deterministic winner) and emit
-   `ON UPDATE NO ACTION` on one reconverging edge — allowed only when it is **covered** (its stored canonical identity
-   column(s) are maintained by the surviving path, as when the composite FKs share a unified canonical column). Both
-   survivor and pruned edges keep the full composite FK.
-3. Fail derivation fast on an uncovered diamond (no safe pruning). There is no `DocumentId`-only FK and no identity-value
-   propagation trigger.
+   pruned. A **covered candidate break** for a diamond — keep `ON UPDATE CASCADE` on a surviving path and emit
+   `ON UPDATE NO ACTION` on a reconverging edge, allowed only when that edge is **covered** (its stored canonical identity
+   column(s) are maintained by the surviving path, as when the composite FKs share a unified canonical column) — is an
+   **input** to the deterministic **global** survivor selection defined in [mssql-cascading.md](mssql-cascading.md) § 5,
+   not a per-diamond first-fit: because overlapping diamonds can share edges (one final mode per FK), the winning breaks
+   are chosen by a global backtracking search over all diamonds. Both survivor and pruned edges keep the full composite FK.
+3. Fail derivation fast only when **no** complete assignment satisfies the retained-`NativeCascade` invariant (an acyclic
+   multitree with every pruned edge covered by the final graph) — i.e. a single uncovered diamond, or globally infeasible
+   overlapping diamonds. There is no `DocumentId`-only FK and no identity-value propagation trigger.
 
 Because the pruned edge keeps its identity columns and the shared canonical value is maintained by the surviving
 cascade, the `NO ACTION` FK never observes a mismatch — the same safety property probe 6 confirms in

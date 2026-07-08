@@ -401,9 +401,12 @@ Notes:
     pruning is auditable and reproducible. `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics —
     there is nothing to attribute.
   - hard derivation errors for the two fail-fast conditions, each carrying the full diagnostic detail (not just tables/FK
-    names): a cascade cycle/SCC error names the SCC tables and the FK edges forming the cycle; an uncovered-diamond error
-    (a receiver reached twice from one origin with no coverable prune) names the origin/root, the receiver, the two (or
-    more) distinct cascade paths, the candidate/pruned edges, and the coverage columns.
+    names): a cascade cycle/SCC error names the SCC tables and the FK edges forming the cycle; and a
+    diamonds-cannot-be-jointly-broken error covers both flavors — for a single uncovered diamond (a receiver reached twice
+    from one origin with no coverable prune) it names the origin/root, the receiver, the two (or more) distinct cascade
+    paths, the candidate/pruned edges, and the coverage columns; and for globally infeasible overlapping diamonds (no
+    global assignment satisfies the retained-`NativeCascade` invariant) it names the involved diamonds, the shared edge(s)
+    whose single final mode is over-constrained, and the invariant clause (acyclic / multitree / coverage) that failed.
   This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;
   PostgreSQL model sets keep `ON UPDATE CASCADE` on every eligible edge and do not use `MssqlPropagationMode`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
