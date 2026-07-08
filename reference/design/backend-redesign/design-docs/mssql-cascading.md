@@ -478,43 +478,59 @@ receiver's other retained edges is not part of any diamond; it stays `NativeCasc
 therefore evaluated *per originating tree* — never "does some other edge into `R` happen to touch the
 same column", which would wrongly green-light pruning an independent parent.
 
-### 5. Choose survivors and emit outcomes
+### 5. Choose survivors globally and emit outcomes
 
 Independent edges (and every edge into an in-degree-≤-1 receiver) are emitted as `NativeCascade` — no
-pruning. For each **diamond** (a receiver `R` reachable twice from a common origin), break the
-duplicate deterministically:
+pruning. Immutable references are outside the cascade graph entirely and are emitted as
+`ImmutableNoAction` (step 1). The remaining work is to break every **diamond** so that the final
+retained `NativeCascade` graph is a legal multitree while every pruned edge stays covered. Because
+overlapping diamonds can share edges, this is decided **globally** — not one diamond at a time — so a
+locally-valid choice is never committed on its own.
 
-1. Among the reconverging incoming edges of the diamond, consider each as the candidate survivor,
-   in a stable order (source table identifier, then constraint name).
-2. Keep the first candidate for which every *other reconverging* edge is covered (step 4) for all of
-   its origins under key unification.
-3. If such a survivor exists: emit it (and the rest of its path) as `NativeCascade` and emit the
-   covered reconverging edge(s) as `NoPropagation`.
-4. If no candidate survivor covers the others — including any case where a reconverging edge is also
-   the sole path from an independent origin — the diamond cannot be broken safely → **fail fast**
-   (step 6).
+**Per-diamond candidate breaks.** For a diamond (a receiver `R` reachable twice from a common origin),
+a *candidate break* keeps one reconverging edge as the survivor (`NativeCascade`) and prunes the other
+reconverging edge(s) into `R` to `NoPropagation`. A candidate break is *admissible* only when every
+edge it prunes is **covered** (step 4) for **every** origin that reaches `R` through it under key
+unification. A diamond's admissible candidate breaks are enumerated in a **stable order** — by
+survivor edge (source/referrer table identifier, then constraint name). A diamond with **no**
+admissible break (e.g. a reconverging edge that is also the sole path from an independent origin, or a
+different/non-unified value) has no local solution at all and forces fail-fast (step 6).
 
-The choice is local to each diamond; edges outside diamonds are untouched. Immutable references are
-outside the cascade graph entirely and are emitted as `ImmutableNoAction` (step 1).
+**Global deterministic selection (backtracking search).** A single edge can be a reconverging edge of
+more than one diamond, so the break chosen for one diamond constrains the others — an edge has exactly
+one final mode. DMS-1258 therefore does **not** commit a per-diamond first-fit and then fail if the
+global invariant breaks; it selects the whole classification by a deterministic depth-first search:
 
-**Global invariant (validated after all diamonds are resolved).** Survivor selection is computed per
-diamond, but overlapping diamonds can share edges, so a locally-valid choice for one diamond can break
-another. The classification is complete only once the **whole** retained graph satisfies a global
-invariant, which DMS-1258 must validate after all local choices are made rather than trusting the
-per-diamond snapshots:
+1. Order the diamonds stably (by receiver table identifier, then origin identifier).
+2. Visit diamonds in that order. At each diamond, try its admissible candidate breaks in the stable
+   order above, skipping any candidate whose per-edge mode assignment **conflicts** with a mode
+   already fixed by an earlier diamond on a shared edge.
+3. After tentatively fixing a diamond's break, advance to the next diamond. If a later diamond has no
+   admissible, non-conflicting candidate remaining, **backtrack** to the most recent diamond that
+   still has an untried candidate and advance it.
+4. Accept the **first complete assignment** (in this DFS order) whose final retained graph satisfies
+   the global invariant below. Because both the diamond order and the per-diamond candidate order are
+   stable, the accepted assignment is unique and reproducible.
+5. **Fail fast** (step 6) only when the search exhausts every candidate combination without any
+   assignment satisfying the invariant — i.e. the graph is genuinely unrepresentable, not merely
+   unrepresentable under one arbitrary local choice.
+
+**Global invariant (the acceptance predicate).** A complete assignment is valid iff:
 
 1. Every SQL Server reference FK has **exactly one** final `MssqlPropagationMode`.
 2. The retained `NativeCascade` subgraph (all kept `CASCADE` edges) is **acyclic**.
 3. The retained `NativeCascade` subgraph is a **multitree**: at most one directed cascade path between
    any ordered pair of tables (no receiver is reachable twice from any origin over kept edges).
 4. Every `NoPropagation` edge is **covered by the final retained graph** — the surviving path that
-   justified the prune must still exist and still maintain the shared canonical columns *after* every
-   other diamond is resolved, not merely within its own local diamond snapshot.
+   justifies the prune exists and still maintains the shared canonical columns in the *final*
+   assignment, not merely within an isolated diamond.
 
-If a local survivor choice would violate (2)–(3) for another diamond, or leaves a `NoPropagation` edge
-uncovered under (4), the graph has no safe classification → **fail fast** (step 6). Survivor selection
-stays deterministic (the stable source-table / constraint-name order above); the global check adds no
-nondeterminism — it only rejects graphs that no deterministic local choice can satisfy.
+This is the load-bearing correction for **overlapping diamonds**: a candidate that is locally valid
+but globally invalid is a signal to try the next candidate (or backtrack), and the graph is rejected
+only when **no** deterministic global assignment satisfies (1)–(4). The search space is finite
+(finitely many diamonds, each with finitely many admissible breaks) and the traversal is fully
+ordered, so the outcome is deterministic and independent of diamond-visitation timing; DMS-1258 must
+implement it as such.
 
 | Final per-edge outcome (`MssqlPropagationMode`) | FK shape | `ON UPDATE` | Propagation mechanism | Carrier diagnostics |
 |------------------------|----------|-------------|-----------------------|---------------------|

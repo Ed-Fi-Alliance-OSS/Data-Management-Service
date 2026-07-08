@@ -1689,10 +1689,20 @@ If `B` and `C` themselves depend on the same upstream identity and that upstream
 
 This section defines the required cross-engine behavior and mitigation strategy.
 
-#### PostgreSQL (supported; no special mitigation required)
+#### PostgreSQL (full-composite cascade; not physically pruned)
 
-PostgreSQL supports “cycles or multiple cascade paths” for FK cascades. Therefore, it is valid for DDL emission to use
-declarative `ON UPDATE CASCADE` on all eligible edges (eligibility defined by transitive identity mutability: `IsAbstract || TransitivelyAllowIdentityUpdates`).
+PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths, so DMS emits declarative
+full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defined by transitive identity mutability:
+`IsAbstract || TransitivelyAllowIdentityUpdates`) and **never physically prunes** PostgreSQL FKs. This is unchanged by
+the SQL Server foreign-key-pruning design.
+
+DMS nonetheless **fails derivation on both dialects** for a cascade cycle/SCC or an **uncovered diamond** — a
+cross-engine **portability** policy, so a model that cannot be represented on SQL Server is rejected up front
+regardless of the engine in use, **not** because PostgreSQL requires it (see [mssql-cascading.md](mssql-cascading.md),
+*Dialect scope decision*). No claim is made about PostgreSQL propagating through a cascade *cycle* at run time; such
+graphs are refused at derivation before either engine runs them. A multiple-cascade-path shape that reaches the same
+referrer is therefore valid only when it passes the shared portability / global-invariant checks — i.e. it is not a
+cycle, and any convergent diamond is coverable under key unification.
 
 Key properties under unification:
 
