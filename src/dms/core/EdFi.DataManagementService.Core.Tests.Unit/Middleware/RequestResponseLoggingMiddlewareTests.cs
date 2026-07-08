@@ -238,15 +238,15 @@ public class Given_RequestResponseLoggingMiddleware
         var json = JsonNode.Parse(writer.ToString());
         var properties = json?["Properties"];
 
-        properties?["Application"]?.GetValue<string>().Should().Be("EdFi.DataManagementService");
-        properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
-        properties?["TraceId"]?.GetValue<string>().Should().Be("json-trace-id");
-        properties?["RequestLayer"]?.GetValue<string>().Should().Be("Core");
-        properties?["Method"]?.GetValue<string>().Should().Be("GET");
-        properties?["Path"]?.GetValue<string>().Should().Be("/ed-fi/students");
-        properties?["StatusCode"]?.GetValue<int>().Should().Be(200);
-        properties?["DurationMs"]?.GetValue<long>().Should().Be(42L);
-        json?["RenderedMessage"]?.GetValue<string>().Should().Contain("DMS request completed");
+        (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DataManagementService");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["TraceId"]?.GetValue<string>()).Should().Be("json-trace-id");
+        (properties?["RequestLayer"]?.GetValue<string>()).Should().Be("Core");
+        (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
+        (properties?["Path"]?.GetValue<string>()).Should().Be("/ed-fi/students");
+        (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
+        (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
+        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("DMS request completed");
     }
 
     [Test]
@@ -271,12 +271,11 @@ public class Given_RequestResponseLoggingMiddleware
         var json = JsonNode.Parse(writer.ToString());
         var properties = json?["Properties"];
 
-        properties
-            ?["SourceContext"]?.GetValue<string>()
+        (properties?["SourceContext"]?.GetValue<string>())
             .Should()
             .Be("EdFi.DataManagementService.Core.Middleware.RequestResponseLoggingMiddleware");
-        properties?["RequestLayer"]?.GetValue<string>().Should().Be("Core");
-        properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
+        (properties?["RequestLayer"]?.GetValue<string>()).Should().Be("Core");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
     }
 
     private sealed class CapturingSerilogSink : ILogEventSink
