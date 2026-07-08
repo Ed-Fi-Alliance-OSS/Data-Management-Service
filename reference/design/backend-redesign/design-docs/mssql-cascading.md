@@ -467,11 +467,16 @@ a reconverging edge `E` chosen for pruning is:
   column consistent, so the pruned FK never observes a mismatch (probe 6). `E` becomes `NoPropagation`
   and keeps the **full composite** FK — RI is preserved without a second cascade path.
 
-- **Uncovered** — some origin reaches `R` through `E` with no surviving path maintaining `E`'s
-  columns (a different/non-unified value, or `E` is the *sole* path from an independent origin). A
+- **Uncovered (relative to the chosen survivor)** — under that survivor, some origin reaches `R`
+  through `E` with no surviving path maintaining `E`'s columns. Pruning `E` here is unsafe: a
   full-composite `NO ACTION` on those columns would block that origin's real identity updates
   (probe 3), and neither a trigger (probe 3) nor an `INSTEAD OF` reorder (probe 5) can rescue it while
-  the identity columns remain in the FK. There is no safe emission for `E` → **fail fast** (step 6).
+  the identity columns remain in the FK. Coverage is therefore a property of the *(edge, chosen
+  survivor)* pair: an uncovered edge makes **that candidate break inadmissible**, so step 5 tries
+  another survivor (or backtracks) rather than failing outright. Fail-fast (step 6) is reached only
+  when **no** admissible break exists under any survivor — e.g. `E` carries a different/non-unified
+  value regardless of survivor, or `E` is the *sole* path from an independent origin, so no survivor
+  can ever cover it.
 
 **Independent edges are never candidates.** An incoming edge whose source shares no ancestor with the
 receiver's other retained edges is not part of any diamond; it stays `NativeCascade`. Coverage is
@@ -537,7 +542,7 @@ implement it as such.
 | `NativeCascade` (cascade-eligible; an independent edge, the surviving path of a diamond, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
 | `NoPropagation` (cascade-eligible; a covered reconverging edge of a diamond) | full composite | `NO ACTION` | none needed — covered by the surviving path for the same origin (probe 6) | **yes** — records the origin, receiver, both paths, and shared columns |
 | `ImmutableNoAction` (not cascade-eligible; immutable target, not in the cascade graph) | full composite | `NO ACTION` | none — the referenced identity cannot change | none |
-| **derivation fails** (cascade cycle/SCC, or a diamond whose reconverging edge cannot be covered) | — | — | **fail fast** with a diagnostic | n/a |
+| **derivation fails** (cascade cycle/SCC; or diamonds that cannot be jointly broken — a single uncovered diamond, or globally-infeasible overlapping diamonds) | — | — | **fail fast** with a diagnostic | n/a |
 
 There is **no** `TriggerFallback` / `DocumentId`-only outcome. Every emitted SQL Server reference FK
 keeps the full composite key, so value-level RI is always enforced and the DMS-1002 stale-identity
@@ -548,21 +553,33 @@ alone; that is exactly why it is carried explicitly (see the contract).
 
 ### 6. Fail fast when no safe pruning exists
 
-Derivation fails, with a diagnostic, in exactly two situations. This failure applies on **both**
-dialects as a cross-engine portability policy — the graph is unrepresentable on SQL Server; PostgreSQL
-alone could run it, but DMS refuses a non-portable model (see the *Dialect scope decision*):
+Derivation fails, with a diagnostic, in **two** conditions — the graph cannot be made into a covered
+`NativeCascade` multitree. This failure applies on **both** dialects as a cross-engine portability
+policy — the graph is unrepresentable on SQL Server; PostgreSQL alone could run it, but DMS refuses a
+non-portable model (see the *Dialect scope decision*):
 
-- **Cascade cycle** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the action
-  tree revisits a table. Diagnostic names the SCC tables and the FK edges forming the cycle.
-- **Uncovered diamond** (step 5): an origin reaches a receiver by two distinct cascade paths, and no
-  survivor choice covers the reconverging edge (a different/non-unified value, or a reconverging edge
-  that is also the sole path from an independent origin). There is no legal SQL Server DDL that
-  preserves identity RI here — SQL Server allows at most one cascade path from an origin to a table
-  (probe 1), a `NO ACTION` composite FK cannot be trigger-rescued (probe 3), and `INSTEAD OF` is
-  unavailable (probe 5). Diagnostic names the **origin/root, the receiver, the two (or more) distinct
-  cascade paths, the candidate/pruned edges, and the coverage columns**.
+1. **Cascade cycle / SCC** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the
+   action tree revisits a table. Detected before survivor selection begins. Diagnostic names the SCC
+   tables and the FK edges forming the cycle.
+2. **Diamonds that cannot be jointly broken** (step 5): the global search finds no assignment that
+   breaks every diamond into a covered multitree. Same root cause — no safe prune exists — surfacing
+   two ways:
+   - a **single diamond with no admissible break** — an origin reaches the receiver by two distinct
+     cascade paths and no survivor choice covers the reconverging edge (a different/non-unified value
+     regardless of survivor, or a reconverging edge that is also the sole path from an independent
+     origin); or
+   - **globally infeasible overlapping diamonds** — each diamond has an admissible break in isolation,
+     but because overlapping diamonds share edges (an edge has exactly one final mode) no combination
+     satisfies the invariant. This is the case a per-diamond-local first-fit would have mis-handled.
 
-Both are precisely the cases ODS prunes silently and incorrectly. Failing here is safe because the
+   There is no legal SQL Server DDL that preserves identity RI in either — SQL Server allows at most
+   one cascade path from an origin to a table (probe 1), a `NO ACTION` composite FK cannot be
+   trigger-rescued (probe 3), and `INSTEAD OF` is unavailable (probe 5). The diagnostic names the
+   origin/root, the receiver, the distinct cascade paths, the candidate/pruned edges, and the coverage
+   columns — and, for the overlapping case, the specific diamonds and the shared edge whose final mode
+   is over-constrained.
+
+These are precisely the cases ODS prunes silently and incorrectly. Failing here is safe because the
 schema that produces it should have been rejected at authoring time (see the MetaEd follow-up), so
 the DMS check is a defense-in-depth backstop. Because `TriggerFallback` is gone, this fail-fast is
 now the *only* backstop for an uncovered live edge — which makes the MetaEd authoring guard
