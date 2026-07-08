@@ -1611,16 +1611,18 @@ storage columns and converted unified member path columns into read-only aliases
 rewrite or emit reference FKs; it only mutates the derived model (columns + storage metadata + unification classes)
 and adds `NullOrTrue` hardening constraints for synthetic presence flags.
 
-For a reference site, the composite FK uses canonical storage columns for unified identity parts:
+For a reference site, the composite FK uses canonical storage columns for unified identity parts. Column order is
+**identity parts first, `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing
+is positional: local column *i* pairs with target column *i*):
 
-- Local FK columns:
-  - `{RefBaseName}_DocumentId`
+- Local FK columns (in this order):
   - `<CanonicalIdentityParts...>` (in the referenced target’s identity path order; derived by mapping each identity
     part binding column through `DbColumnModel.Storage`)
-- Target columns:
-  - `DocumentId`
+  - `{RefBaseName}_DocumentId`
+- Target columns (in the matching order):
   - `<TargetIdentityColumns...>` (derived by mapping each target identity binding column through
     `DbColumnModel.Storage`)
+  - `DocumentId`
 
 Referential actions:
 

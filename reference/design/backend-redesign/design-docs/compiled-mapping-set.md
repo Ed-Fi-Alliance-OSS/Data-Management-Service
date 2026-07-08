@@ -386,11 +386,17 @@ Notes:
   `TableConstraint.ForeignKey` records the *result* of pruning, but the derived model must also carry the classification
   so DDL generation, runtime, and manifest verification agree. DMS-1258 must add to the shared derived contract (concrete
   C# shape deferred to DMS-1258; the required contract is fixed here — see `design-docs/mssql-cascading.md`):
-  - a per-edge `MssqlPropagationMode` with exactly two values — `NativeCascade` (surviving edge, `ON UPDATE CASCADE`) and
-    `NoPropagation` (pruned covered edge, `ON UPDATE NO ACTION`). There is no `TriggerFallback` value and no
-    `MssqlFkShape` axis: every SQL Server reference FK keeps the full composite key, so shape is not a variable.
-  - coverage / carrier diagnostics for each `NoPropagation` edge (which surviving edge and shared canonical columns cover
-    it), emitted into `relational-model.manifest.json` so pruning is auditable and reproducible.
+  - a per-edge `MssqlPropagationMode` on every SQL Server reference FK, with exactly three values (a *total*
+    classification, so consumers never infer intent from `OnUpdate`): `NativeCascade` (cascade-eligible surviving edge,
+    `ON UPDATE CASCADE`), `NoPropagation` (cascade-eligible pruned edge covered by the surviving cascade,
+    `ON UPDATE NO ACTION`), and `ImmutableNoAction` (reference to a genuinely immutable target — not in the cascade
+    graph — `ON UPDATE NO ACTION`). `NO ACTION` therefore does **not** imply `NoPropagation`: it is either
+    `NoPropagation` or `ImmutableNoAction`, which is why the mode is carried explicitly rather than derived from
+    `OnUpdate`. There is no `TriggerFallback` value and no `MssqlFkShape` axis: every SQL Server reference FK keeps the
+    full composite key, so shape is not a variable.
+  - coverage / carrier diagnostics **for `NoPropagation` edges only** (which surviving edge and shared canonical columns
+    cover the pruned edge), emitted into `relational-model.manifest.json` so pruning is auditable and reproducible.
+    `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics — there is nothing to attribute.
   - hard derivation errors for the two fail-fast conditions (a cascade cycle/SCC, or a receiver with an uncovered
     convergent live edge), each naming the offending tables and FK constraint names.
   This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;

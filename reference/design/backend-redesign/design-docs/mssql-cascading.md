@@ -25,7 +25,10 @@ design only.
 > SQL Server reference FK keeps the full composite key and a pruned live/uncovered edge is a
 > fail-fast error; reframes the cross-dialect detection as a **SQL Server portability / authoring
 > guard**, not a PostgreSQL correctness requirement; and uses **transitive** identity mutability
-> consistently. See [Resolved design decisions](#resolved-design-decisions).
+> consistently. A follow-up review round added a third `MssqlPropagationMode` value,
+> **`ImmutableNoAction`**, so genuinely immutable full-composite `NO ACTION` FKs are classified
+> explicitly instead of being conflated with pruned/covered edges. See
+> [Resolved design decisions](#resolved-design-decisions).
 
 ## The problem
 
@@ -102,6 +105,144 @@ also drive the corrections applied to the other design docs by DMS-1129.
    text) says pruning is decided "per referenced table"; that is the wrong orientation. It must be
    restated in receiver / referrer / path-convergence terms per decision 1. See
    [Correction required in the DMS-1258 ticket](#correction-required-in-the-dms-1258-ticket).
+
+## Diagrams
+
+These diagrams are the visual companion to the algorithm below; they are deliberately compact and
+implementation-oriented so DMS-1258 can read the object contract, the graph orientation, and each
+decision point directly. `overview.md` and `summary.md` cross-reference this section rather than
+duplicating it.
+
+### A. Database objects and what maintains them
+
+Shows the objects a reference site involves and — critically — separates **identity-value
+propagation** (a database FK cascade, solid arrows) from the **maintenance triggers** (dashed
+arrows) that are *not* the propagation mechanism. Arrows here point in the FK **references**
+direction (child → parent); the propagation graph in B reverses this.
+
+```mermaid
+flowchart LR
+  subgraph core["Core (dms.*)"]
+    DOC["dms.Document (PK DocumentId)"]
+    RI["dms.ReferentialIdentity (ReferentialId to DocumentId)"]
+  end
+  subgraph parent["Referenced parent (e.g. edfi.School)"]
+    SCH["edfi.School / PK DocumentId / SchoolId = identity storage col / UNIQUE UX_School_RefKey (SchoolId, DocumentId)"]
+    AID["edfi.EducationOrganizationIdentity (abstract target, when polymorphic) / identity parts..., DocumentId"]
+  end
+  subgraph ref["Referrer (root + child / _ext binding tables)"]
+    SSA["edfi.StudentSchoolAssociation root / PK DocumentId / School_SchoolId, School_DocumentId = binding cols"]
+    CH["child / _ext binding table (composite reference FK can live here too)"]
+  end
+
+  SCH -->|"FK DocumentId to dms.Document, ON DELETE CASCADE"| DOC
+  SSA -->|"FK DocumentId to dms.Document, ON DELETE CASCADE"| DOC
+  AID -->|"FK DocumentId to dms.Document"| DOC
+  SSA -->|"composite reference FK: School_SchoolId, School_DocumentId to School SchoolId, DocumentId; ON UPDATE per MssqlPropagationMode"| SCH
+  CH -->|"composite reference FK: identity parts..., _DocumentId"| SCH
+
+  STAMP(["*_Stamp trigger"]) -.->|"stamps ContentVersion etc. after any row change"| DOC
+  RIT(["ReferentialIdentity maintenance trigger"]) -.->|"recompute ReferentialId"| RI
+  ABT(["AbstractIdentity maintenance trigger"]) -.->|"upsert abstract identity row"| AID
+```
+
+*For DMS-1258:* the composite reference FK (identity parts first, `DocumentId` last) is the object
+that carries `MssqlPropagationMode`; the dashed triggers are the unaffected maintenance triggers,
+not the retired identity-value propagation trigger.
+
+### B. Propagation-direction graph and the convergence receiver
+
+Edges point in **propagation direction** (referenced/parent → referrer/child). The diamond makes the
+receiver explicit.
+
+```mermaid
+flowchart TD
+  A["A - hub identity (referenced parent)"]
+  B["B"]
+  C["C - cascade receiver, reached by A-to-C and A-to-B-to-C"]
+  A -->|"cascade"| B
+  A -->|"cascade"| C
+  B -->|"cascade"| C
+```
+
+*For DMS-1258:* SQL Server error 1785 is a property of **C** (cascade in-degree 2), not of the hub
+**A**. The prune/survivor decision is made at each receiver with in-degree > 1 — never "per
+referenced table".
+
+### C. Safe pruning — covered edge (restores identity-value RI)
+
+Both incoming edges bind the **same key-unified canonical column** on the receiver, so the survivor's
+cascade keeps it current and the pruned `NO ACTION` FK never observes a mismatch (probe 6).
+
+```mermaid
+flowchart TD
+  P1["Parent P1"]
+  P2["Parent P2"]
+  R["Receiver R: ONE key-unified column, e.g. StudentUniqueId_Unified; full composite FK on BOTH edges"]
+  P1 -->|"ON UPDATE CASCADE - survivor (NativeCascade), maintains the shared column"| R
+  P2 -->|"ON UPDATE NO ACTION - pruned + COVERED (NoPropagation), same column kept current by the survivor"| R
+```
+
+*For DMS-1258:* both edges keep the **full composite** FK, so identity values are enforced by the
+DB — no `DocumentId`-only shape, no stale-identity window. Only the pruned edge carries
+coverage/carrier diagnostics (which survivor covers it, over which columns).
+
+### D. Unsafe convergence — fail fast (no DocumentId-only fallback)
+
+The two incoming edges carry **independent** identities into **separate, non-unified** columns, so no
+survivor choice covers the other.
+
+```mermaid
+flowchart TD
+  P1["Parent P1 - identity X"]
+  P2["Parent P2 - identity Y (independent of X)"]
+  R["Receiver R: stores X and Y in separate, non-unified columns"]
+  P1 -->|"live cascade (X)"| R
+  P2 -->|"live cascade (Y)"| R
+  R -.->|"keep one as CASCADE; the other must be NO ACTION, but that blocks real updates (547), and there is no DocumentId-only fallback"| FAIL(["FAIL FAST - uncovered convergent live edge; diagnostic names R + the conflicting edges"])
+```
+
+*For DMS-1258:* this is the case ODS prunes silently and wrongly. DMS raises a hard derivation
+error; MetaEd (METAED-1667) should reject it at authoring time.
+
+### E. Cascade cycle / SCC — fail fast
+
+```mermaid
+flowchart LR
+  A -->|"cascade"| B
+  B -->|"cascade"| C
+  C -->|"cascade"| A
+```
+
+*For DMS-1258:* a nontrivial SCC (or a self-loop) is the "cycles" half of error 1785. Pruning one
+edge does not leave a cascade that still propagates every identity, so no pruning rule is claimed
+safe → fail fast, naming the SCC tables and the FK edges in the cycle.
+
+### F. Before (DMS-1002 workaround) vs after (DMS-1129 pruning)
+
+```mermaid
+flowchart TB
+  subgraph before["BEFORE - DMS-1002 workaround"]
+    direction TB
+    BP["Referenced parent"]
+    BR["Referrer: DocumentId-only FK, identity columns stripped"]
+    BT(["MssqlIdentityPropagationTrigger (AFTER)"])
+    BR -->|"FK on _DocumentId only"| BP
+    BT -.->|"copies new identity into referrer"| BR
+    BN["identity VALUES not enforced by DB; a concurrent insert/update can persist STALE identity"]
+  end
+  subgraph after["AFTER - DMS-1129 FK pruning"]
+    direction TB
+    AP["Referenced parent"]
+    AR["Referrer: full composite FK, identity parts..., DocumentId"]
+    AR -->|"NativeCascade CASCADE (survivor) / NoPropagation NO ACTION (covered) / ImmutableNoAction NO ACTION"| AP
+    AN["identity-value RI enforced by the DB; unsafe graphs fail fast - no stale identity"]
+  end
+```
+
+*For DMS-1258:* the migration is "restore the full composite FK everywhere + classify each edge",
+not "add another trigger". The before-column mechanism (`DocumentId`-only + trigger) is removed
+entirely.
 
 ## SQL Server behavior (empirically confirmed)
 
@@ -185,8 +326,9 @@ the reference is identity-propagating, i.e. the target is abstract or the concre
 `TransitivelyAllowIdentityUpdates = true` (decision 4). This is the transitive-mutability set:
 directly-immutable references that are nonetheless transitively mutable are included; genuinely
 immutable references (`IsAbstract = false` and `TransitivelyAllowIdentityUpdates = false`) are
-**excluded** from the graph and always get a plain full-composite `NO ACTION` FK, so they never
-participate in convergence.
+**excluded** from the graph and always get a plain full-composite `NO ACTION` FK — classified
+`ImmutableNoAction` in the [derived-model contract](#derived-model-contract-for-dms-1258) — so they
+never participate in convergence and are not pruning candidates.
 
 This is the same underlying edge set that `ReferenceConstraintPass` and
 `DeriveTriggerInventoryPass.BuildReverseReferenceIndex` already enumerate — only the **orientation**
@@ -246,15 +388,19 @@ edge is covered by it:
 
 Receivers with cascade in-degree ≤ 1 keep their single edge as `NativeCascade` (no pruning needed).
 
-| Final per-edge outcome | FK shape | `ON UPDATE` | Propagation mechanism |
-|------------------------|----------|-------------|-----------------------|
-| `NativeCascade` (surviving edge, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) |
-| `NoPropagation` (pruned, covered) | full composite | `NO ACTION` | none needed — covered by the surviving cascade (probe 6) |
-| **derivation fails** (cascade cycle/SCC, or a receiver with any uncovered live pruned edge) | — | — | **fail fast** with a diagnostic |
+| Final per-edge outcome (`MssqlPropagationMode`) | FK shape | `ON UPDATE` | Propagation mechanism | Carrier diagnostics |
+|------------------------|----------|-------------|-----------------------|---------------------|
+| `NativeCascade` (cascade-eligible; surviving edge, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
+| `NoPropagation` (cascade-eligible; pruned, covered) | full composite | `NO ACTION` | none needed — covered by the surviving cascade (probe 6) | **yes** — records the covering survivor + shared columns |
+| `ImmutableNoAction` (not cascade-eligible; immutable target, not in the cascade graph) | full composite | `NO ACTION` | none — the referenced identity cannot change | none |
+| **derivation fails** (cascade cycle/SCC, or a receiver with any uncovered live pruned edge) | — | — | **fail fast** with a diagnostic | n/a |
 
 There is **no** `TriggerFallback` / `DocumentId`-only outcome. Every emitted SQL Server reference FK
 keeps the full composite key, so value-level RI is always enforced and the DMS-1002 stale-identity
-race does not reappear.
+race does not reappear. Note that `ON UPDATE NO ACTION` is emitted for *two distinct* reasons —
+`NoPropagation` (a pruned but covered cascade-eligible edge) and `ImmutableNoAction` (a reference
+whose target identity cannot change) — so the mode is **not** derivable from the `OnUpdate` action
+alone; that is exactly why it is carried explicitly (see the contract).
 
 ### 6. Fail fast when no safe pruning exists
 
@@ -311,21 +457,33 @@ design fixes the contract that ticket must add. Today's shared model
 
 DMS-1258 must add:
 
-- **Per-edge `MssqlPropagationMode`** with exactly two values: `NativeCascade` and `NoPropagation`.
-  (The earlier draft's third value `TriggerFallback` is removed, and the `MssqlFkShape`
+- **Per-edge `MssqlPropagationMode`** on every SQL Server reference FK, with exactly three values —
+  a *total* classification, so a consumer never has to infer intent from `OnUpdate`:
+  - `NativeCascade` — a cascade-eligible edge kept as the surviving cascade (or the sole edge into a
+    receiver); `ON UPDATE CASCADE`.
+  - `NoPropagation` — a cascade-eligible edge that was pruned but is covered by the surviving
+    cascade; `ON UPDATE NO ACTION`.
+  - `ImmutableNoAction` — a reference to a genuinely immutable target
+    (`IsAbstract = false` and `TransitivelyAllowIdentityUpdates = false`), which is not part of the
+    cascade graph and not a pruning candidate; `ON UPDATE NO ACTION`.
+
+  The `OnUpdate` action does **not** determine the mode: `CASCADE` ⇒ `NativeCascade`, but
+  `NO ACTION` is either `NoPropagation` or `ImmutableNoAction`. The mode is therefore carried
+  explicitly (it distinguishes "pruned but covered" from "immutable"), not derived. (The earlier
+  draft's `TriggerFallback` value is removed, and the `MssqlFkShape`
   (`FullComposite` / `DocumentIdOnly`) axis is dropped entirely — every SQL Server reference FK is
-  now full composite, so shape is no longer a variable.) The mode is redundant with the FK's
-  `OnUpdate` (`CASCADE` ⇒ `NativeCascade`, `NO ACTION` ⇒ `NoPropagation`) but is carried explicitly
-  as provenance for diagnostics and manifest verification.
-- **Coverage / carrier diagnostics**: for each `NoPropagation` pruned edge, which surviving cascade
-  edge (receiver + survivor constraint name) covers it and over which shared canonical columns —
-  emitted into the relational-model manifest so pruning decisions are auditable and reproducible.
+  full composite, so shape is no longer a variable.)
+- **Coverage / carrier diagnostics — only for `NoPropagation` edges**: which surviving cascade edge
+  (receiver + survivor constraint name) covers the pruned edge and over which shared canonical
+  columns, emitted into the relational-model manifest so pruning decisions are auditable and
+  reproducible. `NativeCascade` and `ImmutableNoAction` edges carry **no** carrier diagnostics —
+  there is nothing to attribute (a survivor is self-carrying; an immutable target never changes).
 - **Fail-fast derivation errors** for the two conditions in step 6 (cycle/SCC; uncovered
   convergence), each carrying the offending tables and FK constraint names, surfaced as hard
   derivation errors (not manifest warnings).
 
 PostgreSQL emission and its `OnUpdate` values are unchanged; `MssqlPropagationMode` is meaningful
-only for SQL Server model sets.
+only for SQL Server model sets (it is absent / not applicable on PostgreSQL FKs).
 
 ## FK / RefKey column order (canonical)
 
@@ -374,8 +532,11 @@ conflict is a hard error, never a silent prune.
   propagation. The `MssqlIdentityPropagationTrigger` trigger kind is retired for identity-value
   propagation. (The UUIDv5 referential-identity and abstract-identity *maintenance* triggers are
   unaffected — see Non-goals.)
-- New derivation output: per-edge `MssqlPropagationMode`, coverage/carrier diagnostics, and hard
-  derivation errors for cascade cycles and uncovered convergence (see the contract above).
+- New derivation output: per-edge `MssqlPropagationMode` (`NativeCascade` / `NoPropagation` /
+  `ImmutableNoAction`), coverage/carrier diagnostics for `NoPropagation` edges only, and hard
+  derivation errors for cascade cycles and uncovered convergence (see the contract above). Immutable
+  references — which `ResolveOnUpdate` already emits as `NO ACTION` — become `ImmutableNoAction`
+  rather than being conflated with pruned/covered edges.
 
 PostgreSQL emission is unchanged.
 
@@ -388,8 +549,9 @@ before implementation begins:
 - The survivor/prune decision is made **per cascade receiver** (the referrer/child table reached by
   multiple cascade paths), analyzed in **propagation direction**, using **path convergence**
   (cascade in-degree > 1), not per referenced/parent table.
-- The ticket must also drop `TriggerFallback` / `DocumentId`-only wording: the outcomes are
-  `NativeCascade`, `NoPropagation`, or fail-fast, and every emitted FK is full composite.
+- The ticket must also drop `TriggerFallback` / `DocumentId`-only wording: the per-edge outcomes are
+  `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and every emitted FK is full
+  composite.
 - The ticket must add explicit **cycle/SCC fail-fast** to the scope.
 
 ## Follow-up work

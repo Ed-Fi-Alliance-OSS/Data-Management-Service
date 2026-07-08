@@ -218,7 +218,7 @@ This is not preferred if the goal is full parity with document-level `equalityCo
 
 1. **Reference-site vs scalar propagation**
    - If a dependent endpoint is a *reference identity-part column* that participates in a composite FK (e.g., a child
-     table stores `School_DocumentId` plus `SchoolId` under a `FOREIGN KEY (School_DocumentId, SchoolId) ...`), then
+     table stores `SchoolId` plus `School_DocumentId` under a `FOREIGN KEY (SchoolId, School_DocumentId) ...` (identity parts first, `DocumentId` last)), then
      “propagate `SchoolId` only” may violate the composite FK unless the `..._DocumentId` already points to the same
      target row.
    - Supporting this scenario may therefore require one of:

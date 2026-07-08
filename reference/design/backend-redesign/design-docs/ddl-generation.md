@@ -223,13 +223,13 @@ The DDL generator must emit document-reference columns and constraints that enab
   - All-or-none constraints are defined over:
     - the reference group’s `..._DocumentId`, and
     - the per-site identity-part binding columns (even when those columns are generated aliases).
-- Enforce a composite FK over **storage columns only**:
-  - Local FK columns:
-    - the reference group’s `..._DocumentId`, and
-    - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`.
-  - Target columns:
-    - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, and
-    - `DocumentId` (identity storage columns first, `DocumentId` last).
+- Enforce a composite FK over **storage columns only**. Column order is **identity storage columns first, then the reference `..._DocumentId` / `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
+  - Local FK columns (in this order):
+    - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`, then
+    - the reference group’s `..._DocumentId`.
+  - Target columns (in the matching order):
+    - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
+    - `DocumentId`.
   - Use `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`. On SQL Server, `ON UPDATE CASCADE` is further limited by foreign-key pruning to the one surviving edge into each cascade receiver; pruned edges use `ON UPDATE NO ACTION` (still full composite) and are allowed only when covered by the surviving cascade, with fail-fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge). There is no `DocumentId`-only trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(<IdentityParts...>, DocumentId)` because `DocumentId` is already unique; identity storage columns first, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).

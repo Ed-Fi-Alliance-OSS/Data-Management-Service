@@ -594,7 +594,7 @@ Typical structure:
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL:
-        - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
+        - concrete targets: `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; `ON UPDATE NO ACTION` otherwise)
         - abstract targets: `ON UPDATE CASCADE`
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - surviving edge into each cascade receiver: full composite FK with `ON UPDATE CASCADE`

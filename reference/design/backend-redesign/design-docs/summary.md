@@ -247,11 +247,11 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 ## Key risks and mitigations (from the docs)
 
 - **Cascade feasibility and fan-out**
-  - SQL Server “multiple cascade paths” / cycle restrictions (error 1785) are handled by foreign-key pruning analyzed in propagation direction: cascade on the one surviving edge into each cascade receiver, `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge) — no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
+  - SQL Server “multiple cascade paths” / cycle restrictions (error 1785) are handled by foreign-key pruning analyzed in propagation direction: cascade on the one surviving edge into each cascade receiver, `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge) — no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md), including its [diagrams](mssql-cascading.md#diagrams)).
   - Identity updates on “hub” documents can synchronously update many dependent rows; needs guardrails, telemetry, and a deadlock retry policy.
 
 - **Trigger correctness and multi-row stamping**
-  - Stamping must produce per-row unique `ChangeVersion` values (especially for SQL Server multi-row propagation-trigger updates) and must cover changes across root + child + extension tables.
+  - Stamping must produce per-row unique `ChangeVersion` values (especially for SQL Server multi-row updates from native identity cascades, where one parent identity change can rewrite many referrer rows) and must cover changes across root + child + extension tables.
 
 - **Read amplification**
   - Reconstitution can be expensive for deep resources (many child tables/result sets); benchmark representative deep resources early and treat read-path performance as a first-class requirement.

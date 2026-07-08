@@ -117,8 +117,10 @@ Mitigations:
 ### Trigger correctness for stamping and identity maintenance (Correctness Risk)
 
 Correctness depends on generated triggers to:
-- stamp `dms.Document` on all representation changes (including propagation updates from PostgreSQL FK cascades or SQL Server propagation triggers), and
+- stamp `dms.Document` on all representation changes — including the referrer-row updates produced by identity propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on the surviving edge under foreign-key pruning). The propagation itself is a database FK cascade, not a trigger; the ordinary `*_Stamp` and identity-maintenance triggers then fire on the cascaded row updates exactly as they do for direct writes, and
 - maintain `dms.ReferentialIdentity` and abstract identity tables transactionally.
+
+These abstract-identity and referential-identity *maintenance* triggers are unaffected by the DMS-1129 revision; only the retired SQL Server identity-*value* propagation trigger (`MssqlIdentityPropagationTrigger`) is gone, replaced by native cascade (see [mssql-cascading.md](mssql-cascading.md)).
 
 Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or incorrect identity resolution.
 
