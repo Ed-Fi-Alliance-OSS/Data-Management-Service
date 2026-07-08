@@ -2281,7 +2281,8 @@ semantics, or cascade correctness.
     the surviving path kept as `ON UPDATE CASCADE` and one covered reconverging edge pruned to `ON UPDATE NO ACTION`,
   - every reference composite FK keeps the full composite key (identity columns are never dropped); there is no
     `DocumentId`-only FK and no identity-value propagation trigger,
-  - an uncovered diamond fails derivation.
+  - SQL Server fail-fast occurs when no complete global assignment satisfies the retained-`NativeCascade` invariant —
+    a single uncovered diamond, or globally infeasible overlapping diamonds — as well as any cascade cycle/SCC.
 
 ### Write planning + flattening
 

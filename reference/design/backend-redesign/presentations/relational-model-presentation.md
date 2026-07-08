@@ -585,7 +585,7 @@ flowchart LR
     subgraph P5["Pass 5: Abstract Artifacts"]
         direction TB
         P5A["For each abstract resource:"]
-        P5B["Create identity table<br/>(DocumentId + identity cols<br/>+ Discriminator)"]
+        P5B["Create identity table<br/>(PK DocumentId, identity cols,<br/>Discriminator last)"]
         P5C["Resolve canonical column<br/>signatures across members"]
         P5D["Create union view<br/>(UNION ALL of concrete arms)"]
         P5A --> P5B --> P5C --> P5D

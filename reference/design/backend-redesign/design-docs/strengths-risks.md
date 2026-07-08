@@ -82,7 +82,7 @@ Mitigations / guidance:
 SQL Server may reject FK graphs with “cycles or multiple cascade paths” (confirmed: error 1785) — a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree. The design handles this with **foreign-key pruning** (analyzed in propagation direction, referenced/parent → referrer/child) rather than by disabling all update cascades. The DDL generator must:
 - build the cascade graph in propagation direction and fail fast on any cascade cycle/SCC,
 - keep `ON UPDATE CASCADE` (full composite FK) on eligible edges — including independent parents into a shared receiver (in-degree > 1 is legal, not a conflict) — and only at a **diamond** (a receiver reached by two distinct cascade paths from one origin) prune one covered reconverging edge to `ON UPDATE NO ACTION` (still full composite), allowed only when it is covered by the surviving path, and
-- fail derivation fast on an uncovered diamond (no safe pruning). Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
+- fail derivation fast when no safe pruning exists — a cascade cycle/SCC/self-loop, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds where no global survivor assignment satisfies the retained-`NativeCascade` invariant). Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
 - extra derivation complexity (propagation-direction graph, cycle/SCC detection, coverage classification, deterministic survivor selection),

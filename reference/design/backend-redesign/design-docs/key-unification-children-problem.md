@@ -7,8 +7,11 @@ Draft.
 > **SQL Server mechanism superseded (DMS-1129).** This document was written when SQL Server
 > identity-value propagation used `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`. That
 > mechanism is superseded by [mssql-cascading.md](mssql-cascading.md): SQL Server now uses native
-> `ON UPDATE CASCADE` on eligible edges (pruning only a covered edge at a diamond, with fail-fast on
-> cycles/uncovered diamonds), largely like PostgreSQL. The `MssqlIdentityPropagationTrigger` references below are
+> `ON UPDATE CASCADE` on eligible edges plus **SQL-Server-only** foreign-key pruning and fail-fast
+> (pruning a covered edge only at a diamond; failing when no safe pruning exists — a cascade
+> cycle/SCC, or diamonds that cannot be jointly broken, including globally infeasible overlapping
+> diamonds). PostgreSQL is never pruned or failed by DMS (MetaEd is the cross-engine authoring guard).
+> The `MssqlIdentityPropagationTrigger` references below are
 > retained as **historical analysis only** and are non-normative. Native cascade follows the FK on
 > child/extension binding tables directly, so the "SQL Server trigger only considers root-table
 > reference sites" limitation described here does not apply to the native-cascade design — a child
