@@ -20,10 +20,10 @@ public static class EtagValue
     public const char Separator = '-';
 
     /// <summary>
-    /// Splits an opaque etag value "{contentVersion}-{variantKey}" into its two parts. ContentVersion
-    /// is digits-only and variantKey characters are [a-z0-9_.], so the first '-' is the unambiguous
-    /// boundary. Returns <see langword="false"/> (and empty out-params) when either part is empty or
-    /// no separator is present. Callers that also need the header quote/weak-tag handling use
+    /// Splits an opaque etag value "{contentVersion}-{variantKey}" into its two parts. The variantKey
+    /// portion is guaranteed not to contain <see cref="Separator"/>, so the last '-' is the unambiguous
+    /// boundary. Returns <see langword="false"/> (and empty out-params) when either part is empty or no
+    /// separator is present. Callers that also need the header quote/weak-tag handling use
     /// <see cref="TryParseHeaderValue"/> first.
     /// </summary>
     public static bool TryParse(string? etagValue, out string contentVersion, out string variantKey)
@@ -36,7 +36,7 @@ public static class EtagValue
             return false;
         }
 
-        var separator = etagValue.IndexOf(Separator, StringComparison.Ordinal);
+        var separator = etagValue.LastIndexOf(Separator, StringComparison.Ordinal);
         if (separator <= 0 || separator == etagValue.Length - 1)
         {
             return false;
