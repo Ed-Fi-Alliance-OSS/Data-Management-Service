@@ -44,7 +44,7 @@ Authorization is addressed separately in [auth.md](auth.md). Extension-specific 
 
 - **Schema-driven, no codegen**: derive extension tables/columns from effective `ApiSchema.json` (`jsonSchemaForInsert` + `documentPathsMapping`) and compile plans at startup.
 - **Low coupling to document shape**: treat `_ext` as a generic “project-scoped subtree” discovered via JSON schema traversal (no hard-coded paths).
-- **Cross-engine**: PostgreSQL + SQL Server parity.
+- **Cross-engine**: extension tables/columns must be supported on both PostgreSQL and SQL Server — shared behavior where practical, explicit engine-specific behavior where the engines diverge (e.g. SQL-Server-only cascade pruning/fail-fast; PostgreSQL left as-is — see [mssql-cascading.md](mssql-cascading.md)).
 - **No core-table widening**: avoid merging extension columns into core resource tables; keep extension projects’ data in their own table hierarchies.
 
 ## Table naming patterns (borrowed from the old flattening design)
