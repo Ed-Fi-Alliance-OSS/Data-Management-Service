@@ -26,7 +26,7 @@ public class Given_RelationalCommittedRepresentationReader
     public async Task It_composes_the_committed_etag_from_the_stamped_content_version()
     {
         var sut = new RelationalCommittedRepresentationReader(
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
             Options.Create(new ResourceLinksOptions())
         );
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();

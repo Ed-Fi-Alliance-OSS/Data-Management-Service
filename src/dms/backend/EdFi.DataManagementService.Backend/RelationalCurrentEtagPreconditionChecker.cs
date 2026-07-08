@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -62,14 +64,22 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
-    IEtagComposer etagComposer
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
+    ILogger<RelationalCurrentEtagPreconditionChecker> logger
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
 
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
+
+    private readonly ILogger<RelationalCurrentEtagPreconditionChecker> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
         MappingSet mappingSet,
@@ -141,15 +151,16 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         // Compose the current served etag (it still carries profileCode from the request's profile, for
         // the returned CurrentEtag). If-Match then compares only the state-significant projection
         // (ContentVersion, schemaEpoch); format, linkFlag, and profileCode are projected out — profileCode
-        // as of the 2026-07-04 ADR amendment. A wildcard precondition (If-Match: *) short-circuits to a
-        // match here because reaching this point means the target row exists and is locked.
-        var currentEtag = _etagComposer.Compose(
-            currentState.DocumentMetadata.ContentVersion,
-            VariantKeyFactory.Create(
+        // as of the 2026-07-04 ADR amendment. A wildcard precondition (If-Match: *) is handled inside the
+        // evaluator, which matches unconditionally because reaching this point means the target row
+        // exists and is locked.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
                 request.MappingSet.Key.EffectiveSchemaHash,
                 ResponseFormat.Json,
-                ProfileVariantCode.Of(request.ProfileName),
-                linksEnabled: true
+                request.ProfileName,
+                LinksEnabled: true,
+                currentState.DocumentMetadata.ContentVersion
             )
         );
         var refreshedTargetContext = request.TargetContext with
@@ -157,16 +168,26 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
         };
 
+        var evaluation = _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
+                    + "currentTag={CurrentTag}, matched={IsMatch}",
+                request.TargetContext.DocumentId,
+                request.Precondition.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
+
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
             currentEtag,
-            request.Precondition.IsWildcard
-                || string.Equals(
-                    EtagMatchProjection.Of(request.Precondition.Value),
-                    EtagMatchProjection.Of(currentEtag),
-                    StringComparison.Ordinal
-                )
+            evaluation.IsMatch
         );
     }
 

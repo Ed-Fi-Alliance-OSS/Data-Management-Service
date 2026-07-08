@@ -24,6 +24,7 @@ public class Given_DescriptorReadHandler
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
     private static readonly IEtagComposer _etagComposer = new EtagComposer();
+    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer(_etagComposer);
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]")]
@@ -163,10 +164,11 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_to_external_descriptor_reads_without_recomputing_etag()
+    public async Task It_applies_readable_profile_projection_and_varies_the_etag_by_profile()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
         var projectionContext = CreateReadableProfileProjectionContext();
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
@@ -178,16 +180,28 @@ public class Given_DescriptorReadHandler
                 ),
             ]),
         ]);
-        var unprojectedDocument = DescriptorDocumentMaterializer.Materialize(
-            CreateDescriptorReadRow(
-                documentUuid.Value,
-                description: "Alternative school type",
-                effectiveBeginDate: new DateOnly(2025, 1, 15)
-            ),
-            RelationalGetRequestReadMode.ExternalResponse,
-            _etagComposer,
-            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+        // The full/unprofiled representation still carries the profile-insensitive "_" etag.
+        var unprofiledEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: false,
+                ContentVersion: 42L
+            )
         );
+        // The profile-reduced representation the client actually sees must carry a distinct etag
+        // (RFC 7232 strong-validator semantics: distinct byte-representations, distinct etags).
+        var profiledEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                projectionContext.ProfileName,
+                LinksEnabled: false,
+                ContentVersion: 42L
+            )
+        );
+        profiledEtag.Should().NotBe(unprofiledEtag);
         var projectedDocument = JsonNode.Parse(
             """
             {
@@ -200,7 +214,9 @@ public class Given_DescriptorReadHandler
             }
             """
         )!;
-        projectedDocument["_etag"] = unprojectedDocument["_etag"]!.DeepClone();
+        // Mirrors real IReadableProfileProjector behavior: projection only drops/keeps business
+        // fields, it never touches the _etag the materializer already composed.
+        projectedDocument["_etag"] = profiledEtag;
         var readableProfileProjector = A.Fake<IReadableProfileProjector>();
         A.CallTo(() =>
                 readableProfileProjector.Project(
@@ -224,10 +240,8 @@ public class Given_DescriptorReadHandler
         success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
         success.EdfiDoc["shortDescription"].Should().BeNull();
         success.EdfiDoc["effectiveBeginDate"].Should().BeNull();
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(unprojectedDocument["_etag"]!.GetValue<string>());
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(profiledEtag);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBe(unprofiledEtag);
         A.CallTo(() =>
                 readableProfileProjector.Project(
                     A<JsonNode>._,
@@ -236,6 +250,34 @@ public class Given_DescriptorReadHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_composes_a_profile_insensitive_etag_for_unprofiled_descriptor_reads()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-aaaaaaaaaaaa"));
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value)),
+            ]),
+        ]);
+        var expectedEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: false,
+                ContentVersion: 42L
+            )
+        );
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+
+        var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().EndWith("._.n");
     }
 
     [Test]
@@ -550,10 +592,11 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_to_descriptor_query_items_without_recomputing_etags()
+    public async Task It_applies_readable_profile_projection_and_varies_the_etag_by_profile_for_query_items()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
         var projectionContext = CreateReadableProfileProjectionContext();
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
@@ -565,16 +608,25 @@ public class Given_DescriptorReadHandler
                 ),
             ]),
         ]);
-        var unprojectedDocument = DescriptorDocumentMaterializer.Materialize(
-            CreateDescriptorReadRow(
-                documentUuid,
-                description: "Alternative school type",
-                effectiveBeginDate: new DateOnly(2025, 1, 15)
-            ),
-            RelationalGetRequestReadMode.ExternalResponse,
-            _etagComposer,
-            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+        var unprofiledEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: false,
+                ContentVersion: 42L
+            )
         );
+        var profiledEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                projectionContext.ProfileName,
+                LinksEnabled: false,
+                ContentVersion: 42L
+            )
+        );
+        profiledEtag.Should().NotBe(unprofiledEtag);
         var projectedDocument = JsonNode.Parse(
             """
             {
@@ -587,7 +639,7 @@ public class Given_DescriptorReadHandler
             }
             """
         )!;
-        projectedDocument["_etag"] = unprojectedDocument["_etag"]!.DeepClone();
+        projectedDocument["_etag"] = profiledEtag;
         var readableProfileProjector = A.Fake<IReadableProfileProjector>();
         A.CallTo(() =>
                 readableProfileProjector.Project(
@@ -615,10 +667,8 @@ public class Given_DescriptorReadHandler
         projectedItem["description"]!.GetValue<string>().Should().Be("Alternative school type");
         projectedItem["shortDescription"].Should().BeNull();
         projectedItem["effectiveBeginDate"].Should().BeNull();
-        projectedItem["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(unprojectedDocument["_etag"]!.GetValue<string>());
+        projectedItem["_etag"]!.GetValue<string>().Should().Be(profiledEtag);
+        projectedItem["_etag"]!.GetValue<string>().Should().NotBe(unprofiledEtag);
 
         A.CallTo(() =>
                 readableProfileProjector.Project(
@@ -691,7 +741,7 @@ public class Given_DescriptorReadHandler
         return new DescriptorReadHandler(
             commandExecutor,
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
-            _etagComposer,
+            _servedEtagComposer,
             NullLogger<DescriptorReadHandler>.Instance
         );
     }
@@ -707,7 +757,10 @@ public class Given_DescriptorReadHandler
                 []
             ),
             new HashSet<string>(StringComparer.Ordinal) { "namespace", "codeValue" }
-        );
+        )
+        {
+            ProfileName = "Sample-Profile",
+        };
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
@@ -823,34 +876,6 @@ public class Given_DescriptorReadHandler
             contentVersion,
             DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
-
-    private static DescriptorReadRow CreateDescriptorReadRow(
-        Guid documentUuid,
-        long documentId = 101L,
-        string? ns = "uri://ed-fi.org/SchoolTypeDescriptor",
-        string? codeValue = "Alternative",
-        string? shortDescription = "Alternative",
-        string? description = "Alternative school type",
-        DateOnly? effectiveBeginDate = null,
-        DateOnly? effectiveEndDate = null,
-        string? discriminator = "SchoolTypeDescriptor"
-    )
-    {
-        return new DescriptorReadRow(
-            DocumentId: documentId,
-            DocumentUuid: documentUuid,
-            ContentVersion: 42L,
-            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
-            ResourceKeyId: 13,
-            Namespace: ns!,
-            CodeValue: codeValue!,
-            ShortDescription: shortDescription!,
-            Description: description,
-            EffectiveBeginDate: effectiveBeginDate,
-            EffectiveEndDate: effectiveEndDate,
-            Discriminator: discriminator
-        );
-    }
 
     private static QueryElement CreateQueryElement(
         string queryFieldName,

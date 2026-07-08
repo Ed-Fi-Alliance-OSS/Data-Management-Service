@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -36,7 +37,12 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     {
         _currentStateLoader = A.Fake<IRelationalWriteCurrentStateLoader>();
         _writeSession = A.Fake<IRelationalWriteSession>();
-        _sut = new RelationalCurrentEtagPreconditionChecker(_currentStateLoader, new EtagComposer());
+        _sut = new RelationalCurrentEtagPreconditionChecker(
+            _currentStateLoader,
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
+            NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
+        );
 
         A.CallTo(() => _writeSession.CreateCommand(A<RelationalCommand>._))
             .Invokes(call => _capturedLockCommand = call.GetArgument<RelationalCommand>(0)!)
@@ -124,6 +130,24 @@ public class Given_RelationalCurrentEtagPreconditionChecker
             SqlDialect.Pgsql,
             new WritePrecondition.IfMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion - 1))
         );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_reports_mismatch_when_only_the_schema_epoch_differs()
+    {
+        // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
+        // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
+        // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
+        var differentEpochEtag = new EtagComposer().Compose(
+            LockedContentVersion,
+            new VariantKey($"ffffffff.j._.l")
+        );
+        var request = CreateRequest(SqlDialect.Pgsql, new WritePrecondition.IfMatch(differentEpochEtag));
 
         var result = await _sut.CheckAsync(request, _writeSession);
 

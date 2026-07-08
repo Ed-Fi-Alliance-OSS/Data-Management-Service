@@ -16,6 +16,37 @@ public static class EtagValue
     public static string Compose(string contentVersion, string variantKey) =>
         $"{contentVersion}-{variantKey}";
 
+    /// <summary>Separator between the ContentVersion and variantKey portions of an etag value.</summary>
+    public const char Separator = '-';
+
+    /// <summary>
+    /// Splits an opaque etag value "{contentVersion}-{variantKey}" into its two parts. The variantKey
+    /// portion is guaranteed not to contain <see cref="Separator"/>, so the last '-' is the unambiguous
+    /// boundary. Returns <see langword="false"/> (and empty out-params) when either part is empty or no
+    /// separator is present. Callers that also need the header quote/weak-tag handling use
+    /// <see cref="TryParseHeaderValue"/> first.
+    /// </summary>
+    public static bool TryParse(string? etagValue, out string contentVersion, out string variantKey)
+    {
+        contentVersion = string.Empty;
+        variantKey = string.Empty;
+
+        if (string.IsNullOrEmpty(etagValue))
+        {
+            return false;
+        }
+
+        var separator = etagValue.LastIndexOf(Separator);
+        if (separator <= 0 || separator == etagValue.Length - 1)
+        {
+            return false;
+        }
+
+        contentVersion = etagValue[..separator];
+        variantKey = etagValue[(separator + 1)..];
+        return true;
+    }
+
     /// <summary>Quotes an opaque etag value for the ETag / If-Match HTTP header (strong, no W/).</summary>
     public static string ToHeaderValue(string etagValue) => $"\"{etagValue}\"";
 

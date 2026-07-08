@@ -42,3 +42,33 @@ public class Given_VariantKeyFactory
         key.Value.Should().StartWith("a1b2c3d4.");
     }
 }
+
+[TestFixture]
+[Parallelizable]
+public class Given_VariantKey
+{
+    [Test]
+    public void It_parses_a_well_formed_key_into_components()
+    {
+        new VariantKey("a1b2c3d4.j._.l").TryParseComponents(out var components).Should().BeTrue();
+        components.SchemaEpoch.Should().Be("a1b2c3d4");
+        components.Format.Should().Be("j");
+        components.ProfileCode.Should().Be("_");
+        components.LinkFlag.Should().Be("l");
+        components.IfMatchSignificant().Should().Be("a1b2c3d4");
+    }
+
+    [TestCase("a1b2c3d4.j._")] // 3 parts
+    [TestCase("a1b2c3d4.j._.l.extra")] // 5 parts
+    [TestCase("")]
+    public void It_rejects_keys_without_exactly_four_components(string value)
+    {
+        new VariantKey(value).TryParseComponents(out _).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_formats_components_back_into_the_wire_value()
+    {
+        VariantKey.FromComponents("a1b2c3d4", "j", "_", "l").Value.Should().Be("a1b2c3d4.j._.l");
+    }
+}

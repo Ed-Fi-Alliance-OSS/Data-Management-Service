@@ -846,6 +846,274 @@ public class Given_A_Mssql_Unprofiled_Put_Using_The_Current_Profiled_Get_Etag
         _unprofiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
 }
 
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
+public class Given_A_Mssql_Unprofiled_Delete_Using_The_Current_Profiled_Get_Etag
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("b1c2d3e4-0006-4a1b-9c2d-1a2b3c4d5e06")
+    );
+
+    private const int NamingStressItemId = 7611;
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private DeleteResult _unprofiledDeleteResult = null!;
+    private GetResult _getAfterDelete = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRootTableOnlyMergeSupport.NamingStressFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileIfMatchEtagTestSupport.CreateServiceProvider();
+
+        var seedBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 42,
+        };
+
+        (
+            await MssqlProfileIfMatchEtagTestSupport.SeedAsync(
+                _serviceProvider,
+                _database,
+                _mappingSet,
+                NamingStressItemId,
+                seedBody,
+                DocumentUuid,
+                "mssql-unprofiled-delete-profiled-etag-seed"
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+
+        var profiledGet = await MssqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-unprofiled-delete-profiled-etag-get",
+            MssqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext()
+        );
+
+        var profiledEtag = MssqlProfileIfMatchEtagTestSupport.GetEtag(
+            MssqlProfileIfMatchEtagTestSupport.GetSuccessDocument(profiledGet)
+        );
+
+        // DELETE has no profile lens (unprofiled is the only DELETE path), guarded by the etag
+        // captured from the profiled read.
+        _unprofiledDeleteResult = await MssqlProfileIfMatchEtagTestSupport.ExecuteDeleteAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-unprofiled-delete-profiled-etag-delete",
+            profiledEtag
+        );
+
+        _getAfterDelete = await MssqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-unprofiled-delete-profiled-etag-get-after"
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public void It_accepts_the_profiled_get_etag_for_an_unprofiled_delete() =>
+        _unprofiledDeleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+
+    [Test]
+    public void It_removes_the_document() =>
+        _getAfterDelete.Should().BeOfType<GetResult.GetFailureNotExists>();
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
+public class Given_A_Mssql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden_Field_Change
+{
+    private static readonly DocumentUuid DocumentUuid = new(
+        Guid.Parse("b1c2d3e4-0007-4a1b-9c2d-1a2b3c4d5e07")
+    );
+
+    private const int NamingStressItemId = 7622;
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GetResult _profiledGetBeforeHiddenChange = null!;
+    private GetResult _profiledGetAfterHiddenChange = null!;
+    private DeleteResult _staleDeleteResult = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRootTableOnlyMergeSupport.NamingStressFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileIfMatchEtagTestSupport.CreateServiceProvider();
+
+        var seedBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 42,
+        };
+
+        (
+            await MssqlProfileIfMatchEtagTestSupport.SeedAsync(
+                _serviceProvider,
+                _database,
+                _mappingSet,
+                NamingStressItemId,
+                seedBody,
+                DocumentUuid,
+                "mssql-delete-stale-profiled-etag-seed"
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+
+        var readableProfileProjectionContext =
+            MssqlProfileIfMatchEtagTestSupport.CreateReadableProfileProjectionContext();
+
+        _profiledGetBeforeHiddenChange = await MssqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-delete-stale-profiled-etag-get-before",
+            readableProfileProjectionContext
+        );
+
+        var staleProfiledEtag = MssqlProfileIfMatchEtagTestSupport.GetEtag(
+            MssqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetBeforeHiddenChange)
+        );
+
+        var hiddenFieldChangeBody = new JsonObject
+        {
+            ["namingStressItemId"] = NamingStressItemId,
+            ["shortName"] = "Original",
+            ["order"] = 43,
+        };
+
+        (
+            await MssqlProfileIfMatchEtagTestSupport.ExecuteUnprofiledUpdateAsync(
+                _serviceProvider,
+                _database.ConnectionString,
+                _mappingSet,
+                NamingStressItemId,
+                DocumentUuid,
+                hiddenFieldChangeBody,
+                "mssql-delete-stale-profiled-etag-hidden-field-change"
+            )
+        )
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>();
+
+        // Capture the profiled etag after the hidden-field change, before the DELETE removes the
+        // document, so we can independently prove the profiled etag actually changed (rather than
+        // just observing a 412 that could also result from a "DELETE always fails" bug).
+        _profiledGetAfterHiddenChange = await MssqlProfileIfMatchEtagTestSupport.ExecuteGetByIdAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-delete-stale-profiled-etag-get-after",
+            readableProfileProjectionContext
+        );
+
+        // DELETE has no profile lens (unprofiled is the only DELETE path), guarded by the now-stale
+        // etag captured before the hidden-field change bumped ContentVersion.
+        _staleDeleteResult = await MssqlProfileIfMatchEtagTestSupport.ExecuteDeleteAsync(
+            _serviceProvider,
+            _database.ConnectionString,
+            _mappingSet,
+            DocumentUuid,
+            "mssql-delete-stale-profiled-etag-delete",
+            staleProfiledEtag
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public void It_returns_412_for_a_delete_using_the_stale_profiled_etag() =>
+        _staleDeleteResult.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+
+    [Test]
+    public void It_changes_the_profiled_etag_when_the_hidden_field_changes()
+    {
+        var staleProfiledEtag = MssqlProfileIfMatchEtagTestSupport.GetEtag(
+            MssqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetBeforeHiddenChange)
+        );
+        var currentProfiledEtag = MssqlProfileIfMatchEtagTestSupport.GetEtag(
+            MssqlProfileIfMatchEtagTestSupport.GetSuccessDocument(_profiledGetAfterHiddenChange)
+        );
+
+        currentProfiledEtag.Should().NotBe(staleProfiledEtag);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  RFC 7232 wildcard (If-Match: *) end-to-end behavior against a real database.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1148,7 +1416,11 @@ public class Given_A_Mssql_Wildcard_IfMatch_Put_Against_A_Missing_Document
 
     [Test]
     public void It_returns_412_and_not_404_for_a_wildcard_put_against_a_missing_document() =>
-        _wildcardPutResult.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        _wildcardPutResult
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }
 
 [TestFixture]
@@ -1213,7 +1485,11 @@ public class Given_A_Mssql_Wildcard_IfMatch_Delete_Against_A_Missing_Document
 
     [Test]
     public void It_returns_412_and_not_404_for_a_wildcard_delete_against_a_missing_document() =>
-        _wildcardDeleteResult.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        _wildcardDeleteResult
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }
 
 [TestFixture]
@@ -1289,5 +1565,9 @@ public class Given_A_Mssql_Wildcard_IfMatch_Post_Resolving_To_Insert
 
     [Test]
     public void It_returns_412_for_a_wildcard_post_resolving_to_insert() =>
-        _wildcardPostResult.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        _wildcardPostResult
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
 }

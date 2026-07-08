@@ -28,12 +28,12 @@ public class Given_DescriptorDocumentMaterializer
             effectiveEndDate: new DateOnly(2025, 12, 31),
             discriminator: "SchoolTypeDescriptor"
         );
+        var composedEtag = _etagComposer.Compose(row.ContentVersion, _descriptorVariantKey);
 
         var result = DescriptorDocumentMaterializer.Materialize(
             row,
             RelationalGetRequestReadMode.ExternalResponse,
-            _etagComposer,
-            _descriptorVariantKey
+            composedEtag
         );
 
         result["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
@@ -44,10 +44,7 @@ public class Given_DescriptorDocumentMaterializer
         result["effectiveEndDate"]!.GetValue<string>().Should().Be("2025-12-31");
         result["id"]!.GetValue<string>().Should().Be("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
         result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
-        result["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(_etagComposer.Compose(row.ContentVersion, _descriptorVariantKey));
+        result["_etag"]!.GetValue<string>().Should().Be(composedEtag);
         result["Uri"].Should().BeNull();
         result["Discriminator"].Should().BeNull();
         result["ChangeVersion"].Should().BeNull();
@@ -68,8 +65,7 @@ public class Given_DescriptorDocumentMaterializer
         var result = DescriptorDocumentMaterializer.Materialize(
             row,
             RelationalGetRequestReadMode.StoredDocument,
-            _etagComposer,
-            _descriptorVariantKey
+            composedEtag: null
         );
 
         result
@@ -87,7 +83,7 @@ public class Given_DescriptorDocumentMaterializer
     }
 
     [Test]
-    public void It_composes_the_external_response_etag_from_content_version_and_variant_key()
+    public void It_carries_the_callers_precomposed_etag_through_unchanged()
     {
         var row = CreateDescriptorRow(
             documentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-dddddddddddd"),
@@ -99,18 +95,38 @@ public class Given_DescriptorDocumentMaterializer
             contentVersion: 7L
         );
 
+        // The materializer no longer composes the etag itself: it is the caller's responsibility
+        // (DescriptorReadHandler, via IServedEtagComposer) to decide profile-sensitivity and pass
+        // the final string through.
         var externalResponse = DescriptorDocumentMaterializer.Materialize(
             row,
             RelationalGetRequestReadMode.ExternalResponse,
-            _etagComposer,
-            _descriptorVariantKey
+            "7-deadbeef.j.somecode.n"
         );
 
-        // The composed _etag is derived from ContentVersion + variant key, not from the body.
-        externalResponse["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(_etagComposer.Compose(row.ContentVersion, _descriptorVariantKey));
+        externalResponse["_etag"]!.GetValue<string>().Should().Be("7-deadbeef.j.somecode.n");
+    }
+
+    [Test]
+    public void It_throws_when_an_external_response_read_has_no_composed_etag()
+    {
+        var row = CreateDescriptorRow(
+            documentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"),
+            contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
+            description: "Alternative school type",
+            effectiveBeginDate: null,
+            effectiveEndDate: null,
+            discriminator: "SchoolTypeDescriptor"
+        );
+
+        var act = () =>
+            DescriptorDocumentMaterializer.Materialize(
+                row,
+                RelationalGetRequestReadMode.ExternalResponse,
+                composedEtag: null
+            );
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     private static DescriptorReadRow CreateDescriptorRow(

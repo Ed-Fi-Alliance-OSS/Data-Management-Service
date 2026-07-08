@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -26,11 +27,13 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
-    IEtagComposer etagComposer,
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
-    ILogger<DefaultRelationalWriteExecutor>? logger = null
+    ILogger<DefaultRelationalWriteExecutor>? logger = null,
+    ILoggerFactory? loggerFactory = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -54,7 +57,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         targetLookupResolver,
         currentStateLoader,
         currentEtagPreconditionChecker,
-        etagComposer
+        servedEtagComposer,
+        ifMatchEvaluator,
+        (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
     private readonly RelationalWriteMergeOrchestrator _mergeOrchestrator = new(
@@ -154,7 +159,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        executionRequest.OperationKind
+                        executionRequest.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
                     );
                 }
             }

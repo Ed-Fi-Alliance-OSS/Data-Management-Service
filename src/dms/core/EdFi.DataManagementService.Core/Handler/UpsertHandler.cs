@@ -137,16 +137,9 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                 Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UpsertFailureETagMisMatch => new(
+            UpsertFailureETagMisMatch mismatch => new(
                 StatusCode: 412,
-                Body: ForETagMisMatch(
-                    "The item has been modified by another user.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: new[]
-                    {
-                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
-                    }
-                ),
+                Body: ForETagMisMatch(mismatch.Reason, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             UpsertFailureNotAuthorized failure => new(

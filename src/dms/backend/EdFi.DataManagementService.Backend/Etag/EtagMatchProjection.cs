@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Utilities;
+
 namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
@@ -11,7 +13,8 @@ namespace EdFi.DataManagementService.Backend.Etag;
 /// (as amended 2026-07-04), If-Match ignores the representation-selector components (format,
 /// profileCode, linkFlag) and retains only ContentVersion and schemaEpoch. Two tags match iff their
 /// projections are equal (ordinal). A malformed tag yields a sentinel that cannot equal any
-/// well-formed projection.
+/// well-formed projection. Parsing is delegated to <see cref="EtagValue"/> (ContentVersion / variantKey
+/// split) and <see cref="VariantKey"/> (variantKey component split).
 /// </summary>
 public static class EtagMatchProjection
 {
@@ -20,30 +23,18 @@ public static class EtagMatchProjection
 
     public static string Of(string? etagValue)
     {
-        if (string.IsNullOrEmpty(etagValue))
+        if (!EtagValue.TryParse(etagValue, out var contentVersion, out var variantKeyValue))
         {
             return Malformed;
         }
 
-        // ContentVersion "-" variantKey: ContentVersion is digits-only and variantKey components are
-        // [a-z0-9_], so the first '-' is the unambiguous separator.
-        var dash = etagValue.IndexOf('-', StringComparison.Ordinal);
-        if (dash <= 0 || dash == etagValue.Length - 1)
+        if (!new VariantKey(variantKeyValue).TryParseComponents(out var components))
         {
             return Malformed;
         }
 
-        var contentVersion = etagValue[..dash];
-        var variantKey = etagValue[(dash + 1)..];
-        var parts = variantKey.Split('.');
-        if (parts.Length != 4)
-        {
-            return Malformed;
-        }
-
-        var schemaEpoch = parts[0];
-        // parts[1] = format, parts[2] = profileCode, parts[3] = linkFlag are intentionally dropped
-
-        return $"{contentVersion}-{schemaEpoch}";
+        // The projection is "{ContentVersion}-{schemaEpoch}", which is exactly EtagValue.Compose of the
+        // ContentVersion with the state-significant component. Format/profileCode/linkFlag are dropped.
+        return EtagValue.Compose(contentVersion, components.IfMatchSignificant());
     }
 }

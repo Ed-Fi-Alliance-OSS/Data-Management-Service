@@ -40,11 +40,12 @@ public sealed record RelationalReadMaterializationRequest(
     public HydratedDocumentReferenceLookup? DocumentReferenceLookup { get; init; }
 
     /// <summary>
-    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>. When set (and
-    /// <see cref="MappingSet"/> is present) on an <see cref="RelationalGetRequestReadMode.ExternalResponse"/>
-    /// materialization, the served <c>_etag</c> is composed as <c>"{ContentVersion}-{variantKey}"</c>.
-    /// <see langword="null"/> on callers that have not yet been converted; those fall back to the
-    /// legacy content hash.
+    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>, required on every
+    /// <see cref="RelationalGetRequestReadMode.ExternalResponse"/> materialization (together with
+    /// <see cref="MappingSet"/>); the served <c>_etag</c> is composed as
+    /// <c>"{ContentVersion}-{variantKey}"</c>. <c>ComposeEtag</c> throws when this is
+    /// <see langword="null"/> on an external response — absence indicates a wiring bug in the caller,
+    /// not a fallback. There is no legacy content-hash path.
     /// </summary>
     public EtagVariantInputs? EtagVariant { get; init; }
 }
@@ -66,8 +67,9 @@ public sealed record RelationalReadPageMaterializationRequest(
 
     /// <summary>
     /// Representation inputs for composing a ContentVersion-based <c>_etag</c>; see
-    /// <see cref="RelationalReadMaterializationRequest.EtagVariant"/>. <see langword="null"/> callers
-    /// fall back to the legacy content hash.
+    /// <see cref="RelationalReadMaterializationRequest.EtagVariant"/>. Required on every external-response
+    /// materialization; absence is a wiring bug in the caller, not a fallback. There is no legacy
+    /// content-hash path.
     /// </summary>
     public EtagVariantInputs? EtagVariant { get; init; }
 }
@@ -93,7 +95,7 @@ public interface IRelationalReadMaterializer
 internal sealed class RelationalReadMaterializer(
     IDocumentLinkSlugResolver slugResolver,
     IOptions<ResourceLinksOptions> linksOptions,
-    IEtagComposer etagComposer
+    IServedEtagComposer servedEtagComposer
 ) : IRelationalReadMaterializer
 {
     private const string IdPropertyName = "id";
@@ -105,8 +107,8 @@ internal sealed class RelationalReadMaterializer(
         slugResolver ?? throw new ArgumentNullException(nameof(slugResolver));
     private readonly ResourceLinksOptions _linksOptions =
         linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -269,13 +271,14 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        var variantKey = VariantKeyFactory.Create(
-            mappingSetValue.Key.EffectiveSchemaHash,
-            variant.Format,
-            ProfileVariantCode.Of(variant.ProfileName),
-            _linksOptions.Enabled
+        return _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSetValue.Key.EffectiveSchemaHash,
+                variant.Format,
+                variant.ProfileName,
+                _linksOptions.Enabled,
+                documentMetadata.ContentVersion
+            )
         );
-
-        return _etagComposer.Compose(documentMetadata.ContentVersion, variantKey);
     }
 }

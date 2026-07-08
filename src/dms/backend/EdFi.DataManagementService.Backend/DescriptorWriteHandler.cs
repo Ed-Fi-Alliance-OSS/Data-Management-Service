@@ -24,7 +24,8 @@ internal sealed class DescriptorWriteHandler(
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
     ILogger<DescriptorWriteHandler> logger,
-    IEtagComposer etagComposer,
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
 ) : IDescriptorWriteHandler
@@ -39,8 +40,10 @@ internal sealed class DescriptorWriteHandler(
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
@@ -178,7 +181,9 @@ internal sealed class DescriptorWriteHandler(
             {
                 case DescriptorLockedPreconditionResult.CreateNew:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch();
+                    return new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    );
 
                 case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -363,7 +368,9 @@ internal sealed class DescriptorWriteHandler(
                         // missing PUT target yields the precondition-failed (412) result rather than
                         // not-exists (404).
                         return ifMatch.IsWildcard
-                            ? new UpdateResult.UpdateFailureETagMisMatch()
+                            ? new UpdateResult.UpdateFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new UpdateResult.UpdateFailureNotExists();
 
                     case DescriptorLockedPreconditionResult.MissingDescriptor(
@@ -684,7 +691,9 @@ internal sealed class DescriptorWriteHandler(
                         // than not-exists (404).
                         DescriptorLockedPreconditionResult.NotFound
                         or DescriptorLockedPreconditionResult.MissingDocument => ifMatch.IsWildcard
-                            ? new DeleteResult.DeleteFailureETagMisMatch()
+                            ? new DeleteResult.DeleteFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new DeleteResult.DeleteFailureNotExists(),
                         DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
                             new DeleteResult.UnknownFailure(
@@ -908,7 +917,7 @@ internal sealed class DescriptorWriteHandler(
 
         var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                 mappingSet.Key.Dialect,
-                DescriptorVariantKey.For(mappingSet.Key.EffectiveSchemaHash),
+                mappingSet.Key.EffectiveSchemaHash,
                 existingTargetContext.DocumentId,
                 writeSession,
                 cancellationToken
@@ -958,6 +967,28 @@ internal sealed class DescriptorWriteHandler(
             }
         }
 
+        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag))
+        {
+            var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(
+                    "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                        + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                    existingTargetContext.DocumentId,
+                    ifMatch.IsWildcard,
+                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                    currentEtag,
+                    evaluation.IsMatch
+                );
+            }
+
+            return evaluation.IsMatch
+                ? new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag)
+                : DescriptorLockedPreconditionResult.Mismatch.Instance;
+        }
+
         return lockedCurrentState switch
         {
             DescriptorCurrentStateLoadResult.MissingDocument => DescriptorLockedPreconditionResult
@@ -965,33 +996,11 @@ internal sealed class DescriptorWriteHandler(
                 .Instance,
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
-            DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                when !ifMatch.IsWildcard && !IfMatchMatchesCurrentEtag(ifMatch.Value, currentEtag) =>
-                DescriptorLockedPreconditionResult.Mismatch.Instance,
-            DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
-                new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
             _ => throw new InvalidOperationException(
                 $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
             ),
         };
     }
-
-    /// <summary>
-    /// Compares the client's If-Match against the composed current etag on their state-significant
-    /// projections (ContentVersion + schemaEpoch) rather than byte-for-byte, so representation-encoding
-    /// differences (format, profileCode, linkFlag) do not spuriously fail the precondition. For a
-    /// descriptor the fixed variant key already reduces to those components, so a stale ContentVersion
-    /// (or a schema change) still yields the 412 mismatch path. The frontend has already stripped the
-    /// surrounding quotes from <paramref name="ifMatchValue"/>. A wildcard precondition (If-Match: *) is
-    /// handled by the caller's switch guard and never reaches this comparison, since it matches whenever
-    /// the target exists.
-    /// </summary>
-    private static bool IfMatchMatchesCurrentEtag(string ifMatchValue, string currentEtag) =>
-        string.Equals(
-            EtagMatchProjection.Of(ifMatchValue),
-            EtagMatchProjection.Of(currentEtag),
-            StringComparison.Ordinal
-        );
 
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
         RelationalWriteTargetLookupResult targetLookupResult,
@@ -1404,11 +1413,17 @@ internal sealed class DescriptorWriteHandler(
             )
             .ConfigureAwait(false);
 
-        var variantKey = DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash);
-
         return new UpsertResult.InsertSuccess(
             documentUuid,
-            _etagComposer.Compose(persistedContentVersion, variantKey)
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    ProfileName: null,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
         );
     }
 
@@ -1455,11 +1470,17 @@ internal sealed class DescriptorWriteHandler(
             )
             .ConfigureAwait(false);
 
-        var variantKey = DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash);
-
         return new UpsertResult.UpdateSuccess(
             existingDocumentUuid,
-            _etagComposer.Compose(persistedContentVersion, variantKey)
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    ProfileName: null,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
         );
     }
 
@@ -1561,10 +1582,17 @@ internal sealed class DescriptorWriteHandler(
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        var variantKey = DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash);
         return new UpdateResult.UpdateSuccess(
             documentUuid,
-            _etagComposer.Compose(persistedContentVersion, variantKey)
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    ProfileName: null,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
         );
     }
 
@@ -1674,7 +1702,7 @@ internal sealed class DescriptorWriteHandler(
         {
             var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                     request.MappingSet.Key.Dialect,
-                    DescriptorVariantKey.For(request.MappingSet.Key.EffectiveSchemaHash),
+                    request.MappingSet.Key.EffectiveSchemaHash,
                     documentId,
                     writeSession,
                     cancellationToken
@@ -2314,7 +2342,7 @@ internal sealed class DescriptorWriteHandler(
 
     private async Task<DescriptorCurrentStateLoadResult> LoadLockedDescriptorCurrentStateAsync(
         SqlDialect dialect,
-        VariantKey variantKey,
+        string effectiveSchemaHash,
         long documentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -2341,11 +2369,20 @@ internal sealed class DescriptorWriteHandler(
             return DescriptorCurrentStateLoadResult.MissingDescriptor.Instance;
         }
 
-        // The current etag is composed from the locked ContentVersion and the fixed descriptor variant
-        // key so the If-Match comparison projects the same state-significant components as the served GET.
+        // The current etag is composed from the locked ContentVersion and the fixed descriptor
+        // representation (no profile, links disabled, JSON) so the If-Match comparison projects the
+        // same state-significant components as the served GET.
         return new DescriptorCurrentStateLoadResult.Loaded(
             persistedDescriptor,
-            _etagComposer.Compose(lockedContentVersion.Value, variantKey)
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    effectiveSchemaHash,
+                    ResponseFormat.Json,
+                    ProfileName: null,
+                    LinksEnabled: false,
+                    lockedContentVersion.Value
+                )
+            )
         );
     }
 

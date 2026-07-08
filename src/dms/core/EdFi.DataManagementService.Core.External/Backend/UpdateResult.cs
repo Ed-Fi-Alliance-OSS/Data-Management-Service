@@ -35,7 +35,10 @@ public record UpdateResult
     /// <summary>
     /// A failure because the Etag mismatch
     /// </summary>
-    public record UpdateFailureETagMisMatch() : UpdateResult();
+    /// <param name="Reason">Machine-readable reason for the precondition failure</param>
+    public record UpdateFailureETagMisMatch(
+        ETagPreconditionFailureReason Reason = ETagPreconditionFailureReason.Concurrency
+    ) : UpdateResult();
 
     /// <summary>
     /// A failure because referenced documents and/or descriptors in the updated document are invalid

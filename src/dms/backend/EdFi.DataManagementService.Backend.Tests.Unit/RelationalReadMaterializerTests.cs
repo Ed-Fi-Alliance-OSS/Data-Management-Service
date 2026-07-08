@@ -262,7 +262,7 @@ public class Given_RelationalReadMaterializer
         new(
             new NoLinkSlugResolver(),
             Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions()),
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer())
         );
 
     // ExternalResponse materialization now requires both EtagVariant and MappingSet to compose the
@@ -742,7 +742,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
             Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer())
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -803,7 +803,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
             Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer())
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -972,7 +972,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         new(
             new StubSlugResolver(_schoolSlug),
             Microsoft.Extensions.Options.Options.Create(linksOptions),
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer())
         );
 
     /// <summary>

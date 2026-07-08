@@ -24,7 +24,59 @@ public readonly record struct VariantKey(string Value)
     /// <summary>The <c>profileCode</c> used when no readable profile applies.</summary>
     public const string NoProfileCode = "_";
 
+    /// <summary>Separator between the four variantKey components.</summary>
+    public const char ComponentSeparator = '.';
+
+    /// <summary>Number of components: schemaEpoch, format, profileCode, linkFlag.</summary>
+    public const int ComponentCount = 4;
+
+    /// <summary>Builds a variantKey wire value from its four components (fixed order).</summary>
+    public static VariantKey FromComponents(
+        string schemaEpoch,
+        string formatCode,
+        string profileCode,
+        string linkFlag
+    ) => new(string.Join(ComponentSeparator, schemaEpoch, formatCode, profileCode, linkFlag));
+
+    /// <summary>
+    /// Splits <see cref="Value"/> into its four components. Returns <see langword="false"/> when the
+    /// value does not have exactly <see cref="ComponentCount"/> dot-delimited parts.
+    /// </summary>
+    public bool TryParseComponents(out Components components)
+    {
+        components = default;
+        if (string.IsNullOrEmpty(Value))
+        {
+            return false;
+        }
+
+        var parts = Value.Split(ComponentSeparator);
+        if (parts.Length != ComponentCount)
+        {
+            return false;
+        }
+
+        components = new Components(parts[0], parts[1], parts[2], parts[3]);
+        return true;
+    }
+
     public override string ToString() => Value;
+
+    /// <summary>The parsed components of a variantKey, in fixed order.</summary>
+    public readonly record struct Components(
+        string SchemaEpoch,
+        string Format,
+        string ProfileCode,
+        string LinkFlag
+    )
+    {
+        /// <summary>
+        /// The subset that remains significant for RFC 7232 If-Match comparison. Per the 2026-07-04
+        /// ADR amendment this is <see cref="SchemaEpoch"/> only; format, profileCode, and linkFlag are
+        /// projected out. This is the single definition of "what If-Match compares".
+        /// </summary>
+        public string IfMatchSignificant() => SchemaEpoch;
+    }
 }
 
 /// <summary>
@@ -52,7 +104,7 @@ public static class VariantKeyFactory
         var formatCode = FormatCode(format);
         var linkFlag = linksEnabled ? "l" : "n";
 
-        return new VariantKey($"{schemaEpoch}.{formatCode}.{profileCode}.{linkFlag}");
+        return VariantKey.FromComponents(schemaEpoch, formatCode, profileCode, linkFlag);
     }
 
     // First 8 lowercase hex characters of the in-force EffectiveSchemaHash (already lowercase hex,

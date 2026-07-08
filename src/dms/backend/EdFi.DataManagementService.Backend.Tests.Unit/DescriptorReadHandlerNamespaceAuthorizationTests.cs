@@ -712,7 +712,9 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         new(
             commandExecutor,
             A.Fake<Core.Profile.IReadableProfileProjector>(),
-            new EdFi.DataManagementService.Backend.Etag.EtagComposer(),
+            new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer(
+                new EdFi.DataManagementService.Backend.Etag.EtagComposer()
+            ),
             NullLogger<DescriptorReadHandler>.Instance
         );
 

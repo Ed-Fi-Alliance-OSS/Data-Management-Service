@@ -78,7 +78,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator()
         );
     }
 
@@ -666,7 +667,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             parameterConfigurator
         );
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -750,7 +752,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
@@ -807,7 +810,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
         );
@@ -1509,7 +1513,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer()
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator()
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -1568,11 +1573,14 @@ public class Given_Default_Relational_Write_Executor
 
         // UpdateFailureNotExists and UpdateFailureETagMisMatch are both memberless records, so
         // BeEquivalentTo cannot tell them apart; assert on the concrete inner result type instead.
+        // The target is missing, so the reason is TargetDoesNotExist rather than a Concurrency mismatch.
         result
             .Should()
             .BeOfType<RelationalWriteExecutorResult.Update>()
             .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -1624,11 +1632,15 @@ public class Given_Default_Relational_Write_Executor
 
         var result = await _sut.ExecuteAsync(request);
 
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
         result
             .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
-            );
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
@@ -1703,11 +1715,16 @@ public class Given_Default_Relational_Write_Executor
 
         var result = await _sut.ExecuteAsync(request);
 
+        // Re-resolving the advisory POST target as CreateNew means there is no current representation
+        // to satisfy the If-Match precondition against, so the reason is TargetDoesNotExist rather than
+        // a Concurrency mismatch.
         result
             .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
-            );
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
         _targetLookupResolver
@@ -1735,11 +1752,16 @@ public class Given_Default_Relational_Write_Executor
 
         var result = await _sut.ExecuteAsync(request);
 
+        // Authoritative target resolution proving a new insert means there is no current
+        // representation to satisfy the If-Match precondition against, so the reason is
+        // TargetDoesNotExist rather than a Concurrency mismatch.
         result
             .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
-            );
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
@@ -5172,11 +5194,15 @@ public class Given_Default_Relational_Write_Executor
             }
         );
 
+        // The deferred If-Match check runs against a CreateNew target, which has no current
+        // representation, so the reason is TargetDoesNotExist rather than a Concurrency mismatch.
         result
             .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
-            );
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(1);
@@ -5787,7 +5813,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new EtagComposer(),
+            new ServedEtagComposer(new EtagComposer()),
+            new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 providerMessage
@@ -6089,11 +6116,15 @@ public class Given_Default_Relational_Write_Executor
             }
         );
 
+        // The deferred If-Match check runs against a loaded current state, so a mismatch is a
+        // Concurrency reason rather than TargetDoesNotExist.
         result
             .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
-            );
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);

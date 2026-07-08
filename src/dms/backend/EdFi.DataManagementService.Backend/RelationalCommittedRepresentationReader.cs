@@ -20,14 +20,14 @@ internal interface IRelationalCommittedRepresentationReader
 }
 
 internal sealed class RelationalCommittedRepresentationReader(
-    IEtagComposer etagComposer,
+    IServedEtagComposer servedEtagComposer,
     IOptions<ResourceLinksOptions> linksOptions
 ) : IRelationalCommittedRepresentationReader
 {
     private const string EtagPropertyName = "_etag";
 
-    private readonly IEtagComposer _etagComposer =
-        etagComposer ?? throw new ArgumentNullException(nameof(etagComposer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
     private readonly ResourceLinksOptions _linksOptions =
         linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
 
@@ -44,18 +44,16 @@ internal sealed class RelationalCommittedRepresentationReader(
         ArgumentNullException.ThrowIfNull(persistedTarget);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var variantKey = VariantKeyFactory.Create(
-            request.MappingSet.Key.EffectiveSchemaHash,
-            ResponseFormat.Json,
-            ProfileVariantCode.Of(request.ProfileWriteContext?.ProfileName),
-            _linksOptions.Enabled
+        var etag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                request.ProfileWriteContext?.ProfileName,
+                _linksOptions.Enabled,
+                persistedTarget.ContentVersion
+            )
         );
 
-        return Task.FromResult<JsonNode>(
-            new JsonObject
-            {
-                [EtagPropertyName] = _etagComposer.Compose(persistedTarget.ContentVersion, variantKey),
-            }
-        );
+        return Task.FromResult<JsonNode>(new JsonObject { [EtagPropertyName] = etag });
     }
 }
