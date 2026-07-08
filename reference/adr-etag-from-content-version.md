@@ -11,6 +11,9 @@ compatibility — see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if
 see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching). \
 **Amended 2026-07-07:** the served descriptor `_etag` is now profile-sensitive for conditional-GET
 correctness — see [Amendment (2026-07-07, descriptor profile etag)](#amendment-2026-07-07-descriptor-served-etag-varies-by-readable-profile). \
+**Amended 2026-07-08:** a final `ContentVersion` read is restored — relocated into the persister,
+after every table mutation — because the root-insert stamp is stale once child-table writes fire
+stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendment-2026-07-08-final-contentversion-read-relocated-into-the-persister). \
 **Date:** 2026-06-30 (accepted 2026-07-03) \
 **Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
@@ -366,3 +369,71 @@ A feasibility spike confirmed that descriptors **are** subject to readable-profi
 ### Consequence
 
 Two profile-different descriptor GET representations now carry distinct strong `ETag` values, closing the RFC 7232 §2.1 gap for descriptors specifically (the main ADR text already closed it for non-descriptor resources). `If-Match` / `If-None-Match` semantics for descriptor writes are unaffected — a client may still read a descriptor under one profile and write it back unprofiled using the same etag.
+
+## Amendment (2026-07-08): final `ContentVersion` read relocated into the persister
+
+**Status:** Accepted — refines how Option 4's "serve `_etag` from the persisted `ContentVersion`"
+is realized on the write path; the served-etag and `If-Match` contracts are unchanged. \
+**Date:** 2026-07-08 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-08 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+Option 4 assumed the write-response etag could be composed from the `ContentVersion` "already
+returned by `INSERT … RETURNING` … at zero marginal cost," and an intermediate refactor accordingly
+**dropped the response reader's separate `SELECT ContentVersion`** and composed the etag from that
+persist-time value. This amendment **restores a final `ContentVersion` read**, but relocates it out
+of the response reader and into the persistence layer, where it runs **after every table mutation**.
+
+Concretely:
+
+- `RelationalWritePersistResult` carries the final `ContentVersion` (read after
+  `ExecuteDeletesAsync` / `ExecuteUpsertsAsync` in `RelationalWriteNoProfilePersister.PersistAsync`
+  via `ReadCommittedContentVersionAsync`).
+- `RelationalCommittedRepresentationReader` composes the etag from `persistedTarget.ContentVersion`
+  and issues **no** `dms.Document` query of its own.
+- The guarded no-op path (no persister runs) composes from `guardedTarget.ObservedContentVersion`,
+  which the freshness check already established.
+
+### Why
+
+1. **Correctness — the root-insert stamp is not the final `ContentVersion`.** Child-table
+   deletes/upserts can fire stamp triggers that bump the owning root document's `ContentVersion`.
+   The value returned by the root `INSERT` (the "zero-cost" value Option 4 anticipated) is captured
+   before those child writes run, so composing the etag from it would emit a **stale** tag that does
+   not match the `ContentVersion` a subsequent GET returns — breaking conditional-GET / `If-None-Match`
+   cache correctness and the write→read etag parity the descriptor and non-descriptor tests assert.
+   The final version is only known once every table operation has completed.
+
+2. **Ownership / layering.** The persister owns the write boundary and is the only layer that knows
+   when all persistence-side mutations are done. The final `ContentVersion` is **persistence
+   metadata**, not response-materialization metadata, so it belongs on `RelationalWritePersistResult`.
+   Moving it there makes the write contract explicit instead of hiding a database lookup inside a
+   "read committed response" abstraction, and prevents future code from reintroducing representation
+   hydration/hash work behind that abstraction.
+
+3. **It does not give back the throughput goal, and preserves the path to fully reclaiming it.**
+   The bottleneck this ADR removed was the hydrate-materialize-**hash** readback; the restored read
+   is a single lightweight `ContentVersion` lookup, run after the mutations rather than inside a
+   representation read. Placing it in the persister sets up the next optimization: the persister can
+   later capture the final stamp directly from the DML/triggers and drop even this lookup, eliminating
+   the round trip in the correct layer.
+
+### What did not change
+
+- The served-etag format (`"{ContentVersion}-{variantKey}"`) and the `If-Match` state-significant
+  projection (`ContentVersion` + `schemaEpoch`) are untouched.
+- No content hashing is reintroduced anywhere; the readback that Option 4 eliminated stays eliminated.
+- `RelationalWritePersistResult.ContentVersion` defaults to `0` only for the incremental rollout;
+  production persistence always sets a positive value, and `RelationalWritePersistedTargetValidator`
+  rejects a non-positive committed `ContentVersion` on applied writes.
+
+### Consequence
+
+Write-response etags reflect the true post-commit `ContentVersion` — including bumps from child-table
+stamp triggers — so a write's etag matches a follow-up GET's etag. The remaining per-write cost is a
+single `ContentVersion` read located in the persistence layer, where it is visible and can be removed
+later without touching the response contract.
