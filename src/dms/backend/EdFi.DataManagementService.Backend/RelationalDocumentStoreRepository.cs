@@ -375,18 +375,6 @@ public sealed class RelationalDocumentStoreRepository(
     {
         var documentUuid = relationalDeleteRequest.DocumentUuid;
         var traceId = relationalDeleteRequest.TraceId;
-        var readPlanPreparation =
-            writePrecondition is WritePrecondition.IfMatch
-                ? PrepareExistingDocumentReadPlan(mappingSet, resource)
-                : new ExistingDocumentReadPlanPreparation(null, null);
-
-        if (writePrecondition is WritePrecondition.IfMatch && readPlanPreparation.ReadPlan is null)
-        {
-            return new DeleteResult.UnknownFailure(
-                readPlanPreparation.FailureMessage
-                    ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
-            );
-        }
 
         IRelationalWriteSession writeSession;
         try
@@ -484,11 +472,9 @@ public sealed class RelationalDocumentStoreRepository(
                             outcome = await ExecuteAuthorizedDeleteAsync(
                                     mappingSet,
                                     resource,
-                                    readPlanPreparation,
                                     documentUuid,
                                     traceId,
                                     writePrecondition,
-                                    writeSession,
                                     sessionCommandExecutor,
                                     lockedTargetContext
                                 )
@@ -571,37 +557,25 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<DeleteResult> ExecuteAuthorizedDeleteAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ExistingDocumentReadPlanPreparation readPlanPreparation,
         DocumentUuid documentUuid,
         TraceId traceId,
         WritePrecondition writePrecondition,
-        IRelationalWriteSession writeSession,
         IRelationalCommandExecutor sessionCommandExecutor,
         RelationalWriteTargetContext.ExistingDocument lockedTargetContext
     )
     {
         if (writePrecondition is WritePrecondition.IfMatch ifMatch)
         {
-            var preconditionCheckResult = await _deleteEtagPreconditionChecker
-                .CheckAsync(
-                    mappingSet,
-                    readPlanPreparation.ReadPlan!,
-                    lockedTargetContext,
-                    ifMatch,
-                    writeSession
-                )
-                .ConfigureAwait(false);
-
-            if (preconditionCheckResult is null)
-            {
-                // RFC 7232 If-Match: * requires the target to exist; a wildcard whose recheck cannot
-                // re-lock the target (a concurrent delete) yields 412 rather than 404.
-                return ifMatch.IsWildcard
-                    ? new DeleteResult.DeleteFailureETagMisMatch(
-                        ETagPreconditionFailureReason.TargetDoesNotExist
-                    )
-                    : new DeleteResult.DeleteFailureNotExists();
-            }
+            // Existence and concurrency were already settled by resolving and locking the target above,
+            // and its ContentVersion is carried on lockedTargetContext. The precondition is therefore a
+            // pure compare against that locked stamp — no re-lock and no state hydration. A wildcard
+            // matches unconditionally because the locked row exists; the missing-target 412/404 split is
+            // handled by the resolve/lock steps upstream.
+            var preconditionCheckResult = _deleteEtagPreconditionChecker.Evaluate(
+                mappingSet,
+                lockedTargetContext,
+                ifMatch
+            );
 
             if (!preconditionCheckResult.IsMatch)
             {

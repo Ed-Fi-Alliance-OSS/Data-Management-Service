@@ -8894,9 +8894,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CapturedRequest.Should().NotBeNull();
         _currentEtagPreconditionChecker.CapturedRequest!.MappingSet.Should().BeSameAs(mappingSet);
-        _currentEtagPreconditionChecker
-            .CapturedRequest.ReadPlan.Should()
-            .BeSameAs(mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")]);
         _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentId.Should().Be(123L);
         _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentUuid.Should().Be(documentUuid);
         _currentEtagPreconditionChecker.CapturedRequest.Precondition.Should().Be(writePrecondition);
@@ -8935,70 +8932,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.Concurrency);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_relational_delete_failure_not_exists_when_if_match_precondition_recheck_cannot_relock_the_target(
-        SqlDialect dialect
-    )
-    {
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute when the target disappears.")
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = null;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
-            writePrecondition,
-            documentUuid
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_recheck_cannot_relock_the_target(
-        SqlDialect dialect
-    )
-    {
-        // RFC 7232 If-Match: * requires the target to exist; when the wildcard recheck cannot re-lock
-        // the target (a concurrent delete), the wildcard yields 412 rather than 404.
-        var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute when the target disappears.")
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = null;
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
-            writePrecondition,
-            documentUuid
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        // The wildcard recheck could not re-lock the target (a concurrent delete), so there is no
-        // current representation and the reason is TargetDoesNotExist rather than Concurrency.
-        result
-            .Should()
-            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -9124,27 +9057,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_the_missing_read_plan_guard_rail_for_relational_delete_if_match_precondition_requests()
-    {
-        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
-        const string expectedFailureMessage =
-            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
-            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
-            + "but no entry was found. This indicates an internal compilation/selection bug.";
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateMissingReadPlanMappingSet(_schoolResourceInfo),
-            writePrecondition
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeEquivalentTo(new DeleteResult.UnknownFailure(expectedFailureMessage));
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
     }
 
     [Test]
@@ -9452,7 +9364,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private sealed record CapturedDeleteEtagPreconditionRequest(
         MappingSet MappingSet,
-        ResourceReadPlan ReadPlan,
         RelationalWriteTargetContext.ExistingDocument TargetContext,
         WritePrecondition.IfMatch Precondition
     );
@@ -9470,32 +9381,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public Action? OnCheck { get; set; }
 
-        public Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+        public RelationalDeleteEtagPreconditionCheckResult Evaluate(
             MappingSet mappingSet,
-            ResourceReadPlan readPlan,
-            RelationalWriteTargetContext.ExistingDocument targetContext,
-            WritePrecondition.IfMatch precondition,
-            IRelationalWriteSession writeSession,
-            CancellationToken cancellationToken = default
+            RelationalWriteTargetContext.ExistingDocument lockedTargetContext,
+            WritePrecondition.IfMatch precondition
         )
         {
-            cancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(mappingSet);
-            ArgumentNullException.ThrowIfNull(readPlan);
-            ArgumentNullException.ThrowIfNull(targetContext);
+            ArgumentNullException.ThrowIfNull(lockedTargetContext);
             ArgumentNullException.ThrowIfNull(precondition);
-            ArgumentNullException.ThrowIfNull(writeSession);
 
             CallCount++;
             OnCheck?.Invoke();
             CapturedRequest = new CapturedDeleteEtagPreconditionRequest(
                 mappingSet,
-                readPlan,
-                targetContext,
+                lockedTargetContext,
                 precondition
             );
 
-            return Task.FromResult(ResultToReturn);
+            return ResultToReturn
+                ?? throw new InvalidOperationException(
+                    "ResultToReturn must be configured before the delete precondition is evaluated."
+                );
         }
     }
 

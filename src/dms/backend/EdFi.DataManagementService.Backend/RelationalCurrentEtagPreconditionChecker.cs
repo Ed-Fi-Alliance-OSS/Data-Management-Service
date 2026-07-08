@@ -81,30 +81,48 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
     private readonly ILogger<RelationalCurrentEtagPreconditionChecker> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+    public RelationalDeleteEtagPreconditionCheckResult Evaluate(
         MappingSet mappingSet,
-        ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
+        RelationalWriteTargetContext.ExistingDocument lockedTargetContext,
+        WritePrecondition.IfMatch precondition
     )
     {
-        var result = await CheckAsync(
-                new RelationalCurrentEtagPreconditionCheckRequest(
-                    mappingSet,
-                    readPlan,
-                    targetContext,
-                    precondition
-                ),
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(lockedTargetContext);
+        ArgumentNullException.ThrowIfNull(precondition);
 
-        return result is null
-            ? null
-            : new RelationalDeleteEtagPreconditionCheckResult(result.TargetContext, result.IsMatch);
+        // DELETE serves no body and applies no profile lens, so there is nothing to hydrate: the caller
+        // has already resolved and locked the target row (capturing its ContentVersion), so the current
+        // served etag is composed directly from that locked ContentVersion plus the schema epoch. If-Match
+        // then compares only the state-significant projection (ContentVersion, schemaEpoch); format,
+        // linkFlag, and profileCode are projected out. A wildcard (If-Match: *) matches unconditionally
+        // because reaching this point means the caller holds the lock on an existing row.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: true,
+                lockedTargetContext.ObservedContentVersion
+            )
+        );
+
+        var evaluation = _ifMatchEvaluator.Evaluate(precondition, currentEtag);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "DELETE If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                lockedTargetContext.DocumentId,
+                precondition.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(precondition.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
+
+        return new RelationalDeleteEtagPreconditionCheckResult(lockedTargetContext, evaluation.IsMatch);
     }
 
     public async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
