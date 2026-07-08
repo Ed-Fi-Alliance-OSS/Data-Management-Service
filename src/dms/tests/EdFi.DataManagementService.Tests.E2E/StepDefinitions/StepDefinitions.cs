@@ -832,7 +832,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url);
 
             // Build a valid JSON payload body that exceeds the configured max body size.
-            var oversizedValue = new string('A', sizeInMb * 1024 * 1024);
+            var oversizedValue = new string('A', sizeInMb * AppSettings.BytesPerMegabyte);
             var body = $$"""
                 {
                     "schoolId": 1701,
@@ -857,6 +857,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             };
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation("Authorization", GetDmsTokenFromContext());
+            request.Headers.ExpectContinue = true;
             request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
 
             using var response = await httpClient.SendAsync(
