@@ -1654,6 +1654,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _rawEtag.Should().StartWith("\"").And.EndWith("\""); // RFC 7232 §2.3 quoted strong validator
         }
 
+        // Asserts the opaque ETag value (quotes stripped) conforms to the DMS-1252 format:
+        // "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". This locks in the
+        // served shape at the API boundary rather than only asserting that some ETag exists.
+        [Then("the ETag value matches the pattern {string}")]
+        public void ThenTheEtagValueMatchesThePattern(string pattern)
+        {
+            string opaque = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            opaque.Should().MatchRegex(pattern);
+        }
+
         // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
         // surrounding quotes so the captured value matches the unquoted _etag in the response body and
         // round-trips as an If-Match request header (the API accepts both quoted and unquoted forms).

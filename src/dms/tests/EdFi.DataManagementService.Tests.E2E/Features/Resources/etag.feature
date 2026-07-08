@@ -274,3 +274,29 @@ Feature: ETag validations
               And the quoted ETag is in the response header
              When a DELETE if-match "{IfMatchQuoted}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
+        @e2e-ci-shard-1
+        Scenario: 14 Ensure the served ETag conforms to the DMS-1252 format and matches the body _etag
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the quoted ETag is in the response header
+              And the ETag value matches the pattern "^\d+-[0-9a-f]{8}\.j\.(_|[0-9a-f]{8})\.[ln]$"
+              And the ETag is in the response header
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "studentUniqueId": "111111",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Russella",
+                    "lastSurname": "Mayers",
+                    "_etag": "{etag}"
+                  }
+                  """
