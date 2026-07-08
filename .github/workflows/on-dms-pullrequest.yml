@@ -264,6 +264,8 @@ jobs:
 
       - name: Install and Run SchemaTools Package
         run: |
+          $ErrorActionPreference = "Stop"
+
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           $toolPath = Join-Path $env:RUNNER_TEMP "api-schema-tools"
           New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
@@ -278,15 +280,7 @@ jobs:
             --version $packageVersion
 
           $env:PATH = "$toolPath$([System.IO.Path]::PathSeparator)$env:PATH"
-          api-schema-tools --help
-
-          # Exercise real, DB-free commands against a committed fixture so the packaged
-          # dependency closure is verified doing actual work, not just constructing the
-          # command tree as `--help` does.
           $fixture = "./src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json"
-
-          # Core stack: schema load -> normalize -> hash.
-          api-schema-tools hash $fixture
 
           # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
           api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both

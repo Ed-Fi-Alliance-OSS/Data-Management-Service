@@ -100,11 +100,6 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
-      # Promote SchemaTools last. It is the newest package and may be absent from the feed
-      # for a version whose prerelease was cut before this package existed. Steps in this job
-      # run sequentially and fail-fast, so keeping SchemaTools last ensures a missing (or
-      # otherwise un-promotable) SchemaTools package cannot block promotion of EdFi.Api or
-      # EdFi.Api.ConfigurationService.
       - name: Promote EdFi.Api.SchemaTools Package
         shell: pwsh
         run: |
