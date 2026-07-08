@@ -3,14 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using JsonObject = System.Text.Json.Nodes.JsonObject;
-using JsonValue = System.Text.Json.Nodes.JsonValue;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -136,10 +133,10 @@ internal static class RelationalWriteExecutorResults
     public static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
         DocumentUuid documentUuid,
-        JsonNode committedResponse
+        string etag
     )
     {
-        var etag = GetCommittedResponseEtag(committedResponse);
+        RequireEtag(etag);
 
         return operationKind switch
         {
@@ -159,10 +156,10 @@ internal static class RelationalWriteExecutorResults
         RelationalWriteOperationKind operationKind,
         RelationalWriteTargetContext targetContext,
         RelationalWritePersistResult persistedTarget,
-        JsonNode committedResponse
+        string etag
     )
     {
-        var etag = GetCommittedResponseEtag(committedResponse);
+        RequireEtag(etag);
         var documentUuid = persistedTarget.DocumentUuid;
 
         return (operationKind, targetContext) switch
@@ -343,22 +340,13 @@ internal static class RelationalWriteExecutorResults
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
-    private static string GetCommittedResponseEtag(JsonNode committedResponse)
+    private static void RequireEtag(string etag)
     {
-        ArgumentNullException.ThrowIfNull(committedResponse);
-
-        if (
-            committedResponse is not JsonObject documentObject
-            || documentObject["_etag"] is not JsonValue etagValue
-            || !etagValue.TryGetValue(out string? etag)
-            || string.IsNullOrWhiteSpace(etag)
-        )
+        if (string.IsNullOrWhiteSpace(etag))
         {
             throw new InvalidOperationException(
-                "Committed relational write readback did not produce an external response _etag."
+                "Committed relational write did not produce an external response _etag."
             );
         }
-
-        return etag;
     }
 }

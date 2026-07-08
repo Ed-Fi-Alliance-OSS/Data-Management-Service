@@ -54,8 +54,7 @@ public class Given_RelationalCommittedRepresentationReader
                 linksEnabled: true
             )
         );
-        result.Should().BeOfType<JsonObject>();
-        result["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
+        result.Should().Be(expectedEtag);
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(

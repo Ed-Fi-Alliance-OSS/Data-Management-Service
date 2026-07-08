@@ -334,7 +334,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     );
                 }
 
-                var guardedNoOpCommittedResponse = await _committedRepresentationReader
+                var guardedNoOpEtag = await _committedRepresentationReader
                     .ReadAsync(
                         executionRequest,
                         new RelationalWritePersistResult(
@@ -350,7 +350,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
-                    guardedNoOpCommittedResponse
+                    guardedNoOpEtag
                 );
             }
 
@@ -360,7 +360,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
 
-            var committedResponse = await _committedRepresentationReader
+            var committedEtag = await _committedRepresentationReader
                 .ReadAsync(executionRequest, persistedTarget, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -369,7 +369,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 request.OperationKind,
                 executionRequest.TargetContext,
                 persistedTarget,
-                committedResponse
+                committedEtag
             );
         }
         catch (RelationalWriteRequestValidationException ex)

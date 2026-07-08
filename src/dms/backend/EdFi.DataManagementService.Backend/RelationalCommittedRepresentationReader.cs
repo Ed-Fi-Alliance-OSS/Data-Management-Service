@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using Microsoft.Extensions.Options;
@@ -12,7 +11,11 @@ namespace EdFi.DataManagementService.Backend;
 
 internal interface IRelationalCommittedRepresentationReader
 {
-    Task<JsonNode> ReadAsync(
+    /// <summary>
+    /// Composes the served <c>_etag</c> for a just-committed write. A write response carries only
+    /// the etag, so this returns the opaque etag string directly rather than a document body.
+    /// </summary>
+    Task<string> ReadAsync(
         RelationalWriteExecutorRequest request,
         RelationalWritePersistResult persistedTarget,
         CancellationToken cancellationToken = default
@@ -24,8 +27,6 @@ internal sealed class RelationalCommittedRepresentationReader(
     IOptions<ResourceLinksOptions> linksOptions
 ) : IRelationalCommittedRepresentationReader
 {
-    private const string EtagPropertyName = "_etag";
-
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
     private readonly ResourceLinksOptions _linksOptions =
@@ -34,7 +35,7 @@ internal sealed class RelationalCommittedRepresentationReader(
     // The write response carries only the _etag header. The final committed ContentVersion is
     // persistence metadata supplied by the persister (RelationalWritePersistResult.ContentVersion),
     // so this reader only composes the etag — no dms.Document query, no hydrate, no hashing.
-    public Task<JsonNode> ReadAsync(
+    public Task<string> ReadAsync(
         RelationalWriteExecutorRequest request,
         RelationalWritePersistResult persistedTarget,
         CancellationToken cancellationToken = default
@@ -54,6 +55,6 @@ internal sealed class RelationalCommittedRepresentationReader(
             )
         );
 
-        return Task.FromResult<JsonNode>(new JsonObject { [EtagPropertyName] = etag });
+        return Task.FromResult(etag);
     }
 }

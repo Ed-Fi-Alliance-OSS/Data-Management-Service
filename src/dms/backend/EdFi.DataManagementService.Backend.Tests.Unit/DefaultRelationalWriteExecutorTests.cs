@@ -1162,13 +1162,13 @@ public class Given_Default_Relational_Write_Executor
             ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
             77L
         );
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
 
         _noProfilePersister.ResultToReturn = persistedTarget;
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -1264,11 +1264,11 @@ public class Given_Default_Relational_Write_Executor
         {
             ContentVersion = 44L,
         };
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -3696,14 +3696,14 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             new RelationalWritePersistResult(
                 existingTargetContext.DocumentId,
                 existingTargetContext.DocumentUuid
             ),
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
         );
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4260,7 +4260,7 @@ public class Given_Default_Relational_Write_Executor
             ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
             77L
         );
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             persistedTarget,
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
         );
@@ -4289,7 +4289,7 @@ public class Given_Default_Relational_Write_Executor
             supportsGuardedNoOp: false
         );
         _noProfilePersister.ResultToReturn = persistedTarget;
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4335,7 +4335,7 @@ public class Given_Default_Relational_Write_Executor
             345L,
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
         );
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
@@ -4359,7 +4359,7 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4399,7 +4399,7 @@ public class Given_Default_Relational_Write_Executor
             existingTarget.DocumentId,
             existingTarget.DocumentUuid
         );
-        var committedResponse = CreateCommittedExternalResponse(
+        var committedEtag = CommittedWriteEtag(
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
@@ -4423,7 +4423,7 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
-        _committedRepresentationReader.ResultToReturn = committedResponse;
+        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -7406,20 +7406,16 @@ public class Given_Default_Relational_Write_Executor
             )
         );
 
-    private static JsonNode CreateCommittedExternalResponse(
+    // A committed write surfaces only its served _etag (no document body), so the reader returns the
+    // etag string directly. The arguments mirror a real committed write for call-site readability.
+    private static string CommittedWriteEtag(
         RelationalWritePersistResult persistedTarget,
         JsonNode materializedBody
     )
     {
-        var committedResponse = materializedBody.DeepClone();
-
-        committedResponse.Should().BeOfType<JsonObject>();
-        var committedObject = (JsonObject)committedResponse;
-        committedObject["id"] = persistedTarget.DocumentUuid.Value.ToString();
-        committedObject["_lastModifiedDate"] = "2026-04-02T12:00:00Z";
-        committedObject["_etag"] = ComposedWriteResultEtag;
-
-        return committedObject;
+        _ = persistedTarget;
+        _ = materializedBody;
+        return ComposedWriteResultEtag;
     }
 
     private static MappingSet CreateMappingSet(
@@ -8113,9 +8109,9 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWritePersistResult? CapturedPersistedTarget { get; private set; }
 
-        public JsonNode? ResultToReturn { get; set; }
+        public string? ResultToReturn { get; set; }
 
-        public Task<JsonNode> ReadAsync(
+        public Task<string> ReadAsync(
             RelationalWriteExecutorRequest request,
             RelationalWritePersistResult persistedTarget,
             CancellationToken cancellationToken = default
@@ -8127,7 +8123,7 @@ public class Given_Default_Relational_Write_Executor
             CapturedPersistedTarget = persistedTarget;
 
             return Task.FromResult(
-                ResultToReturn ?? CreateCommittedExternalResponse(persistedTarget, request.SelectedBody)
+                ResultToReturn ?? CommittedWriteEtag(persistedTarget, request.SelectedBody)
             );
         }
     }
