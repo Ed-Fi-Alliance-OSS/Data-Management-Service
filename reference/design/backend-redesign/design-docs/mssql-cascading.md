@@ -39,10 +39,11 @@ When a resource's identifying values change, the new values must reach every row
 copy of them — the propagated identity-part columns on each direct referrer's storage table.
 The two supported engines diverge:
 
-- **PostgreSQL** allows a foreign-key graph with "cycles or multiple cascade paths", so DMS uses
-  composite FKs `(…identity parts…, DocumentId)` with `ON UPDATE CASCADE` on every eligible edge
-  (abstract targets, and concrete targets whose identity can change transitively). The engine
-  propagates identity changes natively. This remains correct and unchanged.
+- **PostgreSQL** has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so DMS
+  uses composite FKs `(…identity parts…, DocumentId)` with `ON UPDATE CASCADE` on every eligible edge
+  (abstract targets, and concrete targets whose identity can change transitively); the engine
+  propagates identity changes natively across multiple cascade paths. DMS does **not** physically
+  prune PostgreSQL FKs. This remains correct and unchanged.
 
 - **SQL Server** rejects the same graph at DDL time whenever a table would be **reached by more
   than one cascade path**, or whenever the cascade edges form a cycle (error **1785**). To get a
@@ -101,21 +102,26 @@ also drive the corrections applied to the other design docs by DMS-1129.
    references (`allowIdentityUpdates = false`) can still be *transitively* mutable and must be
    treated as live.
 
-5. **The cross-dialect detection is a SQL Server portability / authoring guard, not a PostgreSQL
-   correctness requirement.** PostgreSQL can natively cascade all paths of a multi-path or cyclic
-   graph and keeps full-composite `ON UPDATE CASCADE` on every eligible edge, unchanged. Detection
-   runs dialect-agnostically only so a schema that *cannot* be represented on SQL Server is surfaced
-   early (and prevented in MetaEd), not because PostgreSQL needs pruning.
+5. **The unsafe-graph detection is a SQL Server portability / cross-engine authoring policy, not a
+   PostgreSQL correctness requirement.** PostgreSQL has no 1785 DDL restriction and keeps
+   full-composite `ON UPDATE CASCADE` on every eligible edge, unchanged; DMS never physically prunes
+   PostgreSQL FKs. Because a DMS model must be representable on **both** supported engines, derivation
+   runs the detection dialect-agnostically and **fails fast on both dialects** for a graph that cannot
+   be represented on SQL Server (a cascade cycle/SCC, or an uncovered diamond) — an explicit
+   cross-engine portability / authoring policy, **not** because PostgreSQL needs pruning (PostgreSQL
+   alone would accept the graph). MetaEd (METAED-1667) prevents these graphs at authoring time so
+   neither engine encounters one in practice. See the *Dialect scope decision* section.
 
 6. **Canonical FK/RefKey column order is identity parts first, `DocumentId` last.** This matches
    `ReferenceConstraintPass` and the `*_RefKey` ordering rationale in
    [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes". Docs that showed
    `(DocumentId, <identity parts…>)` are corrected; no code change is required.
 
-7. **DMS-1258 wording must be corrected before implementation.** The Jira ticket (and any older doc
-   text) says pruning is decided "per referenced table"; that is the wrong orientation. It must be
-   restated in receiver / referrer / path-convergence terms per decision 1. See
-   [Correction required in the DMS-1258 ticket](#correction-required-in-the-dms-1258-ticket).
+7. **DMS-1258 has been aligned with this design.** The Jira ticket previously said pruning was decided
+   "per referenced table" (the wrong orientation); it has been restated in
+   receiver / referrer / path-convergence terms per decision 1, and now also carries the both-dialect
+   fail-fast policy (decision 5) and the global retained-graph invariant. See
+   [DMS-1258 alignment](#dms-1258-alignment).
 
 ## Diagrams
 
@@ -411,6 +417,22 @@ SCC's tables and the exact FK edges (constraint names) forming the cycle.
 
 ### 3. Detect duplicate reachability (diamonds) — not raw in-degree
 
+**What "origin" means.** Throughout this analysis an *origin* is **any cascade-graph ancestor** — any
+table from which cascade edges can reach the receiver — **not** only the resources at which DMS
+permits a *direct* identity update. This is deliberate. SQL Server 1785 is a **static, DDL-time**
+check over the entire cascade FK graph (when it builds the tree of cascading actions it treats every
+table as a potential update source), so the multitree property must hold from every ancestor for the
+schema to even `CREATE`; restricting origins to update-permitted roots would let non-creatable DDL
+through. Coverage (step 4) quantifies over the **same** origin set for a runtime reason: a pruned
+`NO ACTION` composite FK trips error 547 whenever its *referenced* key changes for **any** reason —
+including a cascade arriving from a transitively-mutable ancestor — so an edge is prunable only if a
+survivor maintains its columns for every ancestor that can reach it, regardless of where the update
+was first issued. The runtime `AllowIdentityUpdates` gate (`RelationalWriteIdentityStability`) governs
+only whether a *statement-level direct* identity write is accepted at a root resource; it does **not**
+bound which tables' keys change under propagation, so it never narrows the origin set for 1785 or 547.
+The graph is therefore built over the full transitive-mutability edge set (decision 4), and
+reachability/coverage quantify over all cascade ancestors.
+
 A table is legal on SQL Server iff it appears at most once in the cascade action tree of any single
 `UPDATE`/`DELETE` — equivalently, the cascade graph is a **multitree**: at most one directed cascade
 path between any ordered pair of tables. So the unit of analysis is **duplicate reachability**, not
@@ -475,6 +497,25 @@ duplicate deterministically:
 The choice is local to each diamond; edges outside diamonds are untouched. Immutable references are
 outside the cascade graph entirely and are emitted as `ImmutableNoAction` (step 1).
 
+**Global invariant (validated after all diamonds are resolved).** Survivor selection is computed per
+diamond, but overlapping diamonds can share edges, so a locally-valid choice for one diamond can break
+another. The classification is complete only once the **whole** retained graph satisfies a global
+invariant, which DMS-1258 must validate after all local choices are made rather than trusting the
+per-diamond snapshots:
+
+1. Every SQL Server reference FK has **exactly one** final `MssqlPropagationMode`.
+2. The retained `NativeCascade` subgraph (all kept `CASCADE` edges) is **acyclic**.
+3. The retained `NativeCascade` subgraph is a **multitree**: at most one directed cascade path between
+   any ordered pair of tables (no receiver is reachable twice from any origin over kept edges).
+4. Every `NoPropagation` edge is **covered by the final retained graph** — the surviving path that
+   justified the prune must still exist and still maintain the shared canonical columns *after* every
+   other diamond is resolved, not merely within its own local diamond snapshot.
+
+If a local survivor choice would violate (2)–(3) for another diamond, or leaves a `NoPropagation` edge
+uncovered under (4), the graph has no safe classification → **fail fast** (step 6). Survivor selection
+stays deterministic (the stable source-table / constraint-name order above); the global check adds no
+nondeterminism — it only rejects graphs that no deterministic local choice can satisfy.
+
 | Final per-edge outcome (`MssqlPropagationMode`) | FK shape | `ON UPDATE` | Propagation mechanism | Carrier diagnostics |
 |------------------------|----------|-------------|-----------------------|---------------------|
 | `NativeCascade` (cascade-eligible; an independent edge, the surviving path of a diamond, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
@@ -491,7 +532,9 @@ alone; that is exactly why it is carried explicitly (see the contract).
 
 ### 6. Fail fast when no safe pruning exists
 
-Derivation fails, with a diagnostic, in exactly two situations:
+Derivation fails, with a diagnostic, in exactly two situations. This failure applies on **both**
+dialects as a cross-engine portability policy — the graph is unrepresentable on SQL Server; PostgreSQL
+alone could run it, but DMS refuses a non-portable model (see the *Dialect scope decision*):
 
 - **Cascade cycle** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the action
   tree revisits a table. Diagnostic names the SCC tables and the FK edges forming the cycle.
@@ -511,29 +554,34 @@ load-bearing rather than merely nice-to-have.
 
 ## Dialect scope decision (AC: "MSSQL only, or both?")
 
-**Recommendation: physical FK pruning is emitted for SQL Server only; PostgreSQL keeps full
-composite `ON UPDATE CASCADE` on every eligible edge.** ODS prunes for both engines, but ODS's
-motivation is uniform DDL generation, not a PostgreSQL correctness need. PostgreSQL has no
-multiple-cascade-paths restriction and no `NO ACTION`-before-trigger problem: it can preserve full
-composite cascades on all paths of a multi-path graph (and can cascade through cycles), so pruning
-on PostgreSQL would only *remove* native RI enforcement for no benefit.
+**Physical FK pruning is emitted for SQL Server only; PostgreSQL keeps full composite
+`ON UPDATE CASCADE` on every eligible edge.** ODS prunes for both engines, but ODS's motivation is
+uniform DDL generation, not a PostgreSQL correctness need. PostgreSQL has no 1785
+multiple-cascade-paths/cycles DDL restriction and no `NO ACTION`-before-trigger problem: it can create
+and natively cascade all paths of a multi-path graph, so pruning on PostgreSQL would only *remove*
+native RI enforcement for no benefit.
 
-The unsafe-graph condition (an **uncovered diamond** — duplicate reachability that cannot be safely
-broken — or a **cascade cycle**) is therefore **not a PostgreSQL correctness problem**: PostgreSQL
-resolves multiple cascade paths and cycles at run time, so it handles those graphs natively. It is a
-**SQL Server portability / parity concern**: a schema authored and validated on PostgreSQL could
-fail to create on SQL Server. The split is:
+Detection of the unsafe-graph condition (an **uncovered diamond** — duplicate reachability that cannot
+be safely broken — or a **cascade cycle**) is therefore **not a PostgreSQL correctness requirement**.
+It is a **cross-engine portability / parity policy**: a schema authored and validated on PostgreSQL
+must not silently fail to create on SQL Server later, so a DMS model is required to be representable on
+**both** supported engines. The split is:
 
-- **Detect** the SQL-Server-unsatisfiable condition during model derivation for both dialects, so a
-  non-portable schema is surfaced early regardless of the engine currently in use (schema
-  soundness / cross-engine parity), **not** because PostgreSQL requires it.
+- **Detect** the SQL-Server-unsatisfiable condition during model derivation dialect-agnostically, and
+  **fail derivation on both dialects** — so a non-portable schema is rejected up front regardless of
+  the engine currently in use (schema soundness / cross-engine parity), **not** because PostgreSQL
+  requires it. (PostgreSQL alone would create and run such a graph; DMS refuses it as a portability
+  policy.)
 - **Emit** cascade pruning (`CASCADE` → `NO ACTION` rewrites) only for SQL Server DDL. PostgreSQL
   physical emission is unchanged: full-composite `ON UPDATE CASCADE` on every eligible edge.
 - **Prevent** the condition at authoring time in MetaEd (below), so neither engine encounters it in
   practice.
 
-If a future decision wants PostgreSQL to *also* fail on these graphs, that must be stated as an
-explicit cross-dialect authoring policy — it does not follow from PostgreSQL semantics.
+This both-dialect fail-fast is a deliberate cross-engine authoring policy: it does not follow from
+PostgreSQL semantics (PostgreSQL alone would accept the graph), but from DMS's requirement that a
+single derived model be valid on every supported engine. No claim is made about PostgreSQL propagating
+identity through a cascade *cycle* at run time — DMS refuses cyclic cascade graphs at derivation before
+either engine runs them.
 
 ## Derived-model contract for DMS-1258
 
@@ -576,6 +624,29 @@ DMS-1258 must add:
 
 PostgreSQL emission and its `OnUpdate` values are unchanged; `MssqlPropagationMode` is meaningful
 only for SQL Server model sets (it is absent / not applicable on PostgreSQL FKs).
+
+### Where the classification runs and lives (pass ordering, for DMS-1258)
+
+The classification is a new set-level pass with a fixed position in
+`RelationalModelSetPasses.CreatePasses`. Today that list runs, in order,
+`… ReferenceBindingPass → KeyUnificationPass → AbstractIdentityTableAndUnionViewDerivationPass →
+RootIdentityConstraintPass → TransitiveIdentityMutabilityPass → ReferenceConstraintPass → …`. The
+pruning classification MUST run:
+
+- **after `TransitiveIdentityMutabilityPass`**, because cascade-eligibility and liveness are defined
+  by `IsAbstract || TransitivelyAllowIdentityUpdates` (decision 4), which that pass computes;
+- **after `ReferenceBindingPass` / `KeyUnificationPass`**, so the reference-FK edge set and the
+  canonical (key-unified) columns each edge binds are known; and
+- **before the reference FK's `ON UPDATE` action is finalized** — i.e. it runs immediately before
+  `ReferenceConstraintPass` and feeds `ResolveOnUpdate`, or `ReferenceConstraintPass` is split so a
+  classification step precedes its `OnUpdate` finalization. Either way `ResolveOnUpdate` becomes a
+  **consumer** of `MssqlPropagationMode`, not the source of the `NO ACTION` / `CASCADE` decision.
+
+Storage: `MssqlPropagationMode` is carried **per reference FK** on the derived constraint model
+(alongside `ReferentialAction OnUpdate`) in the shared derived contract; the coverage/carrier
+diagnostics and the fail-fast errors are emitted into `relational-model.manifest.json`. The concrete
+C# shape is deferred to DMS-1258 (see the contract above); this note fixes only the ordering and the
+home of the metadata.
 
 ## FK / RefKey column order (canonical)
 
@@ -621,7 +692,7 @@ safely; a cascade cycle or an uncovered diamond is a hard error, never a silent 
   PostgreSQL; only the `OnUpdate` action differs by classification. Column ordering is unchanged.
 - `DeriveTriggerInventoryPass.EmitMssqlIdentityPropagationTriggers` — currently emits a
   propagation trigger for every eligible target. Under this design **no identity-value propagation
-  triggers are emitted**: native cascade on the surviving edge (which naturally follows FKs on child
+  triggers are emitted**: native cascade on the kept edges (which naturally follow FKs on child
   and extension binding tables) replaces the trigger fan-out, and covered pruned edges need no
   propagation. The `MssqlIdentityPropagationTrigger` trigger kind is retired for identity-value
   propagation. (The UUIDv5 referential-identity and abstract-identity *maintenance* triggers are
@@ -636,21 +707,23 @@ safely; a cascade cycle or an uncovered diamond is a hard error, never a silent 
 
 PostgreSQL emission is unchanged.
 
-## Correction required in the DMS-1258 ticket
+## DMS-1258 alignment
 
-The DMS-1258 implementation ticket (and any residual doc text) describes pruning as choosing a
-survivor "per referenced table". That orientation is wrong per decision 1 and must be restated
-before implementation begins:
+DMS-1258 has been updated to match this design (it previously described pruning as choosing a survivor
+"per referenced table", the wrong orientation per decision 1). The aligned ticket now states:
 
 - The survivor/prune decision is made **per diamond** — a receiver reached by two distinct cascade
   paths from a common origin — analyzed in **propagation direction** using **per-origin duplicate
-  reachability** (a multitree violation). Raw cascade in-degree > 1 is only a candidate signal, and
-  it is **not** decided "per referenced/parent table"; independent parents into one receiver are
-  legal and are never pruned.
-- The ticket must also drop `TriggerFallback` / `DocumentId`-only wording: the per-edge outcomes are
-  `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and every emitted FK is full
-  composite.
-- The ticket must add explicit **cycle/SCC fail-fast** to the scope.
+  reachability** (a multitree violation). Raw cascade in-degree > 1 is only a candidate signal, and it
+  is **not** decided "per referenced/parent table"; independent parents into one receiver are legal
+  and are never pruned.
+- The per-edge outcomes are `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and
+  every emitted SQL Server FK is full composite — no `TriggerFallback` / `DocumentId`-only shape.
+- Explicit **cycle/SCC fail-fast** is in scope, and derivation fails on **both** dialects as the
+  cross-engine portability policy (decision 5).
+- The classification runs after `TransitiveIdentityMutabilityPass` and feeds
+  `ReferenceConstraintPass.ResolveOnUpdate` (a consumer of `MssqlPropagationMode`), and the retained
+  graph must satisfy the global invariant above.
 
 ## Follow-up work
 
@@ -663,8 +736,8 @@ before implementation begins:
 - **DMS-1258** (implementation): implement the propagation-direction graph, cycle/SCC detection, the
   coverage classification, deterministic survivor selection with full-composite restoration on
   kept/covered edges, removal of the `DocumentId`-only branch and the identity-propagation trigger,
-  the `MssqlPropagationMode` contract, and fail-fast derivation. Correct the ticket wording first
-  (above).
+  the `MssqlPropagationMode` contract, and fail-fast derivation. (The ticket wording has been aligned
+  with this design — see the DMS-1258 alignment section above.)
 - **DMS-1128**: superseded by DMS-1258; reconcile with this design.
 
 ## Non-goals

@@ -34,7 +34,9 @@ The backend redesign relies on:
   row as stored “identity-part” columns to support query/reconstitution.
 - **DB-driven identity propagation**:
   - PostgreSQL: `ON UPDATE CASCADE` on eligible composite reference FKs.
-  - SQL Server: `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`.
+  - SQL Server: native `ON UPDATE CASCADE` on eligible composite reference FKs (foreign-key pruning; see
+    [mssql-cascading.md](mssql-cascading.md)) — superseding the earlier `ON UPDATE NO ACTION` +
+    `MssqlIdentityPropagationTrigger` mechanism this document was written against.
 - **Key unification**: uses `equalityConstraints` to unify duplicated stored scalar/descriptor columns into a single
   canonical stored column *within one physical table row* (aliases remain available for API-path semantics).
 
@@ -104,6 +106,11 @@ So the root value changes but the child values do not.
 
 ### 3) SQL Server `MssqlIdentityPropagationTrigger` currently only considers root-table reference sites
 
+> **Superseded (DMS-1129), non-actionable.** Native `ON UPDATE CASCADE` follows composite reference FKs
+> on child/extension binding tables directly, so this trigger root-only limitation no longer applies —
+> a child reference site that holds a composite reference FK is cascaded natively. The analysis below
+> is retained for historical context only; see [mssql-cascading.md](mssql-cascading.md).
+
 The design docs call out that SQL Server `MssqlIdentityPropagationTrigger` triggers should fan out to “root and non-root reference
 sites” (`reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`).
 
@@ -130,6 +137,12 @@ propagation.
 Below are candidate directions (not mutually exclusive).
 
 ### A) Implement SQL Server `MssqlIdentityPropagationTrigger` for non-root reference sites (baseline parity fix)
+
+> **Superseded (DMS-1129), non-actionable.** No trigger change is needed: native `ON UPDATE CASCADE`
+> already reaches non-root reference sites via the composite reference FKs on child/extension tables
+> (see [mssql-cascading.md](mssql-cascading.md)). This item is retained only as historical analysis;
+> the remaining open question is the cross-scope key-unification parity gap (option B below), which is
+> independent of the propagation mechanism.
 
 Bring the implementation in line with the design intent:
 

@@ -1713,7 +1713,7 @@ Normative guidance:
   paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
   identity update succeeds (no transient FK violations and no mid-cascade check failures).
 
-#### SQL Server (foreign-key pruning; native cascade on the surviving edge)
+#### SQL Server (foreign-key pruning; native cascade on eligible edges)
 
 SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
 reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
@@ -1819,11 +1819,14 @@ the composite FK legal” MUST be defined over the same canonical storage column
 
 Normative rules:
 
-1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be:
-   - `DocumentId`, plus
+1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be
+   ordered identity storage columns first, `DocumentId` last — matching the local FK's column order so
+   the FK and its referenced-key UNIQUE are positionally aligned (see
+   [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes"):
    - the target identity-part columns mapped to their **canonical storage columns**:
      - `Stored` → itself
      - `UnifiedAlias` → `UnifiedAlias.CanonicalColumn`
+   - followed by `DocumentId`
 2. If two or more identity parts map to the same canonical column (because the identity schema contains duplicated
    endpoints that are equality-constrained), the derivation MUST de-duplicate the repeated canonical column name
    deterministically:
@@ -1834,7 +1837,7 @@ Rationale:
 
 - The composite FK must not reference read-only alias columns.
 - The composite FK and its required referenced-key UNIQUE must agree on the same physical key shape to avoid
-  mismatches and to keep identity propagation (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on the surviving edge on SQL Server) anchored on
+  mismatches and to keep identity propagation (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on eligible edges on SQL Server) anchored on
   the canonical writable columns.
 
 #### Index inventory (constraints imply indexes)
@@ -1909,7 +1912,7 @@ unified member’s value is the **presence-gated expression** derived from `Colu
 
 This makes identity change detection robust to:
 
-- FK-cascade updates (PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on the surviving edge) that update canonical storage columns, and
+- FK-cascade updates (PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges) that update canonical storage columns, and
 - presence changes that gate an alias between `NULL` and a canonical value.
 
 In derived trigger inventory contracts, this compare set is carried by `DbTriggerInfo.IdentityProjectionColumns` and is
@@ -1936,7 +1939,7 @@ These triggers must use the same value-diff gating:
 - For unified identity members, the identity value is the presence-gated canonical expression above.
 
 This guarantees that cascade updates to canonical columns (PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on
-the surviving edge) correctly cause referential-id and abstract-identity maintenance, even though alias columns are
+eligible edges) correctly cause referential-id and abstract-identity maintenance, even though alias columns are
 read-only.
 
 Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission docs):
@@ -2310,7 +2313,7 @@ semantics, or cascade correctness.
 - Triggers do not rely on “updated column” checks for alias columns (aliases are read-only).
 - Identity-change detection uses value diffs between old/new row images:
   - unified members use the presence-gated canonical expression, not the alias column name.
-- Cascades that update canonicals (PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on the surviving edge) still trigger correct stamping and
+- Cascades that update canonicals (PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges) still trigger correct stamping and
   maintenance behavior (no missed recomputes).
 - SQL Server trigger implementations are set-based and correct under multi-row statements.
 

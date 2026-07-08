@@ -128,9 +128,11 @@ unified key parts.
 2. **Reference-site retargeting when required**: if the dependent endpoint is inside a composite reference FK
    (`..._DocumentId + identity parts`), propagate the entire reference site (not just the unified key part) so the FK
    remains valid and the reference is effectively “retargeted” as ODS/API would do.
-3. **SQL Server baseline parity fix**: include non-root reference sites when deriving
-   `MssqlIdentityPropagationTrigger` triggers (remove the “only root-table bindings” restriction in
-   `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`).
+3. ~~**SQL Server baseline parity fix**: include non-root reference sites when deriving
+   `MssqlIdentityPropagationTrigger` triggers~~ — **superseded (DMS-1129), non-actionable:** SQL Server
+   identity propagation is now native `ON UPDATE CASCADE`, which already reaches non-root reference
+   sites via composite FKs on child/extension tables; there is no propagation trigger and no
+   “only root-table bindings” restriction to relax (see [mssql-cascading.md](mssql-cascading.md)).
 
 ## Detailed Design
 
@@ -316,6 +318,12 @@ Versioning requirements:
 
 ### 6) SQL Server baseline parity fix (non-root reverse references)
 
+> **Superseded (DMS-1129), non-actionable.** This subsection predates the switch to native
+> `ON UPDATE CASCADE` on SQL Server. Native cascade follows composite reference FKs on child/extension
+> binding tables directly, so there is no `MssqlIdentityPropagationTrigger` and no root-only filter to
+> relax; the "non-root reverse reference" parity concern is moot for the propagation mechanism (see
+> [mssql-cascading.md](mssql-cascading.md)). Retained for historical context only.
+
 Independently of DLEP, SQL Server `MssqlIdentityPropagationTrigger` triggers must include non-root referrers, per the design
 intent in `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“fan out to all impacted
 referrer tables (root and non-root reference sites)”).
@@ -352,7 +360,7 @@ This fix is a prerequisite for correctness on SQL Server even without DLEP.
   - produce a document `X` with the root ↔ child equality constraint shape,
   - perform an identity update that changes the root value via propagation,
   - assert child collection rows are updated and reconstituted JSON remains consistent.
-- Add a SQL Server-focused test verifying non-root `MssqlIdentityPropagationTrigger` updates child/extension referrers.
+- ~~Add a SQL Server-focused test verifying non-root `MssqlIdentityPropagationTrigger` updates child/extension referrers.~~ (Superseded by DMS-1129 — no propagation trigger exists; native cascade covers non-root reference sites.)
 
 ## Open Questions
 

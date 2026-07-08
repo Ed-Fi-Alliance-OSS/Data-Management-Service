@@ -34,7 +34,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges), with per-site binding columns available for query compilation and reconstitution.
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges), with per-site binding columns available for query compilation and reconstitution.
 - Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
 
 ### Key unification for equality-constrained identity parts (single source of truth)
@@ -64,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server foreign-key pruning — `ON UPDATE CASCADE` on surviving edges, `NO ACTION` (full composite) on pruned covered edges, fail-fast when no safe pruning exists; see [mssql-cascading.md](mssql-cascading.md)), and
+- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server foreign-key pruning — `ON UPDATE CASCADE` on eligible edges, `NO ACTION` (full composite) on a covered reconverging edge pruned only at a diamond, fail-fast when no safe pruning exists; see [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -117,7 +117,7 @@ Mitigations:
 ### Trigger correctness for stamping and identity maintenance (Correctness Risk)
 
 Correctness depends on generated triggers to:
-- stamp `dms.Document` on all representation changes — including the referrer-row updates produced by identity propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on the surviving edge under foreign-key pruning). The propagation itself is a database FK cascade, not a trigger; the ordinary `*_Stamp` and identity-maintenance triggers then fire on the cascaded row updates exactly as they do for direct writes, and
+- stamp `dms.Document` on all representation changes — including the referrer-row updates produced by identity propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges under foreign-key pruning). The propagation itself is a database FK cascade, not a trigger; the ordinary `*_Stamp` and identity-maintenance triggers then fire on the cascaded row updates exactly as they do for direct writes, and
 - maintain `dms.ReferentialIdentity` and abstract identity tables transactionally.
 
 These abstract-identity and referential-identity *maintenance* triggers are unaffected by the DMS-1129 revision; only the retired SQL Server identity-*value* propagation trigger (`MssqlIdentityPropagationTrigger`) is gone, replaced by native cascade (see [mssql-cascading.md](mssql-cascading.md)).

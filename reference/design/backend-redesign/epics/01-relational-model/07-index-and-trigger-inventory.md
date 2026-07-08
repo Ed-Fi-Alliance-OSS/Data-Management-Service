@@ -24,7 +24,7 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
   - `DeriveTriggerInventoryPass`: derives trigger intent inventory (stamping, referential-identity, and abstract-identity
     maintenance triggers). SQL Server identity-value propagation is **not** a trigger — it is native `ON UPDATE CASCADE`
-    on the surviving edge chosen by foreign-key pruning (see `design-docs/mssql-cascading.md`); the retired
+    on eligible edges, with foreign-key pruning removing cascade from a covered reconverging edge only at a diamond (see `design-docs/mssql-cascading.md`); the retired
     `MssqlIdentityPropagationTrigger` fan-out is not emitted.
 
 ## Scope (What This Story Is Talking About)

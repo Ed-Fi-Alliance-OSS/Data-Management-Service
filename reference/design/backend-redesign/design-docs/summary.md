@@ -42,7 +42,7 @@ Source documents:
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so referential ids can be recomputed row-locally.
-- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as database-driven propagation updates to canonical stored identity columns that back the local bindings (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges), including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as database-driven propagation updates to canonical stored identity columns that back the local bindings (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges), including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
 
 ## Data model summary
 
@@ -79,7 +79,7 @@ Source documents:
 
 ### Update tracking additions (unified design)
 
-`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via database-driven propagation updates (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges) to canonical stored identity columns that back local reference-identity bindings:
+`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via database-driven propagation updates (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges) to canonical stored identity columns that back local reference-identity bindings:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
@@ -199,7 +199,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 5. **Strict identity maintenance (row-local triggers)**
    - Per-resource triggers recompute `dms.ReferentialIdentity` when a document’s identity projection columns change (directly or via propagated updates to identity-component reference identity columns).
-   - Identity changes therefore propagate transitively via DB-driven propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges), without application-managed closure traversal.
+   - Identity changes therefore propagate transitively via DB-driven propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges), without application-managed closure traversal.
 
 6. **Update tracking (stored metadata + tracked-change rows)**
    - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.

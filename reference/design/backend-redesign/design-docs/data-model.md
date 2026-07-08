@@ -669,7 +669,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 Usage:
 
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges — see [mssql-cascading.md](mssql-cascading.md)).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges — see [mssql-cascading.md](mssql-cascading.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:

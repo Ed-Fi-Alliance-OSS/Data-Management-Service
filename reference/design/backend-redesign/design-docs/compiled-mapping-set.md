@@ -395,11 +395,15 @@ Notes:
     `NoPropagation` or `ImmutableNoAction`, which is why the mode is carried explicitly rather than derived from
     `OnUpdate`. There is no `TriggerFallback` value and no `MssqlFkShape` axis: every SQL Server reference FK keeps the
     full composite key, so shape is not a variable.
-  - coverage / carrier diagnostics **for `NoPropagation` edges only** (which surviving edge and shared canonical columns
-    cover the pruned edge), emitted into `relational-model.manifest.json` so pruning is auditable and reproducible.
-    `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics — there is nothing to attribute.
-  - hard derivation errors for the two fail-fast conditions (a cascade cycle/SCC, or an uncovered diamond — a receiver
-    reached twice from one origin with no coverable prune), each naming the offending tables and FK constraint names.
+  - coverage / carrier diagnostics **for `NoPropagation` edges only** — enough to reconstruct the diamond that justified
+    the prune: the originating root, the receiver, the ordered surviving path and the ordered pruned path (as FK-constraint
+    sequences), and the shared canonical columns the survivor maintains — emitted into `relational-model.manifest.json` so
+    pruning is auditable and reproducible. `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics —
+    there is nothing to attribute.
+  - hard derivation errors for the two fail-fast conditions, each carrying the full diagnostic detail (not just tables/FK
+    names): a cascade cycle/SCC error names the SCC tables and the FK edges forming the cycle; an uncovered-diamond error
+    (a receiver reached twice from one origin with no coverable prune) names the origin/root, the receiver, the two (or
+    more) distinct cascade paths, the candidate/pruned edges, and the coverage columns.
   This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;
   PostgreSQL model sets keep `ON UPDATE CASCADE` on every eligible edge and do not use `MssqlPropagationMode`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.

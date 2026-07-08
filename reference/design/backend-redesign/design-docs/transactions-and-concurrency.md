@@ -272,7 +272,7 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL supports “cycles or multiple cascade paths” for FK cascades, so it keeps `ON UPDATE CASCADE` on every eligible edge.
+- PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so it keeps `ON UPDATE CASCADE` on every eligible edge and DMS never physically prunes PostgreSQL FKs. (A cascade cycle or an uncovered diamond still fails derivation on both dialects as a cross-engine portability policy; see [mssql-cascading.md](mssql-cascading.md).)
 - SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child): `ON UPDATE CASCADE` on
   eligible edges (including independent parents into a shared receiver), pruning a covered edge to `ON UPDATE NO ACTION`
@@ -319,7 +319,7 @@ Operational guidance:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
 because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
-**canonical/storage identity-part columns** (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on the surviving edge on SQL Server) and for
+**canonical/storage identity-part columns** (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on eligible edges on SQL Server) and for
 **derived artifacts** (referential ids and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
@@ -499,7 +499,7 @@ When serving from `dms.DocumentCache`, treat a row as usable only if it is **fre
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
-Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server native `ON UPDATE CASCADE` on surviving edges), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
+Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server native `ON UPDATE CASCADE` on eligible edges), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
 
 A minimal projector approach:
 
