@@ -186,6 +186,7 @@ public class InvalidResourceSchemasTests
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
+                NullLoggerFactory.Instance,
                 appSettingsOptions,
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),

@@ -41,8 +41,7 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unknown Error - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
-
+            requestInfo.UnhandledException = ex;
             // Replace the frontend response (if any) with a 500 error
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,

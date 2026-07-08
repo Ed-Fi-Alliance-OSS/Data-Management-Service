@@ -40,6 +40,7 @@ internal class ApiService : IApiService
     private readonly IEqualityConstraintValidator _equalityConstraintValidator;
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
+    private readonly ILogger<RequestResponseLoggingMiddleware> _requestResponseLogger;
     private readonly IOptions<AppSettings> _appSettings;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
@@ -113,6 +114,7 @@ internal class ApiService : IApiService
         IEqualityConstraintValidator equalityConstraintValidator,
         IDecimalValidator decimalValidator,
         ILogger<ApiService> logger,
+        ILoggerFactory loggerFactory,
         IOptions<AppSettings> appSettings,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
@@ -131,6 +133,7 @@ internal class ApiService : IApiService
         _equalityConstraintValidator = equalityConstraintValidator;
         _decimalValidator = decimalValidator;
         _logger = logger;
+        _requestResponseLogger = loggerFactory.CreateLogger<RequestResponseLoggingMiddleware>();
         _appSettings = appSettings;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
@@ -160,7 +163,7 @@ internal class ApiService : IApiService
     {
         return
         [
-            new RequestResponseLoggingMiddleware(_logger),
+            new RequestResponseLoggingMiddleware(_requestResponseLogger),
             new CoreExceptionLoggingMiddleware(_logger),
             new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),

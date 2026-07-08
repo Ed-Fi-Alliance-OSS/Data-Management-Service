@@ -23,6 +23,99 @@ protecting sensitive data and avoiding excessive log storage size.
   debug message, use the utility `IsDebugEnabled` and `IsInfoEnabled` functions
   first before executing that logic.
 
+## CMS And DMS Request Log Console Contract
+
+The Configuration Management Service and Data Management Service emit request
+completion and request failure logs as structured events. DMS includes both the
+ASP.NET frontend request middleware and the core pipeline request middleware in
+this contract. The console sink is the production collector contract for CMS and
+DMS request logs and must emit newline-delimited JSON using
+`Serilog.Formatting.Json.JsonFormatter, Serilog`.
+
+Collector rules should target structured properties, not parse the rendered
+message. These request log properties are emitted directly by each CMS and DMS
+request logging layer:
+
+* `Application`: `EdFi.DmsConfigurationService` or
+  `EdFi.DataManagementService`.
+* `EventName`: `HttpRequestCompleted` or `HttpRequestFailed`.
+* `SourceContext`: logger category emitted by Serilog/Microsoft logging.
+* `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
+  separate externally visible HTTP request events from core pipeline request
+  events when aggregating DMS request volume or failure rates.
+* `TraceId`: the application-visible trace or correlation ID. CMS uses
+  `HttpContext.TraceIdentifier`; DMS uses the configured correlation header
+  when present and falls back to `HttpContext.TraceIdentifier`.
+* `Method`: sanitized HTTP method.
+* `Path`: sanitized request path without the query string.
+* `StatusCode`: HTTP response status code. An unhandled exception before a
+  response is produced is logged as `500`.
+* `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.
+
+The ASP.NET request logging layers can also add these optional request scope
+properties when available:
+
+* `ActivityTraceId`: W3C activity trace ID when `Activity.Current` exists.
+* `SpanId`: W3C span ID when `Activity.Current` exists.
+* `PathBase`: sanitized request path base when available from the ASP.NET
+  request scope.
+
+DMS core request events normally run inside the DMS frontend request scope, so
+they may inherit `ActivityTraceId`, `SpanId`, and `PathBase` through Serilog log
+context enrichment. Collectors must tolerate those optional ASP.NET-specific
+properties being absent from DMS core events when the core pipeline is invoked
+outside the ASP.NET frontend. For DMS request-count dashboards, collectors
+should filter to `RequestLayer = "Frontend"` so the frontend and core request
+events are not counted as separate external HTTP requests.
+
+### Example Request Log Output
+
+Each CMS and DMS request completion event produces newline-delimited JSON with
+this structure:
+
+```json
+{
+  "Timestamp": "2026-06-29T14:23:45.123Z",
+  "Level": "Information",
+  "MessageTemplate": "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+  "RenderedMessage": "HttpRequestCompleted: CMS request completed: GET /v3/vendors responded 200 in 42 ms with TraceId 0HN...",
+  "Exception": null,
+  "Properties": {
+    "Application": "EdFi.DmsConfigurationService",
+    "EventName": "HttpRequestCompleted",
+    "SourceContext": "EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware.RequestLoggingMiddleware",
+    "TraceId": "0HN...",
+    "ActivityTraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "SpanId": "00f067aa0ba902b7",
+    "Method": "GET",
+    "Path": "/v3/vendors",
+    "StatusCode": 200,
+    "DurationMs": 42,
+    "PathBase": ""
+  }
+}
+```
+
+Request failure logs follow the same structure with `EventName` set to
+`HttpRequestFailed`, `Level` set to `Error`, and exception details in the
+`Exception` field.
+
+Completion logs use `Information`, except CMS `/.well-known/*` completion logs,
+which use `Debug`. Failure logs use `Error`. Request start logs are diagnostic
+breadcrumbs emitted at `Debug` and are outside the production completion/failure
+collector contract. CMS rethrows the original exception for upstream middleware;
+DMS frontend preserves its existing behavior of wrapping the original exception
+after logging and writing its existing JSON error response when the response has
+not started. DMS core preserves its existing behavior of wrapping core pipeline
+failures after logging them.
+
+Information-level request logs must not include request bodies, response
+bodies, authorization headers, bearer tokens, API keys, client secrets,
+connection strings, raw query strings, arbitrary headers, route values, or raw
+tenant header values. Remote IP address and user agent are also excluded unless
+a later story defines the privacy, retention, and cardinality requirements for
+those fields.
+
 ## Log Levels
 
 The DMS applications will utilize the following levels when logging messages.
