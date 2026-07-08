@@ -25,6 +25,7 @@ function Get-EffectiveSchemaHashFromOutput {
     #>
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [object[]]
         $Output
     )

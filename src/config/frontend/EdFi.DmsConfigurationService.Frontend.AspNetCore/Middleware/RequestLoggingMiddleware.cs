@@ -21,10 +21,35 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         var logLevel = context.Request.Path.StartsWithSegments(new PathString("/.well-known"))
             ? LogLevel.Debug
             : LogLevel.Information;
-        var scopeValues = BuildScopeValues(context);
+
+        var traceId = LoggingUtility.SanitizeForLog(context.TraceIdentifier);
+        var method = LoggingUtility.SanitizeForLog(context.Request.Method);
+        var path = LoggingUtility.SanitizeForLog(context.Request.Path.Value);
+        var pathBase = LoggingUtility.SanitizeForLog(context.Request.PathBase.Value);
+
+        var scopeValues = new Dictionary<string, object>
+        {
+            ["Application"] = ApplicationName,
+            ["TraceId"] = traceId,
+            ["Method"] = method,
+            ["Path"] = path,
+            ["PathBase"] = pathBase,
+        };
+
+        var activity = Activity.Current;
+        if (activity is not null)
+        {
+            scopeValues["ActivityTraceId"] = activity.TraceId.ToString();
+            scopeValues["SpanId"] = activity.SpanId.ToString();
+        }
 
         using (logger.BeginScope(scopeValues))
         {
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("Request started");
+            }
+
             try
             {
                 await _next(context);
@@ -39,39 +64,24 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     return;
                 }
 
+                var durationMs = sw.ElapsedMilliseconds;
                 scopeValues["StatusCode"] = statusCode;
-                scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+                scopeValues["DurationMs"] = durationMs;
 
                 if (statusCode >= StatusCodes.Status500InternalServerError)
                 {
                     var handledException = context.Features.Get<IExceptionHandlerFeature>()?.Error;
-                    if (handledException is not null)
-                    {
-                        logger.LogError(
-                            RequestLoggingEventIds.HttpRequestFailed,
-                            handledException,
-                            "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                            RequestLoggingEventIds.HttpRequestFailed.Name,
-                            (string)scopeValues["Method"],
-                            (string)scopeValues["Path"],
-                            scopeValues["StatusCode"],
-                            scopeValues["DurationMs"],
-                            (string)scopeValues["TraceId"]
-                        );
-                    }
-                    else
-                    {
-                        logger.LogError(
-                            RequestLoggingEventIds.HttpRequestFailed,
-                            "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                            RequestLoggingEventIds.HttpRequestFailed.Name,
-                            (string)scopeValues["Method"],
-                            (string)scopeValues["Path"],
-                            scopeValues["StatusCode"],
-                            scopeValues["DurationMs"],
-                            (string)scopeValues["TraceId"]
-                        );
-                    }
+                    logger.LogError(
+                        RequestLoggingEventIds.HttpRequestFailed,
+                        handledException,
+                        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        RequestLoggingEventIds.HttpRequestFailed.Name,
+                        method,
+                        path,
+                        statusCode,
+                        durationMs,
+                        traceId
+                    );
                 }
                 else
                 {
@@ -80,17 +90,17 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                         RequestLoggingEventIds.HttpRequestCompleted,
                         "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                         RequestLoggingEventIds.HttpRequestCompleted.Name,
-                        (string)scopeValues["Method"],
-                        (string)scopeValues["Path"],
-                        scopeValues["StatusCode"],
-                        scopeValues["DurationMs"],
-                        (string)scopeValues["TraceId"]
+                        method,
+                        path,
+                        statusCode,
+                        durationMs,
+                        traceId
                     );
                 }
             }
             catch (Exception ex)
             {
-                LogFailure(context, logger, sw, ex, scopeValues);
+                LogFailure(context, logger, sw, ex, scopeValues, method, path, traceId);
                 throw;
             }
         }
@@ -101,7 +111,10 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         ILogger<RequestLoggingMiddleware> logger,
         Stopwatch sw,
         Exception ex,
-        Dictionary<string, object> scopeValues
+        Dictionary<string, object> scopeValues,
+        string method,
+        string path,
+        string traceId
     )
     {
         try
@@ -111,19 +124,21 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                 sw.Stop();
             }
 
-            scopeValues["StatusCode"] = GetFailureStatusCode(context);
-            scopeValues["DurationMs"] = sw.ElapsedMilliseconds;
+            var statusCode = GetFailureStatusCode(context);
+            var durationMs = sw.ElapsedMilliseconds;
+            scopeValues["StatusCode"] = statusCode;
+            scopeValues["DurationMs"] = durationMs;
 
             logger.LogError(
                 RequestLoggingEventIds.HttpRequestFailed,
                 ex,
                 "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                 RequestLoggingEventIds.HttpRequestFailed.Name,
-                (string)scopeValues["Method"],
-                (string)scopeValues["Path"],
-                scopeValues["StatusCode"],
-                scopeValues["DurationMs"],
-                (string)scopeValues["TraceId"]
+                method,
+                path,
+                statusCode,
+                durationMs,
+                traceId
             );
         }
         catch (Exception)
@@ -132,35 +147,6 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         }
     }
 
-    private static Dictionary<string, object> BuildScopeValues(HttpContext context)
-    {
-        var scopeValues = new Dictionary<string, object>
-        {
-            ["Application"] = ApplicationName,
-            ["TraceId"] = LoggingUtility.SanitizeForLog(context.TraceIdentifier),
-            ["Method"] = LoggingUtility.SanitizeForLog(context.Request.Method),
-            ["Path"] = LoggingUtility.SanitizeForLog(context.Request.Path.Value),
-            ["PathBase"] = LoggingUtility.SanitizeForLog(context.Request.PathBase.Value),
-        };
-
-        var activity = Activity.Current;
-        if (activity is not null)
-        {
-            scopeValues["ActivityTraceId"] = activity.TraceId.ToString();
-            scopeValues["SpanId"] = activity.SpanId.ToString();
-        }
-
-        return scopeValues;
-    }
-
-    private static int GetFailureStatusCode(HttpContext context)
-    {
-        var statusCode = context.Response?.StatusCode ?? 0;
-        if (context.Response is not null && !context.Response.HasStarted)
-        {
-            return StatusCodes.Status500InternalServerError;
-        }
-
-        return statusCode == 0 ? StatusCodes.Status500InternalServerError : statusCode;
-    }
+    private static int GetFailureStatusCode(HttpContext context) =>
+        context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
 }

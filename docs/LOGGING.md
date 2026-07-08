@@ -32,6 +32,16 @@ this contract. The console sink is the production collector contract for CMS and
 DMS request logs and must emit newline-delimited JSON using
 `Serilog.Formatting.Json.JsonFormatter, Serilog`.
 
+> [!WARNING]
+> Do not set `Serilog:WriteTo:*:Args:outputTemplate` in an environment override
+> such as a local `appsettings.development.json`. Serilog configuration arrays
+> merge by index, and `Serilog.Settings.Configuration` prefers the
+> `outputTemplate` string overload over the `formatter` object, so an override
+> that adds `outputTemplate` to the console sink silently replaces the JSON
+> formatter with plain text and breaks this structured request-log contract.
+> Override `MinimumLevel` only, or restate the full `formatter` object when the
+> console sink itself must change.
+
 Collector rules should target structured properties, not parse the rendered
 message. These request log properties are emitted directly by each CMS and DMS
 request logging layer:
@@ -103,7 +113,10 @@ Request failure logs follow the same structure with `EventName` set to
 Completion logs use `Information`, except CMS `/.well-known/*` completion logs,
 which use `Debug`. Failure logs use `Error`. Request start logs are diagnostic
 breadcrumbs emitted at `Debug` and are outside the production completion/failure
-collector contract. CMS rethrows the original exception for upstream middleware;
+collector contract. The DMS frontend emits oversized-request-body rejections
+(HTTP 413) as `HttpRequestCompleted` events carrying `StatusCode` 413, so they
+remain visible to the request-log contract as client-error responses rather than
+failures. CMS rethrows the original exception for upstream middleware;
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
 not started. DMS core preserves its existing behavior of wrapping core pipeline

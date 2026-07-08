@@ -94,20 +94,33 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
             catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
             {
                 stopwatch.Stop();
-                logger.LogWarning(
-                    ex,
-                    "Request rejected because the payload was too large: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                    sanitizedMethod,
-                    sanitizedPath,
-                    stopwatch.ElapsedMilliseconds,
-                    traceId
-                );
 
                 var response = context.Response;
                 if (!response.HasStarted)
                 {
                     response.StatusCode = StatusCodes.Status413PayloadTooLarge;
                 }
+
+                // An oversized body is a client error the pipeline responded to, so it participates
+                // in the request-log contract as a completion event carrying the 413 status code. The
+                // caught exception is expected control flow, not a failure, so it is deliberately not
+                // attached to this Information-level completion event.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception as a parameter
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.Log(
+                        LogLevel.Information,
+                        RequestLoggingEventIds.HttpRequestCompleted,
+                        "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        RequestLoggingEventIds.HttpRequestCompleted.Name,
+                        sanitizedMethod,
+                        sanitizedPath,
+                        StatusCodes.Status413PayloadTooLarge,
+                        stopwatch.ElapsedMilliseconds,
+                        traceId
+                    );
+                }
+#pragma warning restore S6667
             }
             catch (Exception ex)
             {
@@ -139,7 +152,10 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    traceId,
+                                    // The error response body preserves the ASP.NET request identifier so this
+                                    // path keeps its existing contract; the sanitized correlation value is used
+                                    // only for log events.
+                                    traceId = context.TraceIdentifier,
                                 }
                             )
                         );
@@ -154,8 +170,12 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                     }
                 }
 
-                // Preserve existing behavior: wrap and rethrow
-                throw new InvalidOperationException("Request processing failed", ex);
+                // Preserve existing behavior: wrap and rethrow. Keep the request identity in the
+                // wrapper message so host-level logging retains correlation after the scope is disposed.
+                throw new InvalidOperationException(
+                    $"Request processing failed for {sanitizedMethod} {sanitizedPath} - TraceId: {traceId}",
+                    ex
+                );
             }
         }
     }
@@ -172,14 +192,6 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         }
     }
 
-    private static int GetFailureStatusCode(HttpContext context)
-    {
-        var statusCode = context.Response?.StatusCode ?? 0;
-        if (context.Response is not null && !context.Response.HasStarted)
-        {
-            return StatusCodes.Status500InternalServerError;
-        }
-
-        return statusCode == 0 ? StatusCodes.Status500InternalServerError : statusCode;
-    }
+    private static int GetFailureStatusCode(HttpContext context) =>
+        context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
 }

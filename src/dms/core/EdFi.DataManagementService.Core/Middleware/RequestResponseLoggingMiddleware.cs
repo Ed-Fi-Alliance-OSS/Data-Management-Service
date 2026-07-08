@@ -115,7 +115,7 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
                 _logger.LogError(
                     RequestLoggingEventIds.HttpRequestFailed,
                     ex,
-                    "{EventName}: DMS core request failed: {Method} {Path} responded {StatusCode} after {DurationMs} ms with TraceId {TraceId}",
+                    "{EventName}: DMS core request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                     RequestLoggingEventIds.HttpRequestFailed.Name,
                     method,
                     path,

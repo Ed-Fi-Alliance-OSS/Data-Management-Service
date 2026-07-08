@@ -35,11 +35,11 @@ internal class TestLogger<T> : ILogger<T>
         object?[] ActiveScopes
     );
 
-    public readonly List<LogEntry> Entries = new();
+    public readonly List<LogEntry> Entries = [];
     private readonly Func<LogLevel, bool> _isEnabled;
 
-    private readonly Stack<object?> _scopes = new();
-    private readonly List<object?> _createdScopes = new();
+    private readonly Stack<object?> _scopes = [];
+    private readonly List<object?> _createdScopes = [];
 
     public TestLogger()
         : this(_ => true) { }
@@ -72,13 +72,9 @@ internal class TestLogger<T> : ILogger<T>
         Entries.Add(new LogEntry(logLevel, eventId, state!, exception, _scopes.ToArray()));
     }
 
-    private sealed class Scope : IDisposable
+    private sealed class Scope(Action onDispose) : IDisposable
     {
-        private readonly Action _onDispose;
-
-        public Scope(Action onDispose) => _onDispose = onDispose;
-
-        public void Dispose() => _onDispose();
+        public void Dispose() => onDispose();
     }
 }
 
@@ -136,6 +132,25 @@ internal class Given_RequestLoggingMiddleware
             .Which.Any(kvp => kvp.Key == "DurationMs" && kvp.Value is long)
             .Should()
             .BeTrue("duration should be captured in the log scope");
+    }
+
+    [Test]
+    public async Task It_logs_request_start_as_a_debug_breadcrumb()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "GET";
+        httpContext.Request.Path = "/api/v1/test";
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(_next);
+
+        await middleware.Invoke(httpContext, logger);
+
+        logger
+            .Entries.Should()
+            .ContainSingle(e =>
+                e.Level == LogLevel.Debug
+                && e.State.HasStructuredProperty("{OriginalFormat}", "Request started")
+            );
     }
 
     [Test]
@@ -509,13 +524,6 @@ internal class Given_RequestLoggingMiddleware
         if (formatter is null)
         {
             return false;
-        }
-
-        // Handle both string format (legacy) and object format (new)
-        if (formatter.GetValueKind() == System.Text.Json.JsonValueKind.String)
-        {
-            var formatterString = formatter.GetValue<string>();
-            return formatterString == "Serilog.Formatting.Json.JsonFormatter, Serilog";
         }
 
         if (formatter is JsonObject formatterObj)

@@ -35,9 +35,9 @@ public class TestLogger<T> : ILogger<T>
         object?[] ActiveScopes
     );
 
-    internal readonly List<LogEntry> Entries = new();
-    private readonly List<object?> _createdScopes = new();
-    private readonly Stack<object?> _scopes = new();
+    internal readonly List<LogEntry> Entries = [];
+    private readonly List<object?> _createdScopes = [];
+    private readonly Stack<object?> _scopes = [];
 
     IDisposable ILogger.BeginScope<TState>(TState state)
     {
@@ -61,13 +61,9 @@ public class TestLogger<T> : ILogger<T>
         Entries.Add(new LogEntry(logLevel, eventId, state!, exception, _scopes.ToArray()));
     }
 
-    private sealed class Scope : IDisposable
+    private sealed class Scope(Action onDispose) : IDisposable
     {
-        private readonly Action _onDispose;
-
-        public Scope(Action onDispose) => _onDispose = onDispose;
-
-        public void Dispose() => _onDispose();
+        public void Dispose() => onDispose();
     }
 }
 
@@ -294,7 +290,7 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
-    public async Task It_leaves_request_body_too_large_rejections_at_413()
+    public async Task It_logs_request_body_too_large_rejections_as_413_completions()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = HttpMethods.Post;
@@ -315,9 +311,11 @@ public class Given_LoggingMiddleware
 
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
         responseBody.ToArray().Should().BeEmpty();
-        logger
-            .Entries.Should()
-            .ContainSingle(e => e.Level == LogLevel.Warning && e.Exception is BadHttpRequestException);
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
+        entry.Level.Should().Be(LogLevel.Information);
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status413PayloadTooLarge);
+        entry.State.ContainKey("DurationMs");
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
     }
 
     [Test]
@@ -341,6 +339,37 @@ public class Given_LoggingMiddleware
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         httpContext.Response.ContentType.Should().Be("application/json");
         responseBody.ToArray().Should().NotBeEmpty();
+    }
+
+    [Test]
+    public async Task It_writes_the_trace_identifier_not_the_correlation_id_in_the_500_error_body()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.TraceIdentifier = "host-trace-identifier";
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/ed-fi/students";
+        httpContext.Request.Headers["x-correlation-id"] = "operator-correlation-id";
+        var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader("x-correlation-id")
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+
+        await invoke.Should().ThrowAsync<InvalidOperationException>();
+
+        var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
+        body?["traceId"]?.GetValue<string>().Should().Be("host-trace-identifier");
+
+        // The log events still carry the sanitized correlation value, proving the two diverge.
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
+        entry.State.ContainStructuredProperty("TraceId", "operator-correlation-id");
+        entry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "operator-correlation-id"));
     }
 
     [Test]
@@ -479,13 +508,6 @@ public class Given_LoggingMiddleware
             return false;
         }
 
-        // Handle both string format (legacy) and object format (new)
-        if (formatter.GetValueKind() == System.Text.Json.JsonValueKind.String)
-        {
-            var formatterString = formatter.GetValue<string>();
-            return formatterString == "Serilog.Formatting.Json.JsonFormatter, Serilog";
-        }
-
         if (formatter is JsonObject formatterObj)
         {
             var type = formatterObj["type"]?.GetValue<string>();
@@ -542,12 +564,6 @@ internal static class LogStateAssertions
     {
         return state is IEnumerable<KeyValuePair<string, object?>> values
             && values.Any(kvp => kvp.Key == propertyName && Equals(kvp.Value, expectedValue));
-    }
-
-    public static bool HasLongStructuredProperty(this object? state, string propertyName)
-    {
-        return state is IEnumerable<KeyValuePair<string, object?>> values
-            && values.Any(kvp => kvp.Key == propertyName && kvp.Value is long);
     }
 
     public static object? GetStructuredProperty(this object? state, string propertyName)

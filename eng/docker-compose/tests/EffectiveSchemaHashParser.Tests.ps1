@@ -57,6 +57,10 @@ Describe "DMS effective schema hash parser" {
         Get-EffectiveSchemaHashFromOutput -Output $output | Should -Be $otherHash
     }
 
+    It "returns null for empty output" {
+        Get-EffectiveSchemaHashFromOutput -Output @() | Should -BeNullOrEmpty
+    }
+
     It "ignores blank lines in the output" {
         $output = @(
             ""
