@@ -147,8 +147,15 @@ property:
 ```
 
 Request failure logs follow the same structure with `EventName` set to
-`HttpRequestFailed`, `Level` set to `Error`, and exception details in the
-`Exception` field.
+`HttpRequestFailed` and `Level` set to `Error`. The `Exception` field carries
+the exception the logging layer itself observed, when there is one: a request
+logged as failed only because the downstream pipeline produced a 5xx status has
+`Exception` `null`. In DMS, an exception caught by the core pipeline is
+attached to the core-layer `HttpRequestFailed` event (`RequestLayer` = `Core`),
+and the frontend then logs its own `HttpRequestFailed` event for the resulting
+5xx response with `Exception` `null`; the two events share the same `TraceId`,
+so use `TraceId` plus `RequestLayer` to recover the exception behind a frontend
+failure event.
 
 Completion logs use `Information`, except CMS `/.well-known/*` completion logs,
 which use `Debug`. Failure logs use `Error`. Request start logs are diagnostic
@@ -159,16 +166,27 @@ actually received — 413 unless the response had already started with another
 status — so they remain visible to the request-log contract as client-error
 responses rather than failures. The `HttpRequestFailed` event is the canonical
 application error log for a request: when the CMS global exception handler
-converts an unhandled exception into an error response, the request logging
+converts an unhandled exception into a 500 response, the request logging
 middleware logs that handled exception on the `HttpRequestFailed` event, and the
-exception handler itself does not log. CMS rethrows the original exception for
-upstream middleware;
+exception handler itself does not log. When the CMS global exception handler
+instead converts an exception into a 400 response (malformed request bodies and
+validation failures), the request is a handled client error: it is logged as a
+normal `HttpRequestCompleted` event with no exception payload, and the error
+details are returned to the client in the problem-details response body. This
+intentionally replaces the previous behavior of logging handled exceptions at
+`Error` from the exception handler. An exception the CMS exception handler does
+not observe (thrown outside its scope, or after the response has started)
+propagates through the request logging middleware, which logs it on
+`HttpRequestFailed` and rethrows it for the host.
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
-not started. The `traceId` in that error response body is the same sanitized
-value the request logs carry as `TraceId`, so a client-reported trace id can be
-located in the logs. DMS core preserves its existing behavior of wrapping core
-pipeline failures after logging them.
+not started. The `traceId` in that error response body is the raw correlation
+value for the request — the same raw value every other DMS error response body
+returns — while log events always carry the sanitized `TraceId`. The two differ
+only when a client-supplied correlation id contains characters outside the
+logging whitelist; applying that whitelist to a client-reported trace id yields
+the `TraceId` to search for in the logs. DMS core preserves its existing
+behavior of wrapping core pipeline failures after logging them.
 
 Information-level request logs must not include request bodies, response
 bodies, authorization headers, bearer tokens, API keys, client secrets,

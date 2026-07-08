@@ -373,7 +373,7 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
-    public async Task It_writes_the_logged_trace_id_in_the_500_error_body_so_clients_can_correlate()
+    public async Task It_writes_the_correlation_id_in_the_500_error_body_so_clients_can_correlate()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.TraceIdentifier = "host-trace-identifier";
@@ -400,6 +400,35 @@ public class Given_LoggingMiddleware
         entry
             .ActiveScopes.Should()
             .Contain(scope => scope.HasStructuredProperty("TraceId", "operator-correlation-id"));
+    }
+
+    [Test]
+    public async Task It_writes_the_raw_correlation_id_in_the_500_error_body_and_sanitizes_only_the_logs()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/ed-fi/students";
+        httpContext.Request.Headers["x-correlation-id"] = "operator{correlation}id\t";
+        var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader("x-correlation-id")
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+
+        await invoke.Should().ThrowAsync<InvalidOperationException>();
+
+        var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
+        (body?["traceId"]?.GetValue<string>()).Should().Be("operator{correlation}id\t");
+
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
+        entry.State.ContainStructuredProperty("TraceId", "operatorcorrelationid");
+        entry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "operatorcorrelationid"));
     }
 
     [Test]

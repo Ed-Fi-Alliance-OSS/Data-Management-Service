@@ -19,9 +19,11 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         CancellationToken cancellationToken
     )
     {
-        // This handler only writes the error response. RequestLoggingMiddleware logs the
-        // handled exception as the canonical structured HttpRequestFailed event (via
-        // IExceptionHandlerFeature), so logging here would double-count request errors.
+        // This handler only writes the error response. For 500s, RequestLoggingMiddleware
+        // logs the handled exception as the canonical structured HttpRequestFailed event
+        // (via IExceptionHandlerFeature), so logging here would double-count request errors.
+        // Exceptions handled as 400s are client errors: the request logs as a normal
+        // completion event and the error details are returned in the response body.
         var relaxedSerializer = new JsonSerializerOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,

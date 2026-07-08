@@ -27,7 +27,8 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         var sanitizedMethod = LoggingSanitizer.SanitizeForLogging(context.Request.Method);
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
-        var traceId = LoggingSanitizer.SanitizeForLogging(ExtractTraceId(context));
+        var rawTraceId = ExtractTraceId(context) ?? string.Empty;
+        var traceId = LoggingSanitizer.SanitizeForLogging(rawTraceId);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -154,9 +155,11 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body must carry the same value the log events use
-                                    // as TraceId, or a client-reported trace id cannot be found in the logs.
-                                    traceId,
+                                    // The error response body echoes the raw correlation value, matching
+                                    // every other DMS error response body (see FailureResponse). Only log
+                                    // properties are sanitized; applying the logging whitelist to a
+                                    // client-reported trace id yields the TraceId to search for in the logs.
+                                    traceId = rawTraceId,
                                 }
                             )
                         );

@@ -73,109 +73,41 @@ function Get-EffectiveSchemaHashFromLogLine {
         return $null
     }
 
-    return Find-EffectiveSchemaHashInValue -Value $payload
-}
-
-function Find-EffectiveSchemaHashInValue {
-    param(
-        [object]
-        $Value
-    )
-
-    if ($null -eq $Value) {
+    # ConvertFrom-Json -AsHashtable yields hashtables for JSON objects, so plain
+    # dictionary indexing covers every shape this parser can receive.
+    if ($payload -isnot [System.Collections.IDictionary]) {
         return $null
     }
 
-    if ($Value -is [string]) {
-        if ($Value -match '(?i)\b([a-f0-9]{64})\b') {
-            return $Matches[1].ToLowerInvariant()
-        }
+    $messageTemplate = $payload['MessageTemplate']
+    $renderedMessage = $payload['RenderedMessage']
 
+    $isEffectiveSchemaEvent =
+        ($messageTemplate -is [string] -and $messageTemplate -match '(?i)Effective schema hash') -or
+        ($renderedMessage -is [string] -and $renderedMessage -match '(?i)Effective schema hash')
+
+    if (-not $isEffectiveSchemaEvent) {
         return $null
     }
 
-    if ($Value -is [System.Collections.IDictionary]) {
-        $messageTemplate = $Value['MessageTemplate']
-        $renderedMessage = $Value['RenderedMessage']
-
-        $isEffectiveSchemaEvent = $false
-        if ($messageTemplate -is [string] -and $messageTemplate -match '(?i)Effective schema hash') {
-            $isEffectiveSchemaEvent = $true
-        }
-        elseif ($renderedMessage -is [string] -and $renderedMessage -match '(?i)Effective schema hash') {
-            $isEffectiveSchemaEvent = $true
-        }
-
-        if ($isEffectiveSchemaEvent) {
-            $hash = Get-EffectiveSchemaHashFromEventProperty -EventPayload $Value
-            if (-not [string]::IsNullOrWhiteSpace($hash)) {
-                return $hash
-            }
-
-            if ($renderedMessage -is [string] -and $renderedMessage -match '(?i)\b([a-f0-9]{64})\b') {
-                return $Matches[1].ToLowerInvariant()
-            }
-        }
-
-        return $null
-    }
-
-    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
-        foreach ($item in $Value) {
-            $hash = Find-EffectiveSchemaHashInValue -Value $item
-            if (-not [string]::IsNullOrWhiteSpace($hash)) {
-                return $hash
-            }
-        }
-
-        return $null
-    }
-
-    return $null
-}
-
-function Get-EffectiveSchemaHashFromEventProperty {
-    param(
-        [object]
-        $EventPayload
-    )
-
-    $hash = Get-ValidEffectiveSchemaHash -Value (Get-ObjectPropertyValue -InputObject $EventPayload -PropertyName "Hash")
+    $hash = Get-ValidEffectiveSchemaHash -Value $payload['Hash']
     if (-not [string]::IsNullOrWhiteSpace($hash)) {
         return $hash
     }
 
-    $properties = Get-ObjectPropertyValue -InputObject $EventPayload -PropertyName "Properties"
-    if ($null -eq $properties) {
-        return $null
+    $properties = $payload['Properties']
+    if ($properties -is [System.Collections.IDictionary]) {
+        $hash = Get-ValidEffectiveSchemaHash -Value $properties['Hash']
+        if (-not [string]::IsNullOrWhiteSpace($hash)) {
+            return $hash
+        }
     }
 
-    return Get-ValidEffectiveSchemaHash -Value (Get-ObjectPropertyValue -InputObject $properties -PropertyName "Hash")
-}
-
-function Get-ObjectPropertyValue {
-    param(
-        [object]
-        $InputObject,
-
-        [string]
-        $PropertyName
-    )
-
-    if ($null -eq $InputObject) {
-        return $null
+    if ($renderedMessage -is [string] -and $renderedMessage -match '(?i)\b([a-f0-9]{64})\b') {
+        return $Matches[1].ToLowerInvariant()
     }
 
-    if ($InputObject -is [System.Collections.IDictionary]) {
-        return $InputObject[$PropertyName]
-    }
-
-    $property = $InputObject.PSObject.Properties[$PropertyName]
-    if ($null -eq $property) {
-        return $null
-    }
-
-    return $property.Value
+    return $null
 }
 
 function Get-ValidEffectiveSchemaHash {
