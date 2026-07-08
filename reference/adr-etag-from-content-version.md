@@ -371,6 +371,17 @@ A feasibility spike confirmed that descriptors **are** subject to readable-profi
 
 - **Descriptor `If-Match` remains profile-insensitive.** `EtagMatchProjection.Of` (unaffected by this change) drops `profileCode` — along with `format` and `linkFlag` — from every precondition comparison, descriptor or not (see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison)). A descriptor PUT/DELETE using an `If-Match` value obtained from a profiled GET still succeeds whenever `ContentVersion` and `schemaEpoch` agree, exactly as for non-descriptor resources.
 - **Descriptor write-response etags remain unprofiled.** `DescriptorWriteHandler` already composed its response etag via `IServedEtagComposer` with `ProfileName: null` before this change and continues to do so; only the *read* path changes.
+
+  > [!WARNING]
+  > **Superseded 2026-07-08 — descriptor write-response etags are now profile-sensitive.** A follow-up
+  > fix ("profile-code descriptor write response ETags") changed `DescriptorWriteHandler` to compose
+  > every success-response etag via `IServedEtagComposer` with the request's `ProfileName` (not
+  > `ProfileName: null`). A profiled descriptor POST/PUT therefore returns the same profile-variant
+  > `_etag` a follow-up profiled GET serves — the write→read parity the descriptor integration tests
+  > assert. This aligns the descriptor *write* path with the *read* path this amendment introduced.
+  > Descriptor `If-Match` is unaffected and remains profile-insensitive (the bullet above): the served
+  > etag gains `profileCode`, but `EtagMatchProjection.Of` still drops it from every precondition
+  > comparison.
 - `DescriptorVariantKey` is left in place: it remains the correct, still-used shorthand for the fixed "no profile, no links, JSON" variant in the descriptor *write*-side tests (`DescriptorWriteHandlerPreconditionTests`, `DescriptorWriteHandlerResponseEtagTests`), where the represented etag genuinely is always profile-insensitive. It is simply no longer invoked from descriptor *read* production code.
 
 ### Scope of the code change

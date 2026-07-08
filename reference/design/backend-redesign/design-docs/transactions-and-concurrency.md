@@ -328,8 +328,9 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
   - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`. `_etag`
     is composed as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
-    metadata") — a strong validator that is representation-sensitive, computed with no readback or
-    hashing.
+    metadata") — a strong validator that is representation-sensitive, composed with no document
+    hashing or representation readback (the write path does read the final scalar `ContentVersion` in
+    the persistence layer; see `update-tracking.md`).
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)

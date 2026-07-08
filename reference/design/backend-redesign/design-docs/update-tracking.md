@@ -167,8 +167,13 @@ For a document `P`:
   - `variantKey` is the deterministic representation token defined in "`variantKey` encoding"
     below. It makes `_etag` distinct per served byte-representation, satisfying RFC 7232
     strong-validator semantics.
-  - `_etag` MUST be computed with **no database readback and no document hashing**: it is a string
-    composition of a stored counter and precomputed representation tokens.
+  - `_etag` MUST be computed with **no document hashing and no representation readback**: it is a
+    string composition of the stored `ContentVersion` counter and precomputed representation tokens.
+    Obtaining the counter itself may cost a single lightweight scalar `ContentVersion` read on the
+    write path — read after every table mutation, in the persistence layer, because child-table stamp
+    triggers can bump the root document's `ContentVersion` after its own INSERT (see the ContentVersion
+    ADR's 2026-07-08 final-`ContentVersion`-read amendment). That scalar read is deliberately *not* the
+    hydrate-materialize-hash readback of the document that this design eliminates.
 
 This design does not compute `_etag` from the document body or from dependency scans at read time.
 Representation-state change is tracked by stored `ContentVersion`/`ContentLastModifiedAt`; `_etag`
@@ -197,16 +202,24 @@ variantKey = schemaEpoch "." format "." profileCode "." linkFlag
 2. **`format`** — a stable code for the response media type from a fixed server-side registry
    (`j` = `application/json` today; reserve e.g. `x` for XML). MUST NOT be derived from the raw
    media-type string at runtime.
-3. **`profileCode`** — `_` when no readable profile applies; otherwise the readable profile's stable
-   compile-time index within the current `MappingSet`. Indices need be stable only within a
-   `schemaEpoch` (profile redefinition rotates `schemaEpoch`).
+3. **`profileCode`** — `_` when no readable profile applies; otherwise the first 8 lowercase hex
+   characters of `SHA-256(UTF-8(profileName))` — a hash of the readable profile's *name*, never the
+   document. This hashes only the tiny, static profile-name descriptor, so it upholds the
+   no-representation-hash rule; it is deterministic and stable across processes and engines, needs no
+   profile catalog to enumerate, and a profile-*definition* change still rotates `schemaEpoch`. (See
+   the ContentVersion ADR's 2026-07-08 `profileCode`-hash amendment; the earlier "compile-time index"
+   form was never implemented because a `MappingSet` exposes no enumerable profile catalog.)
 4. **`linkFlag`** — `l` when `DataManagement:ResourceLinks:Enabled` is true, `n` when false.
 
 Example: `_etag` body value `5-a1b2c3d4.j._.l`; `ETag` header `"5-a1b2c3d4.j._.l"`.
 
 The server MUST recompute the full `_etag` deterministically from request context (negotiated
 format, profile in effect, `link` mode) plus the loaded schema at read response, write response,
-and `If-Match` evaluation, with no database dependency. At `If-Match` evaluation the server compares
+and `If-Match` evaluation, with **no document hashing and no representation readback**. The only
+database access the tag requires is obtaining the stored `ContentVersion` counter it composes over —
+already loaded with the row on the read path, a single lightweight scalar read in the persistence
+layer on the write path (see "Serving API metadata"), and the locked-row read on `If-Match` — never a
+hydrate-materialize-hash readback of the document. At `If-Match` evaluation the server compares
 only the **state-significant projection** of the tag (`ContentVersion` and `schemaEpoch`; `format`,
 `profileCode`, and `linkFlag` excluded) — see "Optimistic concurrency".
 
