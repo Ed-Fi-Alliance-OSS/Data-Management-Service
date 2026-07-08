@@ -171,6 +171,7 @@ internal sealed class DescriptorWriteHandler(
                     ifMatch,
                     writeSession,
                     cancellationToken,
+                    request.ProfileName,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     body.Namespace
@@ -353,6 +354,7 @@ internal sealed class DescriptorWriteHandler(
                         ifMatch,
                         writeSession,
                         cancellationToken,
+                        request.ProfileName,
                         storedNamespaceAuthorization,
                         proposedNamespaceAuthorization,
                         body.Namespace
@@ -680,7 +682,9 @@ internal sealed class DescriptorWriteHandler(
                             ifMatch,
                             writeSession,
                             cancellationToken,
-                            storedNamespaceAuthorization
+                            // DELETE has no profile lens, so the current etag is unprofiled.
+                            profileName: null,
+                            storedNamespaceAuthorization: storedNamespaceAuthorization
                         )
                         .ConfigureAwait(false);
 
@@ -800,6 +804,7 @@ internal sealed class DescriptorWriteHandler(
         WritePrecondition.IfMatch ifMatch,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
+        string? profileName = null,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
         string? proposedNamespace = null
@@ -918,6 +923,7 @@ internal sealed class DescriptorWriteHandler(
         var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                 mappingSet.Key.Dialect,
                 mappingSet.Key.EffectiveSchemaHash,
+                profileName,
                 existingTargetContext.DocumentId,
                 writeSession,
                 cancellationToken
@@ -1419,7 +1425,7 @@ internal sealed class DescriptorWriteHandler(
                 new ServedEtagContext(
                     request.MappingSet.Key.EffectiveSchemaHash,
                     ResponseFormat.Json,
-                    ProfileName: null,
+                    request.ProfileName,
                     LinksEnabled: false,
                     persistedContentVersion
                 )
@@ -1476,7 +1482,7 @@ internal sealed class DescriptorWriteHandler(
                 new ServedEtagContext(
                     request.MappingSet.Key.EffectiveSchemaHash,
                     ResponseFormat.Json,
-                    ProfileName: null,
+                    request.ProfileName,
                     LinksEnabled: false,
                     persistedContentVersion
                 )
@@ -1588,7 +1594,7 @@ internal sealed class DescriptorWriteHandler(
                 new ServedEtagContext(
                     request.MappingSet.Key.EffectiveSchemaHash,
                     ResponseFormat.Json,
-                    ProfileName: null,
+                    request.ProfileName,
                     LinksEnabled: false,
                     persistedContentVersion
                 )
@@ -1703,6 +1709,7 @@ internal sealed class DescriptorWriteHandler(
             var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                     request.MappingSet.Key.Dialect,
                     request.MappingSet.Key.EffectiveSchemaHash,
+                    request.ProfileName,
                     documentId,
                     writeSession,
                     cancellationToken
@@ -2343,6 +2350,7 @@ internal sealed class DescriptorWriteHandler(
     private async Task<DescriptorCurrentStateLoadResult> LoadLockedDescriptorCurrentStateAsync(
         SqlDialect dialect,
         string effectiveSchemaHash,
+        string? profileName,
         long documentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
@@ -2369,16 +2377,17 @@ internal sealed class DescriptorWriteHandler(
             return DescriptorCurrentStateLoadResult.MissingDescriptor.Instance;
         }
 
-        // The current etag is composed from the locked ContentVersion and the fixed descriptor
-        // representation (no profile, links disabled, JSON) so the If-Match comparison projects the
-        // same state-significant components as the served GET.
+        // The current etag is composed from the locked ContentVersion and the active profile so a
+        // no-op write returns the same profile-sensitive etag a GET of that representation would.
+        // If-Match comparison stays profile-insensitive because EtagMatchProjection projects the
+        // profileCode out, retaining only ContentVersion and schemaEpoch.
         return new DescriptorCurrentStateLoadResult.Loaded(
             persistedDescriptor,
             _servedEtagComposer.Compose(
                 new ServedEtagContext(
                     effectiveSchemaHash,
                     ResponseFormat.Json,
-                    ProfileName: null,
+                    profileName,
                     LinksEnabled: false,
                     lockedContentVersion.Value
                 )

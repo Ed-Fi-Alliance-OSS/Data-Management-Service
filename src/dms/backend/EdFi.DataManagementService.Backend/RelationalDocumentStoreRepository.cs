@@ -120,6 +120,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         WritePrecondition = writePrecondition,
+                        ProfileName = upsertRequest.BackendProfileWriteContext?.ProfileName,
                     }
                 )
                 .ConfigureAwait(false);
@@ -254,6 +255,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         WritePrecondition = writePrecondition,
+                        ProfileName = updateRequest.BackendProfileWriteContext?.ProfileName,
                     }
                 )
                 .ConfigureAwait(false);

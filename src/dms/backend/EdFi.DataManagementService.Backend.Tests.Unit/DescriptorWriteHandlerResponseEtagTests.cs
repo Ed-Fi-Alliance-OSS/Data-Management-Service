@@ -245,10 +245,122 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory.Session.Executor.Commands[1].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
     }
 
+    [Test]
+    public async Task It_returns_a_profile_coded_etag_for_a_profiled_descriptor_post_create()
+    {
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            ),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(42L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePostRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+        ) with
+        {
+            ProfileName = ProfileName,
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.InsertSuccess(
+                    request.DocumentUuid,
+                    ExpectedProfiledDescriptorEtag(42L, ProfileName)
+                )
+            );
+        // A profiled write etag differs from the unprofiled one for the same ContentVersion.
+        result
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>()
+            .Which.ETag.Should()
+            .NotBe(ExpectedComposedDescriptorEtag(42L));
+    }
+
+    [Test]
+    public async Task It_returns_a_profile_coded_etag_for_a_profiled_descriptor_put_update()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        ) with
+        {
+            ProfileName = ProfileName,
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedProfiledDescriptorEtag(45L, ProfileName))
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_profile_coded_current_etag_for_a_profiled_descriptor_put_no_op()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            ProfileName = ProfileName,
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // A no-op profiled PUT returns the current representation's etag, which must carry the
+        // profile code just as the changed-write path (and a profiled GET) would.
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedProfiledDescriptorEtag(44L, ProfileName))
+            );
+    }
+
+    private const string ProfileName = "E2E-Test-SchoolTypeDescriptor-Profile";
+
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         _etagComposer.Compose(
             contentVersion,
             DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+        );
+
+    private static string ExpectedProfiledDescriptorEtag(long contentVersion, string profileName) =>
+        _etagComposer.Compose(
+            contentVersion,
+            VariantKeyFactory.Create(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(profileName),
+                linksEnabled: false
+            )
         );
 
     private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>

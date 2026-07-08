@@ -109,6 +109,9 @@ public static class RelationalGetIntegrationTestHelper
 
     public static string CanonicalizeJson(JsonNode node) => NormalizeJsonNode(node)?.ToJsonString() ?? "null";
 
+    /// <summary>Exposes the served <c>_etag</c> of a GET success for direct comparison in tests.</summary>
+    public static string ReadResultEtag(GetResult getResult) => GetReadResultEtag(getResult);
+
     private static string GetWriteResultEtag(UpsertResult writeResult) =>
         writeResult switch
         {

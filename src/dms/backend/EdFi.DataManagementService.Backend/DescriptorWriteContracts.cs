@@ -89,6 +89,14 @@ public sealed record DescriptorWriteRequest
         init => _writePrecondition = value ?? new WritePrecondition.None();
     }
 
+    /// <summary>
+    /// The name of the profile governing this write, or <c>null</c> when unprofiled. Used only to
+    /// compose the profile-sensitive response ETag so a profiled descriptor write returns the same
+    /// ETag a profiled GET of the same representation would return. If-Match comparison stays
+    /// profile-insensitive per the 2026-07-04 ADR amendment (profileCode is projected out).
+    /// </summary>
+    public string? ProfileName { get; init; }
+
     private WritePrecondition _writePrecondition = new WritePrecondition.None();
 }
 

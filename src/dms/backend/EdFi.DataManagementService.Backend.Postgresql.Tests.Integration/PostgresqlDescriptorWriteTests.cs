@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -225,6 +226,65 @@ public class Given_PostgresqlDescriptorWriteHandler
                 _database.Fixture.SchoolTypeDescriptorResource,
                 documentUuid
             )
+        );
+    }
+
+    [Test]
+    public async Task It_returns_profiled_descriptor_write_etags_matching_a_follow_up_profiled_get()
+    {
+        const string profileName = "E2E-Test-SchoolTypeDescriptor-Profile";
+
+        using var scope = CreateConfiguredScope();
+        var writeHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var readHandler = scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>();
+        var resource = _database.Fixture.SchoolTypeDescriptorResource;
+        var profileContext = CreateReadableProfileProjectionContext(profileName);
+
+        var createRequest = CreatePostRequest(
+            resource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "ProfiledParity",
+                "shortDescription": "Profiled Parity"
+            }
+            """,
+            profileName
+        );
+        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+
+        // The profiled POST etag matches a follow-up profiled GET of the same representation.
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            createResult,
+            await GetDescriptorByIdAsync(readHandler, resource, documentUuid, profileContext)
+        );
+
+        // ...and is a distinct strong validator from the unprofiled representation's etag.
+        var unprofiledGet = await GetDescriptorByIdAsync(readHandler, resource, documentUuid);
+        RelationalGetIntegrationTestHelper
+            .ReadResultEtag(unprofiledGet)
+            .Should()
+            .NotBe(((UpsertResult.InsertSuccess)createResult).ETag);
+
+        var putRequest = CreatePutRequest(
+            resource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "ProfiledParity",
+                "shortDescription": "Profiled Parity PUT",
+                "description": "Updated through profiled PUT"
+            }
+            """,
+            profileName
+        );
+        var putResult = await writeHandler.HandlePutAsync(putRequest);
+
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            putResult,
+            await GetDescriptorByIdAsync(readHandler, resource, documentUuid, profileContext)
         );
     }
 
@@ -608,7 +668,8 @@ public class Given_PostgresqlDescriptorWriteHandler
     private async Task<GetResult> GetDescriptorByIdAsync(
         IDescriptorReadHandler handler,
         QualifiedResourceName resource,
-        DocumentUuid documentUuid
+        DocumentUuid documentUuid,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
     )
     {
         return await handler
@@ -619,12 +680,26 @@ public class Given_PostgresqlDescriptorWriteHandler
                     documentUuid,
                     RelationalGetRequestReadMode.ExternalResponse,
                     authorizationStrategyEvaluators: [],
-                    readableProfileProjectionContext: null,
+                    readableProfileProjectionContext: readableProfileProjectionContext,
                     traceId: new TraceId("test-trace")
                 )
             )
             .ConfigureAwait(false);
     }
+
+    // A readable projection context whose ProfileName drives the served etag's profileCode. The
+    // content-type selection is immaterial to the etag (only ProfileName + ContentVersion +
+    // schemaEpoch feed it), so an IncludeAll pass-through with the descriptor identity fields is enough.
+    private static ReadableProfileProjectionContext CreateReadableProfileProjectionContext(
+        string profileName
+    ) =>
+        new(
+            new ContentTypeDefinition(MemberSelection.IncludeAll, [], [], [], []),
+            new HashSet<string>(StringComparer.Ordinal) { "namespace", "codeValue" }
+        )
+        {
+            ProfileName = profileName,
+        };
 
     private IServiceScope CreateConfiguredScope()
     {
@@ -650,7 +725,11 @@ public class Given_PostgresqlDescriptorWriteHandler
         return scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
     }
 
-    private DescriptorWriteRequest CreatePostRequest(QualifiedResourceName resource, string bodyJson)
+    private DescriptorWriteRequest CreatePostRequest(
+        QualifiedResourceName resource,
+        string bodyJson,
+        string? profileName = null
+    )
     {
         var body = JsonNode.Parse(bodyJson)!;
         var descriptorDoc = new Core.Model.DescriptorDocument(body);
@@ -669,13 +748,17 @@ public class Given_PostgresqlDescriptorWriteHandler
             new DocumentUuid(Guid.NewGuid()),
             referentialId,
             new TraceId("test-trace")
-        );
+        )
+        {
+            ProfileName = profileName,
+        };
     }
 
     private DescriptorWriteRequest CreatePutRequest(
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        string bodyJson
+        string bodyJson,
+        string? profileName = null
     )
     {
         return new DescriptorWriteRequest(
@@ -685,7 +768,10 @@ public class Given_PostgresqlDescriptorWriteHandler
             documentUuid,
             referentialId: null,
             new TraceId("test-trace")
-        );
+        )
+        {
+            ProfileName = profileName,
+        };
     }
 
     private DescriptorDeleteRequest CreateDeleteRequest(
