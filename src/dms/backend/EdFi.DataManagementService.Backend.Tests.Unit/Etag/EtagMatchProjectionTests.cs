@@ -39,8 +39,24 @@ public class Given_EtagMatchProjection
     [TestCase("")]
     [TestCase("not-a-tag")]
     [TestCase("5-a1b2c3d4.j._")]
-    public void It_yields_a_non_matching_sentinel_for_a_malformed_tag(string tag)
+    public void It_yields_a_non_matching_sentinel_for_a_structurally_malformed_tag(string tag)
     {
         EtagMatchProjection.Of(tag).Should().NotBe(EtagMatchProjection.Of("5-a1b2c3d4.j._.l"));
+    }
+
+    [Test]
+    public void It_tolerates_empty_or_unrecognized_content_in_the_ignored_components()
+    {
+        // The three ignored positions (format, profileCode, linkFlag) are not validated: once a tag has
+        // the correct ContentVersion and schemaEpoch and exactly four variantKey parts, it matches
+        // whatever those positions hold, including empty. This tolerance is intentional (see
+        // EtagMatchProjection remarks) and safe — the significant components must still match. The
+        // reviewer's example "5-a1b2c3d4..." is four parts with three empty ignored components.
+        EtagMatchProjection.Of("5-a1b2c3d4...").Should().Be("5-a1b2c3d4");
+        EtagMatchProjection.Of("5-a1b2c3d4...").Should().Be(EtagMatchProjection.Of("5-a1b2c3d4.j._.n"));
+
+        // But a wrong schemaEpoch or ContentVersion in such a tag still fails to match.
+        EtagMatchProjection.Of("5-ffffffff...").Should().NotBe(EtagMatchProjection.Of("5-a1b2c3d4.j._.n"));
+        EtagMatchProjection.Of("6-a1b2c3d4...").Should().NotBe(EtagMatchProjection.Of("5-a1b2c3d4.j._.n"));
     }
 }

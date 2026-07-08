@@ -12,10 +12,26 @@ namespace EdFi.DataManagementService.Backend.Etag;
 /// A served etag is "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". Per the ADR
 /// (as amended 2026-07-04), If-Match ignores the representation-selector components (format,
 /// profileCode, linkFlag) and retains only ContentVersion and schemaEpoch. Two tags match iff their
-/// projections are equal (ordinal). A malformed tag yields a sentinel that cannot equal any
-/// well-formed projection. Parsing is delegated to <see cref="EtagValue"/> (ContentVersion / variantKey
-/// split) and <see cref="VariantKey"/> (variantKey component split).
+/// projections are equal (ordinal). Parsing is delegated to <see cref="EtagValue"/> (ContentVersion /
+/// variantKey split) and <see cref="VariantKey"/> (variantKey component split).
 /// </summary>
+/// <remarks>
+/// "Malformed" here means <em>structurally</em> malformed — a value <see cref="EtagValue.TryParse"/>
+/// rejects (no ContentVersion/variantKey "-" split, or an empty half) or whose variantKey does not
+/// split into exactly <see cref="VariantKey.ComponentCount"/> dot-delimited parts. Such a value yields
+/// the <see cref="Malformed"/> sentinel, which never equals a well-formed projection.
+/// <para>
+/// The <em>content</em> of the three ignored positions (format, profileCode, linkFlag) is deliberately
+/// NOT validated, so it is not part of well-formedness for matching: once a value's ContentVersion and
+/// schemaEpoch equal the current tag's and its variantKey has exactly four parts, it matches whatever
+/// the ignored positions hold — empty (e.g. "5-a1b2c3d4...") or an unrecognized code (e.g.
+/// "5-a1b2c3d4.x.3.n"). This tolerance is intentional and carries no lost-update risk: a match still
+/// requires the correct ContentVersion and schemaEpoch, so a stale or wrong tag never matches, and any
+/// client able to supply those could already form a fully well-formed tag. Validating the ignored
+/// positions is avoided on purpose — it would re-couple If-Match to the selectors the 2026-07-04
+/// amendment decoupled, breaking cross-format / cross-profile / cross-link If-Match.
+/// </para>
+/// </remarks>
 public static class EtagMatchProjection
 {
     // This sentinel lacks the '-' / '.' structure of a well-formed projection, so it never matches a real tag.

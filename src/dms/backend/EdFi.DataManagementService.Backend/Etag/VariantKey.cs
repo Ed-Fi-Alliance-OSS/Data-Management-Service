@@ -40,7 +40,10 @@ public readonly record struct VariantKey(string Value)
 
     /// <summary>
     /// Splits <see cref="Value"/> into its four components. Returns <see langword="false"/> when the
-    /// value does not have exactly <see cref="ComponentCount"/> dot-delimited parts.
+    /// value does not have exactly <see cref="ComponentCount"/> dot-delimited parts. Only the part
+    /// <em>count</em> is validated; the individual component values are not (a part may be empty or an
+    /// unrecognized code) — the caller decides which components are significant and how to interpret
+    /// them (see <see cref="EtagMatchProjection"/>).
     /// </summary>
     public bool TryParseComponents(out Components components)
     {
