@@ -102,7 +102,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
   - SQL Server reference composite FKs use `ON UPDATE CASCADE` on eligible edges (including independent parents into a
     shared receiver); only at a diamond (a receiver reached by two distinct cascade paths from one origin) is one covered
     reconverging edge pruned to `ON UPDATE NO ACTION` (full composite); every FK keeps the full composite key.
-  - a cascade cycle/SCC, or an uncovered diamond, fails derivation.
+  - a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), fails derivation.
   - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:

@@ -1633,7 +1633,7 @@ Referential actions:
     edges (including independent parents into a shared receiver); only at a diamond (one update would otherwise reach a
     table by two cascade paths) keep the surviving path as `ON UPDATE CASCADE` and prune one covered reconverging edge to
     `ON UPDATE NO ACTION`; every FK keeps the full composite key (identity columns are never dropped). Identity-value
-    propagation is native cascade, not a trigger; a cascade cycle/SCC or an uncovered diamond fails derivation.
+    propagation is native cascade, not a trigger; a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), fails derivation.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1696,13 +1696,12 @@ full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defin
 `IsAbstract || TransitivelyAllowIdentityUpdates`) and **never physically prunes** PostgreSQL FKs. This is unchanged by
 the SQL Server foreign-key-pruning design.
 
-DMS nonetheless **fails derivation on both dialects** for a cascade cycle/SCC or an **uncovered diamond** — a
-cross-engine **portability** policy, so a model that cannot be represented on SQL Server is rejected up front
-regardless of the engine in use, **not** because PostgreSQL requires it (see [mssql-cascading.md](mssql-cascading.md),
-*Dialect scope decision*). No claim is made about PostgreSQL propagating through a cascade *cycle* at run time; such
-graphs are refused at derivation before either engine runs them. A multiple-cascade-path shape that reaches the same
-referrer is therefore valid only when it passes the shared portability / global-invariant checks — i.e. it is not a
-cycle, and any convergent diamond is coverable under key unification.
+DMS does **not** run the SQL Server pruning classification or fail-fast on PostgreSQL — PostgreSQL derivation is left
+as-is (an engine-specific policy; see [mssql-cascading.md](mssql-cascading.md), *Dialect scope decision*). A
+multiple-cascade-path shape that reaches the same referrer runs natively on PostgreSQL. Cross-engine safety is handled
+at authoring time by MetaEd (METAED-1667), which flags a cascade graph SQL Server cannot represent (a cascade cycle/SCC,
+or diamonds that cannot be jointly broken) so a SQL-Server-incompatible model is caught before it is deployed. No claim
+is made about PostgreSQL's runtime behavior for a cascade *cycle*.
 
 Key properties under unification:
 

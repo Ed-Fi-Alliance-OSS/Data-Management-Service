@@ -263,7 +263,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
      - `Discriminator` (NOT NULL; last).
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
-   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level. On SQL Server these abstract-target edges are classified like any other eligible edge — native `ON UPDATE CASCADE`, with a covered reconverging edge pruned to full-composite `ON UPDATE NO ACTION` only at a diamond, and cycles/uncovered diamonds failing derivation (see [mssql-cascading.md](mssql-cascading.md)).
+   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level. On SQL Server these abstract-target edges are classified like any other eligible edge — native `ON UPDATE CASCADE`, with a covered reconverging edge pruned to full-composite `ON UPDATE NO ACTION` only at a diamond, and cycles/SCC or diamonds that cannot be jointly broken (incl. globally infeasible overlapping) failing derivation (see [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
 ### 4.2 Recommended child-table keys (stable internal collection identity)

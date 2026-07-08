@@ -126,7 +126,7 @@ unified key parts.
 1. **Cross-table propagation for equality constraints that cross root ↔ child scopes**, updating dependent child
    **storage/canonical** columns set-based by owning root `DocumentId`.
 2. **Reference-site retargeting when required**: if the dependent endpoint is inside a composite reference FK
-   (`..._DocumentId + identity parts`), propagate the entire reference site (not just the unified key part) so the FK
+   (`<identity parts…>, ..._DocumentId` — identity storage columns first, `DocumentId` last), propagate the entire reference site (not just the unified key part) so the FK
    remains valid and the reference is effectively “retargeted” as ODS/API would do.
 3. ~~**SQL Server baseline parity fix**: include non-root reference sites when deriving
    `MssqlIdentityPropagationTrigger` triggers~~ — **superseded (DMS-1129), non-actionable:** SQL Server

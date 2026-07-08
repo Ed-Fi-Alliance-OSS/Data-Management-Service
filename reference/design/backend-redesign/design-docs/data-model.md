@@ -599,7 +599,7 @@ Typical structure:
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - eligible edges (including independent parents into a shared receiver): full composite FK with `ON UPDATE CASCADE`
         - pruning happens only at a **diamond** (where one update would otherwise reach a table by two cascade paths): keep the surviving path as `ON UPDATE CASCADE` and prune one reconverging edge to full-composite `ON UPDATE NO ACTION`, allowed only when it is covered by the survivor (its identity columns are maintained by that cascade under key unification) — there is no `DocumentId`-only trigger fallback, and independent parents are never pruned
-        - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or an uncovered diamond
+        - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -656,7 +656,7 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)` (identity fields first, `DocumentId` last).
     - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only at a diamond, and fail-fast on cycles/uncovered diamonds; see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained (abstract-identity *maintenance* triggers, distinct from identity-value propagation); `allowIdentityUpdates` applies to concrete targets.
+    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only at a diamond, and fail-fast on cycles/SCC or diamonds that cannot be jointly broken, incl. globally infeasible overlapping; see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained (abstract-identity *maintenance* triggers, distinct from identity-value propagation); `allowIdentityUpdates` applies to concrete targets.
 
 Required: `{schema}.{AbstractResource}_View` union view
 

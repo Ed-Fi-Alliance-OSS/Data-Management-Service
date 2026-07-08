@@ -23,8 +23,9 @@ design only.
 > tree** (a diamond, or a cycle), not at the referenced parent; adds explicit **cycle / SCC**
 > handling (fail fast); **removes `TriggerFallback`** (the `DocumentId`-only + trigger outcome)
 > entirely, so every emitted SQL Server reference FK keeps the full composite key and a pruned
-> live/uncovered edge is a fail-fast error; reframes the cross-dialect detection as a **SQL Server
-> portability / authoring guard**, not a PostgreSQL correctness requirement; and uses **transitive**
+> live/uncovered edge is a fail-fast error; scopes foreign-key pruning, detection, and fail-fast to
+> **SQL Server only** (engine-specific — PostgreSQL keeps full-composite `ON UPDATE CASCADE`, is not
+> pruned or failed by DMS, and cross-engine authoring safety is handled by MetaEd); and uses **transitive**
 > identity mutability consistently. A later review round added a third `MssqlPropagationMode` value,
 > **`ImmutableNoAction`**, so genuinely immutable full-composite `NO ACTION` FKs are classified
 > explicitly instead of being conflated with pruned/covered edges. A further round **corrected the
@@ -102,15 +103,16 @@ also drive the corrections applied to the other design docs by DMS-1129.
    references (`allowIdentityUpdates = false`) can still be *transitively* mutable and must be
    treated as live.
 
-5. **The unsafe-graph detection is a SQL Server portability / cross-engine authoring policy, not a
-   PostgreSQL correctness requirement.** PostgreSQL has no 1785 DDL restriction and keeps
-   full-composite `ON UPDATE CASCADE` on every eligible edge, unchanged; DMS never physically prunes
-   PostgreSQL FKs. Because a DMS model must be representable on **both** supported engines, derivation
-   runs the detection dialect-agnostically and **fails fast on both dialects** for a graph that cannot
-   be represented on SQL Server (a cascade cycle/SCC, or an uncovered diamond) — an explicit
-   cross-engine portability / authoring policy, **not** because PostgreSQL needs pruning (PostgreSQL
-   alone would accept the graph). MetaEd (METAED-1667) prevents these graphs at authoring time so
-   neither engine encounters one in practice. See the *Dialect scope decision* section.
+5. **Foreign-key pruning, unsafe-graph detection, and fail-fast are SQL Server–specific; PostgreSQL is
+   left as-is.** They exist only because of SQL Server's 1785 DDL restriction. PostgreSQL has no such
+   restriction: it keeps full-composite `ON UPDATE CASCADE` on every eligible edge, is **never**
+   physically pruned, and DMS does **not** impose the SQL Server fail-fast on it. This follows the
+   team's engine-specific policy — where the two engines cannot behave identically, each does what
+   works for it rather than being forced into parity. Cross-engine safety for *authors* is handled at
+   authoring time by MetaEd (METAED-1667), which flags a model whose cascade graph SQL Server cannot
+   represent (a cascade cycle/SCC, or diamonds that cannot be jointly broken). No claim is made about
+   PostgreSQL's runtime behavior for a cascade cycle; such models are expected to be caught at
+   authoring. See the *Dialect scope decision* section.
 
 6. **Canonical FK/RefKey column order is identity parts first, `DocumentId` last.** This matches
    `ReferenceConstraintPass` and the `*_RefKey` ordering rationale in
@@ -119,8 +121,8 @@ also drive the corrections applied to the other design docs by DMS-1129.
 
 7. **DMS-1258 has been aligned with this design.** The Jira ticket previously said pruning was decided
    "per referenced table" (the wrong orientation); it has been restated in
-   receiver / referrer / path-convergence terms per decision 1, and now also carries the both-dialect
-   fail-fast policy (decision 5) and the global retained-graph invariant. See
+   receiver / referrer / path-convergence terms per decision 1, and now also scopes fail-fast to
+   SQL Server (decision 5) and adds the global retained-graph invariant. See
    [DMS-1258 alignment](#dms-1258-alignment).
 
 ## Diagrams
@@ -553,10 +555,10 @@ alone; that is exactly why it is carried explicitly (see the contract).
 
 ### 6. Fail fast when no safe pruning exists
 
-Derivation fails, with a diagnostic, in **two** conditions — the graph cannot be made into a covered
-`NativeCascade` multitree. This failure applies on **both** dialects as a cross-engine portability
-policy — the graph is unrepresentable on SQL Server; PostgreSQL alone could run it, but DMS refuses a
-non-portable model (see the *Dialect scope decision*):
+Derivation fails, with a diagnostic, in **two** conditions — the SQL Server graph cannot be made into
+a covered `NativeCascade` multitree. This fail-fast is **SQL Server–specific** (part of SQL Server
+model derivation); PostgreSQL is not pruned or failed by DMS — it keeps full-composite
+`ON UPDATE CASCADE` (see the *Dialect scope decision*). The two conditions are:
 
 1. **Cascade cycle / SCC** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the
    action tree revisits a table. Detected before survivor selection begins. Diagnostic names the SCC
@@ -587,35 +589,29 @@ load-bearing rather than merely nice-to-have.
 
 ## Dialect scope decision (AC: "MSSQL only, or both?")
 
-**Physical FK pruning is emitted for SQL Server only; PostgreSQL keeps full composite
-`ON UPDATE CASCADE` on every eligible edge.** ODS prunes for both engines, but ODS's motivation is
-uniform DDL generation, not a PostgreSQL correctness need. PostgreSQL has no 1785
-multiple-cascade-paths/cycles DDL restriction and no `NO ACTION`-before-trigger problem: it can create
-and natively cascade all paths of a multi-path graph, so pruning on PostgreSQL would only *remove*
-native RI enforcement for no benefit.
+**Decision (team-ratified): foreign-key pruning, unsafe-graph detection, and fail-fast are emitted for
+SQL Server only. PostgreSQL keeps full-composite `ON UPDATE CASCADE` on every eligible edge and is left
+as-is — never pruned, never failed by DMS.** This follows the team's engine-specific policy: where the
+two engines cannot behave identically (as here — SQL Server's 1785 DDL restriction has no PostgreSQL
+equivalent), each engine does what works for it rather than being forced into parity. ODS prunes for
+both engines, but its motivation is uniform DDL generation, not a PostgreSQL need.
 
-Detection of the unsafe-graph condition (an **uncovered diamond** — duplicate reachability that cannot
-be safely broken — or a **cascade cycle**) is therefore **not a PostgreSQL correctness requirement**.
-It is a **cross-engine portability / parity policy**: a schema authored and validated on PostgreSQL
-must not silently fail to create on SQL Server later, so a DMS model is required to be representable on
-**both** supported engines. The split is:
+- **SQL Server:** run the classification (§§ 1–5), emit pruning (`CASCADE` → `NO ACTION` rewrites at
+  covered diamonds), and **fail derivation** when no safe classification exists (§ 6).
+- **PostgreSQL:** emit full-composite `ON UPDATE CASCADE` on every eligible edge, unchanged. DMS does
+  **not** run the pruning classification or the fail-fast on PostgreSQL. PostgreSQL has no 1785 DDL
+  restriction, so it accepts the DDL at create time; no claim is made about PostgreSQL's runtime
+  behavior for a cascade *cycle*.
+- **Authoring (both engines):** MetaEd (METAED-1667) is the cross-engine authoring guard. It flags a
+  configuration whose cascade graph SQL Server cannot represent — a cascade cycle/SCC, or diamonds
+  that cannot be jointly broken — so authors do not ship a model that will fail to install on SQL
+  Server. This is where cross-engine safety lives, rather than forcing PostgreSQL derivation to reject
+  graphs it can represent.
 
-- **Detect** the SQL-Server-unsatisfiable condition during model derivation dialect-agnostically, and
-  **fail derivation on both dialects** — so a non-portable schema is rejected up front regardless of
-  the engine currently in use (schema soundness / cross-engine parity), **not** because PostgreSQL
-  requires it. (PostgreSQL alone has no 1785 DDL restriction and would accept such a graph at
-  create time; DMS refuses it as a portability policy. No claim is made about PostgreSQL propagating
-  identity through a cascade *cycle* at run time.)
-- **Emit** cascade pruning (`CASCADE` → `NO ACTION` rewrites) only for SQL Server DDL. PostgreSQL
-  physical emission is unchanged: full-composite `ON UPDATE CASCADE` on every eligible edge.
-- **Prevent** the condition at authoring time in MetaEd (below), so neither engine encounters it in
-  practice.
-
-This both-dialect fail-fast is a deliberate cross-engine authoring policy: it does not follow from
-PostgreSQL semantics (PostgreSQL alone would accept the graph), but from DMS's requirement that a
-single derived model be valid on every supported engine. No claim is made about PostgreSQL propagating
-identity through a cascade *cycle* at run time — DMS refuses cyclic cascade graphs at derivation before
-either engine runs them.
+Rationale for keeping the *authoring* guard cross-engine even though DMS PostgreSQL derivation does not
+fail: an Ed-Fi model or extension is typically authored once and deployed to a mix of SQL Server and
+PostgreSQL sites, so a SQL-Server-incompatible model is best caught when it is authored, not when a SQL
+Server site tries to install it.
 
 ## Derived-model contract for DMS-1258
 
@@ -716,7 +712,7 @@ detection from `inEdges > 1` (raw in-degree) to per-origin duplicate reachabilit
 in-degree test over-approximates 1785 and would prune legal *independent* parents, whereas DMS leaves
 them as `CASCADE`. Second, it adds explicit **cycle/SCC detection** (step 2). Third, it adds the
 **coverage classification** (step 4) and **fail-fast** (step 6): a covered reconverging edge is pruned
-safely; a cascade cycle or an uncovered diamond is a hard error, never a silent prune.
+safely; a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), is a hard error, never a silent prune.
 
 ## Migration from the current code
 
@@ -758,19 +754,21 @@ DMS-1258 has been updated to match this design (it previously described pruning 
   and are never pruned.
 - The per-edge outcomes are `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and
   every emitted SQL Server FK is full composite — no `TriggerFallback` / `DocumentId`-only shape.
-- Explicit **cycle/SCC fail-fast** is in scope, and derivation fails on **both** dialects as the
-  cross-engine portability policy (decision 5).
+- Explicit **cycle/SCC fail-fast** is in scope, scoped to **SQL Server** (PostgreSQL is left as-is;
+  MetaEd is the cross-engine authoring guard — decision 5).
 - The classification runs after `TransitiveIdentityMutabilityPass` and feeds
   `ReferenceConstraintPass.ResolveOnUpdate` (a consumer of `MssqlPropagationMode`), and the retained
   graph must satisfy the global invariant above.
 
 ## Follow-up work
 
-- **MetaEd** (authoring guard — now load-bearing): disallow `allow primary key updates`
-  configurations that yield a cascade cycle or an uncovered diamond (per-origin duplicate reachability
-  that cannot be safely broken) — i.e. any graph where no safe pruning exists — so unsafe schemas are
-  rejected before they reach DMS. Because `TriggerFallback` no longer provides a permissive fallback, this guard is the
-  primary place such schemas should be caught; the DMS fail-fast is the backstop. Tracked as
+- **MetaEd** (authoring guard — the cross-engine catch): disallow `allow primary key updates`
+  configurations that yield a cascade graph SQL Server cannot represent — a cascade cycle/SCC, or
+  diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible
+  overlapping diamonds where no global survivor assignment satisfies the retained-`NativeCascade`
+  invariant) — so unsafe schemas are rejected at authoring, before they reach a SQL Server deployment.
+  Because DMS PostgreSQL derivation is left as-is (no fail-fast) and `TriggerFallback` is gone, this
+  authoring guard is the primary place such schemas are caught; the SQL Server DMS fail-fast is the backstop. Tracked as
   METAED-1667.
 - **DMS-1258** (implementation): implement the propagation-direction graph, cycle/SCC detection, the
   coverage classification, deterministic survivor selection with full-composite restoration on

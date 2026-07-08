@@ -123,7 +123,7 @@ DDL generator requirements (derived from ApiSchema):
       allowed only when covered by the survivor (its identity columns are maintained by that cascade under key
       unification). Independent parents are never pruned; there is no `DocumentId`-only trigger fallback — every SQL Server
       reference FK keeps the full composite key.
-    - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or an uncovered diamond.
+    - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds.
 
 When a referenced document’s identity changes, the database propagates updated identity values into all direct
 referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible
@@ -262,8 +262,7 @@ fields alongside every document reference. Composite-FK update behavior is diale
   (`ON UPDATE NO ACTION` otherwise).
 - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges (including independent parents into a shared
   receiver), pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only where one update would otherwise reach
-  a table by two cascade paths (a diamond), and fail-fast when no safe pruning exists (a cascade cycle, or an uncovered
-  diamond). There is no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
+  a table by two cascade paths (a diamond), and fail-fast when no safe pruning exists (a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds). There is no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -272,12 +271,12 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so it keeps `ON UPDATE CASCADE` on every eligible edge and DMS never physically prunes PostgreSQL FKs. (A cascade cycle or an uncovered diamond still fails derivation on both dialects as a cross-engine portability policy; see [mssql-cascading.md](mssql-cascading.md).)
+- PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so it keeps `ON UPDATE CASCADE` on every eligible edge and DMS never physically prunes PostgreSQL FKs. The pruning classification and fail-fast are SQL-Server-specific; PostgreSQL derivation is left as-is (MetaEd is the cross-engine authoring guard; see [mssql-cascading.md](mssql-cascading.md)).
 - SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child): `ON UPDATE CASCADE` on
   eligible edges (including independent parents into a shared receiver), pruning a covered edge to `ON UPDATE NO ACTION`
   (full composite) only at a diamond (where one update would otherwise reach a table by two cascade paths),
-  failing fast when no safe pruning exists (a cascade cycle/SCC, or an uncovered diamond).
+  failing fast when no safe pruning exists (a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds).
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
   propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 
