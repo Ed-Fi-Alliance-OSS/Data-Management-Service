@@ -78,7 +78,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator()
         );
     }
@@ -667,7 +667,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             parameterConfigurator
         );
@@ -752,7 +752,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
@@ -810,7 +810,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
@@ -1513,7 +1513,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator()
         );
 
@@ -5813,7 +5813,7 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
@@ -7396,7 +7396,7 @@ public class Given_Default_Relational_Write_Executor
     // ContentVersion: schema epoch from the mapping set, JSON format, the write profile (or none),
     // and links-on. format/linkFlag are projected out of the If-Match comparison.
     private static string ComposedCurrentEtag(RelationalWriteExecutorRequest request, long contentVersion) =>
-        new EtagComposer().Compose(
+        EtagComposer.Compose(
             contentVersion,
             VariantKeyFactory.Create(
                 request.MappingSet.Key.EffectiveSchemaHash,

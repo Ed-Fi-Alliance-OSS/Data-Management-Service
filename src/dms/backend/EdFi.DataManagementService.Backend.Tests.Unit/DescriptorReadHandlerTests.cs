@@ -23,8 +23,7 @@ public class Given_DescriptorReadHandler
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
-    private static readonly IEtagComposer _etagComposer = new EtagComposer();
-    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer(_etagComposer);
+    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer();
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "dms.\"Descriptor\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[dms].[Descriptor]")]
@@ -872,7 +871,7 @@ public class Given_DescriptorReadHandler
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
-        _etagComposer.Compose(
+        EtagComposer.Compose(
             contentVersion,
             DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );

@@ -39,7 +39,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _writeSession = A.Fake<IRelationalWriteSession>();
         _sut = new RelationalCurrentEtagPreconditionChecker(
             _currentStateLoader,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
         );
@@ -108,7 +108,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         // Client presents an etag captured under links-off / (hypothetical) XML; the checker composes
         // the current tag under links-on / JSON. The state-significant projection drops format and
         // linkFlag, so the precondition still matches.
-        var linkAndFormatDivergentEtag = new EtagComposer().Compose(
+        var linkAndFormatDivergentEtag = EtagComposer.Compose(
             LockedContentVersion,
             new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n")
         );
@@ -143,7 +143,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
         // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
         // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
-        var differentEpochEtag = new EtagComposer().Compose(
+        var differentEpochEtag = EtagComposer.Compose(
             LockedContentVersion,
             new VariantKey($"ffffffff.j._.l")
         );
@@ -216,7 +216,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         long contentVersion,
         string? profileName = null
     ) =>
-        new EtagComposer().Compose(
+        EtagComposer.Compose(
             contentVersion,
             VariantKeyFactory.Create(
                 BuildMappingSet(dialect).Key.EffectiveSchemaHash,

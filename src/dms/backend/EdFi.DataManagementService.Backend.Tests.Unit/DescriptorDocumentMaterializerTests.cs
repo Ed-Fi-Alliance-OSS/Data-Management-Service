@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_DescriptorDocumentMaterializer
 {
-    private static readonly IEtagComposer _etagComposer = new EtagComposer();
     private static readonly VariantKey _descriptorVariantKey = DescriptorVariantKey.For("abcd1234");
 
     [Test]
@@ -28,7 +27,7 @@ public class Given_DescriptorDocumentMaterializer
             effectiveEndDate: new DateOnly(2025, 12, 31),
             discriminator: "SchoolTypeDescriptor"
         );
-        var composedEtag = _etagComposer.Compose(row.ContentVersion, _descriptorVariantKey);
+        var composedEtag = EtagComposer.Compose(row.ContentVersion, _descriptorVariantKey);
 
         var result = DescriptorDocumentMaterializer.Materialize(
             row,

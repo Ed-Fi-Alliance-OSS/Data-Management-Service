@@ -26,7 +26,7 @@ public class Given_RelationalCommittedRepresentationReader
     public async Task It_composes_the_committed_etag_from_the_stamped_content_version()
     {
         var sut = new RelationalCommittedRepresentationReader(
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             Options.Create(new ResourceLinksOptions())
         );
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -45,7 +45,7 @@ public class Given_RelationalCommittedRepresentationReader
         var result = await sut.ReadAsync(request, persistedTarget);
 
         // No profile ("_"), links enabled ("l"), JSON ("j"), and the mapping set's schema epoch.
-        var expectedEtag = new EtagComposer().Compose(
+        var expectedEtag = EtagComposer.Compose(
             StampedContentVersion,
             VariantKeyFactory.Create(
                 mappingSet.Key.EffectiveSchemaHash,

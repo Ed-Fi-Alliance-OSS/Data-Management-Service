@@ -24,8 +24,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Preconditions
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
-    private static readonly IEtagComposer _etagComposer = new EtagComposer();
-    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer(_etagComposer);
+    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer();
 
     [Test]
     public async Task It_re_resolves_descriptor_post_creates_inside_the_write_session_before_returning_precondition_failed()
@@ -941,7 +940,7 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
-        _etagComposer.Compose(
+        EtagComposer.Compose(
             contentVersion,
             DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
@@ -993,7 +992,7 @@ public class Given_Descriptor_Write_Preconditions
             deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
-            new ServedEtagComposer(_etagComposer),
+            new ServedEtagComposer(),
             new IfMatchEvaluator()
         );
     }

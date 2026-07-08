@@ -23,7 +23,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Response_Etags
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
-    private static readonly IEtagComposer _etagComposer = new EtagComposer();
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
 
     [Test]
@@ -347,13 +346,13 @@ public class Given_Descriptor_Write_Response_Etags
     private const string ProfileName = "E2E-Test-SchoolTypeDescriptor-Profile";
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
-        _etagComposer.Compose(
+        EtagComposer.Compose(
             contentVersion,
             DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
         );
 
     private static string ExpectedProfiledDescriptorEtag(long contentVersion, string profileName) =>
-        _etagComposer.Compose(
+        EtagComposer.Compose(
             contentVersion,
             VariantKeyFactory.Create(
                 CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash,
@@ -379,7 +378,7 @@ public class Given_Descriptor_Write_Response_Etags
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),
             NullLogger<DescriptorWriteHandler>.Instance,
-            new ServedEtagComposer(_etagComposer),
+            new ServedEtagComposer(),
             new IfMatchEvaluator()
         );
     }

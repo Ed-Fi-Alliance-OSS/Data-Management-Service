@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Etag;
 [Parallelizable]
 public class Given_ServedEtagComposer
 {
-    private readonly IServedEtagComposer _sut = new ServedEtagComposer(new EtagComposer());
+    private readonly IServedEtagComposer _sut = new ServedEtagComposer();
 
     [Test]
     public void It_composes_the_same_value_as_the_factory_plus_composer()
@@ -26,7 +26,7 @@ public class Given_ServedEtagComposer
             ContentVersion: 5
         );
 
-        var expected = new EtagComposer().Compose(
+        var expected = EtagComposer.Compose(
             5,
             VariantKeyFactory.Create(
                 "A1B2C3D4E5",

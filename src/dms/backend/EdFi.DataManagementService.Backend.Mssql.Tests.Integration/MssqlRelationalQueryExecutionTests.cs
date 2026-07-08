@@ -117,9 +117,7 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
     private readonly RelationalReadMaterializer _inner = new(
         new IntegrationFixtureSlugResolver(),
         Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions()),
-        new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer(
-            new EdFi.DataManagementService.Backend.Etag.EtagComposer()
-        )
+        new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer()
     );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)

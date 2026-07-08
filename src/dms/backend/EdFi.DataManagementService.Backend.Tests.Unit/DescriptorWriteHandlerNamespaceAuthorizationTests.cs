@@ -1195,7 +1195,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
-            new ServedEtagComposer(new EtagComposer()),
+            new ServedEtagComposer(),
             new IfMatchEvaluator(),
             providerFailureExtractor
         );
