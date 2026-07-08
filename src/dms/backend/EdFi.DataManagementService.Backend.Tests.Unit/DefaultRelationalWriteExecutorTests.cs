@@ -1598,7 +1598,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
 
@@ -1642,7 +1641,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
 
@@ -1681,7 +1679,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
-            currentEtag: "\"stale-etag\"",
             contentVersion: 44L
         );
 
@@ -1754,7 +1751,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
@@ -1977,7 +1973,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
         _writeFreshnessChecker.IsCurrentResult = false;
@@ -2017,7 +2012,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
         _writeFreshnessChecker.IsCurrentResult = false;
@@ -4501,7 +4495,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: true,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
 
@@ -5957,7 +5950,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
 
@@ -5993,7 +5985,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
         _noProfilePersister.ProposedAuthorizationExceptionToThrow =
@@ -6077,7 +6068,6 @@ public class Given_Default_Relational_Write_Executor
         _currentEtagPreconditionChecker.ResultToReturn = CreatePreconditionCheckResult(
             request,
             isMatch: false,
-            currentEtag: "\"current-etag\"",
             contentVersion: 45L
         );
         _noProfilePersister.ProposedAuthorizationExceptionToThrow =
@@ -8230,7 +8220,6 @@ public class Given_Default_Relational_Write_Executor
     private static RelationalCurrentEtagPreconditionCheckResult CreatePreconditionCheckResult(
         RelationalWriteExecutorRequest request,
         bool isMatch,
-        string currentEtag,
         long contentVersion,
         string schoolName = "Lincoln High"
     )
@@ -8246,7 +8235,6 @@ public class Given_Default_Relational_Write_Executor
             {
                 ObservedContentVersion = contentVersion,
             },
-            currentEtag,
             isMatch
         );
     }

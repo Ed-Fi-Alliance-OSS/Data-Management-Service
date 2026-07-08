@@ -75,7 +75,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
-        result.CurrentEtag.Should().Be(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion));
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");

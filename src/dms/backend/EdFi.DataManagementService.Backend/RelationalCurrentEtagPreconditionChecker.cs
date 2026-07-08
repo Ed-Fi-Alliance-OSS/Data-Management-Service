@@ -49,7 +49,6 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     RelationalWriteCurrentState CurrentState,
     RelationalWriteTargetContext.ExistingDocument TargetContext,
-    string CurrentEtag,
     bool IsMatch
 );
 
@@ -166,12 +165,12 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        // Compose the current served etag (it still carries profileCode from the request's profile, for
-        // the returned CurrentEtag). If-Match then compares only the state-significant projection
-        // (ContentVersion, schemaEpoch); format, linkFlag, and profileCode are projected out — profileCode
-        // as of the 2026-07-04 ADR amendment. A wildcard precondition (If-Match: *) is handled inside the
-        // evaluator, which matches unconditionally because reaching this point means the target row
-        // exists and is locked.
+        // Compose the current served etag for the If-Match comparison. If-Match compares only the
+        // state-significant projection (ContentVersion, schemaEpoch); format, linkFlag, and profileCode
+        // are projected out — profileCode as of the 2026-07-04 ADR amendment — so the profile/link inputs
+        // here do not affect the match, but the full composition keeps the debug log meaningful. A
+        // wildcard precondition (If-Match: *) is handled inside the evaluator, which matches
+        // unconditionally because reaching this point means the target row exists and is locked.
         var currentEtag = _servedEtagComposer.Compose(
             new ServedEtagContext(
                 request.MappingSet.Key.EffectiveSchemaHash,
@@ -204,7 +203,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
-            currentEtag,
             evaluation.IsMatch
         );
     }

@@ -574,7 +574,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
-        result.CurrentEtag.Should().NotBeNullOrEmpty();
     }
 
     [Test]
