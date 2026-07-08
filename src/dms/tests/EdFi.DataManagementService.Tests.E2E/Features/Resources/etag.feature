@@ -300,3 +300,102 @@ Feature: ETag validations
                     "_etag": "{etag}"
                   }
                   """
+        @e2e-ci-shard-1
+        Scenario: 15 Ensure a child-collection-only update advances the ETag and invalidates a stale If-Match
+            Given the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | uri://ed-fi.org/AddressTypeDescriptor#Mailing                  |
+                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                 |
+              And the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | "604824"        | 2010-01-13 | Traci     | Mathews     |
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
+                  """
+                  {
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "studentReference": { "studentUniqueId": "604824" },
+                      "addresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                              "city": "Grand Bend",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is stored in request variable "originalEtag"
+            # A child-collection-only change (address city) must still advance the served ETag: the ADR
+            # restored the post-write ContentVersion read specifically so the response reflects the
+            # trigger-stamped version rather than a stale one.
+             When a PUT request is made to "/ed-fi/studentEducationOrganizationAssociations/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "studentReference": { "studentUniqueId": "604824" },
+                      "addresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                              "city": "Springfield",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 204
+              And the ETag differs from request variable "originalEtag"
+            # The original ETag is now stale, so replaying it as If-Match must be rejected.
+             When a PUT if-match "{originalEtag}" request is made to "/ed-fi/studentEducationOrganizationAssociations/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "studentReference": { "studentUniqueId": "604824" },
+                      "addresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                              "city": "Lakeview",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 412
+            # The current ETag still satisfies If-Match.
+             When a PUT if-match "{IfMatch}" request is made to "/ed-fi/studentEducationOrganizationAssociations/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "studentReference": { "studentUniqueId": "604824" },
+                      "addresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                              "city": "Lakeview",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 204

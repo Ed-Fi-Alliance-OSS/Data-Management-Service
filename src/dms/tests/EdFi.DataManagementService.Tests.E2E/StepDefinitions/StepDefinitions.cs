@@ -568,6 +568,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             ifMatch = ifMatch.Replace("{IfMatchQuoted}", _rawEtag);
+            // Resolve any stored-variable placeholder (e.g. a baseline ETag captured earlier) so a
+            // deliberately stale If-Match can be replayed after the resource has since changed.
+            ifMatch = ifMatch.ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -1662,6 +1665,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             string opaque = StripEtagQuotes(_apiResponse.Headers["etag"]);
             opaque.Should().MatchRegex(pattern);
+        }
+
+        // Captures the most recently served ETag (quotes stripped) under a scenario variable so a later
+        // step can assert the ETag advanced. Use the resulting variable as "{name}" in an If-Match header.
+        [Then("the ETag is stored in request variable {string}")]
+        public void ThenTheEtagIsStoredInRequestVariable(string variableName)
+        {
+            _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            _etag.Should().NotBeNullOrEmpty();
+            _scenarioVariables.Add(variableName, _etag);
+        }
+
+        [Then("the ETag differs from request variable {string}")]
+        public void ThenTheEtagDiffersFromRequestVariable(string variableName)
+        {
+            string current = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            current.Should().NotBeNullOrEmpty();
+            current.Should().NotBe(_scenarioVariables.GetValueByName(variableName));
         }
 
         // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
