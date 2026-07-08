@@ -387,7 +387,8 @@ Notes:
   so DDL generation, runtime, and manifest verification agree. DMS-1258 must add to the shared derived contract (concrete
   C# shape deferred to DMS-1258; the required contract is fixed here — see `design-docs/mssql-cascading.md`):
   - a per-edge `MssqlPropagationMode` on every SQL Server reference FK, with exactly three values (a *total*
-    classification, so consumers never infer intent from `OnUpdate`): `NativeCascade` (cascade-eligible surviving edge,
+    classification, so consumers never infer intent from `OnUpdate`): `NativeCascade` (a cascade-eligible edge that is
+    not pruned — an independent edge, a diamond's surviving edge, or the sole edge into a receiver;
     `ON UPDATE CASCADE`), `NoPropagation` (cascade-eligible pruned edge covered by the surviving cascade,
     `ON UPDATE NO ACTION`), and `ImmutableNoAction` (reference to a genuinely immutable target — not in the cascade
     graph — `ON UPDATE NO ACTION`). `NO ACTION` therefore does **not** imply `NoPropagation`: it is either

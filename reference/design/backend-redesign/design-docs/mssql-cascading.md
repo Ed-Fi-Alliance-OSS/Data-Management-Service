@@ -548,8 +548,9 @@ DMS-1258 must add:
 
 - **Per-edge `MssqlPropagationMode`** on every SQL Server reference FK, with exactly three values —
   a *total* classification, so a consumer never has to infer intent from `OnUpdate`:
-  - `NativeCascade` — a cascade-eligible edge kept as the surviving cascade (or the sole edge into a
-    receiver); `ON UPDATE CASCADE`.
+  - `NativeCascade` — a cascade-eligible edge that is **not** pruned: an independent edge (its source
+    shares no ancestor with the receiver's other retained edges), the surviving path of a diamond, or
+    the sole edge into a receiver; `ON UPDATE CASCADE`.
   - `NoPropagation` — a cascade-eligible edge that was pruned but is covered by the surviving
     cascade; `ON UPDATE NO ACTION`.
   - `ImmutableNoAction` — a reference to a genuinely immutable target
