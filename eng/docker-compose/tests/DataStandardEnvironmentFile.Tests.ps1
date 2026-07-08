@@ -24,7 +24,7 @@ DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0
 # A comment that must survive
 SCHEMA_PACKAGES='[
   {
-    "version": "1.0.332",
+    "version": "1.0.333",
     "name": "EdFi.DataStandard52.ApiSchema"
   }
 ]'

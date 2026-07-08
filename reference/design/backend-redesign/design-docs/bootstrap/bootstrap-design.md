@@ -245,12 +245,12 @@ DMS. That explains the current `.env.example` pattern, for example:
 ```json
 [
   {
-    "version": "1.0.332",
+    "version": "1.0.333",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.332",
+    "version": "1.0.333",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.Sample.ApiSchema"
   }
