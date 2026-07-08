@@ -1945,14 +1945,23 @@ internal sealed class DescriptorWriteHandler(
             command,
             static async (reader, ct) =>
             {
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                // Every descriptor write batch ends with the row-producing SELECT "ContentVersion".
+                // Neither Npgsql nor SqlClient surfaces the preceding UPDATE/INSERT/MERGE as a
+                // row-bearing result set, so in practice the trailing SELECT is the first exposed
+                // result set. Scan defensively anyway rather than depending on that ordering:
+                // advance past any leading result set a driver might expose and stop at the first
+                // row, which is the ContentVersion the trailing SELECT produces.
+                do
                 {
-                    throw new InvalidOperationException(
-                        "Descriptor write did not surface a ContentVersion value for etag composition."
-                    );
-                }
+                    if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return reader.GetRequiredFieldValue<long>("ContentVersion");
+                    }
+                } while (await reader.NextResultAsync(ct).ConfigureAwait(false));
 
-                return reader.GetRequiredFieldValue<long>("ContentVersion");
+                throw new InvalidOperationException(
+                    "Descriptor write did not surface a ContentVersion value for etag composition."
+                );
             },
             cancellationToken
         );
