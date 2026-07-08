@@ -102,9 +102,11 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                 }
 
                 // An oversized body is a client error the pipeline responded to, so it participates
-                // in the request-log contract as a completion event carrying the 413 status code. The
-                // caught exception is expected control flow, not a failure, so it is deliberately not
-                // attached to this Information-level completion event.
+                // in the request-log contract as a completion event. The logged status must be the
+                // status the client actually received, which is only 413 when the response had not
+                // already started. The caught exception is expected control flow, not a failure, so
+                // it is deliberately not attached to this Information-level completion event.
+                var statusCode = response.StatusCode;
 #pragma warning disable S6667 // Logging in a catch clause should pass the caught exception as a parameter
                 if (logger.IsEnabled(LogLevel.Information))
                 {
@@ -115,7 +117,7 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                         RequestLoggingEventIds.HttpRequestCompleted.Name,
                         sanitizedMethod,
                         sanitizedPath,
-                        StatusCodes.Status413PayloadTooLarge,
+                        statusCode,
                         stopwatch.ElapsedMilliseconds,
                         traceId
                     );

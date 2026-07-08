@@ -92,7 +92,7 @@ events are not counted as separate external HTTP requests.
 ### Example Request Log Output
 
 Each CMS and DMS request completion event produces newline-delimited JSON with
-this structure:
+this structure. CMS example:
 
 ```json
 {
@@ -104,12 +104,41 @@ this structure:
   "Properties": {
     "Application": "EdFi.DmsConfigurationService",
     "EventName": "HttpRequestCompleted",
+    "EventId": { "Id": 1228001, "Name": "HttpRequestCompleted" },
     "SourceContext": "EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware.RequestLoggingMiddleware",
     "TraceId": "0HN...",
     "ActivityTraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
     "SpanId": "00f067aa0ba902b7",
     "Method": "GET",
     "Path": "/v3/vendors",
+    "StatusCode": 200,
+    "DurationMs": 42,
+    "PathBase": ""
+  }
+}
+```
+
+DMS frontend example, which additionally carries the DMS-only `RequestLayer`
+property:
+
+```json
+{
+  "Timestamp": "2026-06-29T14:23:45.123Z",
+  "Level": "Information",
+  "MessageTemplate": "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+  "RenderedMessage": "HttpRequestCompleted: DMS request completed: GET /ed-fi/students responded 200 in 42 ms with TraceId 0HN...",
+  "Exception": null,
+  "Properties": {
+    "Application": "EdFi.DataManagementService",
+    "EventName": "HttpRequestCompleted",
+    "EventId": { "Id": 1228001, "Name": "HttpRequestCompleted" },
+    "SourceContext": "EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.LoggingMiddleware",
+    "RequestLayer": "Frontend",
+    "TraceId": "0HN...",
+    "ActivityTraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "SpanId": "00f067aa0ba902b7",
+    "Method": "GET",
+    "Path": "/ed-fi/students",
     "StatusCode": 200,
     "DurationMs": 42,
     "PathBase": ""
@@ -125,9 +154,15 @@ Completion logs use `Information`, except CMS `/.well-known/*` completion logs,
 which use `Debug`. Failure logs use `Error`. Request start logs are diagnostic
 breadcrumbs emitted at `Debug` and are outside the production completion/failure
 collector contract. The DMS frontend emits oversized-request-body rejections
-(HTTP 413) as `HttpRequestCompleted` events carrying `StatusCode` 413, so they
-remain visible to the request-log contract as client-error responses rather than
-failures. CMS rethrows the original exception for upstream middleware;
+(HTTP 413) as `HttpRequestCompleted` events carrying the status code the client
+actually received — 413 unless the response had already started with another
+status — so they remain visible to the request-log contract as client-error
+responses rather than failures. The `HttpRequestFailed` event is the canonical
+application error log for a request: when the CMS global exception handler
+converts an unhandled exception into an error response, the request logging
+middleware logs that handled exception on the `HttpRequestFailed` event, and the
+exception handler itself does not log. CMS rethrows the original exception for
+upstream middleware;
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
 not started. The `traceId` in that error response body is the same sanitized

@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Diagnostics;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
-public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
+public sealed class GlobalExceptionHandler : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
@@ -19,6 +19,9 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         CancellationToken cancellationToken
     )
     {
+        // This handler only writes the error response. RequestLoggingMiddleware logs the
+        // handled exception as the canonical structured HttpRequestFailed event (via
+        // IExceptionHandlerFeature), so logging here would double-count request errors.
         var relaxedSerializer = new JsonSerializerOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -26,17 +29,6 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         };
 
         var traceId = httpContext.TraceIdentifier;
-        logger.LogError(
-            JsonSerializer.Serialize(
-                new
-                {
-                    message = "An uncaught error has occurred",
-                    error = new { exception.Message, exception.StackTrace },
-                    traceId = traceId,
-                },
-                relaxedSerializer
-            )
-        );
         var response = httpContext.Response;
         response.ContentType = "application/problem+json";
         response.Headers["TraceId"] = traceId;

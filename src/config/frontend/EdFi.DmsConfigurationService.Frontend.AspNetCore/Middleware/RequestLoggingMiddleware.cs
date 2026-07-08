@@ -64,9 +64,10 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     return;
                 }
 
+                // StatusCode and DurationMs travel in the completion/failure log event state
+                // only; mutating the scope dictionary after BeginScope would depend on
+                // providers reading the mutable dictionary lazily.
                 var durationMs = sw.ElapsedMilliseconds;
-                scopeValues["StatusCode"] = statusCode;
-                scopeValues["DurationMs"] = durationMs;
 
                 if (statusCode >= StatusCodes.Status500InternalServerError)
                 {
@@ -100,7 +101,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             }
             catch (Exception ex)
             {
-                LogFailure(context, logger, sw, ex, scopeValues, method, path, traceId);
+                LogFailure(context, logger, sw, ex, method, path, traceId);
                 throw;
             }
         }
@@ -111,7 +112,6 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         ILogger<RequestLoggingMiddleware> logger,
         Stopwatch sw,
         Exception ex,
-        Dictionary<string, object> scopeValues,
         string method,
         string path,
         string traceId
@@ -126,8 +126,6 @@ public class RequestLoggingMiddleware(RequestDelegate next)
 
             var statusCode = GetFailureStatusCode(context);
             var durationMs = sw.ElapsedMilliseconds;
-            scopeValues["StatusCode"] = statusCode;
-            scopeValues["DurationMs"] = durationMs;
 
             logger.LogError(
                 RequestLoggingEventIds.HttpRequestFailed,

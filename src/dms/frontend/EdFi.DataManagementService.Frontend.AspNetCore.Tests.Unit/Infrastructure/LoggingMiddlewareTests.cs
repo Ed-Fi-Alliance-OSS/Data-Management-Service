@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -322,6 +323,33 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
+    public async Task It_logs_the_actual_status_code_for_413_rejections_after_the_response_started()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/schemas";
+        httpContext.Features.Set<IHttpResponseFeature>(
+            new StartedHttpResponseFeature { StatusCode = StatusCodes.Status200OK }
+        );
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ =>
+                throw new BadHttpRequestException(
+                    "Request body too large.",
+                    StatusCodes.Status413PayloadTooLarge
+                ),
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        await FluentActions.Awaiting(() => middleware.Invoke(httpContext, logger)).Should().NotThrowAsync();
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status200OK);
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
+    }
+
+    [Test]
     public async Task It_keeps_normal_exceptions_on_the_existing_500_path()
     {
         var httpContext = new DefaultHttpContext();
@@ -444,6 +472,8 @@ public class Given_LoggingMiddleware
 
         (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DataManagementService");
         (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["EventId"]?["Id"]?.GetValue<int>()).Should().Be(1228001);
+        (properties?["EventId"]?["Name"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
         (properties?["TraceId"]?.GetValue<string>()).Should().Be("json-trace-id");
         (properties?["RequestLayer"]?.GetValue<string>()).Should().Be("Frontend");
         (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
@@ -639,6 +669,13 @@ public class Given_LoggingMiddleware
         where T : class
     {
         public T Value => throw exception;
+    }
+
+    // DefaultHttpContext's response feature always reports HasStarted false, so simulating a
+    // response that already started requires overriding the feature.
+    private sealed class StartedHttpResponseFeature : HttpResponseFeature
+    {
+        public override bool HasStarted => true;
     }
 
     private sealed class CapturingSerilogSink : ILogEventSink

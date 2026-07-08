@@ -184,7 +184,7 @@ function Get-ValidEffectiveSchemaHash {
         $Value
     )
 
-    if ($Value -is [string] -and $Value -match '^[a-f0-9]{64}$') {
+    if ($Value -is [string] -and $Value -match '(?i)^[a-f0-9]{64}$') {
         return $Value.ToLowerInvariant()
     }
 

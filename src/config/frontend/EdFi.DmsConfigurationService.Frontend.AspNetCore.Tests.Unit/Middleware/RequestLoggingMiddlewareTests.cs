@@ -119,6 +119,13 @@ internal class Given_RequestLoggingMiddleware
             .Be(
                 "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
+        entry.State.ContainStructuredProperty("StatusCode", 204);
+        entry
+            .State.Should()
+            .BeAssignableTo<IEnumerable<KeyValuePair<string, object?>>>()
+            .Which.Any(kvp => kvp.Key == "DurationMs" && kvp.Value is long)
+            .Should()
+            .BeTrue("duration should be captured in the log event state");
 
         var scope = logger.Scopes.Single();
         scope.ContainStructuredProperty("Application", "EdFi.DmsConfigurationService");
@@ -126,13 +133,6 @@ internal class Given_RequestLoggingMiddleware
         scope.ContainStructuredProperty("Method", "GET");
         scope.ContainStructuredProperty("Path", "/api/v1/test");
         scope.ContainStructuredProperty("PathBase", string.Empty);
-        scope.ContainStructuredProperty("StatusCode", 204);
-        scope
-            .Should()
-            .BeAssignableTo<IEnumerable<KeyValuePair<string, object?>>>()
-            .Which.Any(kvp => kvp.Key == "DurationMs" && kvp.Value is long)
-            .Should()
-            .BeTrue("duration should be captured in the log scope");
     }
 
     [Test]
@@ -179,9 +179,10 @@ internal class Given_RequestLoggingMiddleware
             .Be(
                 "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
+        entry.State.ContainStructuredProperty("StatusCode", 500);
+        entry.State.ContainKey("DurationMs");
         logger.Scopes.Should().Contain(scope => scope.HasStructuredProperty("Method", "GET"));
         logger.Scopes.Should().Contain(scope => scope.HasStructuredProperty("Path", "/api/v1/test"));
-        logger.Scopes.Should().Contain(scope => scope.HasStructuredProperty("StatusCode", 500));
         logger
             .Scopes.Should()
             .Contain(scope => scope.HasStructuredProperty("TraceId", httpContext.TraceIdentifier));
@@ -306,11 +307,7 @@ internal class Given_RequestLoggingMiddleware
         entry.Level.Should().Be(LogLevel.Error);
         entry.Exception.Should().BeNull();
         entry.State.ContainStructuredProperty("EventName", "HttpRequestFailed");
-        logger
-            .Scopes.Should()
-            .Contain(scope =>
-                scope.HasStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError)
-            );
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
     }
 
     [Test]
@@ -350,11 +347,8 @@ internal class Given_RequestLoggingMiddleware
         Action act = () => middleware.Invoke(httpContext, logger).GetAwaiter().GetResult();
 
         act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(exception);
-        logger
-            .Scopes.Should()
-            .Contain(scope =>
-                scope.HasStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError)
-            );
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
     }
 
     [Test]
@@ -476,6 +470,8 @@ internal class Given_RequestLoggingMiddleware
 
         (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DmsConfigurationService");
         (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["EventId"]?["Id"]?.GetValue<int>()).Should().Be(1228001);
+        (properties?["EventId"]?["Name"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
         (properties?["TraceId"]?.GetValue<string>()).Should().Be("json-trace-id");
         (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
         (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
